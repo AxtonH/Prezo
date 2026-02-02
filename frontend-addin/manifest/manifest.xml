@@ -10,16 +10,17 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Prezo Host" />
   <Description DefaultValue="Prezo live Q&amp;A and polls inside PowerPoint." />
-  <IconUrl DefaultValue="https://localhost:5173/prezo-icon-32.png" />
-  <SupportUrl DefaultValue="https://localhost:5173/" />
+  <IconUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-32.png" />
+  <SupportUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
   <AppDomains>
-    <AppDomain>https://localhost:5173</AppDomain>
+    <AppDomain>https://prezo-frontend-addin-production.up.railway.app</AppDomain>
+    <AppDomain>https://prezo-frontend-audience-production.up.railway.app</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:5173/" />
+    <SourceLocation DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -75,13 +76,13 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Prezo.Icon16" DefaultValue="https://localhost:5173/prezo-icon-16.png" />
-        <bt:Image id="Prezo.Icon32" DefaultValue="https://localhost:5173/prezo-icon-32.png" />
-        <bt:Image id="Prezo.Icon80" DefaultValue="https://localhost:5173/prezo-icon-80.png" />
+        <bt:Image id="Prezo.Icon16" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-16.png" />
+        <bt:Image id="Prezo.Icon32" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-32.png" />
+        <bt:Image id="Prezo.Icon80" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://localhost:5173/" />
-        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://localhost:5173/function-file.html" />
+        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
+        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/function-file.html" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Prezo.GroupLabel" DefaultValue="Prezo" />
@@ -95,3 +96,4 @@
     </Resources>
   </VersionOverrides>
 </OfficeApp>
+
