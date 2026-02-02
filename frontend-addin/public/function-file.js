@@ -21,6 +21,22 @@
   const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
   let activeDialog = null
+  const addinDebug = {
+    insertMessage: '',
+    openMessage: '',
+    openAt: ''
+  }
+
+  const updateDebugState = (next) => {
+    try {
+      const current = sessionStorage.getItem('prezo-widget-debug')
+      const parsed = current ? JSON.parse(current) : {}
+      const merged = { ...parsed, ...next }
+      sessionStorage.setItem('prezo-widget-debug', JSON.stringify(merged))
+    } catch {
+      // ignore storage failures
+    }
+  }
 
   const parseBinding = (xml) => {
     try {
@@ -1541,10 +1557,21 @@
   }
 
   function openWidgetsDialog(event) {
+    addinDebug.openAt = new Date().toISOString()
+    addinDebug.openMessage = 'Attempting to open dialog...'
+    updateDebugState({
+      openAt: addinDebug.openAt,
+      openMessage: addinDebug.openMessage
+    })
+    if (event && event.completed) {
+      event.completed()
+    }
     const tryOpen = (options, fallback) => {
       Office.context.ui.displayDialogAsync(DIALOG_URL, options, (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
           activeDialog = result.value
+          addinDebug.openMessage = 'Dialog opened.'
+          updateDebugState({ openMessage: addinDebug.openMessage })
           activeDialog.addEventHandler(
             Office.EventType.DialogMessageReceived,
             handleDialogMessage
@@ -1559,6 +1586,8 @@
           (result.error && (result.error.message || result.error.code)) ||
           'Failed to open widget dialog.'
         console.warn('Prezo dialog failed', errorMessage)
+        addinDebug.openMessage = `Dialog failed: ${errorMessage}`
+        updateDebugState({ openMessage: addinDebug.openMessage })
         if (fallback) {
           fallback()
         }
@@ -1570,9 +1599,6 @@
       () => tryOpen({ height: 70, width: 60 })
     )
 
-    if (event && event.completed) {
-      event.completed()
-    }
   }
 
   Office.onReady(() => {

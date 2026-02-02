@@ -15,8 +15,36 @@
   const errorEl = () => el('error')
   const pollStatusEl = () => el('poll-status')
   const pollErrorEl = () => el('poll-error')
+  const debugEl = () => el('debug')
+  const pollDebugEl = () => el('poll-debug')
   const previewEl = () => el('qna-preview')
   const pollPreviewEl = () => el('poll-preview')
+
+  const queryDebug = () => {
+    try {
+      const data = sessionStorage.getItem('prezo-widget-debug')
+      return data ? JSON.parse(data) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const renderDebug = () => {
+    const debug = queryDebug()
+    if (!debug || (!debug.openMessage && !debug.openAt)) {
+      return
+    }
+    const lines = []
+    if (debug.openMessage) {
+      lines.push(`Dialog: ${debug.openMessage}`)
+    }
+    if (debug.openAt) {
+      lines.push(`Attempt: ${debug.openAt}`)
+    }
+    const value = lines.join(' | ')
+    if (debugEl()) debugEl().textContent = value
+    if (pollDebugEl()) pollDebugEl().textContent = value
+  }
 
   const qnaInputs = {
     font: () => el('qna-font'),
@@ -290,5 +318,6 @@
 
     updatePreview()
     updatePollPreview()
+    renderDebug()
   })
 })()
