@@ -1567,7 +1567,7 @@
 
     tryOpen(
       { height: 70, width: 60, displayInIframe: true },
-      () => tryOpen({ height: 70, width: 60, displayInIframe: false })
+      () => tryOpen({ height: 70, width: 60 })
     )
 
     if (event && event.completed) {
