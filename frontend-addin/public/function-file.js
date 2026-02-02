@@ -1541,10 +1541,8 @@
   }
 
   function openWidgetsDialog(event) {
-    Office.context.ui.displayDialogAsync(
-      DIALOG_URL,
-      { height: 70, width: 60, displayInIframe: true },
-      (result) => {
+    const tryOpen = (options, fallback) => {
+      Office.context.ui.displayDialogAsync(DIALOG_URL, options, (result) => {
         if (result.status === Office.AsyncResultStatus.Succeeded) {
           activeDialog = result.value
           activeDialog.addEventHandler(
@@ -1554,8 +1552,22 @@
           activeDialog.addEventHandler(Office.EventType.DialogEventReceived, () => {
             activeDialog = null
           })
+          return
         }
-      }
+
+        const errorMessage =
+          (result.error && (result.error.message || result.error.code)) ||
+          'Failed to open widget dialog.'
+        console.warn('Prezo dialog failed', errorMessage)
+        if (fallback) {
+          fallback()
+        }
+      })
+    }
+
+    tryOpen(
+      { height: 70, width: 60, displayInIframe: true },
+      () => tryOpen({ height: 70, width: 60, displayInIframe: false })
     )
 
     if (event && event.completed) {
