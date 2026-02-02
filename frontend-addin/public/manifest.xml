@@ -19,6 +19,11 @@
   <Hosts>
     <Host Name="Presentation" />
   </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="DialogApi" MinVersion="1.1" />
+    </Sets>
+  </Requirements>
   <DefaultSettings>
     <SourceLocation DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
   </DefaultSettings>
