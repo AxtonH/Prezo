@@ -88,7 +88,14 @@ const getCommonXml = (part: Office.CustomXmlPart) =>
 
 const setCommonXml = (part: Office.CustomXmlPart, xml: string) =>
   new Promise<void>((resolve, reject) => {
-    part.setXmlAsync(xml, (result) => {
+    const partWithSet = part as Office.CustomXmlPart & {
+      setXmlAsync?: (xml: string, callback?: (result: Office.AsyncResult<void>) => void) => void
+    }
+    if (!partWithSet.setXmlAsync) {
+      reject(new Error('CustomXmlPart.setXmlAsync is not available.'))
+      return
+    }
+    partWithSet.setXmlAsync(xml, (result: Office.AsyncResult<void>) => {
       if (result.status === Office.AsyncResultStatus.Succeeded) {
         resolve()
       } else {

@@ -11,7 +11,6 @@ const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
 const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
 const MAX_POLL_OPTIONS = 5
-const MAX_QNA_ITEMS = 4
 const PANEL_TITLE = 'Questions from your audience'
 const EYEBROW_TEXT = 'PREZO LIVE Q&A'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
@@ -235,6 +234,12 @@ const applyFont = (
     font.color = options.color
   }
 }
+
+const getShapeId = (shape: { id: string } | null | undefined) =>
+  shape ? shape.id : undefined
+
+const isShapeNullObject = (shape: { isNullObject?: boolean } | null | undefined) =>
+  Boolean(shape?.isNullObject)
 
 
 
@@ -956,7 +961,7 @@ export async function insertPollWidget(
       })
       label.textFrame.wordWrap = true
       applyFont(label.textFrame.textRange, style, { size: 13, color: style.textColor })
-      label.textFrame.textRange.paragraphFormat.alignment = isVertical ? 'Center' : 'Left'
+      label.textFrame.textRange.paragraphFormat.horizontalAlignment = isVertical ? 'Center' : 'Left'
       label.tags.add(POLL_WIDGET_TAG, 'true')
       label.tags.add('PrezoWidgetRole', 'poll-label')
 
@@ -1117,17 +1122,17 @@ export async function updatePollWidget(
       fills.sort((a, b) => sortKey(a) - sortKey(b))
       const itemCount = Math.min(labels.length, bars.length, fills.length)
       const items = Array.from({ length: itemCount }, (_, index) => ({
-        label: labels[index].id,
-        bg: bars[index].id,
-        fill: fills[index].id
+        label: getShapeId(labels[index]) as string,
+        bg: getShapeId(bars[index]) as string,
+        fill: getShapeId(fills[index]) as string
       }))
 
       return {
-        shadow: shadow?.id,
-        container: container.id,
-        title: title.id,
-        question: question?.id,
-        body: body?.id,
+        shadow: getShapeId(shadow),
+        container: getShapeId(container) as string,
+        title: getShapeId(title) as string,
+        question: getShapeId(question),
+        body: getShapeId(body),
         items
       }
     }
@@ -1346,25 +1351,33 @@ export async function updatePollWidget(
 
         if (taggedContainer || taggedShadow || taggedTitle || taggedQuestion || taggedItems.length) {
           const resolvedShapeIds: PollWidgetShapeIds = {
-            group: groupShape && !groupShape.isNullObject ? groupShape.id : undefined,
+            group: groupShape && !isShapeNullObject(groupShape) ? getShapeId(groupShape) : undefined,
             shadow:
-              taggedShadow && !taggedShadow.isNullObject ? taggedShadow.id : shapeIds.shadow,
+              taggedShadow && !isShapeNullObject(taggedShadow)
+                ? getShapeId(taggedShadow)
+                : shapeIds.shadow,
             container:
-              taggedContainer && !taggedContainer.isNullObject
-                ? taggedContainer.id
+              taggedContainer && !isShapeNullObject(taggedContainer)
+                ? (getShapeId(taggedContainer) as string)
                 : shapeIds.container,
-            title: taggedTitle && !taggedTitle.isNullObject ? taggedTitle.id : shapeIds.title,
+            title:
+              taggedTitle && !isShapeNullObject(taggedTitle)
+                ? (getShapeId(taggedTitle) as string)
+                : shapeIds.title,
             question:
-              taggedQuestion && !taggedQuestion.isNullObject
-                ? taggedQuestion.id
+              taggedQuestion && !isShapeNullObject(taggedQuestion)
+                ? getShapeId(taggedQuestion)
                 : shapeIds.question,
-            body: taggedBody && !taggedBody.isNullObject ? taggedBody.id : shapeIds.body,
+            body:
+              taggedBody && !isShapeNullObject(taggedBody)
+                ? getShapeId(taggedBody)
+                : shapeIds.body,
             items:
               taggedItems.length > 0
                 ? taggedItems.map((item) => ({
-                    label: item.label.id,
-                    bg: item.bg.id,
-                    fill: item.fill.id
+                    label: getShapeId(item.label) as string,
+                    bg: getShapeId(item.bg) as string,
+                    fill: getShapeId(item.fill) as string
                   }))
                 : shapeIds.items
           }
@@ -1449,7 +1462,7 @@ export async function updatePollWidget(
             item.label.top = barTop + barHeight + 6
             item.label.width = safeColumnWidth
             item.label.height = verticalLabelHeight
-            item.label.textFrame.textRange.paragraphFormat.alignment = 'Center'
+            item.label.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
             item.bg.left = barLeft
             item.bg.top = barTop
             item.bg.width = safeBarWidth
@@ -1463,7 +1476,7 @@ export async function updatePollWidget(
             item.label.top = rowTop
             item.label.width = fullBarWidth
             item.label.height = 16
-            item.label.textFrame.textRange.paragraphFormat.alignment = 'Left'
+            item.label.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Left'
             item.bg.left = barLeft
             item.bg.top = rowTop + 18
             item.bg.width = fullBarWidth

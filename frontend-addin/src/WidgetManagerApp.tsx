@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { api } from './api/client'
-import type { Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type { Question, SessionEvent, SessionSnapshot } from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import type { SessionBinding } from './office/sessionBinding'
 import { readSessionBinding } from './office/sessionBinding'
@@ -11,7 +11,6 @@ const BINDING_POLL_MS = 3000
 
 export function WidgetManagerApp() {
   const [binding, setBinding] = useState<SessionBinding | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -20,14 +19,11 @@ export function WidgetManagerApp() {
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
       const snapshot = event.payload.snapshot as SessionSnapshot
-      setSession(snapshot.session)
       setQuestions(snapshot.questions)
       return
     }
 
     if (event.payload.session) {
-      const updated = event.payload.session as Session
-      setSession(updated)
       return
     }
 
@@ -70,7 +66,6 @@ export function WidgetManagerApp() {
 
   useEffect(() => {
     if (!binding?.sessionId) {
-      setSession(null)
       setQuestions([])
       return
     }
@@ -78,7 +73,6 @@ export function WidgetManagerApp() {
     api
       .getSnapshot(binding.sessionId)
       .then((snapshot) => {
-        setSession(snapshot.session)
         setQuestions(snapshot.questions)
       })
       .catch((err) => {
