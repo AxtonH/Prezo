@@ -22,12 +22,15 @@ const loadHttpsOptions = () => {
   }
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  server: {
-    host: 'localhost',
-    port: 5173,
-    strictPort: true,
-    https: loadHttpsOptions()
-  }
-})
+  server:
+    command === 'serve'
+      ? {
+          host: 'localhost',
+          port: 5173,
+          strictPort: true,
+          https: loadHttpsOptions()
+        }
+      : undefined
+}))
