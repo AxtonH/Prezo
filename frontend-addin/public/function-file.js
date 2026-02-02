@@ -1,6 +1,6 @@
 /* global Office, PowerPoint */
 (() => {
-  const DIALOG_URL = `${window.location.origin}/widget-dialog.html`
+  const DIALOG_URL = `${window.location.origin}/widget-dialog/`
   const PREZO_NAMESPACE = 'https://prezo.app/session-binding'
   const WIDGET_TAG = 'PrezoWidget'
   const SESSION_TAG = 'PrezoWidgetSessionId'

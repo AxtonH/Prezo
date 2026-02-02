@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prezo Widget</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f1f5f9;
+        --surface: #ffffff;
+        --surface-2: #f8fafc;
+        --border: #e2e8f0;
+        --text: #0f172a;
+        --muted: #64748b;
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+        --radius: 14px;
+      }
+      body {
+        margin: 0;
+        font-family: 'Sora', sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 65%);
+      }
+      .dialog {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-height: 100vh;
+      }
+      .view {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .view.hidden {
+        display: none;
+      }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      h2 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+      }
+      .card-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .card-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 0;
+      }
+      .card-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 14px;
+        color: #ffffff;
+        background: linear-gradient(135deg, #2563eb, #3b82f6);
+      }
+      .card-icon.poll {
+        background: linear-gradient(135deg, #0f766e, #14b8a6);
+      }
+      .card-actions {
+        display: flex;
+        gap: 8px;
+      }
+      .card-actions button {
+        width: 100%;
+      }
+      .select-hero {
+        background: var(--surface);
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        padding: 14px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .select-eyebrow {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .select-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+      }
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+      }
+      .color-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      label {
+        font-size: 12px;
+        color: #64748b;
+      }
+      input,
+      select {
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        padding: 6px 8px;
+        font-family: inherit;
+        font-size: 12px;
+      }
+      input[type='range'] {
+        padding: 0;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0;
+      }
+      button {
+        border-radius: 10px;
+        border: 1px solid transparent;
+        padding: 8px 12px;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        background: var(--primary);
+        color: #ffffff;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+        box-shadow: none;
+      }
+      button:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      #status,
+      #poll-status {
+        font-size: 12px;
+        color: #64748b;
+      }
+      #error {
+        color: #ef4444;
+        font-size: 12px;
+      }
+      #poll-error {
+        color: #ef4444;
+        font-size: 12px;
+      }
+      .preview-card {
+        border-radius: 14px;
+        border: 1px solid var(--border, #e2e8f0);
+        background: var(--panel-bg, #ffffff);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, var(--shadow-alpha, 0.08));
+        padding: calc(12px * var(--spacing, 1));
+        display: flex;
+        flex-direction: column;
+        gap: calc(10px * var(--spacing, 1));
+        font-family: var(--font-family, 'Sora', sans-serif);
+      }
+      .preview-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .preview-eyebrow {
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted, #64748b);
+      }
+      .preview-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text, #0f172a);
+      }
+      .preview-subtitle {
+        font-size: 12px;
+        color: var(--muted, #64748b);
+      }
+      .preview-badge {
+        align-self: flex-start;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--badge-bg, #dbeafe);
+        color: var(--badge-text, #2563eb);
+      }
+      .preview-item {
+        border-radius: 12px;
+        border: 1px solid var(--border, #e2e8f0);
+        background: var(--card-bg, #f8fafc);
+        padding: calc(8px * var(--spacing, 1));
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .preview-item-title {
+        font-size: 12px;
+        color: var(--text, #0f172a);
+      }
+      .preview-item-votes {
+        font-size: 11px;
+        color: var(--muted, #64748b);
+      }
+      .preview-poll-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text, #0f172a);
+      }
+      .preview-poll-question {
+        font-size: 12px;
+        color: var(--muted, #64748b);
+      }
+      .preview-poll-option {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .preview-poll-options {
+        display: flex;
+        flex-direction: column;
+        gap: calc(10px * var(--spacing, 1));
+      }
+      .preview-poll-label {
+        font-size: 12px;
+        color: var(--text, #0f172a);
+      }
+      .preview-poll-bar {
+        height: calc(8px * var(--bar-thickness, 1));
+        border-radius: 999px;
+        background: var(--bar-bg, #e2e8f0);
+        overflow: hidden;
+        width: 100%;
+        align-self: flex-start;
+      }
+      .preview-poll-fill {
+        height: 100%;
+        width: calc(var(--fill, 0.6) * 100%);
+        border-radius: inherit;
+        background: var(--accent, #2563eb);
+      }
+      .preview-vertical .preview-poll-options {
+        flex-direction: row;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      .preview-vertical .preview-poll-option {
+        align-items: center;
+        gap: 6px;
+        flex-direction: column-reverse;
+      }
+      .preview-vertical .preview-poll-label {
+        font-size: 11px;
+        text-align: center;
+      }
+      .preview-vertical .preview-poll-bar {
+        width: calc(18px * var(--bar-thickness, 1));
+        height: 96px;
+        position: relative;
+      }
+      .preview-vertical .preview-poll-fill {
+        width: 100%;
+        height: calc(var(--fill, 0.6) * 100%);
+        position: absolute;
+        bottom: 0;
+        left: 0;
+      }
+    </style>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script src="/widget-dialog.js" defer></script>
+  </head>
+  <body>
+    <div class="dialog">
+      <div id="view-select" class="view">
+        <div class="select-hero">
+          <div class="select-eyebrow">Prezo Widgets</div>
+          <h1>Choose a widget</h1>
+          <p class="muted">Customize the look before inserting it into your slide.</p>
+        </div>
+        <div class="select-grid">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-icon">Q&amp;A</div>
+              <div>
+                <div class="card-title">Q&amp;A widget</div>
+                <p class="muted">Shows approved questions on the selected slide.</p>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button id="open-qna">Customize &amp; insert</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-icon poll">Poll</div>
+              <div>
+                <div class="card-title">Poll widget</div>
+                <p class="muted">Shows the latest poll on the selected slide.</p>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button id="open-poll">Customize &amp; insert</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-qna" class="view hidden">
+        <div class="toolbar">
+          <button class="ghost" id="back-qna">Back</button>
+          <h1>Q&amp;A Widget</h1>
+        </div>
+        <div class="grid">
+          <div class="panel">
+            <h2>Preview</h2>
+            <div id="qna-preview" class="preview-card">
+              <div class="preview-header">
+                <div>
+                  <div class="preview-eyebrow">PREZO LIVE Q&amp;A</div>
+                  <div class="preview-title">Questions from your audience</div>
+                  <div class="preview-subtitle">Join code XH36BY</div>
+                </div>
+                <div class="preview-badge">Pending 2</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">What's the agenda?</div>
+                <div class="preview-item-votes">3 votes</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">Can we get the slides?</div>
+                <div class="preview-item-votes">1 vote</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">Any Q&amp;A tips?</div>
+                <div class="preview-item-votes">0 votes</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Style</h2>
+            <div class="field">
+              <label for="qna-font">Font</label>
+              <select id="qna-font">
+                <option value="">Default</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="qna-text">Primary text</label>
+                <input id="qna-text" type="color" value="#0f172a" />
+              </div>
+              <div class="field">
+                <label for="qna-muted">Muted text</label>
+                <input id="qna-muted" type="color" value="#64748b" />
+              </div>
+              <div class="field">
+                <label for="qna-accent">Accent</label>
+                <input id="qna-accent" type="color" value="#2563eb" />
+              </div>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="qna-panel">Panel background</label>
+                <input id="qna-panel" type="color" value="#ffffff" />
+              </div>
+              <div class="field">
+                <label for="qna-card">Card background</label>
+                <input id="qna-card" type="color" value="#f8fafc" />
+              </div>
+              <div class="field">
+                <label for="qna-border">Border</label>
+                <input id="qna-border" type="color" value="#e2e8f0" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="qna-shadow">Shadow strength</label>
+              <input id="qna-shadow" type="range" min="0" max="0.6" step="0.05" value="0.4" />
+            </div>
+            <div class="field">
+              <label for="qna-spacing">Spacing</label>
+              <select id="qna-spacing">
+                <option value="0.9">Compact</option>
+                <option value="1" selected>Balanced</option>
+                <option value="1.1">Spacious</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="qna-max">Max questions</label>
+              <select id="qna-max">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="insert-qna">Insert widget</button>
+          <div id="status"></div>
+          <div id="error"></div>
+          <div id="debug" class="muted"></div>
+        </div>
+      </div>
+
+      <div id="view-poll" class="view hidden">
+        <div class="toolbar">
+          <button class="ghost" id="back-poll">Back</button>
+          <h1>Poll Widget</h1>
+        </div>
+        <div class="grid">
+          <div class="panel">
+            <h2>Preview</h2>
+            <div id="poll-preview" class="preview-card">
+              <div>
+                <div class="preview-poll-title">Prezo Poll</div>
+                <div class="preview-poll-question">Live poll: Which topic should we cover?</div>
+              </div>
+              <div class="preview-poll-options">
+                <div class="preview-poll-option">
+                  <div class="preview-poll-label">Growth strategy</div>
+                  <div class="preview-poll-bar">
+                    <div class="preview-poll-fill" style="--fill: 0.72"></div>
+                  </div>
+                </div>
+                <div class="preview-poll-option">
+                  <div class="preview-poll-label">Product roadmap</div>
+                  <div class="preview-poll-bar">
+                    <div class="preview-poll-fill" style="--fill: 0.44"></div>
+                  </div>
+                </div>
+                <div class="preview-poll-option">
+                  <div class="preview-poll-label">Team updates</div>
+                  <div class="preview-poll-bar">
+                    <div class="preview-poll-fill" style="--fill: 0.18"></div>
+                  </div>
+                </div>
+                <div class="preview-poll-option">
+                  <div class="preview-poll-label">Q&amp;A tips</div>
+                  <div class="preview-poll-bar">
+                    <div class="preview-poll-fill" style="--fill: 0.08"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Style</h2>
+            <div class="field">
+              <label for="poll-font">Font</label>
+              <select id="poll-font">
+                <option value="">Default</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="poll-text">Primary text</label>
+                <input id="poll-text" type="color" value="#0f172a" />
+              </div>
+              <div class="field">
+                <label for="poll-muted">Muted text</label>
+                <input id="poll-muted" type="color" value="#64748b" />
+              </div>
+              <div class="field">
+                <label for="poll-accent">Accent</label>
+                <input id="poll-accent" type="color" value="#2563eb" />
+              </div>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="poll-panel">Panel background</label>
+                <input id="poll-panel" type="color" value="#ffffff" />
+              </div>
+              <div class="field">
+                <label for="poll-bar">Bar background</label>
+                <input id="poll-bar" type="color" value="#e2e8f0" />
+              </div>
+              <div class="field">
+                <label for="poll-border">Border</label>
+                <input id="poll-border" type="color" value="#e2e8f0" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="poll-width">Bar thickness</label>
+              <input id="poll-width" type="range" min="0.4" max="2" step="0.1" value="1" />
+            </div>
+            <div class="field">
+              <label for="poll-shadow">Shadow strength</label>
+              <input id="poll-shadow" type="range" min="0" max="0.6" step="0.05" value="0.35" />
+            </div>
+            <div class="field">
+              <label for="poll-spacing">Spacing</label>
+              <select id="poll-spacing">
+                <option value="0.9">Compact</option>
+                <option value="1" selected>Balanced</option>
+                <option value="1.1">Spacious</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="poll-orientation">Orientation</label>
+              <select id="poll-orientation">
+                <option value="horizontal" selected>Horizontal</option>
+                <option value="vertical">Vertical</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="poll-max">Max options</label>
+              <select id="poll-max">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5" selected>5</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="insert-poll">Insert poll</button>
+          <div id="poll-status"></div>
+          <div id="poll-error"></div>
+          <div id="poll-debug" class="muted"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+
