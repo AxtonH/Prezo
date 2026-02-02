@@ -1,0 +1,121 @@
+import { useState } from 'react'
+
+import type { Poll } from '../api/types'
+
+interface PollManagerProps {
+  polls: Poll[]
+  onCreate: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
+  onOpen: (pollId: string) => Promise<void>
+  onClose: (pollId: string) => Promise<void>
+}
+
+export function PollManager({ polls, onCreate, onOpen, onClose }: PollManagerProps) {
+  const [question, setQuestion] = useState('')
+  const [options, setOptions] = useState<string[]>(['', ''])
+  const [allowMultiple, setAllowMultiple] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const updateOption = (index: number, value: string) => {
+    setOptions((prev) => prev.map((option, idx) => (idx === index ? value : option)))
+  }
+
+  const addOption = () => {
+    setOptions((prev) => [...prev, ''])
+  }
+
+  const removeOption = (index: number) => {
+    setOptions((prev) => prev.filter((_, idx) => idx !== index))
+  }
+
+  const handleCreate = async () => {
+    const trimmedQuestion = question.trim()
+    const trimmedOptions = options.map((opt) => opt.trim()).filter(Boolean)
+
+    if (!trimmedQuestion || trimmedOptions.length < 2) {
+      setError('Enter a question and at least two options.')
+      return
+    }
+
+    setError(null)
+    await onCreate(trimmedQuestion, trimmedOptions, allowMultiple)
+    setQuestion('')
+    setOptions(['', ''])
+    setAllowMultiple(false)
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <h2>Polls</h2>
+        <span className="badge">Active {polls.filter((poll) => poll.status === 'open').length}</span>
+      </div>
+      <div className="poll-creator">
+        <div className="field">
+          <label htmlFor="poll-question">Poll question</label>
+          <input
+            id="poll-question"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="What should we cover next?"
+          />
+        </div>
+        <div className="option-list">
+          {options.map((option, index) => (
+            <div key={`option-${index}`} className="option-row">
+              <input
+                value={option}
+                onChange={(event) => updateOption(index, event.target.value)}
+                placeholder={`Option ${index + 1}`}
+              />
+              {options.length > 2 ? (
+                <button className="ghost" onClick={() => removeOption(index)}>
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          ))}
+          <button className="ghost" onClick={addOption}>
+            Add option
+          </button>
+        </div>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={allowMultiple}
+            onChange={(event) => setAllowMultiple(event.target.checked)}
+          />
+          Allow multiple selections
+        </label>
+        <button className="primary" onClick={handleCreate}>
+          Create &amp; open poll
+        </button>
+        {error ? <p className="error">{error}</p> : null}
+      </div>
+      <div className="poll-list">
+        {polls.length === 0 ? (
+          <p className="muted">No polls yet. Create one to start collecting votes.</p>
+        ) : (
+          <ul className="list">
+            {polls.map((poll) => (
+              <li key={poll.id} className="list-item">
+                <div>
+                  <p>{poll.question}</p>
+                  <span className="muted">
+                    {poll.options.reduce((sum, opt) => sum + opt.votes, 0)} votes
+                  </span>
+                </div>
+                <div className="actions">
+                  {poll.status === 'open' ? (
+                    <button onClick={() => onClose(poll.id)}>Close</button>
+                  ) : (
+                    <button onClick={() => onOpen(poll.id)}>Open</button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
