@@ -250,12 +250,16 @@ export default function App() {
     }
     const created = await api.createWordCloud(session.id, words, prompt)
     const opened = await api.openWordCloud(session.id, created.id)
-    setWordClouds((prev) => {
-      const closed = prev.map((cloud) =>
-        cloud.status === 'open' ? { ...cloud, status: 'closed' as const } : cloud
-      )
-      return upsertById(upsertById(closed, created), opened)
-    })
+    const previous = latestWordCloudsRef.current
+    const closed = previous.map((cloud) =>
+      cloud.status === 'open' ? { ...cloud, status: 'closed' as const } : cloud
+    )
+    const next = upsertById(upsertById(closed, created), opened)
+    latestWordCloudsRef.current = next
+    setWordClouds(next)
+    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
+      console.warn('Failed to refresh word cloud widget after create', err)
+    )
     setShowWordCloud(true)
   }
 
@@ -264,14 +268,18 @@ export default function App() {
       return
     }
     const opened = await api.openWordCloud(session.id, wordCloudId)
-    setWordClouds((prev) => {
-      const closed = prev.map((cloud) =>
-        cloud.id !== wordCloudId && cloud.status === 'open'
-          ? { ...cloud, status: 'closed' as const }
-          : cloud
-      )
-      return upsertById(closed, opened)
-    })
+    const previous = latestWordCloudsRef.current
+    const closed = previous.map((cloud) =>
+      cloud.id !== wordCloudId && cloud.status === 'open'
+        ? { ...cloud, status: 'closed' as const }
+        : cloud
+    )
+    const next = upsertById(closed, opened)
+    latestWordCloudsRef.current = next
+    setWordClouds(next)
+    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
+      console.warn('Failed to refresh word cloud widget after open', err)
+    )
   }
 
   const closeWordCloud = async (wordCloudId: string) => {
@@ -279,7 +287,12 @@ export default function App() {
       return
     }
     const closed = await api.closeWordCloud(session.id, wordCloudId)
-    setWordClouds((prev) => upsertById(prev, closed))
+    const next = upsertById(latestWordCloudsRef.current, closed)
+    latestWordCloudsRef.current = next
+    setWordClouds(next)
+    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
+      console.warn('Failed to refresh word cloud widget after close', err)
+    )
   }
 
   const pendingQuestions = useMemo(

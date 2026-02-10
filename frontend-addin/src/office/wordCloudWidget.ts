@@ -178,6 +178,7 @@ const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp(value, 0, 1), 3)
 const interpolate = (from: number, to: number, progress: number) => from + (to - from) * progress
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const normalizeSessionId = (value: string | null | undefined) => String(value ?? '').trim()
 
 const normalizeWordCloudStyle = (
   style?: Partial<WordCloudStyleConfig> | null
@@ -609,6 +610,7 @@ const recoverShapeIds = async (
   let subtitle: PowerPoint.Shape | null = null
   let body: PowerPoint.Shape | null = null
   const wordsByIndex = new Map<number, { bubble?: PowerPoint.Shape; label?: PowerPoint.Shape }>()
+  const legacyWords: Array<{ shape: PowerPoint.Shape; index: number | null }> = []
 
   tagged.forEach(({ shape, widgetTag, roleTag, indexTag }) => {
     const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
@@ -658,6 +660,15 @@ const recoverShapeIds = async (
         wordsByIndex.set(index, entry)
         break
       }
+      case 'word-cloud-word':
+        legacyWords.push({
+          shape,
+          index:
+            !indexTag.isNullObject && Number.isFinite(Number.parseInt(indexTag.value, 10))
+              ? Number.parseInt(indexTag.value, 10)
+              : null
+        })
+        break
       default:
         break
     }
@@ -677,11 +688,46 @@ const recoverShapeIds = async (
     return null
   }
 
-  const words = [...wordsByIndex.entries()]
+  let words = [...wordsByIndex.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([, entry]) => entry)
     .filter((entry) => entry.bubble && entry.label)
     .slice(0, MAX_WORD_CLOUD_WORDS) as Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }>
+
+  if (words.length === 0 && legacyWords.length > 0) {
+    legacyWords.sort((a, b) => {
+      if (a.index !== null || b.index !== null) {
+        const aIndex = a.index ?? Number.MAX_SAFE_INTEGER
+        const bIndex = b.index ?? Number.MAX_SAFE_INTEGER
+        if (aIndex !== bIndex) {
+          return aIndex - bIndex
+        }
+      }
+      if (Math.abs(a.shape.top - b.shape.top) < 4) {
+        return a.shape.left - b.shape.left
+      }
+      return a.shape.top - b.shape.top
+    })
+    words = []
+    legacyWords.slice(0, MAX_WORD_CLOUD_WORDS).forEach((entry, index) => {
+      const bubble = entry.shape
+      const label = slide.shapes.addTextBox('', {
+        left: bubble.left + bubble.width * 0.12,
+        top: bubble.top + bubble.height * 0.18,
+        width: Math.max(24, bubble.width * 0.76),
+        height: Math.max(16, bubble.height * 0.64)
+      })
+      label.fill.transparency = 1
+      label.lineFormat.visible = false
+      label.textFrame.wordWrap = false
+      label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+      label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+      label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+      words.push({ bubble, label })
+    })
+    words.forEach((entry) => entry.label.load('id'))
+    await context.sync()
+  }
 
   if (words.length === 0) {
     return null
@@ -908,6 +954,7 @@ export async function updateWordCloudWidget(
   wordClouds: WordCloud[]
 ) {
   ensurePowerPoint()
+  const normalizedSessionId = normalizeSessionId(sessionId)
 
   const cloud = pickWordCloud(wordClouds)
   const words = cloud?.words.slice(0, MAX_WORD_CLOUD_WORDS) ?? []
@@ -936,8 +983,8 @@ export async function updateWordCloudWidget(
 
     for (const info of slideInfos) {
       const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
-      const hasSessionMatch =
-        !info.sessionTag.isNullObject && info.sessionTag.value === sessionId
+      const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
+      const hasSessionMatch = sessionTagValue === normalizedSessionId
 
       let shapeIds: WordCloudShapeIds | null = null
       if (!info.shapeTag.isNullObject && info.shapeTag.value) {
@@ -961,9 +1008,8 @@ export async function updateWordCloudWidget(
         continue
       }
 
-      if (!isPending && !hasSessionMatch && !recovered) {
-        continue
-      }
+      // Rebind stale widgets instead of skipping them forever when session tags drift.
+      const shouldRebind = isPending || !hasSessionMatch || recovered
 
       let style = DEFAULT_WORD_CLOUD_STYLE
       let applyStyle = false
@@ -1140,8 +1186,8 @@ export async function updateWordCloudWidget(
       const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
       info.slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
-      if (isPending || recovered) {
-        info.slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
+      if (shouldRebind || normalizedSessionId) {
+        info.slide.tags.add(WORD_CLOUD_SESSION_TAG, normalizedSessionId)
         info.slide.tags.delete(WORD_CLOUD_PENDING_TAG)
       }
     }

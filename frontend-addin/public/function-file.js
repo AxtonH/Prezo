@@ -264,6 +264,7 @@
   const resolveApiBaseUrl = (binding) =>
     (binding && binding.apiBaseUrl) || window.PREZO_API_BASE_URL || DEFAULT_API_BASE_URL
   const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
+  const normalizeSessionId = (value) => String(value ?? '').trim()
 
   const buildBody = (questions) => {
     const approved = (questions || []).filter((question) => question.status === 'approved')
@@ -1935,6 +1936,7 @@
   }
 
   const updateWordCloudWidget = async (sessionId, code, wordClouds) => {
+    const normalizedSessionId = normalizeSessionId(sessionId)
     const cloud = pickWordCloud(wordClouds || [])
     const words = cloud ? (cloud.words || []).slice(0, MAX_WORD_CLOUD_WORDS) : []
     const maxVotes = words.reduce((max, word) => Math.max(max, word.votes), 0)
@@ -1962,9 +1964,8 @@
 
       for (const info of slideInfos) {
         const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
-        if (!isPending && (info.sessionTag.isNullObject || info.sessionTag.value !== sessionId)) {
-          continue
-        }
+        const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
+        const hasSessionMatch = sessionTagValue === normalizedSessionId
         if (info.shapeTag.isNullObject || !info.shapeTag.value) {
           continue
         }
@@ -1978,6 +1979,8 @@
         if (!shapeIds) {
           continue
         }
+
+        const shouldRebind = isPending || !hasSessionMatch
 
         let style = DEFAULT_WORD_CLOUD_STYLE
         let applyStyle = false
@@ -2166,8 +2169,8 @@
         const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
         info.slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
-        if (isPending) {
-          info.slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
+        if (shouldRebind || normalizedSessionId) {
+          info.slide.tags.add(WORD_CLOUD_SESSION_TAG, normalizedSessionId)
           info.slide.tags.delete(WORD_CLOUD_PENDING_TAG)
         }
       }
