@@ -117,7 +117,8 @@ export default function App() {
     if (!session) {
       return
     }
-    await api.voteWordCloud(session.id, wordCloudId, wordId, getClientId())
+    const updated = await api.voteWordCloud(session.id, wordCloudId, wordId, getClientId())
+    setWordClouds((prev) => upsertById(prev, updated))
   }
 
   const pendingCount = useMemo(

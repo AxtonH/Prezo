@@ -398,14 +398,11 @@ export async function insertWordCloudWidget(
         height: height * anchor.height
       })
       wordShape.textFrame.wordWrap = true
-      wordShape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
       applyFont(wordShape.textFrame.textRange, style, {
         size: style.minFontSize,
         bold: true,
         color: style.textColor
       })
-      wordShape.fill.transparency = 1
-      wordShape.lineFormat.visible = false
       wordShape.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       wordShape.tags.add('PrezoWidgetRole', 'word-cloud-word')
       wordShapes.push(wordShape)
@@ -587,14 +584,11 @@ export async function updateWordCloudWidget(
         const fontSize =
           style.minFontSize + (style.maxFontSize - style.minFontSize) * ratio
         shape.textFrame.textRange.text = word.label
-        shape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
         applyFont(shape.textFrame.textRange, style, {
           size: Math.round(fontSize),
           bold: ratio >= 0.45,
           color: ratio > 0 ? style.accentColor : style.textColor
         })
-        shape.fill.transparency = 1
-        shape.lineFormat.visible = false
       })
 
       if (isPending || recovered) {

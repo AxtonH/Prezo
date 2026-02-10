@@ -249,7 +249,13 @@ export default function App() {
       return
     }
     const created = await api.createWordCloud(session.id, words, prompt)
-    await api.openWordCloud(session.id, created.id)
+    const opened = await api.openWordCloud(session.id, created.id)
+    setWordClouds((prev) => {
+      const closed = prev.map((cloud) =>
+        cloud.status === 'open' ? { ...cloud, status: 'closed' as const } : cloud
+      )
+      return upsertById(upsertById(closed, created), opened)
+    })
     setShowWordCloud(true)
   }
 
@@ -257,14 +263,23 @@ export default function App() {
     if (!session) {
       return
     }
-    await api.openWordCloud(session.id, wordCloudId)
+    const opened = await api.openWordCloud(session.id, wordCloudId)
+    setWordClouds((prev) => {
+      const closed = prev.map((cloud) =>
+        cloud.id !== wordCloudId && cloud.status === 'open'
+          ? { ...cloud, status: 'closed' as const }
+          : cloud
+      )
+      return upsertById(closed, opened)
+    })
   }
 
   const closeWordCloud = async (wordCloudId: string) => {
     if (!session) {
       return
     }
-    await api.closeWordCloud(session.id, wordCloudId)
+    const closed = await api.closeWordCloud(session.id, wordCloudId)
+    setWordClouds((prev) => upsertById(prev, closed))
   }
 
   const pendingQuestions = useMemo(

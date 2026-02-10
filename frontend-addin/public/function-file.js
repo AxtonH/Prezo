@@ -257,6 +257,7 @@
     code ? `Prezo Word Cloud - ${code}` : 'Prezo Word Cloud'
   const resolveApiBaseUrl = (binding) =>
     (binding && binding.apiBaseUrl) || window.PREZO_API_BASE_URL || DEFAULT_API_BASE_URL
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
   const buildBody = (questions) => {
     const approved = (questions || []).filter((question) => question.status === 'approved')
@@ -1754,14 +1755,11 @@
           const ratio = maxVotes > 0 ? word.votes / maxVotes : 0
           const fontSize = style.minFontSize + (style.maxFontSize - style.minFontSize) * ratio
           shape.textFrame.textRange.text = word.label
-          shape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
           applyFont(shape.textFrame.textRange, style, {
             size: Math.round(fontSize),
             bold: ratio >= 0.45,
             color: ratio > 0 ? style.accentColor : style.textColor
           })
-          shape.fill.transparency = 1
-          shape.lineFormat.visible = false
         })
 
         if (isPending) {
@@ -1912,14 +1910,11 @@
           height: height * anchor.height
         })
         wordShape.textFrame.wordWrap = true
-        wordShape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
         applyFont(wordShape.textFrame.textRange, style, {
           size: style.minFontSize,
           bold: true,
           color: style.textColor
         })
-        wordShape.fill.transparency = 1
-        wordShape.lineFormat.visible = false
         wordShape.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
         wordShape.tags.add('PrezoWidgetRole', 'word-cloud-word')
         wordShapes.push(wordShape)
@@ -1964,6 +1959,19 @@
     }
   }
 
+  const insertWordCloudWidgetWithRetry = async (styleOverrides) => {
+    try {
+      await insertWordCloudWidget(styleOverrides)
+    } catch (error) {
+      const detail = error && error.message ? error.message : String(error || '')
+      if (!/invalid argument/i.test(detail)) {
+        throw error
+      }
+      await wait(150)
+      await insertWordCloudWidget(styleOverrides)
+    }
+  }
+
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -2002,7 +2010,7 @@
     }
     if (message && message.type === 'insert-word-cloud') {
       try {
-        await insertWordCloudWidget(message.style)
+        await insertWordCloudWidgetWithRetry(message.style)
         activeDialog.messageChild(JSON.stringify({ type: 'word-cloud-inserted' }))
         activeDialog.close()
         activeDialog = null
@@ -2066,5 +2074,6 @@
     }
   })
 })()
+
 
 
