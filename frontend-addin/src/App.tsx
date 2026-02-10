@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
-import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type {
+  Poll,
+  Question,
+  Session,
+  SessionEvent,
+  SessionSnapshot,
+  WordCloud
+} from './api/types'
 import { PollManager } from './components/PollManager'
 import { QaModeration } from './components/QaModeration'
 import { SessionSetup } from './components/SessionSetup'
+import { WordCloudManager } from './components/WordCloudManager'
 import { useSessionSocket } from './hooks/useSessionSocket'
+import { updateWordCloudWidget } from './office/wordCloudWidget'
 import { writeSessionBinding } from './office/sessionBinding'
 import { updatePollWidget, updateQnaWidget } from './office/widgetShapes'
 
@@ -27,12 +36,15 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
+  const [wordClouds, setWordClouds] = useState<WordCloud[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showPolls, setShowPolls] = useState(false)
+  const [showWordCloud, setShowWordCloud] = useState(false)
   const [showQna, setShowQna] = useState(false)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
+  const latestWordCloudsRef = useRef<WordCloud[]>([])
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -40,6 +52,7 @@ export default function App() {
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
+      setWordClouds(snapshot.word_clouds ?? [])
       return
     }
 
@@ -58,6 +71,12 @@ export default function App() {
     if (event.payload.poll) {
       const poll = event.payload.poll as Poll
       setPolls((prev) => upsertById(prev, poll))
+      return
+    }
+
+    if (event.payload.word_cloud) {
+      const wordCloud = event.payload.word_cloud as WordCloud
+      setWordClouds((prev) => upsertById(prev, wordCloud))
     }
   }, [])
 
@@ -74,6 +93,10 @@ export default function App() {
   useEffect(() => {
     latestPollsRef.current = polls
   }, [polls])
+
+  useEffect(() => {
+    latestWordCloudsRef.current = wordClouds
+  }, [wordClouds])
 
   useEffect(() => {
     if (session?.qna_open) {
@@ -107,6 +130,15 @@ export default function App() {
   }, [session?.id, session?.code, polls])
 
   useEffect(() => {
+    if (!session) {
+      return
+    }
+    void updateWordCloudWidget(session.id, session.code, wordClouds).catch((err) =>
+      console.warn('Failed to update word cloud widget shapes', err)
+    )
+  }, [session?.id, session?.code, wordClouds])
+
+  useEffect(() => {
     if (!session || !window.Office?.context?.document?.addHandlerAsync) {
       return
     }
@@ -126,6 +158,11 @@ export default function App() {
         currentSession.code,
         latestPollsRef.current
       ).catch((err) => console.warn('Failed to refresh poll widget shapes', err))
+      void updateWordCloudWidget(
+        currentSession.id,
+        currentSession.code,
+        latestWordCloudsRef.current
+      ).catch((err) => console.warn('Failed to refresh word cloud widget shapes', err))
     }
 
     Office.context.document.addHandlerAsync(
@@ -207,6 +244,29 @@ export default function App() {
     await api.closePoll(session.id, pollId)
   }
 
+  const createWordCloud = async (words: string[], prompt?: string) => {
+    if (!session) {
+      return
+    }
+    const created = await api.createWordCloud(session.id, words, prompt)
+    await api.openWordCloud(session.id, created.id)
+    setShowWordCloud(true)
+  }
+
+  const openWordCloud = async (wordCloudId: string) => {
+    if (!session) {
+      return
+    }
+    await api.openWordCloud(session.id, wordCloudId)
+  }
+
+  const closeWordCloud = async (wordCloudId: string) => {
+    if (!session) {
+      return
+    }
+    await api.closeWordCloud(session.id, wordCloudId)
+  }
+
   const pendingQuestions = useMemo(
     () => questions.filter((question) => question.status === 'pending'),
     [questions]
@@ -244,7 +304,9 @@ export default function App() {
 
       <div className="page-heading">
         <h1>Host console</h1>
-        <p className="muted">Manage questions, approve submissions, and run polls.</p>
+        <p className="muted">
+          Manage questions, approve submissions, run polls, and launch word clouds.
+        </p>
       </div>
 
       {error ? <p className="error">{error}</p> : null}
@@ -303,6 +365,30 @@ export default function App() {
           </div>
         ) : (
           <PollManager polls={polls} onCreate={createPoll} onOpen={openPoll} onClose={closePoll} />
+        )}
+
+        {!showWordCloud ? (
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h2>Word cloud</h2>
+                <p className="muted">
+                  Launch a word cloud and let the audience grow the winning words.
+                </p>
+              </div>
+              <button onClick={() => setShowWordCloud(true)} disabled={!session}>
+                Start word cloud
+              </button>
+            </div>
+            {!session ? <p className="muted">Create a session to run word clouds.</p> : null}
+          </div>
+        ) : (
+          <WordCloudManager
+            wordClouds={wordClouds}
+            onCreate={createWordCloud}
+            onOpen={openWordCloud}
+            onClose={closeWordCloud}
+          />
         )}
       </div>
     </div>

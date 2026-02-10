@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import polls, questions, sessions
+from .api import polls, questions, sessions, word_clouds
 from .config import settings
 from .deps import manager, store
 from .models import Event, SessionSnapshot
@@ -24,6 +24,7 @@ app.add_middleware(
 app.include_router(sessions.router)
 app.include_router(questions.router)
 app.include_router(polls.router)
+app.include_router(word_clouds.router)
 
 
 @app.get("/health")

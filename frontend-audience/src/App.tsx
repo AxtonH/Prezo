@@ -1,11 +1,19 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { api } from './api/client'
-import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type {
+  Poll,
+  Question,
+  Session,
+  SessionEvent,
+  SessionSnapshot,
+  WordCloud
+} from './api/types'
 import { JoinPanel } from './components/JoinPanel'
 import { PollsPanel } from './components/PollsPanel'
 import { QuestionComposer } from './components/QuestionComposer'
 import { QuestionFeed } from './components/QuestionFeed'
+import { WordCloudsPanel } from './components/WordCloudsPanel'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { getClientId } from './utils/clientId'
 
@@ -35,6 +43,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
+  const [wordClouds, setWordClouds] = useState<WordCloud[]>([])
   const [joinError, setJoinError] = useState<string | null>(null)
 
   const handleEvent = useCallback((event: SessionEvent) => {
@@ -43,6 +52,7 @@ export default function App() {
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
+      setWordClouds(snapshot.word_clouds ?? [])
       return
     }
 
@@ -61,6 +71,12 @@ export default function App() {
     if (event.payload.poll) {
       const poll = event.payload.poll as Poll
       setPolls((prev) => upsertById(prev, poll))
+      return
+    }
+
+    if (event.payload.word_cloud) {
+      const wordCloud = event.payload.word_cloud as WordCloud
+      setWordClouds((prev) => upsertById(prev, wordCloud))
     }
   }, [])
 
@@ -95,6 +111,13 @@ export default function App() {
       return
     }
     await api.votePoll(session.id, pollId, optionId, getClientId())
+  }
+
+  const voteWordCloud = async (wordCloudId: string, wordId: string) => {
+    if (!session) {
+      return
+    }
+    await api.voteWordCloud(session.id, wordCloudId, wordId, getClientId())
   }
 
   const pendingCount = useMemo(
@@ -164,6 +187,7 @@ export default function App() {
             onVote={voteQuestion}
           />
           <PollsPanel polls={polls} onVote={votePoll} />
+          <WordCloudsPanel wordClouds={wordClouds} onVote={voteWordCloud} />
         </div>
       )}
     </div>
