@@ -466,22 +466,6 @@ const renderWordShape = (
   }
 }
 
-const addWordCloudShape = (
-  slide: PowerPoint.Slide,
-  frame: WidgetRect,
-  shapeType: WordCloudShapeType
-) => {
-  try {
-    return slide.shapes.addGeometricShape(shapeType as any, frame)
-  } catch {
-    try {
-      return slide.shapes.addGeometricShape('RoundRectangle' as any, frame)
-    } catch {
-      return slide.shapes.addTextBox('', frame)
-    }
-  }
-}
-
 const resolveWordCloudShapeType = async (): Promise<WordCloudShapeType> => {
   if (cachedWordCloudShapeType) {
     return cachedWordCloudShapeType
@@ -901,30 +885,52 @@ export async function insertWordCloudWidget(
     body.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
     body.tags.add('PrezoWidgetRole', 'word-cloud-body')
 
+    await context.sync()
+
     const wordShapes: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }> = []
+    const wordShapeTypeCandidates: Array<WordCloudShapeType | 'TextBox'> = []
+    wordShapeTypeCandidates.push(wordShapeType)
+    if (wordShapeType !== 'RoundRectangle') {
+      wordShapeTypeCandidates.push('RoundRectangle')
+    }
+    wordShapeTypeCandidates.push('TextBox')
     const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
     for (let index = 0; index < visibleWords; index += 1) {
       const anchor = wordAnchors[index]
       const frame = baseWordFrame(areaRect, anchor)
-      try {
-        const bubble = addWordCloudShape(slide, frame, wordShapeType)
-        const label = slide.shapes.addTextBox('', frame)
-        setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
-        applyFont(label.textFrame.textRange, style, {
-          size: style.minFontSize,
-          bold: false,
-          color: style.textColor
-        })
-        label.textFrame.wordWrap = false
-        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-        bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-        bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-        label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-        label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-        wordShapes.push({ bubble, label })
-      } catch {
-        // Keep inserting the widget even if an individual word pair fails.
+      let created = false
+      for (const candidateType of wordShapeTypeCandidates) {
+        try {
+          const bubble =
+            candidateType === 'TextBox'
+              ? slide.shapes.addTextBox('', frame)
+              : slide.shapes.addGeometricShape(candidateType as any, frame)
+          const label = slide.shapes.addTextBox('', frame)
+          setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
+          applyFont(label.textFrame.textRange, style, {
+            size: style.minFontSize,
+            bold: false,
+            color: style.textColor
+          })
+          label.textFrame.wordWrap = false
+          bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+          bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+          bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+          label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+          label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+          label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+          bubble.load('id')
+          label.load('id')
+          await context.sync()
+          wordShapes.push({ bubble, label })
+          created = true
+          break
+        } catch {
+          // Try the next candidate shape type for this slot.
+        }
+      }
+      if (!created) {
+        console.warn('Skipping word cloud slot during insert', { index })
       }
     }
 
@@ -944,35 +950,15 @@ export async function insertWordCloudWidget(
       label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       label.tags.add('PrezoWidgetRole', 'word-cloud-label')
       label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, '0')
+      bubble.load('id')
+      label.load('id')
+      await context.sync()
       wordShapes.push({ bubble, label })
-    }
-
-    shadow.load('id')
-    container.load('id')
-    title.load('id')
-    subtitle.load('id')
-    body.load('id')
-    wordShapes.forEach((shape) => {
-      shape.bubble.load('id')
-      shape.label.load('id')
-    })
-    await context.sync()
-
-    const shapeIds: WordCloudShapeIds = {
-      shadow: shadow.id,
-      container: container.id,
-      title: title.id,
-      subtitle: subtitle.id,
-      body: body.id,
-      words: wordShapes.map((shape) => ({
-        bubble: shape.bubble.id,
-        label: shape.label.id
-      }))
     }
 
     const serializedStyle = JSON.stringify(style)
     const serializedState = JSON.stringify(EMPTY_WORD_CLOUD_STATE)
-    const serializedShapeIds = JSON.stringify(shapeIds)
+    const serializedShapeIds = ''
 
     try {
       if (hasSession && sessionId) {
