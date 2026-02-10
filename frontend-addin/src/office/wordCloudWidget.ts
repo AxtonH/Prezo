@@ -179,6 +179,10 @@ const interpolate = (from: number, to: number, progress: number) => from + (to -
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 const normalizeSessionId = (value: string | null | undefined) => String(value ?? '').trim()
+const setSlideTag = (slide: PowerPoint.Slide, key: string, value: string) => {
+  slide.tags.delete(key)
+  slide.tags.add(key, value)
+}
 
 const normalizeWordCloudStyle = (
   style?: Partial<WordCloudStyleConfig> | null
@@ -278,6 +282,8 @@ const wordAnchors = [
 
 const WORD_CLOUD_SHAPE_TYPES = ['Cloud', 'CloudCallout', 'RoundRectangle'] as const
 const WORD_CLOUD_COLOR_SEEDS = [0.14, 0.22, 0.18, 0.27, 0.2]
+type WordCloudShapeType = (typeof WORD_CLOUD_SHAPE_TYPES)[number]
+let cachedWordCloudShapeType: WordCloudShapeType | null = null
 
 const wordAreaRect = (widgetRect: WidgetRect, scale: number): WidgetRect => {
   const sidePadding = Math.round(30 * scale)
@@ -308,6 +314,23 @@ const fitFontSizeForLabel = (
   const widthCap = Math.floor(frame.width / Math.max(2, chars * 0.53))
   const heightCap = Math.floor(frame.height * 0.7)
   return clamp(Math.min(preferred, widthCap, heightCap, maxFontSize), 12, maxFontSize)
+}
+
+const labelFrameForWord = (
+  bubbleFrame: { left: number; top: number; width: number; height: number },
+  label: string,
+  fontSize: number
+) => {
+  const chars = Math.max(1, label.trim().length)
+  const estimatedWidth = fontSize * (chars * 0.56 + 1.1)
+  const width = clamp(estimatedWidth + 8, 24, bubbleFrame.width * 0.8)
+  const height = clamp(fontSize * 1.45, 18, bubbleFrame.height * 0.58)
+  return {
+    left: bubbleFrame.left + (bubbleFrame.width - width) / 2,
+    top: bubbleFrame.top + (bubbleFrame.height - height) / 2,
+    width,
+    height
+  }
 }
 
 const scaledWordFrame = (
@@ -377,10 +400,11 @@ const setWordShapeHidden = (
     pair.bubble.top = frame.top
     pair.bubble.width = frame.width
     pair.bubble.height = frame.height
-    pair.label.left = frame.left + frame.width * 0.12
-    pair.label.top = frame.top + frame.height * 0.18
-    pair.label.width = frame.width * 0.76
-    pair.label.height = frame.height * 0.64
+    const labelFrame = labelFrameForWord(frame, 'word', style.minFontSize)
+    pair.label.left = labelFrame.left
+    pair.label.top = labelFrame.top
+    pair.label.width = labelFrame.width
+    pair.label.height = labelFrame.height
   }
   pair.bubble.fill.setSolidColor(style.panelColor)
   pair.bubble.fill.transparency = 1
@@ -415,19 +439,10 @@ const renderWordShape = (
     pair.bubble.lineFormat.color = visual.borderColor
     pair.bubble.lineFormat.weight = visual.lineWeight
 
-    const labelFrame = {
-      left: frame.left + Math.max(12, frame.width * 0.11),
-      top: frame.top + Math.max(8, frame.height * 0.2),
-      width: Math.max(24, frame.width - Math.max(24, frame.width * 0.22)),
-      height: Math.max(18, frame.height - Math.max(16, frame.height * 0.34))
-    }
     const preferredFontSize = fontSizeForRatio(style, clampedRatio)
-    const fittedFontSize = fitFontSizeForLabel(
-      wordLabel,
-      preferredFontSize,
-      { width: labelFrame.width, height: labelFrame.height },
-      style.maxFontSize
-    )
+    const firstPassFrame = labelFrameForWord(frame, wordLabel, preferredFontSize)
+    const fittedFontSize = fitFontSizeForLabel(wordLabel, preferredFontSize, firstPassFrame, style.maxFontSize)
+    const labelFrame = labelFrameForWord(frame, wordLabel, fittedFontSize)
     pair.label.left = labelFrame.left
     pair.label.top = labelFrame.top
     pair.label.width = labelFrame.width
@@ -439,28 +454,50 @@ const renderWordShape = (
       bold: visual.bold,
       color: visual.textColor
     })
-    try {
-      ;(pair.label.textFrame.textRange.paragraphFormat as any).alignment = 'Center'
-    } catch {
-      // Some Office hosts may not support alignment mutation for this shape.
-    }
-    try {
-      ;(pair.label.textFrame as any).verticalAlignment = 'Middle'
-    } catch {
-      // Ignore unsupported alignment APIs.
-    }
   }
 }
 
-const addWordCloudShape = (slide: PowerPoint.Slide, frame: WidgetRect) => {
-  for (const shapeType of WORD_CLOUD_SHAPE_TYPES) {
+const addWordCloudShape = (
+  slide: PowerPoint.Slide,
+  frame: WidgetRect,
+  shapeType: WordCloudShapeType
+) => slide.shapes.addGeometricShape(shapeType as any, frame)
+
+const resolveWordCloudShapeType = async (): Promise<WordCloudShapeType> => {
+  if (cachedWordCloudShapeType) {
+    return cachedWordCloudShapeType
+  }
+
+  for (const candidate of WORD_CLOUD_SHAPE_TYPES) {
     try {
-      return slide.shapes.addGeometricShape(shapeType as any, frame)
+      await PowerPoint.run(async (context) => {
+        const slides = context.presentation.getSelectedSlides()
+        slides.load('items')
+        await context.sync()
+        const slide = slides.items[0]
+        if (!slide) {
+          throw new Error('Select a slide before inserting a widget.')
+        }
+        const probe = slide.shapes.addGeometricShape(candidate as any, {
+          left: -2000,
+          top: -2000,
+          width: 12,
+          height: 12
+        })
+        probe.load('id')
+        await context.sync()
+        probe.delete()
+        await context.sync()
+      })
+      cachedWordCloudShapeType = candidate
+      return candidate
     } catch {
-      // fallback to the next supported shape
+      // Try the next candidate shape type.
     }
   }
-  return slide.shapes.addTextBox('', frame)
+
+  cachedWordCloudShapeType = 'RoundRectangle'
+  return cachedWordCloudShapeType
 }
 
 const normalizeWordShapeEntries = (
@@ -528,16 +565,6 @@ const upgradeLegacyWordShapeEntries = async (
       bold: false,
       color: style.textColor
     })
-    try {
-      ;(label.textFrame.textRange.paragraphFormat as any).alignment = 'Center'
-    } catch {
-      // Ignore unsupported alignment APIs.
-    }
-    try {
-      ;(label.textFrame as any).verticalAlignment = 'Middle'
-    } catch {
-      // Ignore unsupported alignment APIs.
-    }
     label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
     label.tags.add('PrezoWidgetRole', 'word-cloud-label')
     label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
@@ -760,6 +787,7 @@ export async function insertWordCloudWidget(
   ensurePowerPoint()
 
   const style = normalizeWordCloudStyle(styleOverrides)
+  const wordShapeType = await resolveWordCloudShapeType()
   const scale = style.spacingScale
   const hasSession = Boolean(sessionId)
   const maxWords = style.maxWords
@@ -780,21 +808,23 @@ export async function insertWordCloudWidget(
     existingShapesTag.load('value')
     await context.sync()
 
-    if (!existingShapesTag.isNullObject && existingShapesTag.value) {
-      try {
-        const parsed = JSON.parse(existingShapesTag.value) as Partial<WordCloudShapeIds>
-        const ids = collectShapeIdsForCleanup(parsed)
-        const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
-        shapes.forEach((shape) => shape.load('id'))
-        await context.sync()
-        shapes.forEach((shape) => {
-          if (!shape.isNullObject) {
-            shape.delete()
-          }
-        })
-        await context.sync()
-      } catch {
-        // ignore cleanup errors
+    if (!existingShapesTag.isNullObject) {
+      if (existingShapesTag.value) {
+        try {
+          const parsed = JSON.parse(existingShapesTag.value) as Partial<WordCloudShapeIds>
+          const ids = collectShapeIdsForCleanup(parsed)
+          const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+          shapes.forEach((shape) => shape.load('id'))
+          await context.sync()
+          shapes.forEach((shape) => {
+            if (!shape.isNullObject) {
+              shape.delete()
+            }
+          })
+          await context.sync()
+        } catch {
+          // ignore cleanup errors
+        }
       }
       slide.tags.delete(WORD_CLOUD_SESSION_TAG)
       slide.tags.delete(WORD_CLOUD_PENDING_TAG)
@@ -883,7 +913,7 @@ export async function insertWordCloudWidget(
     for (let index = 0; index < visibleWords; index += 1) {
       const anchor = wordAnchors[index]
       const frame = baseWordFrame(areaRect, anchor)
-      const bubble = addWordCloudShape(slide, frame)
+      const bubble = addWordCloudShape(slide, frame, wordShapeType)
       const label = slide.shapes.addTextBox('', frame)
       setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
       applyFont(label.textFrame.textRange, style, {
@@ -892,16 +922,6 @@ export async function insertWordCloudWidget(
         color: style.textColor
       })
       label.textFrame.wordWrap = false
-      try {
-        ;(label.textFrame.textRange.paragraphFormat as any).alignment = 'Center'
-      } catch {
-        // Ignore unsupported alignment APIs.
-      }
-      try {
-        ;(label.textFrame as any).verticalAlignment = 'Middle'
-      } catch {
-        // Ignore unsupported alignment APIs.
-      }
       bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
       bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
@@ -935,15 +955,15 @@ export async function insertWordCloudWidget(
     }
 
     if (hasSession && sessionId) {
-      slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
+      setSlideTag(slide, WORD_CLOUD_SESSION_TAG, sessionId)
       slide.tags.delete(WORD_CLOUD_PENDING_TAG)
     } else {
-      slide.tags.add(WORD_CLOUD_PENDING_TAG, 'true')
+      setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
       slide.tags.delete(WORD_CLOUD_SESSION_TAG)
     }
-    slide.tags.add(WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
-    slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(EMPTY_WORD_CLOUD_STATE))
-    slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+    setSlideTag(slide, WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
+    setSlideTag(slide, WORD_CLOUD_STATE_TAG, JSON.stringify(EMPTY_WORD_CLOUD_STATE))
+    setSlideTag(slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
     await context.sync()
   })
 }
@@ -1000,7 +1020,7 @@ export async function updateWordCloudWidget(
         shapeIds = await recoverShapeIds(info.slide, context)
         recovered = Boolean(shapeIds)
         if (shapeIds) {
-          info.slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+          setSlideTag(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
         }
       }
 
@@ -1042,7 +1062,7 @@ export async function updateWordCloudWidget(
           )
           if (wordShapeIds.length > 0) {
             shapeIds.words = wordShapeIds
-            info.slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+            setSlideTag(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
             await context.sync()
           }
         }
@@ -1184,10 +1204,10 @@ export async function updateWordCloudWidget(
       }
 
       const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
-      info.slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
+      setSlideTag(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
       if (shouldRebind || normalizedSessionId) {
-        info.slide.tags.add(WORD_CLOUD_SESSION_TAG, normalizedSessionId)
+        setSlideTag(info.slide, WORD_CLOUD_SESSION_TAG, normalizedSessionId)
         info.slide.tags.delete(WORD_CLOUD_PENDING_TAG)
       }
     }
