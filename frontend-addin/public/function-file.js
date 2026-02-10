@@ -23,6 +23,7 @@
   const MAX_QNA_ITEMS = 4
   const MAX_POLL_OPTIONS = 5
   const MAX_WORD_CLOUD_WORDS = 5
+  const MAX_SLIDE_TAG_VALUE_LENGTH = 250
   const PANEL_TITLE = 'Questions from your audience'
   const EYEBROW_TEXT = 'PREZO LIVE Q&A'
   const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
@@ -267,6 +268,15 @@
   const normalizeSessionId = (value) => String(value ?? '').trim()
   const setSlideTag = (slide, key, value) => {
     slide.tags.add(key, value)
+  }
+  const setSlideTagIfFits = (slide, key, value) => {
+    const normalizedValue = String(value ?? '')
+    if (normalizedValue.length > MAX_SLIDE_TAG_VALUE_LENGTH) {
+      slide.tags.delete(key)
+      return false
+    }
+    setSlideTag(slide, key, normalizedValue)
+    return true
   }
 
   const buildBody = (questions) => {
@@ -664,38 +674,30 @@
       label: pair.label.id
     }))
   }
-  const collectShapeIdsForCleanup = (shapeIds) => {
-    if (!shapeIds) {
-      return []
+  const clearExistingWordCloudShapes = async (slide, context) => {
+    const scope = slide.shapes
+    scope.load('items')
+    await context.sync()
+
+    const taggedShapes = scope.items.map((shape) => {
+      const widgetTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WIDGET_TAG)
+      widgetTag.load('value')
+      return { shape, widgetTag }
+    })
+
+    await context.sync()
+
+    let hasDeletes = false
+    taggedShapes.forEach(({ shape, widgetTag }) => {
+      if (!widgetTag.isNullObject && widgetTag.value === 'true') {
+        shape.delete()
+        hasDeletes = true
+      }
+    })
+
+    if (hasDeletes) {
+      await context.sync()
     }
-    const ids = [
-      shapeIds.shadow,
-      shapeIds.container,
-      shapeIds.title,
-      shapeIds.subtitle,
-      shapeIds.body
-    ]
-    const words = shapeIds.words
-    if (Array.isArray(words)) {
-      words.forEach((entry) => {
-        if (!entry) {
-          return
-        }
-        if (typeof entry === 'string') {
-          ids.push(entry)
-          return
-        }
-        if (typeof entry === 'object') {
-          if (typeof entry.bubble === 'string') {
-            ids.push(entry.bubble)
-          }
-          if (typeof entry.label === 'string') {
-            ids.push(entry.label)
-          }
-        }
-      })
-    }
-    return ids.filter(Boolean)
   }
 
   const fetchSnapshot = async (binding) => {
@@ -2049,7 +2051,7 @@
             )
             if (wordShapeIds.length) {
               shapeIds.words = wordShapeIds
-              setSlideTag(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+              setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
               await context.sync()
             }
           }
@@ -2195,7 +2197,7 @@
         }
 
         const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
-        setSlideTag(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
+        setSlideTagIfFits(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
         if (shouldRebind || normalizedSessionId) {
           setSlideTag(info.slide, WORD_CLOUD_SESSION_TAG, normalizedSessionId)
@@ -2233,34 +2235,12 @@
         }
 
         stage = 'cleanup previous word cloud'
-        const existingShapesTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG)
-        existingShapesTag.load('value')
-        await context.sync()
-
-        if (!existingShapesTag.isNullObject) {
-          if (existingShapesTag.value) {
-            try {
-              const parsed = JSON.parse(existingShapesTag.value)
-              const ids = collectShapeIdsForCleanup(parsed)
-              const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
-              shapes.forEach((shape) => shape.load('id'))
-              await context.sync()
-              shapes.forEach((shape) => {
-                if (!shape.isNullObject) {
-                  shape.delete()
-                }
-              })
-              await context.sync()
-            } catch {
-              // ignore cleanup errors
-            }
-          }
-          slide.tags.delete(WORD_CLOUD_SESSION_TAG)
-          slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-          slide.tags.delete(WORD_CLOUD_STYLE_TAG)
-          slide.tags.delete(WORD_CLOUD_STATE_TAG)
-          slide.tags.delete(WORD_CLOUD_SHAPES_TAG)
-        }
+        await clearExistingWordCloudShapes(slide, context)
+        slide.tags.delete(WORD_CLOUD_SESSION_TAG)
+        slide.tags.delete(WORD_CLOUD_PENDING_TAG)
+        slide.tags.delete(WORD_CLOUD_STYLE_TAG)
+        slide.tags.delete(WORD_CLOUD_STATE_TAG)
+        slide.tags.delete(WORD_CLOUD_SHAPES_TAG)
 
         stage = 'create container shapes'
         const width = Math.max(380, pageSetup.slideWidth * 0.7)
@@ -2409,6 +2389,11 @@
           }))
         }
 
+        const serializedStyle = JSON.stringify(style)
+        const serializedState = JSON.stringify(EMPTY_WORD_CLOUD_STATE)
+        const serializedShapeIds = JSON.stringify(shapeIds)
+        stage = `persist tags style=${serializedStyle.length} state=${serializedState.length} shapes=${serializedShapeIds.length}`
+
         if (hasSession && sessionId) {
           setSlideTag(slide, WORD_CLOUD_SESSION_TAG, sessionId)
           slide.tags.delete(WORD_CLOUD_PENDING_TAG)
@@ -2416,9 +2401,9 @@
           setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
           slide.tags.delete(WORD_CLOUD_SESSION_TAG)
         }
-        setSlideTag(slide, WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
-        setSlideTag(slide, WORD_CLOUD_STATE_TAG, JSON.stringify(EMPTY_WORD_CLOUD_STATE))
-        setSlideTag(slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+        setSlideTagIfFits(slide, WORD_CLOUD_STYLE_TAG, serializedStyle)
+        setSlideTagIfFits(slide, WORD_CLOUD_STATE_TAG, serializedState)
+        setSlideTagIfFits(slide, WORD_CLOUD_SHAPES_TAG, serializedShapeIds)
         await context.sync()
       })
     } catch (error) {
