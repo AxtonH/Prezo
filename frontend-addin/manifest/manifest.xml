@@ -87,7 +87,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
-        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/function-file/" />
+        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/function-file/?v=wcfix-20260210-3" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Prezo.GroupLabel" DefaultValue="Prezo" />
