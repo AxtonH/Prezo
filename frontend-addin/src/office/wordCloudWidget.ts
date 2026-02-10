@@ -186,7 +186,7 @@ const setSlideTag = (slide: PowerPoint.Slide, key: string, value: string) => {
 const setSlideTagIfFits = (slide: PowerPoint.Slide, key: string, value: string) => {
   const normalizedValue = String(value ?? '')
   if (normalizedValue.length > MAX_SLIDE_TAG_VALUE_LENGTH) {
-    slide.tags.delete(key)
+    setSlideTag(slide, key, '')
     return false
   }
   setSlideTag(slide, key, normalizedValue)
@@ -820,11 +820,11 @@ export async function insertWordCloudWidget(
     }
 
     await clearExistingWordCloudShapes(slide, context)
-    slide.tags.delete(WORD_CLOUD_SESSION_TAG)
-    slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-    slide.tags.delete(WORD_CLOUD_STYLE_TAG)
-    slide.tags.delete(WORD_CLOUD_STATE_TAG)
-    slide.tags.delete(WORD_CLOUD_SHAPES_TAG)
+    setSlideTag(slide, WORD_CLOUD_SESSION_TAG, '')
+    setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
+    setSlideTag(slide, WORD_CLOUD_STYLE_TAG, '')
+    setSlideTag(slide, WORD_CLOUD_STATE_TAG, '')
+    setSlideTag(slide, WORD_CLOUD_SHAPES_TAG, '')
 
     const width = Math.max(380, pageSetup.slideWidth * 0.7)
     const height = Math.max(280, pageSetup.slideHeight * 0.56)
@@ -974,17 +974,21 @@ export async function insertWordCloudWidget(
     const serializedState = JSON.stringify(EMPTY_WORD_CLOUD_STATE)
     const serializedShapeIds = JSON.stringify(shapeIds)
 
-    if (hasSession && sessionId) {
-      setSlideTag(slide, WORD_CLOUD_SESSION_TAG, sessionId)
-      slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-    } else {
-      setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
-      slide.tags.delete(WORD_CLOUD_SESSION_TAG)
+    try {
+      if (hasSession && sessionId) {
+        setSlideTag(slide, WORD_CLOUD_SESSION_TAG, sessionId)
+        setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'false')
+      } else {
+        setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
+        setSlideTag(slide, WORD_CLOUD_SESSION_TAG, '')
+      }
+      setSlideTagIfFits(slide, WORD_CLOUD_STYLE_TAG, serializedStyle)
+      setSlideTagIfFits(slide, WORD_CLOUD_STATE_TAG, serializedState)
+      setSlideTagIfFits(slide, WORD_CLOUD_SHAPES_TAG, serializedShapeIds)
+      await context.sync()
+    } catch (tagPersistError) {
+      console.warn('Word cloud metadata persistence failed after insert', tagPersistError)
     }
-    setSlideTagIfFits(slide, WORD_CLOUD_STYLE_TAG, serializedStyle)
-    setSlideTagIfFits(slide, WORD_CLOUD_STATE_TAG, serializedState)
-    setSlideTagIfFits(slide, WORD_CLOUD_SHAPES_TAG, serializedShapeIds)
-    await context.sync()
   })
 }
 
@@ -1228,7 +1232,7 @@ export async function updateWordCloudWidget(
 
       if (shouldRebind || normalizedSessionId) {
         setSlideTag(info.slide, WORD_CLOUD_SESSION_TAG, normalizedSessionId)
-        info.slide.tags.delete(WORD_CLOUD_PENDING_TAG)
+        setSlideTag(info.slide, WORD_CLOUD_PENDING_TAG, 'false')
       }
     }
 
