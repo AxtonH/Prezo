@@ -17,6 +17,10 @@
   const WORD_CLOUD_SHAPES_TAG = 'PrezoWordCloudShapeIds'
   const WORD_CLOUD_PENDING_TAG = 'PrezoWordCloudPending'
   const WORD_CLOUD_STYLE_TAG = 'PrezoWordCloudStyle'
+  const WORD_CLOUD_LAYOUT_TAG = 'PrezoWordCloudLayout'
+  const WORD_CLOUD_STATE_TAG = 'PrezoWordCloudState'
+  const WORD_CLOUD_WORD_INDEX_TAG = 'PrezoWordCloudWordIndex'
+  const WORD_CLOUD_LAYOUT_CLOUD = 'cloud-v1'
   const DEFAULT_API_BASE_URL = 'http://localhost:8000'
   const MAX_QNA_ITEMS = 4
   const MAX_POLL_OPTIONS = 5
@@ -122,6 +126,10 @@
     minFontSize: 20,
     maxFontSize: 56,
     maxWords: 5
+  }
+  const EMPTY_WORD_CLOUD_STATE = {
+    cloudId: null,
+    ratios: {}
   }
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
   const hexToRgb = (hex) => {
@@ -345,13 +353,169 @@
     return cloud.status === 'open' ? 'Voting is live.' : 'Voting is closed.'
   }
 
+  const normalizeWordKey = (label) => (label || '').trim().toLocaleLowerCase()
+  const parseWordCloudState = (value) => {
+    if (!value) {
+      return EMPTY_WORD_CLOUD_STATE
+    }
+    try {
+      const parsed = JSON.parse(value)
+      const ratios =
+        parsed && parsed.ratios && typeof parsed.ratios === 'object'
+          ? Object.entries(parsed.ratios).reduce((acc, [key, raw]) => {
+              const ratio = Number(raw)
+              if (Number.isFinite(ratio)) {
+                acc[key] = clamp(ratio, 0, 1)
+              }
+              return acc
+            }, {})
+          : {}
+      return {
+        cloudId: parsed && typeof parsed.cloudId === 'string' ? parsed.cloudId : null,
+        ratios
+      }
+    } catch {
+      return EMPTY_WORD_CLOUD_STATE
+    }
+  }
+  const createWordCloudState = (cloud, words) => {
+    const safeWords = words || []
+    const maxVotes = safeWords.reduce((max, word) => Math.max(max, word.votes), 0)
+    const ratios = safeWords.reduce((acc, word) => {
+      const ratio = maxVotes > 0 ? word.votes / maxVotes : 0
+      acc[normalizeWordKey(word.label)] = clamp(ratio, 0, 1)
+      return acc
+    }, {})
+    return {
+      cloudId: cloud && cloud.id ? cloud.id : null,
+      ratios
+    }
+  }
+  const easeOutCubic = (value) => 1 - Math.pow(1 - clamp(value, 0, 1), 3)
+  const interpolate = (from, to, progress) => from + (to - from) * progress
+
   const WORD_CLOUD_ANCHORS = [
-    { x: 0.16, y: 0.38, width: 0.3, height: 0.16 },
-    { x: 0.52, y: 0.34, width: 0.3, height: 0.16 },
-    { x: 0.28, y: 0.58, width: 0.3, height: 0.16 },
-    { x: 0.62, y: 0.58, width: 0.28, height: 0.16 },
-    { x: 0.44, y: 0.74, width: 0.26, height: 0.14 }
+    { x: 0.14, y: 0.34, width: 0.28, height: 0.15 },
+    { x: 0.46, y: 0.32, width: 0.3, height: 0.16 },
+    { x: 0.26, y: 0.53, width: 0.32, height: 0.17 },
+    { x: 0.58, y: 0.55, width: 0.26, height: 0.15 },
+    { x: 0.4, y: 0.72, width: 0.24, height: 0.14 }
   ]
+  const WORD_CLOUD_SHAPE_TYPES = ['Cloud', 'CloudCallout', 'RoundRectangle']
+  const WORD_CLOUD_COLOR_SEEDS = [0.14, 0.22, 0.18, 0.27, 0.2]
+  const baseWordFrame = (widgetRect, anchor) => ({
+    left: widgetRect.left + widgetRect.width * anchor.x,
+    top: widgetRect.top + widgetRect.height * anchor.y,
+    width: widgetRect.width * anchor.width,
+    height: widgetRect.height * anchor.height
+  })
+  const scaledWordFrame = (widgetRect, anchor, ratio) => {
+    const base = baseWordFrame(widgetRect, anchor)
+    const clamped = clamp(ratio, 0, 1)
+    const widthScale = 0.9 + clamped * 0.42
+    const heightScale = 0.92 + clamped * 0.32
+    const width = base.width * widthScale
+    const height = base.height * heightScale
+    const centerX = base.left + base.width / 2
+    const centerY = base.top + base.height / 2
+    return {
+      left: centerX - width / 2,
+      top: centerY - height / 2,
+      width,
+      height
+    }
+  }
+  const buildCloudVisual = (style, ratio, index) => {
+    const clamped = clamp(ratio, 0, 1)
+    const seed = WORD_CLOUD_COLOR_SEEDS[index % WORD_CLOUD_COLOR_SEEDS.length]
+    const baseFill = mixColors(style.panelColor, style.accentColor, seed)
+    const fillColor = mixColors(baseFill, style.accentColor, 0.16 + clamped * 0.56)
+    const borderColor = mixColors(style.borderColor, style.accentColor, 0.28 + clamped * 0.45)
+    return {
+      fillColor,
+      borderColor,
+      textColor: clamped > 0.6 ? '#ffffff' : style.textColor,
+      transparency: clamp(0.18 - clamped * 0.1, 0.04, 0.22),
+      lineWeight: 1 + clamped * 0.85,
+      bold: clamped >= 0.4
+    }
+  }
+  const fontSizeForRatio = (style, ratio) => {
+    const clamped = clamp(ratio, 0, 1)
+    const eased = Math.pow(clamped, 0.78)
+    return Math.round(style.minFontSize + (style.maxFontSize - style.minFontSize) * eased)
+  }
+  const setWordShapeHidden = (shape, widgetRect, anchor, cloudLayout) => {
+    shape.textFrame.textRange.text = ''
+    if (widgetRect) {
+      const frame = baseWordFrame(widgetRect, anchor)
+      shape.left = frame.left
+      shape.top = frame.top
+      shape.width = frame.width
+      shape.height = frame.height
+    }
+    if (cloudLayout) {
+      shape.fill.transparency = 1
+      shape.lineFormat.visible = false
+    }
+  }
+  const renderWordShape = (
+    shape,
+    wordLabel,
+    ratio,
+    style,
+    widgetRect,
+    anchor,
+    index,
+    cloudLayout
+  ) => {
+    const clampedRatio = clamp(ratio, 0, 1)
+    shape.textFrame.textRange.text = wordLabel
+    shape.textFrame.wordWrap = true
+
+    if (cloudLayout && widgetRect) {
+      const frame = scaledWordFrame(widgetRect, anchor, clampedRatio)
+      const visual = buildCloudVisual(style, clampedRatio, index)
+      shape.left = frame.left
+      shape.top = frame.top
+      shape.width = frame.width
+      shape.height = frame.height
+      shape.fill.setSolidColor(visual.fillColor)
+      shape.fill.transparency = visual.transparency
+      shape.lineFormat.visible = true
+      shape.lineFormat.color = visual.borderColor
+      shape.lineFormat.weight = visual.lineWeight
+      applyFont(shape.textFrame.textRange, style, {
+        size: fontSizeForRatio(style, clampedRatio),
+        bold: visual.bold,
+        color: visual.textColor
+      })
+      return
+    }
+
+    if (widgetRect) {
+      const frame = baseWordFrame(widgetRect, anchor)
+      shape.left = frame.left
+      shape.top = frame.top
+      shape.width = frame.width
+      shape.height = frame.height
+    }
+    applyFont(shape.textFrame.textRange, style, {
+      size: fontSizeForRatio(style, clampedRatio),
+      bold: clampedRatio >= 0.45,
+      color: clampedRatio > 0 ? style.accentColor : style.textColor
+    })
+  }
+  const addWordCloudShape = (slide, frame) => {
+    for (const shapeType of WORD_CLOUD_SHAPE_TYPES) {
+      try {
+        return slide.shapes.addGeometricShape(shapeType, frame)
+      } catch {
+        // fallback to next supported shape
+      }
+    }
+    return slide.shapes.addTextBox('', frame)
+  }
 
   const fetchSnapshot = async (binding) => {
     const apiBaseUrl = resolveApiBaseUrl(binding)
@@ -1633,11 +1797,15 @@
         const pendingTag = slide.tags.getItemOrNullObject(WORD_CLOUD_PENDING_TAG)
         const shapeTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG)
         const styleTag = slide.tags.getItemOrNullObject(WORD_CLOUD_STYLE_TAG)
+        const layoutTag = slide.tags.getItemOrNullObject(WORD_CLOUD_LAYOUT_TAG)
+        const stateTag = slide.tags.getItemOrNullObject(WORD_CLOUD_STATE_TAG)
         sessionTag.load('value')
         pendingTag.load('value')
         shapeTag.load('value')
         styleTag.load('value')
-        return { slide, sessionTag, pendingTag, shapeTag, styleTag }
+        layoutTag.load('value')
+        stateTag.load('value')
+        return { slide, sessionTag, pendingTag, shapeTag, styleTag, layoutTag, stateTag }
       })
 
       await context.sync()
@@ -1693,7 +1861,7 @@
         )
 
         if (shadow) shadow.load('id')
-        if (container) container.load('id')
+        if (container) container.load(['id', 'left', 'top', 'width', 'height'])
         if (title) title.load('id')
         if (subtitle) subtitle.load('id')
         if (body) body.load('id')
@@ -1709,7 +1877,7 @@
           if (container && !container.isNullObject) {
             container.fill.setSolidColor(style.panelColor)
             container.lineFormat.color = style.borderColor
-            container.lineFormat.weight = 1
+            container.lineFormat.weight = 1.2
           }
           if (title && !title.isNullObject) {
             applyFont(title.textFrame.textRange, style, {
@@ -1742,25 +1910,94 @@
           body.textFrame.textRange.text = buildWordCloudMeta(cloud)
         }
 
-        const visibleWords = Math.min(style.maxWords, words.length)
-        wordShapes.forEach((shape, index) => {
-          if (shape.isNullObject) {
-            return
+        const cloudLayout =
+          !info.layoutTag.isNullObject && info.layoutTag.value === WORD_CLOUD_LAYOUT_CLOUD
+        const widgetRect =
+          container && !container.isNullObject
+            ? {
+                left: container.left,
+                top: container.top,
+                width: container.width,
+                height: container.height
+              }
+            : null
+        const previousState = parseWordCloudState(
+          !info.stateTag.isNullObject ? info.stateTag.value : null
+        )
+        const previousRatios =
+          previousState.cloudId === (cloud && cloud.id ? cloud.id : null)
+            ? previousState.ratios
+            : {}
+        const visibleWords = Math.min(style.maxWords, words.length, wordShapes.length)
+
+        const plans = wordShapes.map((shape, index) => {
+          const anchor =
+            WORD_CLOUD_ANCHORS[index] || WORD_CLOUD_ANCHORS[WORD_CLOUD_ANCHORS.length - 1]
+          const word = index < visibleWords ? words[index] : null
+          if (!word) {
+            return {
+              shape,
+              anchor,
+              word: null,
+              startRatio: 0,
+              targetRatio: 0,
+              index
+            }
           }
-          const word = words[index]
-          if (!word || index >= visibleWords) {
-            shape.textFrame.textRange.text = ''
-            return
+          const key = normalizeWordKey(word.label)
+          const startRatio = previousRatios[key] ?? 0
+          const targetRatio = maxVotes > 0 ? word.votes / maxVotes : 0
+          return {
+            shape,
+            anchor,
+            word,
+            startRatio: clamp(startRatio, 0, 1),
+            targetRatio: clamp(targetRatio, 0, 1),
+            index
           }
-          const ratio = maxVotes > 0 ? word.votes / maxVotes : 0
-          const fontSize = style.minFontSize + (style.maxFontSize - style.minFontSize) * ratio
-          shape.textFrame.textRange.text = word.label
-          applyFont(shape.textFrame.textRange, style, {
-            size: Math.round(fontSize),
-            bold: ratio >= 0.45,
-            color: ratio > 0 ? style.accentColor : style.textColor
-          })
         })
+
+        const shouldAnimate =
+          cloudLayout &&
+          plans.some(
+            (plan) => plan.word && Math.abs(plan.startRatio - plan.targetRatio) > 0.035
+          )
+        const frames = shouldAnimate ? 5 : 1
+
+        for (let frame = 1; frame <= frames; frame += 1) {
+          const progress = frame / frames
+          const eased = shouldAnimate ? easeOutCubic(progress) : 1
+          plans.forEach((plan) => {
+            if (plan.shape.isNullObject) {
+              return
+            }
+            if (!plan.word) {
+              setWordShapeHidden(plan.shape, widgetRect, plan.anchor, cloudLayout)
+              return
+            }
+            const ratio = interpolate(plan.startRatio, plan.targetRatio, eased)
+            renderWordShape(
+              plan.shape,
+              plan.word.label,
+              ratio,
+              style,
+              widgetRect,
+              plan.anchor,
+              plan.index,
+              cloudLayout
+            )
+          })
+          await context.sync()
+          if (shouldAnimate && frame < frames) {
+            await wait(50)
+          }
+        }
+
+        const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
+        info.slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
+        if (cloudLayout) {
+          info.slide.tags.add(WORD_CLOUD_LAYOUT_TAG, WORD_CLOUD_LAYOUT_CLOUD)
+        }
 
         if (isPending) {
           info.slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
@@ -1823,6 +2060,8 @@
         slide.tags.delete(WORD_CLOUD_SESSION_TAG)
         slide.tags.delete(WORD_CLOUD_PENDING_TAG)
         slide.tags.delete(WORD_CLOUD_STYLE_TAG)
+        slide.tags.delete(WORD_CLOUD_LAYOUT_TAG)
+        slide.tags.delete(WORD_CLOUD_STATE_TAG)
         slide.tags.delete(WORD_CLOUD_SHAPES_TAG)
       }
 
@@ -1831,6 +2070,7 @@
       const left = (pageSetup.slideWidth - width) / 2
       const top = pageSetup.slideHeight * 0.1
       const padding = 24
+      const widgetRect = { left, top, width, height }
 
       const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
         left: left + 4,
@@ -1852,7 +2092,7 @@
       })
       container.fill.setSolidColor(style.panelColor)
       container.lineFormat.color = style.borderColor
-      container.lineFormat.weight = 1
+      container.lineFormat.weight = 1.2
       container.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       container.tags.add('PrezoWidgetRole', 'word-cloud-container')
 
@@ -1872,7 +2112,7 @@
       title.tags.add('PrezoWidgetRole', 'word-cloud-title')
 
       const subtitle = slide.shapes.addTextBox(
-        hasSession ? 'Audience votes make words grow.' : 'Connect a Prezo session to go live.',
+        hasSession ? 'Audience votes animate each cloud.' : 'Connect a Prezo session to go live.',
         {
           left: left + padding,
           top: top + 52 * scale,
@@ -1903,20 +2143,17 @@
       const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
       for (let index = 0; index < visibleWords; index += 1) {
         const anchor = WORD_CLOUD_ANCHORS[index]
-        const wordShape = slide.shapes.addTextBox('', {
-          left: left + width * anchor.x,
-          top: top + height * anchor.y,
-          width: width * anchor.width,
-          height: height * anchor.height
-        })
-        wordShape.textFrame.wordWrap = true
+        const frame = baseWordFrame(widgetRect, anchor)
+        const wordShape = addWordCloudShape(slide, frame)
+        setWordShapeHidden(wordShape, widgetRect, anchor, true)
         applyFont(wordShape.textFrame.textRange, style, {
           size: style.minFontSize,
-          bold: true,
+          bold: false,
           color: style.textColor
         })
         wordShape.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
         wordShape.tags.add('PrezoWidgetRole', 'word-cloud-word')
+        wordShape.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
         wordShapes.push(wordShape)
       }
 
@@ -1945,6 +2182,8 @@
         slide.tags.delete(WORD_CLOUD_SESSION_TAG)
       }
       slide.tags.add(WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
+      slide.tags.add(WORD_CLOUD_LAYOUT_TAG, WORD_CLOUD_LAYOUT_CLOUD)
+      slide.tags.add(WORD_CLOUD_STATE_TAG, JSON.stringify(EMPTY_WORD_CLOUD_STATE))
       slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
       await context.sync()
     })
