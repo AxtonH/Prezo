@@ -578,6 +578,63 @@
       })
       .filter((entry) => Boolean(entry))
   }
+  const extractLegacyWordShapeIds = (entries) => {
+    if (!Array.isArray(entries)) {
+      return []
+    }
+    return entries.filter((entry) => typeof entry === 'string')
+  }
+  const upgradeLegacyWordShapeEntries = async (slide, context, legacyIds, style) => {
+    const limited = legacyIds.slice(0, MAX_WORD_CLOUD_WORDS)
+    if (!limited.length) {
+      return []
+    }
+    const bubbles = limited.map((id) => slide.shapes.getItemOrNullObject(id))
+    bubbles.forEach((shape) => shape.load(['id', 'left', 'top', 'width', 'height']))
+    await context.sync()
+
+    const pairs = []
+    bubbles.forEach((bubble, index) => {
+      if (bubble.isNullObject) {
+        return
+      }
+      const label = slide.shapes.addTextBox('', {
+        left: bubble.left + bubble.width * 0.12,
+        top: bubble.top + bubble.height * 0.18,
+        width: Math.max(24, bubble.width * 0.76),
+        height: Math.max(16, bubble.height * 0.64)
+      })
+      label.fill.transparency = 1
+      label.lineFormat.visible = false
+      label.textFrame.wordWrap = false
+      applyFont(label.textFrame.textRange, style, {
+        size: style.minFontSize,
+        bold: false,
+        color: style.textColor
+      })
+      try {
+        label.textFrame.textRange.paragraphFormat.alignment = 'Center'
+      } catch {
+        // Ignore unsupported alignment APIs.
+      }
+      try {
+        label.textFrame.verticalAlignment = 'Middle'
+      } catch {
+        // Ignore unsupported alignment APIs.
+      }
+      label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+      label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+      label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+      pairs.push({ bubble, label })
+    })
+
+    pairs.forEach((pair) => pair.label.load('id'))
+    await context.sync()
+    return pairs.map((pair) => ({
+      bubble: pair.bubble.id,
+      label: pair.label.id
+    }))
+  }
   const collectShapeIdsForCleanup = (shapeIds) => {
     if (!shapeIds) {
       return []
@@ -1949,7 +2006,23 @@
         const body = shapeIds.body
           ? info.slide.shapes.getItemOrNullObject(shapeIds.body)
           : null
-        const wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
+        let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
+        if (!wordShapeIds.length) {
+          const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
+          if (legacyWordIds.length) {
+            wordShapeIds = await upgradeLegacyWordShapeEntries(
+              info.slide,
+              context,
+              legacyWordIds,
+              style
+            )
+            if (wordShapeIds.length) {
+              shapeIds.words = wordShapeIds
+              info.slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+              await context.sync()
+            }
+          }
+        }
         if (!wordShapeIds.length) {
           continue
         }

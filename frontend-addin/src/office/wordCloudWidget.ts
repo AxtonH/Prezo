@@ -486,6 +486,72 @@ const normalizeWordShapeEntries = (
     .filter((entry): entry is { bubble: string; label: string } => Boolean(entry))
 }
 
+const extractLegacyWordShapeIds = (entries: unknown): string[] => {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+  return entries.filter((entry): entry is string => typeof entry === 'string')
+}
+
+const upgradeLegacyWordShapeEntries = async (
+  slide: PowerPoint.Slide,
+  context: any,
+  legacyIds: string[],
+  style: WordCloudStyleConfig
+): Promise<Array<{ bubble: string; label: string }>> => {
+  const limited = legacyIds.slice(0, MAX_WORD_CLOUD_WORDS)
+  if (limited.length === 0) {
+    return []
+  }
+
+  const bubbles = limited.map((id) => slide.shapes.getItemOrNullObject(id))
+  bubbles.forEach((shape) => shape.load(['id', 'left', 'top', 'width', 'height']))
+  await context.sync()
+
+  const pairs: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }> = []
+  bubbles.forEach((bubble, index) => {
+    if (bubble.isNullObject) {
+      return
+    }
+    const label = slide.shapes.addTextBox('', {
+      left: bubble.left + bubble.width * 0.12,
+      top: bubble.top + bubble.height * 0.18,
+      width: Math.max(24, bubble.width * 0.76),
+      height: Math.max(16, bubble.height * 0.64)
+    })
+    label.fill.transparency = 1
+    label.lineFormat.visible = false
+    label.textFrame.wordWrap = false
+    applyFont(label.textFrame.textRange, style, {
+      size: style.minFontSize,
+      bold: false,
+      color: style.textColor
+    })
+    try {
+      ;(label.textFrame.textRange.paragraphFormat as any).alignment = 'Center'
+    } catch {
+      // Ignore unsupported alignment APIs.
+    }
+    try {
+      ;(label.textFrame as any).verticalAlignment = 'Middle'
+    } catch {
+      // Ignore unsupported alignment APIs.
+    }
+    label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+    label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+    label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+    pairs.push({ bubble, label })
+  })
+
+  pairs.forEach((pair) => pair.label.load('id'))
+  await context.sync()
+
+  return pairs.map((pair) => ({
+    bubble: pair.bubble.id,
+    label: pair.label.id
+  }))
+}
+
 const collectShapeIdsForCleanup = (shapeIds: Partial<WordCloudShapeIds> | null | undefined) => {
   if (!shapeIds) {
     return []
@@ -918,7 +984,23 @@ export async function updateWordCloudWidget(
       const title = info.slide.shapes.getItemOrNullObject(shapeIds.title)
       const subtitle = info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
       const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
-      const wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
+      let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
+      if (wordShapeIds.length === 0) {
+        const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
+        if (legacyWordIds.length > 0) {
+          wordShapeIds = await upgradeLegacyWordShapeEntries(
+            info.slide,
+            context,
+            legacyWordIds,
+            style
+          )
+          if (wordShapeIds.length > 0) {
+            shapeIds.words = wordShapeIds
+            info.slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+            await context.sync()
+          }
+        }
+      }
       if (wordShapeIds.length === 0) {
         continue
       }
