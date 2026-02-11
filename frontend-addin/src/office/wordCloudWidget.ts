@@ -735,6 +735,8 @@ const createWordCloudWordShapeEntries = async (
           label: pair.label.id
         })
       })
+      // Sync property changes before returning to avoid conflicts in the shared context
+      await context.sync()
     } catch (error) {
       console.error('Failed to sync word cloud shapes', { error, count: shapePairs.length })
     }
@@ -1105,6 +1107,13 @@ export async function insertWordCloudWidget(
     }
     wordShapeTypeCandidates.push('TextBox')
     const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
+    const shapePairs: Array<{
+      bubble: PowerPoint.Shape
+      label: PowerPoint.Shape
+      anchor: WordAnchor
+    }> = []
+
+    // Create all shapes first without setting properties
     for (let index = 0; index < visibleWords; index += 1) {
       const anchor = wordAnchors[index]
       const frame = baseWordFrame(areaRect, anchor)
@@ -1116,13 +1125,6 @@ export async function insertWordCloudWidget(
               ? slide.shapes.addTextBox('', frame)
               : slide.shapes.addGeometricShape(candidateType as any, frame)
           const label = slide.shapes.addTextBox('', frame)
-          setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
-          applyFont(label.textFrame.textRange, style, {
-            size: style.minFontSize,
-            bold: false,
-            color: style.textColor
-          })
-          label.textFrame.wordWrap = false
           bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
           bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
           bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
@@ -1131,8 +1133,7 @@ export async function insertWordCloudWidget(
           label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
           bubble.load('id')
           label.load('id')
-          await context.sync()
-          wordShapes.push({ bubble, label })
+          shapePairs.push({ bubble, label, anchor })
           created = true
           break
         } catch {
@@ -1142,6 +1143,24 @@ export async function insertWordCloudWidget(
       if (!created) {
         console.warn('Skipping word cloud slot during insert', { index })
       }
+    }
+
+    // Sync all shapes at once
+    if (shapePairs.length > 0) {
+      await context.sync()
+      // After sync, set properties on all shapes
+      shapePairs.forEach((pair) => {
+        setWordShapeHidden({ bubble: pair.bubble, label: pair.label }, areaRect, pair.anchor, style)
+        applyFont(pair.label.textFrame.textRange, style, {
+          size: style.minFontSize,
+          bold: false,
+          color: style.textColor
+        })
+        pair.label.textFrame.wordWrap = false
+        wordShapes.push({ bubble: pair.bubble, label: pair.label })
+      })
+      // Sync property changes
+      await context.sync()
     }
 
     if (wordShapes.length === 0) {
