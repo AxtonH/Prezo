@@ -209,45 +209,57 @@ export async function insertWordCloudWidget(
       height: height - 140
     }
 
+    console.log('Creating word bubbles, area:', wordArea)
     const wordShapes: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }> = []
 
+    // Step 1: Create all shapes with just tags (no property setting)
     for (let i = 0; i < MAX_WORD_CLOUD_WORDS; i++) {
       const pos = getWordPosition(i, wordArea.width, wordArea.height)
+      console.log(`Creating bubble ${i}`)
 
-      // Create bubble
+      // Create bubble - just tags
       const bubble = slide.shapes.addGeometricShape('RoundRectangle', {
         left: wordArea.left + pos.x - 60,
         top: wordArea.top + pos.y - 25,
         width: 120,
         height: 50
       })
-      bubble.fill.setSolidColor(style.panelColor)
-      bubble.fill.transparency = 1 // Hidden initially
-      bubble.lineFormat.visible = false
       bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       bubble.tags.add('WordIndex', String(i))
+      bubble.load('id')
 
-      // Create label
+      // Create label - just tags
       const label = slide.shapes.addTextBox('', {
         left: wordArea.left + pos.x - 50,
         top: wordArea.top + pos.y - 15,
         width: 100,
         height: 30
       })
-      label.textFrame.textRange.text = ''
-      label.fill.transparency = 1
-      label.lineFormat.visible = false
-      applyFont(label.textFrame.textRange, style, { size: 18, color: style.textColor })
       label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
       label.tags.add('WordIndex', String(i))
-
-      bubble.load('id')
       label.load('id')
 
       wordShapes.push({ bubble, label })
     }
 
+    // Step 2: Sync to create shapes in PowerPoint
+    console.log('Syncing word bubbles, count:', wordShapes.length)
     await context.sync()
+    console.log('Word bubbles synced, IDs loaded')
+
+    // Step 3: Set properties after sync
+    for (let i = 0; i < wordShapes.length; i++) {
+      const { bubble, label } = wordShapes[i]
+      bubble.fill.setSolidColor(style.panelColor)
+      bubble.fill.transparency = 1 // Hidden initially
+      bubble.lineFormat.visible = false
+      label.fill.transparency = 1
+      label.lineFormat.visible = false
+    }
+
+    // Step 4: Sync property changes
+    await context.sync()
+    console.log('Word bubble properties set')
 
     // Save shape IDs to slide tags
     const shapeIds: WordCloudShapeIds = {
