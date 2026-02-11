@@ -659,7 +659,12 @@ const createWordCloudWordShapeEntries = async (
     return []
   }
   const created: Array<{ bubble: string; label: string }> = []
-  const shapePairs: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape; index: number }> = []
+  const shapePairs: Array<{
+    bubble: PowerPoint.Shape
+    label: PowerPoint.Shape
+    index: number
+    anchor: WordAnchor
+  }> = []
 
   // Determine which shape type to use for bubbles
   const wordShapeType = cachedWordCloudShapeType || 'RoundRectangle'
@@ -691,14 +696,7 @@ const createWordCloudWordShapeEntries = async (
             : (slide.shapes as any).addGeometricShape(candidateType, frame)
         const label = slide.shapes.addTextBox('', frame)
 
-        setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
-        applyFont(label.textFrame.textRange, style, {
-          size: style.minFontSize,
-          bold: false,
-          color: style.textColor
-        })
-        label.textFrame.wordWrap = false
-
+        // Just add tags and load IDs - don't set properties until after sync
         bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
         bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
         bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
@@ -707,7 +705,7 @@ const createWordCloudWordShapeEntries = async (
         label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
         bubble.load('id')
         label.load('id')
-        shapePairs.push({ bubble, label, index })
+        shapePairs.push({ bubble, label, index, anchor })
         shapeCreated = true
         break
       } catch (error) {
@@ -723,8 +721,15 @@ const createWordCloudWordShapeEntries = async (
   if (shapePairs.length > 0) {
     try {
       await context.sync()
-      // After sync, collect the IDs
+      // After sync, set properties and collect the IDs
       shapePairs.forEach((pair) => {
+        setWordShapeHidden({ bubble: pair.bubble, label: pair.label }, areaRect, pair.anchor, style)
+        applyFont(pair.label.textFrame.textRange, style, {
+          size: style.minFontSize,
+          bold: false,
+          color: style.textColor
+        })
+        pair.label.textFrame.wordWrap = false
         created.push({
           bubble: pair.bubble.id,
           label: pair.label.id
