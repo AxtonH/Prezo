@@ -131,6 +131,10 @@
     ratios: {}
   }
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+  const toFiniteNumber = (value, fallback) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
   const hexToRgb = (hex) => {
     const normalized = hex.replace('#', '')
     if (normalized.length === 3) {
@@ -209,12 +213,12 @@
   const normalizeWordCloudStyle = (style) => {
     const next = { ...DEFAULT_WORD_CLOUD_STYLE, ...(style || {}) }
     const minFont = clamp(
-      Math.round(Number(next.minFontSize ?? DEFAULT_WORD_CLOUD_STYLE.minFontSize)),
+      Math.round(toFiniteNumber(next.minFontSize, DEFAULT_WORD_CLOUD_STYLE.minFontSize)),
       14,
       64
     )
     const maxFont = clamp(
-      Math.round(Number(next.maxFontSize ?? DEFAULT_WORD_CLOUD_STYLE.maxFontSize)),
+      Math.round(toFiniteNumber(next.maxFontSize, DEFAULT_WORD_CLOUD_STYLE.maxFontSize)),
       minFont + 2,
       96
     )
@@ -228,18 +232,22 @@
       borderColor: next.borderColor || DEFAULT_WORD_CLOUD_STYLE.borderColor,
       shadowColor: next.shadowColor || DEFAULT_WORD_CLOUD_STYLE.shadowColor,
       shadowOpacity: clamp(
-        Number(next.shadowOpacity ?? DEFAULT_WORD_CLOUD_STYLE.shadowOpacity),
+        toFiniteNumber(next.shadowOpacity, DEFAULT_WORD_CLOUD_STYLE.shadowOpacity),
         0,
         0.8
       ),
       spacingScale: clamp(
-        Number(next.spacingScale ?? DEFAULT_WORD_CLOUD_STYLE.spacingScale),
+        toFiniteNumber(next.spacingScale, DEFAULT_WORD_CLOUD_STYLE.spacingScale),
         0.8,
         1.3
       ),
       minFontSize: minFont,
       maxFontSize: maxFont,
-      maxWords: clamp(Math.round(Number(next.maxWords ?? DEFAULT_WORD_CLOUD_STYLE.maxWords)), 1, 5)
+      maxWords: clamp(
+        Math.round(toFiniteNumber(next.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords)),
+        1,
+        5
+      )
     }
   }
   const badgeFillFor = (style) => lighten(style.accentColor, 0.82)
@@ -904,6 +912,37 @@
       }
     }
     return created
+  }
+  const clearWordCloudWordShapes = async (slide, context) => {
+    const scope = slide.shapes
+    scope.load('items')
+    await context.sync()
+
+    const tagged = scope.items.map((shape) => {
+      const widgetTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WIDGET_TAG)
+      const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+      widgetTag.load('value')
+      roleTag.load('value')
+      return { shape, widgetTag, roleTag }
+    })
+    await context.sync()
+
+    let hasDeletes = false
+    tagged.forEach(({ shape, widgetTag, roleTag }) => {
+      const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
+      const role = !roleTag.isNullObject ? roleTag.value : ''
+      if (
+        hasWidgetTag &&
+        (role === 'word-cloud-bubble' || role === 'word-cloud-label' || role === 'word-cloud-word')
+      ) {
+        shape.delete()
+        hasDeletes = true
+      }
+    })
+
+    if (hasDeletes) {
+      await context.sync()
+    }
   }
 
   const fetchSnapshot = async (binding) => {
@@ -2248,6 +2287,27 @@
         const body = shapeIds.body
           ? info.slide.shapes.getItemOrNullObject(shapeIds.body)
           : null
+
+        if (shadow) shadow.load('id')
+        if (container) container.load(['id', 'left', 'top', 'width', 'height'])
+        if (title) title.load('id')
+        if (subtitle) subtitle.load('id')
+        if (body) body.load('id')
+        await context.sync()
+
+        if (
+          !container ||
+          container.isNullObject ||
+          !title ||
+          title.isNullObject ||
+          !subtitle ||
+          subtitle.isNullObject ||
+          !body ||
+          body.isNullObject
+        ) {
+          continue
+        }
+
         let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
         if (!wordShapeIds.length) {
           const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
@@ -2265,22 +2325,40 @@
             }
           }
         }
+        if (wordShapeIds.length) {
+          const existingWordRefs = wordShapeIds.map((ids) => ({
+            ids,
+            bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
+            label: info.slide.shapes.getItemOrNullObject(ids.label)
+          }))
+          existingWordRefs.forEach((shape) => {
+            shape.bubble.load('id')
+            shape.label.load('id')
+          })
+          await context.sync()
+          wordShapeIds = existingWordRefs
+            .filter((shape) => !shape.bubble.isNullObject && !shape.label.isNullObject)
+            .map((shape) => shape.ids)
+        }
+        const desiredSlots = Math.max(
+          words.length,
+          clamp(toFiniteNumber(style.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords), 1, MAX_WORD_CLOUD_WORDS)
+        )
         const targetWordSlots = Math.max(
           1,
-          Math.min(style.maxWords, MAX_WORD_CLOUD_WORDS, Math.max(words.length, 1))
+          Math.min(MAX_WORD_CLOUD_WORDS, desiredSlots)
         )
-        if (wordShapeIds.length < targetWordSlots) {
-          const missingWordSlots = targetWordSlots - wordShapeIds.length
-          const createdWordShapes = await createWordCloudWordShapeEntries(
+        if (wordShapeIds.length !== targetWordSlots) {
+          await clearWordCloudWordShapes(info.slide, context)
+          wordShapeIds = await createWordCloudWordShapeEntries(
             info.slide,
             context,
             container,
             style,
-            missingWordSlots,
-            wordShapeIds.length
+            targetWordSlots,
+            0
           )
-          if (createdWordShapes.length) {
-            wordShapeIds = [...wordShapeIds, ...createdWordShapes]
+          if (wordShapeIds.length) {
             shapeIds.words = wordShapeIds
             setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
           }
@@ -2293,11 +2371,6 @@
           label: info.slide.shapes.getItemOrNullObject(ids.label)
         }))
 
-        if (shadow) shadow.load('id')
-        if (container) container.load(['id', 'left', 'top', 'width', 'height'])
-        if (title) title.load('id')
-        if (subtitle) subtitle.load('id')
-        if (body) body.load('id')
         wordShapes.forEach((shape) => {
           shape.bubble.load('id')
           shape.label.load('id')

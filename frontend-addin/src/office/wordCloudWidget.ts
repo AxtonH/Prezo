@@ -208,18 +208,22 @@ const setSlideTagIfFits = (slide: PowerPoint.Slide, key: string, value: string) 
   setSlideTag(slide, key, normalizedValue)
   return true
 }
+const toFiniteNumber = (value: unknown, fallback: number) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
 
 const normalizeWordCloudStyle = (
   style?: Partial<WordCloudStyleConfig> | null
 ): WordCloudStyleConfig => {
   const next = { ...DEFAULT_WORD_CLOUD_STYLE, ...(style ?? {}) }
   const minFont = clamp(
-    Math.round(Number(next.minFontSize ?? DEFAULT_WORD_CLOUD_STYLE.minFontSize)),
+    Math.round(toFiniteNumber(next.minFontSize, DEFAULT_WORD_CLOUD_STYLE.minFontSize)),
     14,
     64
   )
   const maxFont = clamp(
-    Math.round(Number(next.maxFontSize ?? DEFAULT_WORD_CLOUD_STYLE.maxFontSize)),
+    Math.round(toFiniteNumber(next.maxFontSize, DEFAULT_WORD_CLOUD_STYLE.maxFontSize)),
     minFont + 2,
     96
   )
@@ -233,19 +237,19 @@ const normalizeWordCloudStyle = (
     borderColor: next.borderColor || DEFAULT_WORD_CLOUD_STYLE.borderColor,
     shadowColor: next.shadowColor || DEFAULT_WORD_CLOUD_STYLE.shadowColor,
     shadowOpacity: clamp(
-      Number(next.shadowOpacity ?? DEFAULT_WORD_CLOUD_STYLE.shadowOpacity),
+      toFiniteNumber(next.shadowOpacity, DEFAULT_WORD_CLOUD_STYLE.shadowOpacity),
       0,
       0.8
     ),
     spacingScale: clamp(
-      Number(next.spacingScale ?? DEFAULT_WORD_CLOUD_STYLE.spacingScale),
+      toFiniteNumber(next.spacingScale, DEFAULT_WORD_CLOUD_STYLE.spacingScale),
       0.8,
       1.3
     ),
     minFontSize: minFont,
     maxFontSize: maxFont,
     maxWords: clamp(
-      Math.round(Number(next.maxWords ?? DEFAULT_WORD_CLOUD_STYLE.maxWords)),
+      Math.round(toFiniteNumber(next.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords)),
       1,
       MAX_WORD_CLOUD_WORDS
     )
@@ -681,6 +685,38 @@ const createWordCloudWordShapeEntries = async (
   }
 
   return created
+}
+
+const clearWordCloudWordShapes = async (slide: PowerPoint.Slide, context: any) => {
+  const scope = slide.shapes
+  scope.load('items')
+  await context.sync()
+
+  const tagged = scope.items.map((shape) => {
+    const widgetTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WIDGET_TAG)
+    const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+    widgetTag.load('value')
+    roleTag.load('value')
+    return { shape, widgetTag, roleTag }
+  })
+  await context.sync()
+
+  let hasDeletes = false
+  tagged.forEach(({ shape, widgetTag, roleTag }) => {
+    const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
+    const role = !roleTag.isNullObject ? roleTag.value : ''
+    if (
+      hasWidgetTag &&
+      (role === 'word-cloud-bubble' || role === 'word-cloud-label' || role === 'word-cloud-word')
+    ) {
+      shape.delete()
+      hasDeletes = true
+    }
+  })
+
+  if (hasDeletes) {
+    await context.sync()
+  }
 }
 
 const recoverShapeIds = async (
@@ -1249,23 +1285,24 @@ export async function updateWordCloudWidget(
             .map((shape) => shape.ids)
         }
 
+        const desiredSlots = Math.max(
+          words.length,
+          clamp(toFiniteNumber(style.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords), 1, MAX_WORD_CLOUD_WORDS)
+        )
         const targetWordSlots = Math.max(
           1,
-          Math.min(MAX_WORD_CLOUD_WORDS, Math.max(words.length, style.maxWords))
+          Math.min(MAX_WORD_CLOUD_WORDS, desiredSlots)
         )
-        if (wordShapeIds.length < targetWordSlots) {
-          const missingWordSlots = targetWordSlots - wordShapeIds.length
-          const createdWordShapes = await createWordCloudWordShapeEntries(
+        if (wordShapeIds.length !== targetWordSlots) {
+          await clearWordCloudWordShapes(info.slide, context)
+          wordShapeIds = await createWordCloudWordShapeEntries(
             info.slide,
             context,
             container,
             style,
-            missingWordSlots,
-            wordShapeIds.length
+            targetWordSlots,
+            0
           )
-          if (createdWordShapes.length > 0) {
-            wordShapeIds = [...wordShapeIds, ...createdWordShapes]
-          }
         }
         if (wordShapeIds.length === 0) {
           continue
