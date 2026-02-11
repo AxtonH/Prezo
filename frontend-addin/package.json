@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "buildTag": "2026-02-11-fix",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && node scripts/copy-public.mjs",
