@@ -598,6 +598,7 @@
     cachedWordCloudShapeType = 'RoundRectangle'
     return cachedWordCloudShapeType
   }
+  const isNonEmptyId = (value) => typeof value === 'string' && value.trim().length > 0
   const normalizeWordShapeEntries = (entries) => {
     if (!Array.isArray(entries)) {
       return []
@@ -609,7 +610,7 @@
         }
         const bubble = entry.bubble
         const label = entry.label
-        if (typeof bubble !== 'string' || typeof label !== 'string') {
+        if (!isNonEmptyId(bubble) || !isNonEmptyId(label)) {
           return null
         }
         return { bubble, label }
@@ -620,17 +621,17 @@
     if (!Array.isArray(entries)) {
       return []
     }
-    return entries.filter((entry) => typeof entry === 'string')
+    return entries.filter((entry) => isNonEmptyId(entry))
   }
   const isValidWordCloudShapeIds = (value) => {
     if (!value || typeof value !== 'object') {
       return false
     }
     return (
-      typeof value.container === 'string' &&
-      typeof value.title === 'string' &&
-      typeof value.subtitle === 'string' &&
-      typeof value.body === 'string'
+      isNonEmptyId(value.container) &&
+      isNonEmptyId(value.title) &&
+      isNonEmptyId(value.subtitle) &&
+      isNonEmptyId(value.body)
     )
   }
   const upgradeLegacyWordShapeEntries = async (slide, context, legacyIds, style) => {
@@ -855,10 +856,10 @@
     count,
     startIndex = 0
   ) => {
-    if (!container || container.isNullObject) {
+    if (!container) {
       return []
     }
-    container.load(['left', 'top', 'width', 'height'])
+    container.load(['id', 'left', 'top', 'width', 'height'])
     await context.sync()
     if (container.isNullObject) {
       return []

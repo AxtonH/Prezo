@@ -39,16 +39,19 @@ type WordCloudShapeIds = {
   }>
 }
 
+const isNonEmptyId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0
+
 const isValidWordCloudShapeIds = (value: unknown): value is WordCloudShapeIds => {
   if (!value || typeof value !== 'object') {
     return false
   }
   const candidate = value as Partial<WordCloudShapeIds>
   return (
-    typeof candidate.container === 'string' &&
-    typeof candidate.title === 'string' &&
-    typeof candidate.subtitle === 'string' &&
-    typeof candidate.body === 'string'
+    isNonEmptyId(candidate.container) &&
+    isNonEmptyId(candidate.title) &&
+    isNonEmptyId(candidate.subtitle) &&
+    isNonEmptyId(candidate.body)
   )
 }
 
@@ -532,7 +535,7 @@ const normalizeWordShapeEntries = (
       }
       const bubble = (entry as { bubble?: unknown }).bubble
       const label = (entry as { label?: unknown }).label
-      if (typeof bubble !== 'string' || typeof label !== 'string') {
+      if (!isNonEmptyId(bubble) || !isNonEmptyId(label)) {
         return null
       }
       return { bubble, label }
@@ -544,7 +547,7 @@ const extractLegacyWordShapeIds = (entries: unknown): string[] => {
   if (!Array.isArray(entries)) {
     return []
   }
-  return entries.filter((entry): entry is string => typeof entry === 'string')
+  return entries.filter((entry): entry is string => isNonEmptyId(entry))
 }
 
 const upgradeLegacyWordShapeEntries = async (
@@ -630,10 +633,7 @@ const createWordCloudWordShapeEntries = async (
   count: number,
   startIndex = 0
 ): Promise<Array<{ bubble: string; label: string }>> => {
-  if (container.isNullObject) {
-    return []
-  }
-  container.load(['left', 'top', 'width', 'height'])
+  container.load(['id', 'left', 'top', 'width', 'height'])
   await context.sync()
   if (container.isNullObject) {
     return []
