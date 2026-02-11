@@ -1208,12 +1208,12 @@ export async function updateWordCloudWidget(
         const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
 
         if (shadow) {
-          shadow.load('isNullObject')
+          shadow.load('id')
         }
-        container.load(['isNullObject', 'left', 'top', 'width', 'height'])
-        title.load('isNullObject')
-        subtitle.load('isNullObject')
-        body.load('isNullObject')
+        container.load(['id', 'left', 'top', 'width', 'height'])
+        title.load('id')
+        subtitle.load('id')
+        body.load('id')
         await context.sync()
 
         if (container.isNullObject || title.isNullObject || subtitle.isNullObject || body.isNullObject) {
@@ -1240,8 +1240,8 @@ export async function updateWordCloudWidget(
             label: info.slide.shapes.getItemOrNullObject(ids.label)
           }))
           existingWordRefs.forEach((shape) => {
-            shape.bubble.load('isNullObject')
-            shape.label.load('isNullObject')
+            shape.bubble.load('id')
+            shape.label.load('id')
           })
           await context.sync()
           wordShapeIds = existingWordRefs
@@ -1279,8 +1279,8 @@ export async function updateWordCloudWidget(
           label: info.slide.shapes.getItemOrNullObject(ids.label)
         }))
         wordShapes.forEach((shape) => {
-          shape.bubble.load('isNullObject')
-          shape.label.load('isNullObject')
+          shape.bubble.load('id')
+          shape.label.load('id')
         })
         await context.sync()
 
