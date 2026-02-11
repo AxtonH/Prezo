@@ -622,6 +622,17 @@
     }
     return entries.filter((entry) => typeof entry === 'string')
   }
+  const isValidWordCloudShapeIds = (value) => {
+    if (!value || typeof value !== 'object') {
+      return false
+    }
+    return (
+      typeof value.container === 'string' &&
+      typeof value.title === 'string' &&
+      typeof value.subtitle === 'string' &&
+      typeof value.body === 'string'
+    )
+  }
   const upgradeLegacyWordShapeEntries = async (slide, context, legacyIds, style) => {
     const limited = legacyIds.slice(0, MAX_WORD_CLOUD_WORDS)
     if (!limited.length) {
@@ -2138,23 +2149,19 @@
         const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
         const hasSessionMatch = sessionTagValue === normalizedSessionId
 
-        let shapeIds = null
         let recovered = false
-        if (!info.shapeTag.isNullObject && info.shapeTag.value) {
+        let shapeIds = await recoverWordCloudShapeIdsFromTags(info.slide, context)
+        if (shapeIds) {
+          recovered = true
+          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+        } else if (!info.shapeTag.isNullObject && info.shapeTag.value) {
           try {
             shapeIds = JSON.parse(info.shapeTag.value)
           } catch {
             shapeIds = null
           }
         }
-        if (!shapeIds) {
-          shapeIds = await recoverWordCloudShapeIdsFromTags(info.slide, context)
-          recovered = Boolean(shapeIds)
-          if (shapeIds) {
-            setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-          }
-        }
-        if (!shapeIds) {
+        if (!shapeIds || !isValidWordCloudShapeIds(shapeIds)) {
           continue
         }
 

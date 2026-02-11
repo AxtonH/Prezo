@@ -39,6 +39,19 @@ type WordCloudShapeIds = {
   }>
 }
 
+const isValidWordCloudShapeIds = (value: unknown): value is WordCloudShapeIds => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<WordCloudShapeIds>
+  return (
+    typeof candidate.container === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.subtitle === 'string' &&
+    typeof candidate.body === 'string'
+  )
+}
+
 type WordCloudStyleConfig = {
   fontFamily: string | null
   textColor: string
@@ -1103,8 +1116,12 @@ export async function updateWordCloudWidget(
       const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
       const hasSessionMatch = sessionTagValue === normalizedSessionId
 
-      let shapeIds: WordCloudShapeIds | null = null
-      if (!info.shapeTag.isNullObject && info.shapeTag.value) {
+      let recovered = false
+      let shapeIds: WordCloudShapeIds | null = await recoverShapeIds(info.slide, context)
+      if (shapeIds) {
+        recovered = true
+        setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+      } else if (!info.shapeTag.isNullObject && info.shapeTag.value) {
         try {
           shapeIds = JSON.parse(info.shapeTag.value) as WordCloudShapeIds
         } catch {
@@ -1112,16 +1129,7 @@ export async function updateWordCloudWidget(
         }
       }
 
-      let recovered = false
-      if (!shapeIds) {
-        shapeIds = await recoverShapeIds(info.slide, context)
-        recovered = Boolean(shapeIds)
-        if (shapeIds) {
-          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-        }
-      }
-
-      if (!shapeIds) {
+      if (!shapeIds || !isValidWordCloudShapeIds(shapeIds)) {
         continue
       }
 
