@@ -688,6 +688,144 @@
       await context.sync()
     }
   }
+  const recoverWordCloudShapeIdsFromTags = async (slide, context) => {
+    const scope = slide.shapes
+    scope.load('items')
+    await context.sync()
+
+    const tagged = scope.items.map((shape) => {
+      const widgetTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WIDGET_TAG)
+      const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+      const indexTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WORD_INDEX_TAG)
+      widgetTag.load('value')
+      roleTag.load('value')
+      indexTag.load('value')
+      shape.load('id')
+      return { shape, widgetTag, roleTag, indexTag }
+    })
+
+    await context.sync()
+
+    let shadow = null
+    let container = null
+    let title = null
+    let subtitle = null
+    let body = null
+    const wordsByIndex = new Map()
+
+    tagged.forEach(({ shape, widgetTag, roleTag, indexTag }) => {
+      const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
+      const role = !roleTag.isNullObject ? roleTag.value : null
+      if (!hasWidgetTag && !role) {
+        return
+      }
+      switch (role) {
+        case 'word-cloud-shadow':
+          shadow = shape
+          break
+        case 'word-cloud-container':
+          container = shape
+          break
+        case 'word-cloud-title':
+          title = shape
+          break
+        case 'word-cloud-subtitle':
+          subtitle = shape
+          break
+        case 'word-cloud-body':
+          body = shape
+          break
+        case 'word-cloud-bubble': {
+          const parsedIndex = Number.parseInt(indexTag.isNullObject ? '' : indexTag.value, 10)
+          if (!Number.isFinite(parsedIndex)) {
+            break
+          }
+          const entry = wordsByIndex.get(parsedIndex) || {}
+          entry.bubble = shape
+          wordsByIndex.set(parsedIndex, entry)
+          break
+        }
+        case 'word-cloud-label': {
+          const parsedIndex = Number.parseInt(indexTag.isNullObject ? '' : indexTag.value, 10)
+          if (!Number.isFinite(parsedIndex)) {
+            break
+          }
+          const entry = wordsByIndex.get(parsedIndex) || {}
+          entry.label = shape
+          wordsByIndex.set(parsedIndex, entry)
+          break
+        }
+        default:
+          break
+      }
+    })
+
+    if (!container || !title || !subtitle || !body) {
+      return null
+    }
+
+    const words = [...wordsByIndex.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, entry]) => entry)
+      .filter((entry) => entry.bubble && entry.label)
+      .slice(0, MAX_WORD_CLOUD_WORDS)
+      .map((entry) => ({
+        bubble: entry.bubble.id,
+        label: entry.label.id
+      }))
+
+    return {
+      shadow: shadow ? shadow.id : undefined,
+      container: container.id,
+      title: title.id,
+      subtitle: subtitle.id,
+      body: body.id,
+      words
+    }
+  }
+  const createWordCloudWordShapeEntries = async (slide, context, container, style, count) => {
+    if (!container || container.isNullObject) {
+      return []
+    }
+    container.load(['left', 'top', 'width', 'height'])
+    await context.sync()
+    if (container.isNullObject) {
+      return []
+    }
+    const widgetRect = {
+      left: container.left,
+      top: container.top,
+      width: container.width,
+      height: container.height
+    }
+    const areaRect = wordAreaRect(widgetRect, style.spacingScale)
+    const total = Math.max(1, Math.min(count, MAX_WORD_CLOUD_WORDS))
+    const created = []
+    for (let index = 0; index < total; index += 1) {
+      const anchor = WORD_CLOUD_ANCHORS[index] || WORD_CLOUD_ANCHORS[WORD_CLOUD_ANCHORS.length - 1]
+      const frame = baseWordFrame(areaRect, anchor)
+      try {
+        const bubble = slide.shapes.addTextBox('', frame)
+        const label = slide.shapes.addTextBox('', frame)
+        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+        bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+        label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        bubble.load('id')
+        label.load('id')
+        await context.sync()
+        created.push({
+          bubble: bubble.id,
+          label: label.id
+        })
+      } catch (error) {
+        console.warn('Failed to create word cloud placeholder slot', { index, error })
+      }
+    }
+    return created
+  }
 
   const fetchSnapshot = async (binding) => {
     const apiBaseUrl = resolveApiBaseUrl(binding)
@@ -1985,21 +2123,28 @@
         const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
         const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
         const hasSessionMatch = sessionTagValue === normalizedSessionId
-        if (info.shapeTag.isNullObject || !info.shapeTag.value) {
-          continue
-        }
 
         let shapeIds = null
-        try {
-          shapeIds = JSON.parse(info.shapeTag.value)
-        } catch {
-          shapeIds = null
+        let recovered = false
+        if (!info.shapeTag.isNullObject && info.shapeTag.value) {
+          try {
+            shapeIds = JSON.parse(info.shapeTag.value)
+          } catch {
+            shapeIds = null
+          }
+        }
+        if (!shapeIds) {
+          shapeIds = await recoverWordCloudShapeIdsFromTags(info.slide, context)
+          recovered = Boolean(shapeIds)
+          if (shapeIds) {
+            setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+          }
         }
         if (!shapeIds) {
           continue
         }
 
-        const shouldRebind = isPending || !hasSessionMatch
+        const shouldRebind = isPending || !hasSessionMatch || recovered
 
         let style = DEFAULT_WORD_CLOUD_STYLE
         let applyStyle = false
@@ -2043,6 +2188,20 @@
               setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
               await context.sync()
             }
+          }
+        }
+        if (!wordShapeIds.length) {
+          const createdWordShapes = await createWordCloudWordShapeEntries(
+            info.slide,
+            context,
+            container,
+            style,
+            style.maxWords
+          )
+          if (createdWordShapes.length) {
+            shapeIds.words = createdWordShapes
+            wordShapeIds = createdWordShapes
+            setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
           }
         }
         if (!wordShapeIds.length) {
@@ -2363,31 +2522,62 @@
         }
 
         if (!wordShapes.length) {
-          const fallbackFrame = {
-            left: left + padding,
-            top: top + 124 * scale,
-            width: Math.max(80, width - padding * 2),
-            height: Math.max(34, height * 0.2)
+          try {
+            const fallbackFrame = {
+              left: left + padding,
+              top: top + 124 * scale,
+              width: Math.max(80, width - padding * 2),
+              height: Math.max(34, height * 0.2)
+            }
+            const bubble = slide.shapes.addTextBox('', fallbackFrame)
+            const label = slide.shapes.addTextBox('', fallbackFrame)
+            bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+            bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+            bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, '0')
+            label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+            label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+            label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, '0')
+            bubble.load('id')
+            label.load('id')
+            stage = 'sync fallback word shape'
+            await context.sync()
+            wordShapes.push({ bubble, label })
+          } catch (fallbackError) {
+            console.warn('Word cloud fallback word shape failed', fallbackError)
           }
-          const bubble = slide.shapes.addGeometricShape('RoundRectangle', fallbackFrame)
-          const label = slide.shapes.addTextBox('', fallbackFrame)
-          setWordShapeHidden({ bubble, label }, areaRect, WORD_CLOUD_ANCHORS[0], style)
-          bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-          bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-          bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, '0')
-          label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-          label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-          label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, '0')
-          bubble.load('id')
-          label.load('id')
-          stage = 'sync fallback word shape'
+        }
+
+        let shapeIds = null
+        try {
+          stage = 'sync scaffold ids'
+          shadow.load('id')
+          container.load('id')
+          title.load('id')
+          subtitle.load('id')
+          body.load('id')
+          wordShapes.forEach((shape) => {
+            shape.bubble.load('id')
+            shape.label.load('id')
+          })
           await context.sync()
-          wordShapes.push({ bubble, label })
+          shapeIds = {
+            shadow: shadow.id,
+            container: container.id,
+            title: title.id,
+            subtitle: subtitle.id,
+            body: body.id,
+            words: wordShapes.map((shape) => ({
+              bubble: shape.bubble.id,
+              label: shape.label.id
+            }))
+          }
+        } catch (shapeIdError) {
+          console.warn('Word cloud shape id sync failed during insert', shapeIdError)
         }
 
         const serializedStyle = JSON.stringify(style)
         const serializedState = JSON.stringify(EMPTY_WORD_CLOUD_STATE)
-        const serializedShapeIds = ''
+        const serializedShapeIds = shapeIds ? JSON.stringify(shapeIds) : ''
         stage = `persist tags style=${serializedStyle.length} state=${serializedState.length} shapes=${serializedShapeIds.length}`
 
         try {
