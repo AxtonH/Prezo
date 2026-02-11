@@ -235,8 +235,6 @@ export async function insertWordCloudWidget(
         height: 30
       })
       label.textFrame.textRange.text = ''
-      label.textFrame.horizontalAlignment = PowerPoint.TextHorizontalAlignment.center
-      label.textFrame.verticalAlignment = PowerPoint.TextVerticalAlignment.middle
       label.fill.transparency = 1
       label.lineFormat.visible = false
       applyFont(label.textFrame.textRange, style, { size: 18, color: style.textColor })
