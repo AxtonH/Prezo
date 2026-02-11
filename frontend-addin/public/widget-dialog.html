@@ -95,6 +95,9 @@
       .card-icon.poll {
         background: linear-gradient(135deg, #0f766e, #14b8a6);
       }
+      .card-icon.word-cloud {
+        background: linear-gradient(135deg, #0f172a, #2563eb);
+      }
       .card-actions {
         display: flex;
         gap: 8px;
@@ -305,6 +308,18 @@
         border-radius: inherit;
         background: var(--accent, #2563eb);
       }
+      .preview-poll-fill.fill-72 {
+        --fill: 0.72;
+      }
+      .preview-poll-fill.fill-44 {
+        --fill: 0.44;
+      }
+      .preview-poll-fill.fill-18 {
+        --fill: 0.18;
+      }
+      .preview-poll-fill.fill-08 {
+        --fill: 0.08;
+      }
       .preview-vertical .preview-poll-options {
         flex-direction: row;
         align-items: flex-end;
@@ -348,6 +363,21 @@
         line-height: 1;
         font-weight: 600;
       }
+      .preview-word.size-16 {
+        font-size: 16px;
+      }
+      .preview-word.size-18 {
+        font-size: 18px;
+      }
+      .preview-word.size-20 {
+        font-size: 20px;
+      }
+      .preview-word.size-24 {
+        font-size: 24px;
+      }
+      .preview-word.size-28 {
+        font-size: 28px;
+      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script src="/widget-dialog.js" defer></script>
@@ -387,7 +417,7 @@
           </div>
           <div class="card">
             <div class="card-header">
-              <div class="card-icon" style="background: linear-gradient(135deg, #0f172a, #2563eb)">WC</div>
+              <div class="card-icon word-cloud">WC</div>
               <div>
                 <div class="card-title">Word cloud widget</div>
                 <p class="muted">Shows live word growth based on audience votes.</p>
@@ -519,25 +549,25 @@
                 <div class="preview-poll-option">
                   <div class="preview-poll-label">Growth strategy</div>
                   <div class="preview-poll-bar">
-                    <div class="preview-poll-fill" style="--fill: 0.72"></div>
+                    <div class="preview-poll-fill fill-72"></div>
                   </div>
                 </div>
                 <div class="preview-poll-option">
                   <div class="preview-poll-label">Product roadmap</div>
                   <div class="preview-poll-bar">
-                    <div class="preview-poll-fill" style="--fill: 0.44"></div>
+                    <div class="preview-poll-fill fill-44"></div>
                   </div>
                 </div>
                 <div class="preview-poll-option">
                   <div class="preview-poll-label">Team updates</div>
                   <div class="preview-poll-bar">
-                    <div class="preview-poll-fill" style="--fill: 0.18"></div>
+                    <div class="preview-poll-fill fill-18"></div>
                   </div>
                 </div>
                 <div class="preview-poll-option">
                   <div class="preview-poll-label">Q&amp;A tips</div>
                   <div class="preview-poll-bar">
-                    <div class="preview-poll-fill" style="--fill: 0.08"></div>
+                    <div class="preview-poll-fill fill-08"></div>
                   </div>
                 </div>
               </div>
@@ -638,11 +668,11 @@
                 <div class="preview-poll-question">Audience votes make words grow.</div>
               </div>
               <div class="preview-word-cloud">
-                <span class="preview-word" style="font-size: 24px">Launch</span>
-                <span class="preview-word" style="font-size: 18px">Quality</span>
-                <span class="preview-word" style="font-size: 28px">Momentum</span>
-                <span class="preview-word" style="font-size: 16px">Clarity</span>
-                <span class="preview-word" style="font-size: 20px">Ownership</span>
+                <span class="preview-word size-24">Launch</span>
+                <span class="preview-word size-18">Quality</span>
+                <span class="preview-word size-28">Momentum</span>
+                <span class="preview-word size-16">Clarity</span>
+                <span class="preview-word size-20">Ownership</span>
               </div>
             </div>
           </div>
