@@ -610,15 +610,19 @@ const clearExistingWordCloudShapes = async (slide: PowerPoint.Slide, context: an
 
   const taggedShapes = scope.items.map((shape) => {
     const widgetTag = shape.tags.getItemOrNullObject(WORD_CLOUD_WIDGET_TAG)
+    const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
     widgetTag.load('value')
-    return { shape, widgetTag }
+    roleTag.load('value')
+    return { shape, widgetTag, roleTag }
   })
 
   await context.sync()
 
   let hasDeletes = false
-  taggedShapes.forEach(({ shape, widgetTag }) => {
-    if (!widgetTag.isNullObject && widgetTag.value === 'true') {
+  taggedShapes.forEach(({ shape, widgetTag, roleTag }) => {
+    const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
+    const role = !roleTag.isNullObject ? roleTag.value : ''
+    if (hasWidgetTag || role.startsWith('word-cloud-')) {
       shape.delete()
       hasDeletes = true
     }
@@ -706,7 +710,7 @@ const clearWordCloudWordShapes = async (slide: PowerPoint.Slide, context: any) =
     const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
     const role = !roleTag.isNullObject ? roleTag.value : ''
     if (
-      hasWidgetTag &&
+      (hasWidgetTag || role.startsWith('word-cloud-')) &&
       (role === 'word-cloud-bubble' || role === 'word-cloud-label' || role === 'word-cloud-word')
     ) {
       shape.delete()
@@ -1378,6 +1382,13 @@ const runWordCloudWidgetUpdate = async (
         const previousRatios =
           previousState.cloudId === (cloud?.id ?? null) ? previousState.ratios : {}
         const visibleWords = Math.min(words.length, liveWordShapes.length)
+        if (visibleWords < words.length) {
+          console.warn('Word cloud has fewer live shape slots than words', {
+            words: words.length,
+            slots: liveWordShapes.length,
+            labels: words.map((word) => word.label)
+          })
+        }
 
         const plans = liveWordShapes.map((pair, index) => {
           const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
