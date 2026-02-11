@@ -213,39 +213,45 @@ export async function insertWordCloudWidget(
     const wordShapes: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }> = []
 
     // Step 1: Create all shapes with just tags (no property setting)
-    for (let i = 0; i < MAX_WORD_CLOUD_WORDS; i++) {
-      const pos = getWordPosition(i, wordArea.width, wordArea.height)
-      console.log(`Creating bubble ${i}`)
+    try {
+      for (let i = 0; i < MAX_WORD_CLOUD_WORDS; i++) {
+        const pos = getWordPosition(i, wordArea.width, wordArea.height)
+        console.log(`Creating bubble ${i} at:`, { x: wordArea.left + pos.x, y: wordArea.top + pos.y })
 
-      // Create bubble - just tags
-      const bubble = slide.shapes.addGeometricShape('RoundRectangle', {
-        left: wordArea.left + pos.x - 60,
-        top: wordArea.top + pos.y - 25,
-        width: 120,
-        height: 50
-      })
-      bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      bubble.tags.add('WordIndex', String(i))
-      bubble.load('id')
+        // Create bubble - just tags
+        const bubble = slide.shapes.addGeometricShape('RoundRectangle', {
+          left: wordArea.left + pos.x - 60,
+          top: wordArea.top + pos.y - 25,
+          width: 120,
+          height: 50
+        })
+        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        bubble.tags.add('WordIndex', String(i))
+        bubble.load('id')
 
-      // Create label - just tags
-      const label = slide.shapes.addTextBox('', {
-        left: wordArea.left + pos.x - 50,
-        top: wordArea.top + pos.y - 15,
-        width: 100,
-        height: 30
-      })
-      label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      label.tags.add('WordIndex', String(i))
-      label.load('id')
+        // Create label - just tags
+        const label = slide.shapes.addTextBox('', {
+          left: wordArea.left + pos.x - 50,
+          top: wordArea.top + pos.y - 15,
+          width: 100,
+          height: 30
+        })
+        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        label.tags.add('WordIndex', String(i))
+        label.load('id')
 
-      wordShapes.push({ bubble, label })
+        wordShapes.push({ bubble, label })
+        console.log(`Bubble ${i} added to array, total: ${wordShapes.length}`)
+      }
+    } catch (error) {
+      console.error('Error creating word bubbles:', error)
+      throw error
     }
 
     // Step 2: Sync to create shapes in PowerPoint
     console.log('Syncing word bubbles, count:', wordShapes.length)
     await context.sync()
-    console.log('Word bubbles synced, IDs loaded')
+    console.log('Word bubbles synced successfully, IDs:', wordShapes.map(ws => ({ bubble: ws.bubble.id, label: ws.label.id })))
 
     // Step 3: Set properties after sync
     for (let i = 0; i < wordShapes.length; i++) {
@@ -270,10 +276,17 @@ export async function insertWordCloudWidget(
       words: wordShapes.map((ws) => ({ bubble: ws.bubble.id, label: ws.label.id }))
     }
 
+    console.log('Saving shape IDs to slide tags:', {
+      wordsCount: shapeIds.words.length,
+      sessionId: sessionId || '',
+      shapeIds
+    })
+
     slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
     slide.tags.add(WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
     slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId || '')
     await context.sync()
+    console.log('Word cloud widget inserted successfully!')
   })
 }
 
