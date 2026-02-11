@@ -614,7 +614,8 @@ const createWordCloudWordShapeEntries = async (
   context: any,
   container: PowerPoint.Shape,
   style: WordCloudStyleConfig,
-  count: number
+  count: number,
+  startIndex = 0
 ): Promise<Array<{ bubble: string; label: string }>> => {
   if (container.isNullObject) {
     return []
@@ -632,10 +633,17 @@ const createWordCloudWordShapeEntries = async (
     height: container.height
   }
   const areaRect = wordAreaRect(widgetRect, style.spacingScale)
-  const total = Math.max(1, Math.min(count, MAX_WORD_CLOUD_WORDS))
+  const total = Math.max(0, Math.min(count, MAX_WORD_CLOUD_WORDS))
+  if (total === 0) {
+    return []
+  }
   const created: Array<{ bubble: string; label: string }> = []
 
-  for (let index = 0; index < total; index += 1) {
+  for (let offset = 0; offset < total; offset += 1) {
+    const index = startIndex + offset
+    if (index >= MAX_WORD_CLOUD_WORDS) {
+      break
+    }
     const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
     const frame = baseWordFrame(areaRect, anchor)
     try {
@@ -1156,17 +1164,23 @@ export async function updateWordCloudWidget(
           }
         }
       }
-      if (wordShapeIds.length === 0) {
+      const targetWordSlots = Math.max(
+        1,
+        Math.min(style.maxWords, MAX_WORD_CLOUD_WORDS, Math.max(words.length, 1))
+      )
+      if (wordShapeIds.length < targetWordSlots) {
+        const missingWordSlots = targetWordSlots - wordShapeIds.length
         const createdWordShapes = await createWordCloudWordShapeEntries(
           info.slide,
           context,
           container,
           style,
-          style.maxWords
+          missingWordSlots,
+          wordShapeIds.length
         )
         if (createdWordShapes.length > 0) {
-          shapeIds.words = createdWordShapes
-          wordShapeIds = createdWordShapes
+          wordShapeIds = [...wordShapeIds, ...createdWordShapes]
+          shapeIds.words = wordShapeIds
           setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
         }
       }

@@ -5,7 +5,7 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
   <Id>c7d3b1a7-3c72-4e83-9a6f-7b4b9c0f5e41</Id>
-  <Version>1.0.0.1</Version>
+  <Version>1.0.0.2</Version>
   <ProviderName>Prezo</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Prezo Host" />
@@ -87,7 +87,7 @@
       </bt:Images>
       <bt:Urls>
         <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
-        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/function-file/?v=wcfix-20260210-4" />
+        <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-frontend-addin-production.up.railway.app/function-file/?v=wcfix-20260211-1" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="Prezo.GroupLabel" DefaultValue="Prezo" />
