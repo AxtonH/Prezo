@@ -718,6 +718,12 @@ const createWordCloudWordShapeEntries = async (
   if (shapePairs.length > 0) {
     try {
       await context.sync()
+      // Load shape properties before modifying them
+      shapePairs.forEach((pair) => {
+        pair.bubble.load(['left', 'top', 'width', 'height', 'fill', 'lineFormat'])
+        pair.label.load(['left', 'top', 'width', 'height', 'fill', 'lineFormat', 'textFrame'])
+      })
+      await context.sync()
       // After sync, set properties and collect the IDs
       shapePairs.forEach((pair) => {
         setWordShapeHidden({ bubble: pair.bubble, label: pair.label }, areaRect, pair.anchor, style)
@@ -1141,6 +1147,12 @@ export async function insertWordCloudWidget(
 
     // Sync all shapes at once
     if (shapePairs.length > 0) {
+      await context.sync()
+      // Load shape properties before modifying them
+      shapePairs.forEach((pair) => {
+        pair.bubble.load(['left', 'top', 'width', 'height', 'fill', 'lineFormat'])
+        pair.label.load(['left', 'top', 'width', 'height', 'fill', 'lineFormat', 'textFrame'])
+      })
       await context.sync()
       // After sync, set properties on all shapes
       shapePairs.forEach((pair) => {
