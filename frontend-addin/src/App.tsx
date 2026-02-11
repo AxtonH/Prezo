@@ -257,9 +257,6 @@ export default function App() {
     const next = upsertById(upsertById(closed, created), opened)
     latestWordCloudsRef.current = next
     setWordClouds(next)
-    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
-      console.warn('Failed to refresh word cloud widget after create', err)
-    )
     setShowWordCloud(true)
   }
 
@@ -277,9 +274,6 @@ export default function App() {
     const next = upsertById(closed, opened)
     latestWordCloudsRef.current = next
     setWordClouds(next)
-    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
-      console.warn('Failed to refresh word cloud widget after open', err)
-    )
   }
 
   const closeWordCloud = async (wordCloudId: string) => {
@@ -290,9 +284,6 @@ export default function App() {
     const next = upsertById(latestWordCloudsRef.current, closed)
     latestWordCloudsRef.current = next
     setWordClouds(next)
-    void updateWordCloudWidget(session.id, session.code, next).catch((err) =>
-      console.warn('Failed to refresh word cloud widget after close', err)
-    )
   }
 
   const pendingQuestions = useMemo(

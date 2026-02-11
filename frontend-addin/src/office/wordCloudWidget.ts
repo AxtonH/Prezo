@@ -1162,11 +1162,11 @@ export async function insertWordCloudWidget(
   })
 }
 
-export async function updateWordCloudWidget(
+const runWordCloudWidgetUpdate = async (
   sessionId: string,
   code: string | null | undefined,
   wordClouds: WordCloud[]
-) {
+) => {
   ensurePowerPoint()
   const normalizedSessionId = normalizeSessionId(sessionId)
 
@@ -1196,7 +1196,9 @@ export async function updateWordCloudWidget(
     await context.sync()
 
     for (const info of slideInfos) {
+      let stage = 'start'
       try {
+        stage = 'read slide tags'
         const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
         const sessionTagValue = !info.sessionTag.isNullObject
           ? normalizeSessionId(info.sessionTag.value)
@@ -1204,6 +1206,7 @@ export async function updateWordCloudWidget(
         const hasSessionMatch = sessionTagValue === normalizedSessionId
 
         let recovered = false
+        stage = 'recover shape ids'
         let shapeIds: WordCloudShapeIds | null = await recoverShapeIds(info.slide, context)
         if (shapeIds) {
           recovered = true
@@ -1225,6 +1228,7 @@ export async function updateWordCloudWidget(
 
         let style = DEFAULT_WORD_CLOUD_STYLE
         let applyStyle = false
+        stage = 'parse style'
         if (!info.styleTag.isNullObject && info.styleTag.value) {
           try {
             const parsed = JSON.parse(info.styleTag.value) as Partial<WordCloudStyleConfig>
@@ -1243,6 +1247,7 @@ export async function updateWordCloudWidget(
         const subtitle = info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
         const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
 
+        stage = 'load scaffold shapes'
         if (shadow) {
           shadow.load('id')
         }
@@ -1256,6 +1261,7 @@ export async function updateWordCloudWidget(
           continue
         }
 
+        stage = 'resolve word slots'
         let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
         if (wordShapeIds.length === 0) {
           const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
@@ -1294,6 +1300,7 @@ export async function updateWordCloudWidget(
           Math.min(MAX_WORD_CLOUD_WORDS, desiredSlots)
         )
         if (wordShapeIds.length !== targetWordSlots) {
+          stage = 'rebuild word slots'
           await clearWordCloudWordShapes(info.slide, context)
           wordShapeIds = await createWordCloudWordShapeEntries(
             info.slide,
@@ -1315,6 +1322,7 @@ export async function updateWordCloudWidget(
           bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
           label: info.slide.shapes.getItemOrNullObject(ids.label)
         }))
+        stage = 'load word shapes'
         wordShapes.forEach((shape) => {
           shape.bubble.load('id')
           shape.label.load('id')
@@ -1329,6 +1337,7 @@ export async function updateWordCloudWidget(
         }
 
         if (applyStyle) {
+          stage = 'apply style'
           if (shadow && !shadow.isNullObject) {
             shadow.fill.setSolidColor(style.shadowColor)
             shadow.fill.transparency = style.shadowOpacity
@@ -1353,6 +1362,7 @@ export async function updateWordCloudWidget(
         subtitle.textFrame.textRange.text = buildWordCloudSubtitle(cloud)
         body.textFrame.textRange.text = buildWordCloudMeta(cloud)
 
+        stage = 'render words'
         const widgetRect: WidgetRect = {
           left: container.left,
           top: container.top,
@@ -1431,10 +1441,24 @@ export async function updateWordCloudWidget(
           setSlideTag(info.slide, WORD_CLOUD_PENDING_TAG, 'false')
         }
       } catch (error) {
-        console.warn('Word cloud slide update skipped due to shape error', error)
+        console.warn(`Word cloud slide update skipped at stage: ${stage}`, error)
       }
     }
 
     await context.sync()
   })
+}
+
+let wordCloudUpdateQueue: Promise<void> = Promise.resolve()
+
+export async function updateWordCloudWidget(
+  sessionId: string,
+  code: string | null | undefined,
+  wordClouds: WordCloud[]
+) {
+  const normalizedWordClouds = [...wordClouds]
+  const execute = () => runWordCloudWidgetUpdate(sessionId, code, normalizedWordClouds)
+  const next = wordCloudUpdateQueue.then(execute, execute)
+  wordCloudUpdateQueue = next.catch(() => undefined)
+  return next
 }
