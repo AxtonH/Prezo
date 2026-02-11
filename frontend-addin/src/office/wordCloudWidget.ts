@@ -1291,13 +1291,15 @@ const runWordCloudWidgetUpdate = async (
             .map((shape) => shape.ids)
         }
 
-        const desiredSlots = Math.max(
-          words.length,
-          clamp(toFiniteNumber(style.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords), 1, MAX_WORD_CLOUD_WORDS)
-        )
         const targetWordSlots = Math.max(
           1,
-          Math.min(MAX_WORD_CLOUD_WORDS, desiredSlots)
+          words.length > 0
+            ? Math.min(MAX_WORD_CLOUD_WORDS, words.length)
+            : clamp(
+                toFiniteNumber(style.maxWords, DEFAULT_WORD_CLOUD_STYLE.maxWords),
+                1,
+                MAX_WORD_CLOUD_WORDS
+              )
         )
         if (wordShapeIds.length !== targetWordSlots) {
           stage = 'rebuild word slots'
@@ -1407,33 +1409,83 @@ const runWordCloudWidgetUpdate = async (
           (plan) => plan.word && Math.abs(plan.startRatio - plan.targetRatio) > 0.035
         )
         const frames = shouldAnimate ? 5 : 1
+        let renderedWordCount = visibleWords
 
-        for (let frame = 1; frame <= frames; frame += 1) {
-          const progress = frame / frames
-          const eased = shouldAnimate ? easeOutCubic(progress) : 1
-          plans.forEach((plan) => {
-            if (!plan.word) {
-              setWordShapeHidden(plan.pair, areaRect, plan.anchor, style)
-              return
+        try {
+          for (let frame = 1; frame <= frames; frame += 1) {
+            const progress = frame / frames
+            const eased = shouldAnimate ? easeOutCubic(progress) : 1
+            plans.forEach((plan) => {
+              if (!plan.word) {
+                setWordShapeHidden(plan.pair, areaRect, plan.anchor, style)
+                return
+              }
+              const ratio = interpolate(plan.startRatio, plan.targetRatio, eased)
+              renderWordShape(
+                plan.pair,
+                plan.word.label,
+                ratio,
+                style,
+                areaRect,
+                plan.anchor,
+                plan.index
+              )
+            })
+            await context.sync()
+            if (shouldAnimate && frame < frames) {
+              await wait(50)
             }
-            const ratio = interpolate(plan.startRatio, plan.targetRatio, eased)
-            renderWordShape(
-              plan.pair,
-              plan.word.label,
-              ratio,
-              style,
-              areaRect,
-              plan.anchor,
-              plan.index
-            )
+          }
+        } catch (renderError) {
+          stage = 'render words retry'
+          console.warn('Word cloud render failed, rebuilding slots and retrying once', renderError)
+          await clearWordCloudWordShapes(info.slide, context)
+          wordShapeIds = await createWordCloudWordShapeEntries(
+            info.slide,
+            context,
+            container,
+            style,
+            targetWordSlots,
+            0
+          )
+          if (wordShapeIds.length === 0) {
+            throw renderError
+          }
+          shapeIds.words = wordShapeIds
+          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+
+          const retryWordShapes = wordShapeIds.map((ids) => ({
+            bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
+            label: info.slide.shapes.getItemOrNullObject(ids.label)
+          }))
+          retryWordShapes.forEach((shape) => {
+            shape.bubble.load('id')
+            shape.label.load('id')
           })
           await context.sync()
-          if (shouldAnimate && frame < frames) {
-            await wait(50)
+
+          const retryLiveWordShapes = retryWordShapes.filter(
+            (shape) => !shape.bubble.isNullObject && !shape.label.isNullObject
+          )
+          if (retryLiveWordShapes.length === 0) {
+            throw renderError
           }
+
+          renderedWordCount = Math.min(words.length, retryLiveWordShapes.length)
+          retryLiveWordShapes.forEach((pair, index) => {
+            const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
+            const word = index < renderedWordCount ? words[index] : null
+            if (!word) {
+              setWordShapeHidden(pair, areaRect, anchor, style)
+              return
+            }
+            const ratio = maxVotes > 0 ? word.votes / maxVotes : 0
+            renderWordShape(pair, word.label, ratio, style, areaRect, anchor, index)
+          })
+          await context.sync()
         }
 
-        const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
+        const nextState = createWordCloudState(cloud, words.slice(0, renderedWordCount))
         setSlideTagIfFits(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
         if (shouldRebind || normalizedSessionId) {
