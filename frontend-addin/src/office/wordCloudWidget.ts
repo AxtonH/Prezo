@@ -1160,228 +1160,241 @@ export async function updateWordCloudWidget(
     await context.sync()
 
     for (const info of slideInfos) {
-      const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
-      const sessionTagValue = !info.sessionTag.isNullObject ? normalizeSessionId(info.sessionTag.value) : ''
-      const hasSessionMatch = sessionTagValue === normalizedSessionId
+      try {
+        const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
+        const sessionTagValue = !info.sessionTag.isNullObject
+          ? normalizeSessionId(info.sessionTag.value)
+          : ''
+        const hasSessionMatch = sessionTagValue === normalizedSessionId
 
-      let recovered = false
-      let shapeIds: WordCloudShapeIds | null = await recoverShapeIds(info.slide, context)
-      if (shapeIds) {
-        recovered = true
-        setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-      } else if (!info.shapeTag.isNullObject && info.shapeTag.value) {
-        try {
-          shapeIds = JSON.parse(info.shapeTag.value) as WordCloudShapeIds
-        } catch {
-          shapeIds = null
-        }
-      }
-
-      if (!shapeIds || !isValidWordCloudShapeIds(shapeIds)) {
-        continue
-      }
-
-      // Rebind stale widgets instead of skipping them forever when session tags drift.
-      const shouldRebind = isPending || !hasSessionMatch || recovered
-
-      let style = DEFAULT_WORD_CLOUD_STYLE
-      let applyStyle = false
-      if (!info.styleTag.isNullObject && info.styleTag.value) {
-        try {
-          const parsed = JSON.parse(info.styleTag.value) as Partial<WordCloudStyleConfig>
-          style = normalizeWordCloudStyle(parsed)
-          applyStyle = Boolean(parsed.lockStyle)
-        } catch {
-          style = DEFAULT_WORD_CLOUD_STYLE
-        }
-      }
-
-      const shadow = shapeIds.shadow
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
-        : null
-      const container = info.slide.shapes.getItemOrNullObject(shapeIds.container)
-      const title = info.slide.shapes.getItemOrNullObject(shapeIds.title)
-      const subtitle = info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
-      const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
-      let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
-      if (wordShapeIds.length === 0) {
-        const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
-        if (legacyWordIds.length > 0) {
-          wordShapeIds = await upgradeLegacyWordShapeEntries(
-            info.slide,
-            context,
-            legacyWordIds,
-            style
-          )
-          if (wordShapeIds.length > 0) {
-            shapeIds.words = wordShapeIds
-            setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-            await context.sync()
+        let recovered = false
+        let shapeIds: WordCloudShapeIds | null = await recoverShapeIds(info.slide, context)
+        if (shapeIds) {
+          recovered = true
+          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+        } else if (!info.shapeTag.isNullObject && info.shapeTag.value) {
+          try {
+            shapeIds = JSON.parse(info.shapeTag.value) as WordCloudShapeIds
+          } catch {
+            shapeIds = null
           }
         }
-      }
-      const targetWordSlots = Math.max(
-        1,
-        Math.min(style.maxWords, MAX_WORD_CLOUD_WORDS, Math.max(words.length, 1))
-      )
-      if (wordShapeIds.length < targetWordSlots) {
-        const missingWordSlots = targetWordSlots - wordShapeIds.length
-        const createdWordShapes = await createWordCloudWordShapeEntries(
-          info.slide,
-          context,
-          container,
-          style,
-          missingWordSlots,
-          wordShapeIds.length
+
+        if (!shapeIds || !isValidWordCloudShapeIds(shapeIds)) {
+          continue
+        }
+
+        // Rebind stale widgets instead of skipping them forever when session tags drift.
+        const shouldRebind = isPending || !hasSessionMatch || recovered
+
+        let style = DEFAULT_WORD_CLOUD_STYLE
+        let applyStyle = false
+        if (!info.styleTag.isNullObject && info.styleTag.value) {
+          try {
+            const parsed = JSON.parse(info.styleTag.value) as Partial<WordCloudStyleConfig>
+            style = normalizeWordCloudStyle(parsed)
+            applyStyle = Boolean(parsed.lockStyle)
+          } catch {
+            style = DEFAULT_WORD_CLOUD_STYLE
+          }
+        }
+
+        const shadow = shapeIds.shadow
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
+          : null
+        const container = info.slide.shapes.getItemOrNullObject(shapeIds.container)
+        const title = info.slide.shapes.getItemOrNullObject(shapeIds.title)
+        const subtitle = info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
+        const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
+
+        if (shadow) {
+          shadow.load('isNullObject')
+        }
+        container.load(['isNullObject', 'left', 'top', 'width', 'height'])
+        title.load('isNullObject')
+        subtitle.load('isNullObject')
+        body.load('isNullObject')
+        await context.sync()
+
+        if (container.isNullObject || title.isNullObject || subtitle.isNullObject || body.isNullObject) {
+          continue
+        }
+
+        let wordShapeIds = normalizeWordShapeEntries(shapeIds.words)
+        if (wordShapeIds.length === 0) {
+          const legacyWordIds = extractLegacyWordShapeIds(shapeIds.words)
+          if (legacyWordIds.length > 0) {
+            wordShapeIds = await upgradeLegacyWordShapeEntries(
+              info.slide,
+              context,
+              legacyWordIds,
+              style
+            )
+          }
+        }
+
+        if (wordShapeIds.length > 0) {
+          const existingWordRefs = wordShapeIds.map((ids) => ({
+            ids,
+            bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
+            label: info.slide.shapes.getItemOrNullObject(ids.label)
+          }))
+          existingWordRefs.forEach((shape) => {
+            shape.bubble.load('isNullObject')
+            shape.label.load('isNullObject')
+          })
+          await context.sync()
+          wordShapeIds = existingWordRefs
+            .filter((shape) => !shape.bubble.isNullObject && !shape.label.isNullObject)
+            .map((shape) => shape.ids)
+        }
+
+        const targetWordSlots = Math.max(
+          1,
+          Math.min(MAX_WORD_CLOUD_WORDS, Math.max(words.length, style.maxWords))
         )
-        if (createdWordShapes.length > 0) {
-          wordShapeIds = [...wordShapeIds, ...createdWordShapes]
-          shapeIds.words = wordShapeIds
-          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+        if (wordShapeIds.length < targetWordSlots) {
+          const missingWordSlots = targetWordSlots - wordShapeIds.length
+          const createdWordShapes = await createWordCloudWordShapeEntries(
+            info.slide,
+            context,
+            container,
+            style,
+            missingWordSlots,
+            wordShapeIds.length
+          )
+          if (createdWordShapes.length > 0) {
+            wordShapeIds = [...wordShapeIds, ...createdWordShapes]
+          }
         }
-      }
-      if (wordShapeIds.length === 0) {
-        continue
-      }
-      const wordShapes = wordShapeIds.map((ids) => ({
-        bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
-        label: info.slide.shapes.getItemOrNullObject(ids.label)
-      }))
-
-      if (shadow) {
-        shadow.load('id')
-      }
-      container.load(['id', 'left', 'top', 'width', 'height'])
-      title.load('id')
-      subtitle.load('id')
-      body.load('id')
-      wordShapes.forEach((shape) => {
-        shape.bubble.load('id')
-        shape.label.load('id')
-      })
-      await context.sync()
-
-      if (applyStyle) {
-        if (shadow && !shadow.isNullObject) {
-          shadow.fill.setSolidColor(style.shadowColor)
-          shadow.fill.transparency = style.shadowOpacity
-          shadow.lineFormat.visible = false
+        if (wordShapeIds.length === 0) {
+          continue
         }
-        if (!container.isNullObject) {
+
+        shapeIds.words = wordShapeIds
+        setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+
+        const wordShapes = wordShapeIds.map((ids) => ({
+          bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
+          label: info.slide.shapes.getItemOrNullObject(ids.label)
+        }))
+        wordShapes.forEach((shape) => {
+          shape.bubble.load('isNullObject')
+          shape.label.load('isNullObject')
+        })
+        await context.sync()
+
+        const liveWordShapes = wordShapes.filter(
+          (shape) => !shape.bubble.isNullObject && !shape.label.isNullObject
+        )
+        if (liveWordShapes.length === 0) {
+          continue
+        }
+
+        if (applyStyle) {
+          if (shadow && !shadow.isNullObject) {
+            shadow.fill.setSolidColor(style.shadowColor)
+            shadow.fill.transparency = style.shadowOpacity
+            shadow.lineFormat.visible = false
+          }
           container.fill.setSolidColor(style.panelColor)
           container.lineFormat.color = style.borderColor
           container.lineFormat.weight = 1.2
-        }
-        if (!title.isNullObject) {
           applyFont(title.textFrame.textRange, style, {
             size: 22,
             bold: true,
             color: style.textColor
           })
-        }
-        if (!subtitle.isNullObject) {
           applyFont(subtitle.textFrame.textRange, style, {
             size: 13,
             color: style.mutedColor
           })
-        }
-        if (!body.isNullObject) {
           applyFont(body.textFrame.textRange, style, { size: 13, color: style.mutedColor })
         }
-      }
 
-      if (!title.isNullObject) {
         title.textFrame.textRange.text = buildWordCloudTitle(code)
-      }
-      if (!subtitle.isNullObject) {
         subtitle.textFrame.textRange.text = buildWordCloudSubtitle(cloud)
-      }
-      if (!body.isNullObject) {
         body.textFrame.textRange.text = buildWordCloudMeta(cloud)
-      }
 
-      const widgetRect: WidgetRect | null =
-        !container.isNullObject
-          ? {
-              left: container.left,
-              top: container.top,
-              width: container.width,
-              height: container.height
+        const widgetRect: WidgetRect = {
+          left: container.left,
+          top: container.top,
+          width: container.width,
+          height: container.height
+        }
+        const areaRect = wordAreaRect(widgetRect, style.spacingScale)
+        const previousState = parseWordCloudState(
+          !info.stateTag.isNullObject ? info.stateTag.value : null
+        )
+        const previousRatios =
+          previousState.cloudId === (cloud?.id ?? null) ? previousState.ratios : {}
+        const visibleWords = Math.min(words.length, liveWordShapes.length)
+
+        const plans = liveWordShapes.map((pair, index) => {
+          const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
+          const word = index < visibleWords ? words[index] : null
+          if (!word) {
+            return {
+              pair,
+              anchor,
+              word: null,
+              startRatio: 0,
+              targetRatio: 0,
+              index
             }
-          : null
-      const areaRect = widgetRect ? wordAreaRect(widgetRect, style.spacingScale) : null
-      const previousState = parseWordCloudState(
-        !info.stateTag.isNullObject ? info.stateTag.value : null
-      )
-      const previousRatios =
-        previousState.cloudId === (cloud?.id ?? null) ? previousState.ratios : {}
-      const visibleWords = Math.min(style.maxWords, words.length, wordShapes.length)
-
-      const plans = wordShapes.map((pair, index) => {
-        const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
-        const word = index < visibleWords ? words[index] : null
-        if (!word) {
+          }
+          const key = normalizeWordKey(word.label)
+          const startRatio = previousRatios[key] ?? 0
+          const targetRatio = maxVotes > 0 ? word.votes / maxVotes : 0
           return {
             pair,
             anchor,
-            word: null,
-            startRatio: 0,
-            targetRatio: 0,
+            word,
+            startRatio: clamp(startRatio, 0, 1),
+            targetRatio: clamp(targetRatio, 0, 1),
             index
           }
-        }
-        const key = normalizeWordKey(word.label)
-        const startRatio = previousRatios[key] ?? 0
-        const targetRatio = maxVotes > 0 ? word.votes / maxVotes : 0
-        return {
-          pair,
-          anchor,
-          word,
-          startRatio: clamp(startRatio, 0, 1),
-          targetRatio: clamp(targetRatio, 0, 1),
-          index
-        }
-      })
-
-      const shouldAnimate = plans.some(
-        (plan) => plan.word && Math.abs(plan.startRatio - plan.targetRatio) > 0.035
-      )
-      const frames = shouldAnimate ? 5 : 1
-
-      for (let frame = 1; frame <= frames; frame += 1) {
-        const progress = frame / frames
-        const eased = shouldAnimate ? easeOutCubic(progress) : 1
-        plans.forEach((plan) => {
-          if (plan.pair.bubble.isNullObject || plan.pair.label.isNullObject) {
-            return
-          }
-          if (!plan.word) {
-            setWordShapeHidden(plan.pair, areaRect, plan.anchor, style)
-            return
-          }
-          const ratio = interpolate(plan.startRatio, plan.targetRatio, eased)
-          renderWordShape(
-            plan.pair,
-            plan.word.label,
-            ratio,
-            style,
-            areaRect,
-            plan.anchor,
-            plan.index
-          )
         })
-        await context.sync()
-        if (shouldAnimate && frame < frames) {
-          await wait(50)
+
+        const shouldAnimate = plans.some(
+          (plan) => plan.word && Math.abs(plan.startRatio - plan.targetRatio) > 0.035
+        )
+        const frames = shouldAnimate ? 5 : 1
+
+        for (let frame = 1; frame <= frames; frame += 1) {
+          const progress = frame / frames
+          const eased = shouldAnimate ? easeOutCubic(progress) : 1
+          plans.forEach((plan) => {
+            if (!plan.word) {
+              setWordShapeHidden(plan.pair, areaRect, plan.anchor, style)
+              return
+            }
+            const ratio = interpolate(plan.startRatio, plan.targetRatio, eased)
+            renderWordShape(
+              plan.pair,
+              plan.word.label,
+              ratio,
+              style,
+              areaRect,
+              plan.anchor,
+              plan.index
+            )
+          })
+          await context.sync()
+          if (shouldAnimate && frame < frames) {
+            await wait(50)
+          }
         }
-      }
 
-      const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
-      setSlideTagIfFits(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
+        const nextState = createWordCloudState(cloud, words.slice(0, visibleWords))
+        setSlideTagIfFits(info.slide, WORD_CLOUD_STATE_TAG, JSON.stringify(nextState))
 
-      if (shouldRebind || normalizedSessionId) {
-        setSlideTag(info.slide, WORD_CLOUD_SESSION_TAG, normalizedSessionId)
-        setSlideTag(info.slide, WORD_CLOUD_PENDING_TAG, 'false')
+        if (shouldRebind || normalizedSessionId) {
+          setSlideTag(info.slide, WORD_CLOUD_SESSION_TAG, normalizedSessionId)
+          setSlideTag(info.slide, WORD_CLOUD_PENDING_TAG, 'false')
+        }
+      } catch (error) {
+        console.warn('Word cloud slide update skipped due to shape error', error)
       }
     }
 
