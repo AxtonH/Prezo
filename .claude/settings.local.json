@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nFix word cloud shape sync timing issues\n\n- Add sync after setting properties in createWordCloudWordShapeEntries to avoid pending operations in shared context\n- Batch shape creation in insertWordCloudWidget: create all shapes, sync, set properties, then sync again\n- Prevents InvalidArgument errors when loading shapes with pending property changes\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nRemove TextBox fallback for word cloud bubbles\n\nTextBox shapes don''t support fill colors and line formats, causing InvalidArgument errors when rendering. Only use geometric shapes \\(Cloud, CloudCallout, RoundRectangle\\) for bubbles since they support the required visual properties.\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
