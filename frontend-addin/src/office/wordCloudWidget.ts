@@ -279,10 +279,14 @@ export async function updateWordCloudWidget(
   const words = cloud?.words.slice(0, MAX_WORD_CLOUD_WORDS) || []
   const maxVotes = words.reduce((max, w) => Math.max(max, w.votes), 0)
 
+  console.log('Updating word cloud widget', { sessionId, wordsCount: words.length, maxVotes, words })
+
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
     await context.sync()
+
+    console.log('Found slides:', slides.items.length)
 
     for (const slide of slides.items) {
       try {
@@ -297,12 +301,20 @@ export async function updateWordCloudWidget(
         await context.sync()
 
         if (sessionTag.isNullObject || sessionTag.value !== sessionId) {
+          console.log('Skipping slide - no matching session', {
+            hasTag: !sessionTag.isNullObject,
+            tagValue: sessionTag.value,
+            expectedSessionId: sessionId
+          })
           continue
         }
 
         if (shapeIdsTag.isNullObject || !shapeIdsTag.value) {
+          console.log('Skipping slide - no shape IDs')
           continue
         }
+
+        console.log('Found matching slide, updating...')
 
         const shapeIds: WordCloudShapeIds = JSON.parse(shapeIdsTag.value)
         const style: WordCloudStyleConfig = styleTag.isNullObject
@@ -331,6 +343,7 @@ export async function updateWordCloudWidget(
         body.textFrame.textRange.text = cloud?.status === 'open' ? 'Voting is live.' : 'Voting is closed.'
 
         // Update word bubbles
+        console.log('Updating word bubbles, count:', shapeIds.words.length)
         for (let i = 0; i < shapeIds.words.length && i < MAX_WORD_CLOUD_WORDS; i++) {
           const wordShapeIds = shapeIds.words[i]
           const bubble = slide.shapes.getItemOrNullObject(wordShapeIds.bubble)
@@ -341,17 +354,21 @@ export async function updateWordCloudWidget(
           await context.sync()
 
           if (bubble.isNullObject || label.isNullObject) {
+            console.log('Bubble or label not found for index:', i)
             continue
           }
 
           const word = words[i]
           if (!word) {
             // Hide unused bubbles
+            console.log('Hiding unused bubble at index:', i)
             bubble.fill.transparency = 1
             bubble.lineFormat.visible = false
             label.textFrame.textRange.text = ''
             continue
           }
+
+          console.log('Updating word bubble:', { index: i, word: word.label, votes: word.votes })
 
           // Calculate size based on votes
           const voteRatio = maxVotes > 0 ? word.votes / maxVotes : 0
