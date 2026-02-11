@@ -895,6 +895,17 @@
     const created = []
     const shapePairs = []
 
+    // Determine which shape type to use for bubbles
+    const wordShapeType = cachedWordCloudShapeType || 'RoundRectangle'
+    const wordShapeTypeCandidates = []
+    if (wordShapeType) {
+      wordShapeTypeCandidates.push(wordShapeType)
+    }
+    if (!wordShapeTypeCandidates.includes('RoundRectangle')) {
+      wordShapeTypeCandidates.push('RoundRectangle')
+    }
+    wordShapeTypeCandidates.push('TextBox')
+
     // First, create all shapes without syncing
     for (let offset = 0; offset < total; offset += 1) {
       const index = startIndex + offset
@@ -903,20 +914,42 @@
       }
       const anchor = WORD_CLOUD_ANCHORS[index] || WORD_CLOUD_ANCHORS[WORD_CLOUD_ANCHORS.length - 1]
       const frame = baseWordFrame(areaRect, anchor)
-      try {
-        const bubble = slide.shapes.addTextBox('', frame)
-        const label = slide.shapes.addTextBox('', frame)
-        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-        bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-        bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-        label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-        label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-        bubble.load('id')
-        label.load('id')
-        shapePairs.push({ bubble, label, index })
-      } catch (error) {
-        console.warn('Failed to create word cloud placeholder slot', { index, error })
+
+      let created = false
+      // Try different shape types until one works
+      for (const candidateType of wordShapeTypeCandidates) {
+        try {
+          const bubble =
+            candidateType === 'TextBox'
+              ? slide.shapes.addTextBox('', frame)
+              : slide.shapes.addGeometricShape(candidateType, frame)
+          const label = slide.shapes.addTextBox('', frame)
+
+          setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
+          applyFont(label.textFrame.textRange, style, {
+            size: style.minFontSize,
+            bold: false,
+            color: style.textColor
+          })
+          label.textFrame.wordWrap = false
+
+          bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+          bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+          bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+          label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+          label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+          label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+          bubble.load('id')
+          label.load('id')
+          shapePairs.push({ bubble, label, index })
+          created = true
+          break
+        } catch (error) {
+          // Try next candidate type
+        }
+      }
+      if (!created) {
+        console.warn('Failed to create word cloud placeholder slot', { index })
       }
     }
 
