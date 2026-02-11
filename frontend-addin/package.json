@@ -2,7 +2,7 @@
   "name": "frontend-addin",
   "private": true,
   "version": "0.0.0",
-  "buildTag": "2026-02-02-01",
+  "buildTag": "2026-02-11-fix",
   "type": "module",
   "scripts": {
     "dev": "vite",
