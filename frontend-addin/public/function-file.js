@@ -711,7 +711,7 @@
       widgetTag.load('value')
       roleTag.load('value')
       indexTag.load('value')
-      shape.load('id')
+      shape.load(['id', 'top', 'left', 'width', 'height'])
       return { shape, widgetTag, roleTag, indexTag }
     })
 
@@ -723,12 +723,19 @@
     let subtitle = null
     let body = null
     const wordsByIndex = new Map()
+    const widgetCandidates = []
+    const areaOf = (shape) => Math.max(0, shape.width) * Math.max(0, shape.height)
 
     tagged.forEach(({ shape, widgetTag, roleTag, indexTag }) => {
       const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
       const role = !roleTag.isNullObject ? roleTag.value : null
+      const parsedIndex = Number.parseInt(indexTag.isNullObject ? '' : indexTag.value, 10)
+      const hasParsedIndex = Number.isFinite(parsedIndex)
       if (!hasWidgetTag && !role) {
         return
+      }
+      if (hasWidgetTag) {
+        widgetCandidates.push({ shape, index: hasParsedIndex ? parsedIndex : null })
       }
       switch (role) {
         case 'word-cloud-shadow':
@@ -747,8 +754,7 @@
           body = shape
           break
         case 'word-cloud-bubble': {
-          const parsedIndex = Number.parseInt(indexTag.isNullObject ? '' : indexTag.value, 10)
-          if (!Number.isFinite(parsedIndex)) {
+          if (!hasParsedIndex) {
             break
           }
           const entry = wordsByIndex.get(parsedIndex) || {}
@@ -757,8 +763,7 @@
           break
         }
         case 'word-cloud-label': {
-          const parsedIndex = Number.parseInt(indexTag.isNullObject ? '' : indexTag.value, 10)
-          if (!Number.isFinite(parsedIndex)) {
+          if (!hasParsedIndex) {
             break
           }
           const entry = wordsByIndex.get(parsedIndex) || {}
@@ -767,9 +772,57 @@
           break
         }
         default:
+          if (hasWidgetTag && hasParsedIndex) {
+            const entry = wordsByIndex.get(parsedIndex) || {}
+            if (!entry.bubble) {
+              entry.bubble = shape
+            } else if (!entry.label) {
+              const bubbleArea = areaOf(entry.bubble)
+              const candidateArea = areaOf(shape)
+              if (candidateArea > bubbleArea) {
+                entry.label = entry.bubble
+                entry.bubble = shape
+              } else {
+                entry.label = shape
+              }
+            }
+            wordsByIndex.set(parsedIndex, entry)
+          }
           break
       }
     })
+
+    if ((!container || !title || !subtitle || !body) && widgetCandidates.length) {
+      const uniqueCandidates = [...new Map(widgetCandidates.map((candidate) => [candidate.shape.id, candidate])).values()]
+      const nonIndexedShapes = uniqueCandidates
+        .filter((candidate) => candidate.index === null)
+        .map((candidate) => candidate.shape)
+      const byArea = [...nonIndexedShapes].sort((a, b) => areaOf(b) - areaOf(a))
+
+      if (!container && byArea.length) {
+        container = byArea[0]
+      }
+      if (!shadow) {
+        const shadowCandidate = byArea.find((shape) => !container || shape.id !== container.id)
+        if (shadowCandidate) {
+          shadow = shadowCandidate
+        }
+      }
+
+      const textCandidates = nonIndexedShapes
+        .filter((shape) => (!container || shape.id !== container.id) && (!shadow || shape.id !== shadow.id))
+        .sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top))
+
+      if (!title && textCandidates.length > 0) {
+        title = textCandidates[0]
+      }
+      if (!subtitle && textCandidates.length > 1) {
+        subtitle = textCandidates[1]
+      }
+      if (!body && textCandidates.length > 2) {
+        body = textCandidates[2]
+      }
+    }
 
     if (!container || !title || !subtitle || !body) {
       return null

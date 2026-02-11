@@ -698,7 +698,7 @@ const recoverShapeIds = async (
     widgetTag.load('value')
     roleTag.load('value')
     indexTag.load('value')
-    shape.load(['id', 'top', 'left'])
+    shape.load(['id', 'top', 'left', 'width', 'height'])
     return { shape, widgetTag, roleTag, indexTag }
   })
 
@@ -711,12 +711,21 @@ const recoverShapeIds = async (
   let body: PowerPoint.Shape | null = null
   const wordsByIndex = new Map<number, { bubble?: PowerPoint.Shape; label?: PowerPoint.Shape }>()
   const legacyWords: Array<{ shape: PowerPoint.Shape; index: number | null }> = []
+  const widgetCandidates: Array<{ shape: PowerPoint.Shape; index: number | null }> = []
+  const areaOf = (shape: PowerPoint.Shape) => Math.max(0, shape.width) * Math.max(0, shape.height)
 
   tagged.forEach(({ shape, widgetTag, roleTag, indexTag }) => {
     const hasWidgetTag = !widgetTag.isNullObject && widgetTag.value === 'true'
     const role = !roleTag.isNullObject ? roleTag.value : null
+    const parsedIndex =
+      !indexTag.isNullObject && Number.isFinite(Number.parseInt(indexTag.value, 10))
+        ? Number.parseInt(indexTag.value, 10)
+        : null
     if (!hasWidgetTag && !role) {
       return
+    }
+    if (hasWidgetTag) {
+      widgetCandidates.push({ shape, index: parsedIndex })
     }
     switch (role) {
       case 'word-cloud-container':
@@ -735,44 +744,83 @@ const recoverShapeIds = async (
         body = shape
         break
       case 'word-cloud-bubble': {
-        const index =
-          !indexTag.isNullObject && Number.isFinite(Number.parseInt(indexTag.value, 10))
-            ? Number.parseInt(indexTag.value, 10)
-            : null
-        if (index === null) {
+        if (parsedIndex === null) {
           break
         }
-        const entry = wordsByIndex.get(index) ?? {}
+        const entry = wordsByIndex.get(parsedIndex) ?? {}
         entry.bubble = shape
-        wordsByIndex.set(index, entry)
+        wordsByIndex.set(parsedIndex, entry)
         break
       }
       case 'word-cloud-label': {
-        const index =
-          !indexTag.isNullObject && Number.isFinite(Number.parseInt(indexTag.value, 10))
-            ? Number.parseInt(indexTag.value, 10)
-            : null
-        if (index === null) {
+        if (parsedIndex === null) {
           break
         }
-        const entry = wordsByIndex.get(index) ?? {}
+        const entry = wordsByIndex.get(parsedIndex) ?? {}
         entry.label = shape
-        wordsByIndex.set(index, entry)
+        wordsByIndex.set(parsedIndex, entry)
         break
       }
       case 'word-cloud-word':
         legacyWords.push({
           shape,
-          index:
-            !indexTag.isNullObject && Number.isFinite(Number.parseInt(indexTag.value, 10))
-              ? Number.parseInt(indexTag.value, 10)
-              : null
+          index: parsedIndex
         })
         break
       default:
+        if (hasWidgetTag && parsedIndex !== null) {
+          const entry = wordsByIndex.get(parsedIndex) ?? {}
+          if (!entry.bubble) {
+            entry.bubble = shape
+          } else if (!entry.label) {
+            const bubbleArea = areaOf(entry.bubble)
+            const candidateArea = areaOf(shape)
+            if (candidateArea > bubbleArea) {
+              entry.label = entry.bubble
+              entry.bubble = shape
+            } else {
+              entry.label = shape
+            }
+          }
+          wordsByIndex.set(parsedIndex, entry)
+        }
         break
     }
   })
+
+  if ((!container || !title || !subtitle || !body) && widgetCandidates.length > 0) {
+    const uniqueCandidates = Array.from(
+      new Map(widgetCandidates.map((candidate) => [candidate.shape.id, candidate])).values()
+    )
+    const nonIndexedShapes = uniqueCandidates
+      .filter((candidate) => candidate.index === null)
+      .map((candidate) => candidate.shape)
+    const byArea = [...nonIndexedShapes].sort((a, b) => areaOf(b) - areaOf(a))
+
+    if (!container && byArea.length > 0) {
+      container = byArea[0]
+    }
+    if (!shadow) {
+      const shadowCandidate = byArea.find((shape) => !container || shape.id !== container.id)
+      if (shadowCandidate) {
+        shadow = shadowCandidate
+      }
+    }
+
+    const textCandidates = nonIndexedShapes
+      .filter((shape) => (!container || shape.id !== container.id) && (!shadow || shape.id !== shadow.id))
+      .sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top))
+
+    if (!title && textCandidates.length > 0) {
+      title = textCandidates[0]
+    }
+    if (!subtitle && textCandidates.length > 1) {
+      subtitle = textCandidates[1]
+    }
+    if (!body && textCandidates.length > 2) {
+      body = textCandidates[2]
+    }
+  }
 
   const resolvedContainer = container
   const resolvedTitle = title
