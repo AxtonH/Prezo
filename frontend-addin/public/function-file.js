@@ -884,10 +884,18 @@
     }
     const areaRect = wordAreaRect(widgetRect, style.spacingScale)
     const total = Math.max(0, Math.min(count, MAX_WORD_CLOUD_WORDS))
+    console.log('[Word Cloud Debug] Creating word shape entries:', {
+      requestedCount: count,
+      actualTotal: total,
+      startIndex: startIndex
+    })
     if (!total) {
       return []
     }
     const created = []
+    const shapePairs = []
+
+    // First, create all shapes without syncing
     for (let offset = 0; offset < total; offset += 1) {
       const index = startIndex + offset
       if (index >= MAX_WORD_CLOUD_WORDS) {
@@ -906,15 +914,32 @@
         label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
         bubble.load('id')
         label.load('id')
-        await context.sync()
-        created.push({
-          bubble: bubble.id,
-          label: label.id
-        })
+        shapePairs.push({ bubble, label, index })
       } catch (error) {
         console.warn('Failed to create word cloud placeholder slot', { index, error })
       }
     }
+
+    // Then sync all shapes at once
+    if (shapePairs.length > 0) {
+      try {
+        await context.sync()
+        // After sync, collect the IDs
+        shapePairs.forEach(pair => {
+          created.push({
+            bubble: pair.bubble.id,
+            label: pair.label.id
+          })
+        })
+      } catch (error) {
+        console.error('Failed to sync word cloud shapes', { error, count: shapePairs.length })
+      }
+    }
+    console.log('[Word Cloud Debug] Shape creation complete:', {
+      requestedTotal: total,
+      actuallyCreated: created.length,
+      createdIndices: created.map((c, i) => i)
+    })
     return created
   }
   const clearWordCloudWordShapes = async (slide, context) => {
@@ -2218,6 +2243,12 @@
     const normalizedSessionId = normalizeSessionId(sessionId)
     const cloud = pickWordCloud(wordClouds || [])
     const words = cloud ? (cloud.words || []).slice(0, MAX_WORD_CLOUD_WORDS) : []
+    console.log('[Word Cloud Debug] Cloud data:', {
+      cloudId: cloud?.id,
+      totalWords: cloud?.words?.length,
+      wordsAfterSlice: words.length,
+      wordLabels: words.map(w => w.label)
+    })
     const maxVotes = words.reduce((max, word) => Math.max(max, word.votes), 0)
 
     await PowerPoint.run(async (context) => {
@@ -2449,6 +2480,12 @@
             ? previousState.ratios
             : {}
         const visibleWords = Math.min(words.length, liveWordShapes.length)
+        console.log('[Word Cloud Debug] Rendering info:', {
+          totalWords: words.length,
+          liveShapeSlots: liveWordShapes.length,
+          visibleWords: visibleWords,
+          wordLabels: words.map((word) => word.label)
+        })
         if (visibleWords < words.length) {
           console.warn('Word cloud has fewer live shape slots than words', {
             words: words.length,
