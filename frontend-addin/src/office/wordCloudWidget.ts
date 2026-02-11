@@ -659,7 +659,20 @@ const createWordCloudWordShapeEntries = async (
     return []
   }
   const created: Array<{ bubble: string; label: string }> = []
+  const shapePairs: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape; index: number }> = []
 
+  // Determine which shape type to use for bubbles
+  const wordShapeType = cachedWordCloudShapeType || 'RoundRectangle'
+  const wordShapeTypeCandidates: Array<WordCloudShapeType | 'TextBox'> = []
+  if (wordShapeType) {
+    wordShapeTypeCandidates.push(wordShapeType)
+  }
+  if (!wordShapeTypeCandidates.includes('RoundRectangle')) {
+    wordShapeTypeCandidates.push('RoundRectangle')
+  }
+  wordShapeTypeCandidates.push('TextBox')
+
+  // First, create all shapes without syncing
   for (let offset = 0; offset < total; offset += 1) {
     const index = startIndex + offset
     if (index >= MAX_WORD_CLOUD_WORDS) {
@@ -667,24 +680,58 @@ const createWordCloudWordShapeEntries = async (
     }
     const anchor = wordAnchors[index] ?? wordAnchors[wordAnchors.length - 1]
     const frame = baseWordFrame(areaRect, anchor)
+
+    let shapeCreated = false
+    // Try different shape types until one works
+    for (const candidateType of wordShapeTypeCandidates) {
+      try {
+        const bubble =
+          candidateType === 'TextBox'
+            ? slide.shapes.addTextBox('', frame)
+            : (slide.shapes as any).addGeometricShape(candidateType, frame)
+        const label = slide.shapes.addTextBox('', frame)
+
+        setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
+        applyFont(label.textFrame.textRange, style, {
+          size: style.minFontSize,
+          bold: false,
+          color: style.textColor
+        })
+        label.textFrame.wordWrap = false
+
+        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+        bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+        label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        bubble.load('id')
+        label.load('id')
+        shapePairs.push({ bubble, label, index })
+        shapeCreated = true
+        break
+      } catch (error) {
+        // Try next candidate type
+      }
+    }
+    if (!shapeCreated) {
+      console.warn('Failed to create word cloud placeholder slot', { index })
+    }
+  }
+
+  // Then sync all shapes at once
+  if (shapePairs.length > 0) {
     try {
-      const bubble = slide.shapes.addTextBox('', frame)
-      const label = slide.shapes.addTextBox('', frame)
-      bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-      bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-      label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-      label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-      bubble.load('id')
-      label.load('id')
       await context.sync()
-      created.push({
-        bubble: bubble.id,
-        label: label.id
+      // After sync, collect the IDs
+      shapePairs.forEach((pair) => {
+        created.push({
+          bubble: pair.bubble.id,
+          label: pair.label.id
+        })
       })
     } catch (error) {
-      console.warn('Failed to create word cloud placeholder slot', { index, error })
+      console.error('Failed to sync word cloud shapes', { error, count: shapePairs.length })
     }
   }
 
