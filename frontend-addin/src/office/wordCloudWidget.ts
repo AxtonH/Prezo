@@ -668,14 +668,14 @@ const createWordCloudWordShapeEntries = async (
 
   // Determine which shape type to use for bubbles
   const wordShapeType = cachedWordCloudShapeType || 'RoundRectangle'
-  const wordShapeTypeCandidates: Array<WordCloudShapeType | 'TextBox'> = []
+  const wordShapeTypeCandidates: Array<WordCloudShapeType> = []
   if (wordShapeType) {
     wordShapeTypeCandidates.push(wordShapeType)
   }
   if (!wordShapeTypeCandidates.includes('RoundRectangle')) {
     wordShapeTypeCandidates.push('RoundRectangle')
   }
-  wordShapeTypeCandidates.push('TextBox')
+  // Don't fall back to TextBox - it doesn't support fill colors
 
   // First, create all shapes without syncing
   for (let offset = 0; offset < total; offset += 1) {
@@ -690,10 +690,7 @@ const createWordCloudWordShapeEntries = async (
     // Try different shape types until one works
     for (const candidateType of wordShapeTypeCandidates) {
       try {
-        const bubble =
-          candidateType === 'TextBox'
-            ? slide.shapes.addTextBox('', frame)
-            : (slide.shapes as any).addGeometricShape(candidateType, frame)
+        const bubble = (slide.shapes as any).addGeometricShape(candidateType, frame)
         const label = slide.shapes.addTextBox('', frame)
 
         // Just add tags and load IDs - don't set properties until after sync
@@ -1100,12 +1097,12 @@ export async function insertWordCloudWidget(
     await context.sync()
 
     const wordShapes: Array<{ bubble: PowerPoint.Shape; label: PowerPoint.Shape }> = []
-    const wordShapeTypeCandidates: Array<WordCloudShapeType | 'TextBox'> = []
+    const wordShapeTypeCandidates: Array<WordCloudShapeType> = []
     wordShapeTypeCandidates.push(wordShapeType)
     if (wordShapeType !== 'RoundRectangle') {
       wordShapeTypeCandidates.push('RoundRectangle')
     }
-    wordShapeTypeCandidates.push('TextBox')
+    // Don't fall back to TextBox - it doesn't support fill colors
     const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
     const shapePairs: Array<{
       bubble: PowerPoint.Shape
@@ -1120,10 +1117,7 @@ export async function insertWordCloudWidget(
       let created = false
       for (const candidateType of wordShapeTypeCandidates) {
         try {
-          const bubble =
-            candidateType === 'TextBox'
-              ? slide.shapes.addTextBox('', frame)
-              : slide.shapes.addGeometricShape(candidateType as any, frame)
+          const bubble = slide.shapes.addGeometricShape(candidateType as any, frame)
           const label = slide.shapes.addTextBox('', frame)
           bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
           bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
