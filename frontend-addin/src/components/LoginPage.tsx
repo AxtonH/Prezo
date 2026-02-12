@@ -110,7 +110,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <div className="login-brand">
           <div className="login-brand-icon">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#1e293b" />
+              <rect width="32" height="32" rx="8" fill="#2563eb" />
               <path
                 d="M10 22V10h6a4 4 0 010 8h-6"
                 stroke="#fff"
@@ -140,9 +140,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <div className="feature-card">
                 <div className="feature-icon">
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                    <rect x="2" y="10" width="4" height="8" rx="1" fill="#2563eb" />
-                    <rect x="8" y="6" width="4" height="12" rx="1" fill="#2563eb" />
-                    <rect x="14" y="2" width="4" height="16" rx="1" fill="#2563eb" />
+                    <rect x="2" y="10" width="4" height="8" rx="1" fill="#60a5fa" />
+                    <rect x="8" y="6" width="4" height="12" rx="1" fill="#60a5fa" />
+                    <rect x="14" y="2" width="4" height="16" rx="1" fill="#60a5fa" />
                   </svg>
                 </div>
                 <div>
@@ -156,7 +156,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path
                       d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z"
-                      fill="#2563eb"
+                      fill="#60a5fa"
                     />
                   </svg>
                 </div>
@@ -171,11 +171,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                     <path
                       d="M10 18a8 8 0 100-16 8 8 0 000 16z"
-                      stroke="#2563eb"
+                      stroke="#60a5fa"
                       strokeWidth="2"
                       fill="none"
                     />
-                    <path d="M7 10l2 2 4-4" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M7 10l2 2 4-4" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </div>
                 <div>
