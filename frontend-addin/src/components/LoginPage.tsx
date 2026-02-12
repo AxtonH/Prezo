@@ -51,63 +51,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           </div>
         </div>
 
-        <h1 className="login-headline">Transform Your Presentations with AI</h1>
-        <p className="login-desc">
-          Analyze, enhance, and perfect your presentation decks with our AI-powered platform
-          designed for consulting and creative teams.
-        </p>
-
-        <div className="login-features">
-          <div className="feature-card">
-            <div className="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="2" y="10" width="4" height="8" rx="1" fill="#2563eb" />
-                <rect x="8" y="6" width="4" height="12" rx="1" fill="#2563eb" />
-                <rect x="14" y="2" width="4" height="16" rx="1" fill="#2563eb" />
-              </svg>
-            </div>
-            <div>
-              <div className="feature-title">Strategic Analysis</div>
-              <div className="feature-desc">Deep narrative and flow analysis</div>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path
-                  d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z"
-                  fill="#2563eb"
-                />
-              </svg>
-            </div>
-            <div>
-              <div className="feature-title">Image Enhancement</div>
-              <div className="feature-desc">AI-powered visual optimization</div>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16z"
-                  stroke="#2563eb"
-                  strokeWidth="2"
-                  fill="none"
-                />
-                <path d="M7 10l2 2 4-4" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div>
-              <div className="feature-title">Quality Assurance</div>
-              <div className="feature-desc">Precision comparison tools</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="login-right">
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-form-header">
             <h2>Welcome Back</h2>
