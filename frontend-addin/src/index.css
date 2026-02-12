@@ -474,7 +474,8 @@ button.ghost {
 
 .login-page:not(.ppt) {
   max-width: 1120px;
-  margin: 32px auto;
+  margin: 48px auto;
+  width: min(1120px, calc(100% - 96px));
   background: #f1f5f9;
   border-radius: 28px;
   border: 1px solid rgba(148, 163, 184, 0.35);
@@ -708,6 +709,7 @@ button.ghost {
 
   .login-page:not(.ppt) {
     margin: 16px;
+    width: auto;
     border-radius: 22px;
   }
 
