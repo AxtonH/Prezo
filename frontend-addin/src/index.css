@@ -456,7 +456,7 @@ button.ghost {
 }
 
 .login-left {
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  background: #0f172a;
   padding: 60px 48px;
   display: flex;
   flex-direction: column;
@@ -474,6 +474,64 @@ button.ghost {
   border: none;
   box-shadow: none;
   padding: 0;
+}
+
+.login-page.ppt .login-form-header h2 {
+  color: #ffffff;
+}
+
+.login-page.ppt .login-form .muted {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.login-page.ppt .login-form label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.login-page.ppt .login-form input {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.login-page.ppt .login-form input:focus {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.login-page.ppt .login-form .error {
+  color: #f87171;
+}
+
+.login-page.ppt .login-guest-btn {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.login-page.ppt .login-guest-btn:hover {
+  border-color: var(--primary);
+  color: #93bbfd;
+}
+
+.login-page.ppt .login-divider {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.login-page.ppt .login-divider::before,
+.login-page.ppt .login-divider::after {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.login-page.ppt .login-footer {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.login-page.ppt .login-footer .muted {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.login-page.ppt .login-footer svg path {
+  stroke: rgba(255, 255, 255, 0.4);
 }
 
 .login-page:not(.ppt) {
@@ -522,23 +580,15 @@ button.ghost {
 .login-brand-name {
   font-weight: 700;
   font-size: 22px;
-  color: #0f172a;
+  color: #ffffff;
 }
 
 .login-brand-tag {
   font-size: 12px;
-  color: var(--primary);
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 600;
-}
-
-.login-page:not(.ppt) .login-brand-name {
-  color: #ffffff;
-}
-
-.login-page:not(.ppt) .login-brand-tag {
-  color: rgba(255, 255, 255, 0.5);
 }
 
 .login-headline {
