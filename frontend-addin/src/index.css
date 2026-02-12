@@ -473,24 +473,30 @@ button.ghost {
 }
 
 .login-page:not(.ppt) {
-  background: radial-gradient(1200px at 10% 15%, #dbeafe 0%, #eef2f7 45%, #f8fafc 100%);
-  padding: 24px;
-  gap: 24px;
+  max-width: 1120px;
+  margin: 32px auto;
+  background: #f1f5f9;
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
 }
 
 .login-page:not(.ppt) .login-left,
 .login-page:not(.ppt) .login-right {
-  border-radius: 26px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
-  overflow: hidden;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
 }
 
 .login-page:not(.ppt) .login-left {
   position: relative;
-  justify-content: flex-start;
-  gap: 28px;
-  padding: 56px;
+  justify-content: center;
+  gap: 24px;
+  padding: 56px 52px;
+  background: linear-gradient(135deg, #eef2f7 0%, #e2e8f0 100%);
 }
 
 .login-page:not(.ppt) .login-left::before {
@@ -509,10 +515,11 @@ button.ghost {
 }
 
 .login-page:not(.ppt) .login-right {
-  background: #f8fafc;
-  padding: 40px;
+  background: #ffffff;
+  padding: 56px 48px;
   align-items: center;
   justify-content: center;
+  border-left: 1px solid rgba(148, 163, 184, 0.3);
 }
 
 .login-brand {
@@ -523,7 +530,7 @@ button.ghost {
 }
 
 .login-page:not(.ppt) .login-brand {
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .login-brand-icon {
@@ -556,25 +563,25 @@ button.ghost {
   font-size: 15px;
   color: var(--muted);
   line-height: 1.7;
-  margin: 0 0 28px;
+  margin: 0 0 20px;
   max-width: 480px;
 }
 
 .login-features {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 18px 24px;
 }
 
 .feature-card {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px 18px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .feature-icon {
@@ -611,11 +618,14 @@ button.ghost {
 .login-form {
   width: 100%;
   max-width: 380px;
-  background: #ffffff;
-  border-radius: 20px;
-  border: 1px solid var(--border);
-  padding: 28px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+}
+
+.login-page:not(.ppt) .login-form {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .login-form-header {
@@ -696,12 +706,19 @@ button.ghost {
     grid-template-columns: 1fr;
   }
 
+  .login-page:not(.ppt) {
+    margin: 16px;
+    border-radius: 22px;
+  }
+
   .login-left {
     padding: 40px 24px;
   }
 
   .login-right {
     padding: 24px;
+    border-left: none;
+    border-top: 1px solid rgba(148, 163, 184, 0.3);
   }
 
   .login-features {
