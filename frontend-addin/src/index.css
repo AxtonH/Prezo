@@ -44,7 +44,7 @@ body.login-view #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 0;
+  padding: 48px 24px;
 }
 
 .app {
