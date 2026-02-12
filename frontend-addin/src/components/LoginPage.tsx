@@ -109,16 +109,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       <div className="login-left">
         <div className="login-brand">
           <div className="login-brand-icon">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="#2563eb" />
-              <path
-                d="M10 22V10h6a4 4 0 010 8h-6"
-                stroke="#fff"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <img src="/prezo-icon.svg" alt="Prezo" width="32" height="32" />
           </div>
           <div>
             <div className="login-brand-name">Prezo</div>
