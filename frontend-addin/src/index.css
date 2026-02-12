@@ -495,7 +495,7 @@ button.ghost {
   position: relative;
   justify-content: center;
   gap: 24px;
-  padding: 56px 52px;
+  padding: 56px 44px;
   background: linear-gradient(135deg, #eef2f7 0%, #e2e8f0 100%);
 }
 
@@ -516,7 +516,7 @@ button.ghost {
 
 .login-page:not(.ppt) .login-right {
   background: #ffffff;
-  padding: 56px 48px;
+  padding: 56px 44px;
   align-items: center;
   justify-content: center;
   border-left: 1px solid rgba(148, 163, 184, 0.3);
