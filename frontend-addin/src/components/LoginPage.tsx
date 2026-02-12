@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { login } from '../auth/auth'
 
@@ -17,6 +17,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const isPowerPointHost =
     window.Office?.context?.host === window.Office?.HostType?.PowerPoint ||
     new URLSearchParams(window.location.search).has('_host_Info')
+
+  useEffect(() => {
+    if (isPowerPointHost) {
+      return
+    }
+    document.body.classList.add('login-view')
+    return () => {
+      document.body.classList.remove('login-view')
+    }
+  }, [isPowerPointHost])
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
