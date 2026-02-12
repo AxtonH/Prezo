@@ -447,7 +447,7 @@ button.ghost {
 
 .login-page {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   min-height: 100vh;
 }
 
@@ -466,6 +466,53 @@ button.ghost {
 .login-page.ppt .login-form {
   margin-top: 28px;
   max-width: 420px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.login-page:not(.ppt) {
+  background: radial-gradient(1200px at 10% 15%, #dbeafe 0%, #eef2f7 45%, #f8fafc 100%);
+  padding: 24px;
+  gap: 24px;
+}
+
+.login-page:not(.ppt) .login-left,
+.login-page:not(.ppt) .login-right {
+  border-radius: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.login-page:not(.ppt) .login-left {
+  position: relative;
+  justify-content: flex-start;
+  gap: 28px;
+  padding: 56px;
+}
+
+.login-page:not(.ppt) .login-left::before {
+  content: '';
+  position: absolute;
+  inset: -40% -10% auto auto;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0));
+  opacity: 0.9;
+}
+
+.login-page:not(.ppt) .login-left > * {
+  position: relative;
+  z-index: 1;
+}
+
+.login-page:not(.ppt) .login-right {
+  background: #f8fafc;
+  padding: 40px;
+  align-items: center;
+  justify-content: center;
 }
 
 .login-brand {
@@ -473,6 +520,10 @@ button.ghost {
   align-items: center;
   gap: 12px;
   margin-bottom: 40px;
+}
+
+.login-page:not(.ppt) .login-brand {
+  margin-bottom: 24px;
 }
 
 .login-brand-icon {
@@ -494,7 +545,7 @@ button.ghost {
 }
 
 .login-headline {
-  font-size: 32px;
+  font-size: clamp(26px, 3vw, 36px);
   font-weight: 700;
   line-height: 1.2;
   margin: 0 0 16px;
@@ -505,13 +556,13 @@ button.ghost {
   font-size: 15px;
   color: var(--muted);
   line-height: 1.7;
-  margin: 0 0 36px;
+  margin: 0 0 28px;
   max-width: 480px;
 }
 
 .login-features {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -523,7 +574,7 @@ button.ghost {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px 18px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
 .feature-icon {
@@ -560,6 +611,11 @@ button.ghost {
 .login-form {
   width: 100%;
   max-width: 380px;
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  padding: 28px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
 }
 
 .login-form-header {
@@ -646,6 +702,10 @@ button.ghost {
 
   .login-right {
     padding: 24px;
+  }
+
+  .login-features {
+    grid-template-columns: 1fr;
   }
 }
 
