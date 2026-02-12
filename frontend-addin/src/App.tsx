@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
 import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import { isAuthenticated, logout } from './auth/auth'
+import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { QaModeration } from './components/QaModeration'
 import { SessionSetup } from './components/SessionSetup'
@@ -24,6 +26,21 @@ const upsertById = <T extends { id: string }>(items: T[], item: T) => {
 }
 
 export default function App() {
+  const [loggedIn, setLoggedIn] = useState(isAuthenticated)
+
+  const handleLogout = () => {
+    logout()
+    setLoggedIn(false)
+  }
+
+  if (!loggedIn) {
+    return <LoginPage onLogin={() => setLoggedIn(true)} />
+  }
+
+  return <HostConsole onLogout={handleLogout} />
+}
+
+function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
@@ -239,6 +256,9 @@ export default function App() {
         <div className="status">
           <span className={`dot ${socketStatus}`}></span>
           <span className="muted">{socketStatus}</span>
+          <button type="button" className="ghost signout-btn" onClick={onLogout}>
+            Sign out
+          </button>
         </div>
       </header>
 
