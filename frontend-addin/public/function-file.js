@@ -441,6 +441,18 @@
     width: areaRect.width * anchor.width,
     height: areaRect.height * anchor.height
   })
+  const toSafeBubbleFrame = (frame, minWidth = 120, minHeight = 56) => {
+    const width = Math.max(minWidth, Number.isFinite(frame?.width) ? frame.width : minWidth)
+    const height = Math.max(minHeight, Number.isFinite(frame?.height) ? frame.height : minHeight)
+    const left = Number.isFinite(frame?.left) ? frame.left : 0
+    const top = Number.isFinite(frame?.top) ? frame.top : 0
+    return {
+      left: Math.round(left * 1000) / 1000,
+      top: Math.round(top * 1000) / 1000,
+      width: Math.round(width * 1000) / 1000,
+      height: Math.round(height * 1000) / 1000
+    }
+  }
   const fitFontSizeForLabel = (label, preferred, frame, maxFontSize) => {
     const chars = Math.max(1, (label || '').trim().length)
     const widthCap = Math.floor(frame.width / Math.max(2, chars * 0.53))
@@ -450,8 +462,10 @@
   const labelFrameForWord = (bubbleFrame, label, fontSize) => {
     const chars = Math.max(1, (label || '').trim().length)
     const estimatedWidth = fontSize * (chars * 0.56 + 1.1)
-    const width = clamp(estimatedWidth + 8, 24, bubbleFrame.width * 0.8)
-    const height = clamp(fontSize * 1.45, 18, bubbleFrame.height * 0.58)
+    const maxWidth = Math.max(24, bubbleFrame.width * 0.8)
+    const maxHeight = Math.max(18, bubbleFrame.height * 0.58)
+    const width = clamp(estimatedWidth + 8, 24, maxWidth)
+    const height = clamp(fontSize * 1.45, 18, maxHeight)
     return {
       left: bubbleFrame.left + (bubbleFrame.width - width) / 2,
       top: bubbleFrame.top + (bubbleFrame.height - height) / 2,
@@ -507,7 +521,7 @@
   const setWordShapeHidden = (pair, areaRect, anchor, style) => {
     pair.label.textFrame.textRange.text = ''
     if (areaRect) {
-      const frame = baseWordFrame(areaRect, anchor)
+      const frame = toSafeBubbleFrame(baseWordFrame(areaRect, anchor))
       pair.bubble.left = frame.left
       pair.bubble.top = frame.top
       pair.bubble.width = frame.width
@@ -538,7 +552,7 @@
     pair.label.textFrame.wordWrap = false
 
     if (areaRect) {
-      const frame = scaledWordFrame(areaRect, anchor, clampedRatio, wordLabel, style)
+      const frame = toSafeBubbleFrame(scaledWordFrame(areaRect, anchor, clampedRatio, wordLabel, style))
       const visual = buildCloudVisual(style, clampedRatio, index)
       pair.bubble.left = frame.left
       pair.bubble.top = frame.top
@@ -884,95 +898,37 @@
     }
     const areaRect = wordAreaRect(widgetRect, style.spacingScale)
     const total = Math.max(0, Math.min(count, MAX_WORD_CLOUD_WORDS))
-    console.log('[Word Cloud Debug] Creating word shape entries:', {
-      requestedCount: count,
-      actualTotal: total,
-      startIndex: startIndex
-    })
     if (!total) {
       return []
     }
     const created = []
-    const shapePairs = []
-
-    // Determine which shape type to use for bubbles
-    const wordShapeType = cachedWordCloudShapeType || 'RoundRectangle'
-    const wordShapeTypeCandidates = []
-    if (wordShapeType) {
-      wordShapeTypeCandidates.push(wordShapeType)
-    }
-    if (!wordShapeTypeCandidates.includes('RoundRectangle')) {
-      wordShapeTypeCandidates.push('RoundRectangle')
-    }
-    wordShapeTypeCandidates.push('TextBox')
-
-    // First, create all shapes without syncing
     for (let offset = 0; offset < total; offset += 1) {
       const index = startIndex + offset
       if (index >= MAX_WORD_CLOUD_WORDS) {
         break
       }
       const anchor = WORD_CLOUD_ANCHORS[index] || WORD_CLOUD_ANCHORS[WORD_CLOUD_ANCHORS.length - 1]
-      const frame = baseWordFrame(areaRect, anchor)
-
-      let created = false
-      // Try different shape types until one works
-      for (const candidateType of wordShapeTypeCandidates) {
-        try {
-          const bubble =
-            candidateType === 'TextBox'
-              ? slide.shapes.addTextBox('', frame)
-              : slide.shapes.addGeometricShape(candidateType, frame)
-          const label = slide.shapes.addTextBox('', frame)
-
-          setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
-          applyFont(label.textFrame.textRange, style, {
-            size: style.minFontSize,
-            bold: false,
-            color: style.textColor
-          })
-          label.textFrame.wordWrap = false
-
-          bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-          bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-          bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-          label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-          label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-          label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-          bubble.load('id')
-          label.load('id')
-          shapePairs.push({ bubble, label, index })
-          created = true
-          break
-        } catch (error) {
-          // Try next candidate type
-        }
-      }
-      if (!created) {
-        console.warn('Failed to create word cloud placeholder slot', { index })
-      }
-    }
-
-    // Then sync all shapes at once
-    if (shapePairs.length > 0) {
+      const frame = toSafeBubbleFrame(baseWordFrame(areaRect, anchor))
       try {
+        const bubble = slide.shapes.addTextBox('', frame)
+        const label = slide.shapes.addTextBox('', frame)
+        bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+        bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+        label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+        label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+        bubble.load('id')
+        label.load('id')
         await context.sync()
-        // After sync, collect the IDs
-        shapePairs.forEach(pair => {
-          created.push({
-            bubble: pair.bubble.id,
-            label: pair.label.id
-          })
+        created.push({
+          bubble: bubble.id,
+          label: label.id
         })
       } catch (error) {
-        console.error('Failed to sync word cloud shapes', { error, count: shapePairs.length })
+        console.warn('Failed to create word cloud placeholder slot', { index, error })
       }
     }
-    console.log('[Word Cloud Debug] Shape creation complete:', {
-      requestedTotal: total,
-      actuallyCreated: created.length,
-      createdIndices: created.map((c, i) => i)
-    })
     return created
   }
   const clearWordCloudWordShapes = async (slide, context) => {
@@ -2276,12 +2232,6 @@
     const normalizedSessionId = normalizeSessionId(sessionId)
     const cloud = pickWordCloud(wordClouds || [])
     const words = cloud ? (cloud.words || []).slice(0, MAX_WORD_CLOUD_WORDS) : []
-    console.log('[Word Cloud Debug] Cloud data:', {
-      cloudId: cloud?.id,
-      totalWords: cloud?.words?.length,
-      wordsAfterSlice: words.length,
-      wordLabels: words.map(w => w.label)
-    })
     const maxVotes = words.reduce((max, word) => Math.max(max, word.votes), 0)
 
     await PowerPoint.run(async (context) => {
@@ -2513,12 +2463,6 @@
             ? previousState.ratios
             : {}
         const visibleWords = Math.min(words.length, liveWordShapes.length)
-        console.log('[Word Cloud Debug] Rendering info:', {
-          totalWords: words.length,
-          liveShapeSlots: liveWordShapes.length,
-          visibleWords: visibleWords,
-          wordLabels: words.map((word) => word.label)
-        })
         if (visibleWords < words.length) {
           console.warn('Word cloud has fewer live shape slots than words', {
             words: words.length,
@@ -2652,7 +2596,6 @@
 
   const insertWordCloudWidget = async (styleOverrides) => {
     const style = normalizeWordCloudStyle(styleOverrides)
-    const wordShapeType = await resolveWordCloudShapeType()
     const scale = style.spacingScale
     const maxWords = style.maxWords
     const binding = await getBinding()
@@ -2764,52 +2707,33 @@
 
         stage = 'create word shapes'
         const wordShapes = []
-        const wordShapeTypeCandidates = []
-        if (wordShapeType) {
-          wordShapeTypeCandidates.push(wordShapeType)
-        }
-        if (!wordShapeTypeCandidates.includes('RoundRectangle')) {
-          wordShapeTypeCandidates.push('RoundRectangle')
-        }
-        wordShapeTypeCandidates.push('TextBox')
         const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
         for (let index = 0; index < visibleWords; index += 1) {
           const anchor = WORD_CLOUD_ANCHORS[index]
-          const frame = baseWordFrame(areaRect, anchor)
-          let created = false
-          for (const candidateType of wordShapeTypeCandidates) {
-            try {
-              stage = `create word shape ${index + 1}/${visibleWords} using ${candidateType}`
-              const bubble =
-                candidateType === 'TextBox'
-                  ? slide.shapes.addTextBox('', frame)
-                  : slide.shapes.addGeometricShape(candidateType, frame)
-              const label = slide.shapes.addTextBox('', frame)
-              setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
-              applyFont(label.textFrame.textRange, style, {
-                size: style.minFontSize,
-                bold: false,
-                color: style.textColor
-              })
-              label.textFrame.wordWrap = false
-              bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-              bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
-              bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-              label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-              label.tags.add('PrezoWidgetRole', 'word-cloud-label')
-              label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
-              bubble.load('id')
-              label.load('id')
-              stage = `sync word shape ${index + 1}/${visibleWords} using ${candidateType}`
-              await context.sync()
-              wordShapes.push({ bubble, label })
-              created = true
-              break
-            } catch {
-              // Try the next candidate shape type for this slot.
-            }
-          }
-          if (!created) {
+          const frame = toSafeBubbleFrame(baseWordFrame(areaRect, anchor))
+          try {
+            stage = `create word shape ${index + 1}/${visibleWords}`
+            const bubble = slide.shapes.addTextBox('', frame)
+            const label = slide.shapes.addTextBox('', frame)
+            setWordShapeHidden({ bubble, label }, areaRect, anchor, style)
+            applyFont(label.textFrame.textRange, style, {
+              size: style.minFontSize,
+              bold: false,
+              color: style.textColor
+            })
+            label.textFrame.wordWrap = false
+            bubble.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+            bubble.tags.add('PrezoWidgetRole', 'word-cloud-bubble')
+            bubble.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+            label.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
+            label.tags.add('PrezoWidgetRole', 'word-cloud-label')
+            label.tags.add(WORD_CLOUD_WORD_INDEX_TAG, `${index}`)
+            bubble.load('id')
+            label.load('id')
+            stage = `sync word shape ${index + 1}/${visibleWords}`
+            await context.sync()
+            wordShapes.push({ bubble, label })
+          } catch {
             console.warn('Skipping word cloud slot during insert', { index })
           }
         }
