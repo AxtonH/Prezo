@@ -41,10 +41,6 @@ body {
 
 body.login-view #root {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px;
 }
 
 .app {
@@ -481,13 +477,7 @@ button.ghost {
 }
 
 .login-page:not(.ppt) {
-  max-width: 1120px;
-  margin: 0;
-  width: min(1120px, calc(100% - 96px));
   background: #0f172a;
-  border-radius: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   padding: 0;
   gap: 0;
@@ -704,12 +694,6 @@ button.ghost {
 @media (max-width: 900px) {
   .login-page {
     grid-template-columns: 1fr;
-  }
-
-  .login-page:not(.ppt) {
-    margin: 16px;
-    width: auto;
-    border-radius: 16px;
   }
 
   .login-left {
