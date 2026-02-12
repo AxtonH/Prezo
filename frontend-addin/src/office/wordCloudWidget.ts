@@ -9,6 +9,9 @@ const WORD_CLOUD_STATE_TAG = 'PrezoWordCloudState'
 const WORD_CLOUD_WORD_INDEX_TAG = 'PrezoWordCloudWordIndex'
 const MAX_WORD_CLOUD_WORDS = 5
 const MAX_SLIDE_TAG_VALUE_LENGTH = 250
+const WORD_CLOUD_SHAPES_TAG_COUNT = `${WORD_CLOUD_SHAPES_TAG}Count`
+const WORD_CLOUD_SHAPES_TAG_PART_PREFIX = `${WORD_CLOUD_SHAPES_TAG}Part`
+const WORD_CLOUD_SHAPES_TAG_MAX_PARTS = 12
 
 const buildWordCloudTitle = (code?: string | null) =>
   code ? `Prezo Word Cloud - ${code}` : 'Prezo Word Cloud'
@@ -208,6 +211,96 @@ const setSlideTagIfFits = (slide: PowerPoint.Slide, key: string, value: string) 
   setSlideTag(slide, key, normalizedValue)
   return true
 }
+const getLoadedTagValue = (tag: { isNullObject: boolean; value?: string } | null | undefined) =>
+  tag && !tag.isNullObject ? String(tag.value ?? '') : ''
+
+const setChunkedSlideTag = (
+  slide: PowerPoint.Slide,
+  key: string,
+  value: string,
+  options?: { maxParts?: number; chunkSize?: number }
+) => {
+  const maxParts = options?.maxParts ?? WORD_CLOUD_SHAPES_TAG_MAX_PARTS
+  const chunkSize = options?.chunkSize ?? MAX_SLIDE_TAG_VALUE_LENGTH
+  const normalizedValue = String(value ?? '')
+  const countKey = `${key}Count`
+  const partKeyAt = (index: number) => `${key}Part${index}`
+
+  if (!normalizedValue) {
+    setSlideTag(slide, key, '')
+    setSlideTag(slide, countKey, '0')
+    for (let index = 0; index < maxParts; index += 1) {
+      setSlideTag(slide, partKeyAt(index), '')
+    }
+    return true
+  }
+
+  const parts: string[] = []
+  for (let start = 0; start < normalizedValue.length; start += chunkSize) {
+    parts.push(normalizedValue.slice(start, start + chunkSize))
+  }
+
+  if (parts.length > maxParts) {
+    setSlideTag(slide, key, '')
+    setSlideTag(slide, countKey, '0')
+    for (let index = 0; index < maxParts; index += 1) {
+      setSlideTag(slide, partKeyAt(index), '')
+    }
+    return false
+  }
+
+  if (parts.length === 1) {
+    setSlideTag(slide, key, normalizedValue)
+    setSlideTag(slide, countKey, '1')
+    for (let index = 0; index < maxParts; index += 1) {
+      setSlideTag(slide, partKeyAt(index), '')
+    }
+    return true
+  }
+
+  setSlideTag(slide, key, '')
+  setSlideTag(slide, countKey, `${parts.length}`)
+  for (let index = 0; index < maxParts; index += 1) {
+    setSlideTag(slide, partKeyAt(index), parts[index] ?? '')
+  }
+  return true
+}
+
+const readChunkedTagFromLoaded = (
+  baseTag: { isNullObject: boolean; value?: string } | null | undefined,
+  countTag: { isNullObject: boolean; value?: string } | null | undefined,
+  partTags: Array<{ isNullObject: boolean; value?: string }>
+) => {
+  const baseValue = getLoadedTagValue(baseTag)
+  const parsedCount = Number.parseInt(getLoadedTagValue(countTag), 10)
+  const partCount = Number.isFinite(parsedCount)
+    ? clamp(parsedCount, 0, partTags.length)
+    : 0
+
+  if (partCount <= 0) {
+    return baseValue
+  }
+  if (partCount === 1) {
+    return baseValue || getLoadedTagValue(partTags[0])
+  }
+
+  let combined = ''
+  for (let index = 0; index < partCount; index += 1) {
+    const value = getLoadedTagValue(partTags[index])
+    if (!value) {
+      return baseValue
+    }
+    combined += value
+  }
+  return combined || baseValue
+}
+
+const setWordCloudShapeIdsTag = (slide: PowerPoint.Slide, value: string) =>
+  setChunkedSlideTag(slide, WORD_CLOUD_SHAPES_TAG, value, {
+    maxParts: WORD_CLOUD_SHAPES_TAG_MAX_PARTS,
+    chunkSize: MAX_SLIDE_TAG_VALUE_LENGTH
+  })
+
 const toFiniteNumber = (value: unknown, fallback: number) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -944,7 +1037,7 @@ export async function insertWordCloudWidget(
     setSlideTag(slide, WORD_CLOUD_PENDING_TAG, 'true')
     setSlideTag(slide, WORD_CLOUD_STYLE_TAG, '')
     setSlideTag(slide, WORD_CLOUD_STATE_TAG, '')
-    setSlideTag(slide, WORD_CLOUD_SHAPES_TAG, '')
+    setWordCloudShapeIdsTag(slide, '')
 
     const width = Math.max(380, pageSetup.slideWidth * 0.7)
     const height = Math.max(280, pageSetup.slideHeight * 0.56)
@@ -1119,7 +1212,7 @@ export async function insertWordCloudWidget(
       }
       setSlideTagIfFits(slide, WORD_CLOUD_STYLE_TAG, serializedStyle)
       setSlideTagIfFits(slide, WORD_CLOUD_STATE_TAG, serializedState)
-      setSlideTagIfFits(slide, WORD_CLOUD_SHAPES_TAG, serializedShapeIds)
+      setWordCloudShapeIdsTag(slide, serializedShapeIds)
       await context.sync()
     } catch (tagPersistError) {
       console.warn('Word cloud metadata persistence failed after insert', tagPersistError)
@@ -1148,14 +1241,29 @@ const runWordCloudWidgetUpdate = async (
       const sessionTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SESSION_TAG)
       const pendingTag = slide.tags.getItemOrNullObject(WORD_CLOUD_PENDING_TAG)
       const shapeTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG)
+      const shapeTagCount = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG_COUNT)
+      const shapeTagParts = Array.from({ length: WORD_CLOUD_SHAPES_TAG_MAX_PARTS }, (_, index) =>
+        slide.tags.getItemOrNullObject(`${WORD_CLOUD_SHAPES_TAG_PART_PREFIX}${index}`)
+      )
       const styleTag = slide.tags.getItemOrNullObject(WORD_CLOUD_STYLE_TAG)
       const stateTag = slide.tags.getItemOrNullObject(WORD_CLOUD_STATE_TAG)
       sessionTag.load('value')
       pendingTag.load('value')
       shapeTag.load('value')
+      shapeTagCount.load('value')
+      shapeTagParts.forEach((tag) => tag.load('value'))
       styleTag.load('value')
       stateTag.load('value')
-      return { slide, sessionTag, pendingTag, shapeTag, styleTag, stateTag }
+      return {
+        slide,
+        sessionTag,
+        pendingTag,
+        shapeTag,
+        shapeTagCount,
+        shapeTagParts,
+        styleTag,
+        stateTag
+      }
     })
 
     await context.sync()
@@ -1171,16 +1279,27 @@ const runWordCloudWidgetUpdate = async (
         const hasSessionMatch = sessionTagValue === normalizedSessionId
 
         let recovered = false
-        stage = 'recover shape ids'
-        let shapeIds: WordCloudShapeIds | null = await recoverShapeIds(info.slide, context)
-        if (shapeIds) {
-          recovered = true
-          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-        } else if (!info.shapeTag.isNullObject && info.shapeTag.value) {
+        stage = 'parse stored shape ids'
+        let shapeIds: WordCloudShapeIds | null = null
+        const serializedShapeIds = readChunkedTagFromLoaded(
+          info.shapeTag,
+          info.shapeTagCount,
+          info.shapeTagParts
+        )
+        if (serializedShapeIds) {
           try {
-            shapeIds = JSON.parse(info.shapeTag.value) as WordCloudShapeIds
+            shapeIds = JSON.parse(serializedShapeIds) as WordCloudShapeIds
           } catch {
             shapeIds = null
+          }
+        }
+
+        if (!shapeIds || !isValidWordCloudShapeIds(shapeIds)) {
+          stage = 'recover shape ids'
+          shapeIds = await recoverShapeIds(info.slide, context)
+          if (shapeIds) {
+            recovered = true
+            setWordCloudShapeIdsTag(info.slide, JSON.stringify(shapeIds))
           }
         }
 
@@ -1283,7 +1402,7 @@ const runWordCloudWidgetUpdate = async (
         }
 
         shapeIds.words = wordShapeIds
-        setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+        setWordCloudShapeIdsTag(info.slide, JSON.stringify(shapeIds))
 
         const wordShapes = wordShapeIds.map((ids) => ({
           bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
@@ -1424,7 +1543,7 @@ const runWordCloudWidgetUpdate = async (
             throw renderError
           }
           shapeIds.words = wordShapeIds
-          setSlideTagIfFits(info.slide, WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
+          setWordCloudShapeIdsTag(info.slide, JSON.stringify(shapeIds))
 
           const retryWordShapes = wordShapeIds.map((ids) => ({
             bubble: info.slide.shapes.getItemOrNullObject(ids.bubble),
