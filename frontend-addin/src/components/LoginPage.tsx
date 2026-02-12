@@ -130,10 +130,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           form
         ) : (
           <>
-            <h1 className="login-headline">Transform Your Presentations with AI</h1>
+            <h1 className="login-headline">Transform Your Presentations with Action</h1>
             <p className="login-desc">
-              Analyze, enhance, and perfect your presentation decks with our AI-powered platform
-              designed for consulting and creative teams.
+              Add fully editable, interactive elements while maintaining a seamless presentation experience
             </p>
 
             <div className="login-features">
@@ -161,8 +160,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   </svg>
                 </div>
                 <div>
-                  <div className="feature-title">Image Enhancement</div>
-                  <div className="feature-desc">AI-powered visual optimization</div>
+                  <div className="feature-title">Fully Integrated</div>
+                  <div className="feature-desc">Bring your PowerPoint to life</div>
                 </div>
               </div>
 
