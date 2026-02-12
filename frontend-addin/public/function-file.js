@@ -12,15 +12,9 @@
   const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
   const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
   const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
-  const WORD_CLOUD_WIDGET_TAG = 'PrezoWordCloudWidget'
-  const WORD_CLOUD_SESSION_TAG = 'PrezoWordCloudSessionId'
-  const WORD_CLOUD_SHAPES_TAG = 'PrezoWordCloudShapeIds'
-  const WORD_CLOUD_PENDING_TAG = 'PrezoWordCloudPending'
-  const WORD_CLOUD_STYLE_TAG = 'PrezoWordCloudStyle'
   const DEFAULT_API_BASE_URL = 'http://localhost:8000'
   const MAX_QNA_ITEMS = 4
   const MAX_POLL_OPTIONS = 5
-  const MAX_WORD_CLOUD_WORDS = 5
   const PANEL_TITLE = 'Questions from your audience'
   const EYEBROW_TEXT = 'PREZO LIVE Q&A'
   const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
@@ -109,20 +103,6 @@
     barThicknessScale: 1,
     maxOptions: 5
   }
-  const DEFAULT_WORD_CLOUD_STYLE = {
-    fontFamily: null,
-    textColor: '#0f172a',
-    mutedColor: '#64748b',
-    accentColor: '#2563eb',
-    panelColor: '#ffffff',
-    borderColor: '#e2e8f0',
-    shadowColor: '#e2e8f0',
-    shadowOpacity: 0.35,
-    spacingScale: 1,
-    minFontSize: 20,
-    maxFontSize: 56,
-    maxWords: 5
-  }
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
   const hexToRgb = (hex) => {
     const normalized = hex.replace('#', '')
@@ -199,42 +179,6 @@
       maxOptions: clamp(Math.round(Number(next.maxOptions ?? DEFAULT_POLL_STYLE.maxOptions)), 1, 5)
     }
   }
-  const normalizeWordCloudStyle = (style) => {
-    const next = { ...DEFAULT_WORD_CLOUD_STYLE, ...(style || {}) }
-    const minFont = clamp(
-      Math.round(Number(next.minFontSize ?? DEFAULT_WORD_CLOUD_STYLE.minFontSize)),
-      14,
-      64
-    )
-    const maxFont = clamp(
-      Math.round(Number(next.maxFontSize ?? DEFAULT_WORD_CLOUD_STYLE.maxFontSize)),
-      minFont + 2,
-      96
-    )
-    return {
-      ...next,
-      fontFamily: next.fontFamily ? String(next.fontFamily) : null,
-      textColor: next.textColor || DEFAULT_WORD_CLOUD_STYLE.textColor,
-      mutedColor: next.mutedColor || DEFAULT_WORD_CLOUD_STYLE.mutedColor,
-      accentColor: next.accentColor || DEFAULT_WORD_CLOUD_STYLE.accentColor,
-      panelColor: next.panelColor || DEFAULT_WORD_CLOUD_STYLE.panelColor,
-      borderColor: next.borderColor || DEFAULT_WORD_CLOUD_STYLE.borderColor,
-      shadowColor: next.shadowColor || DEFAULT_WORD_CLOUD_STYLE.shadowColor,
-      shadowOpacity: clamp(
-        Number(next.shadowOpacity ?? DEFAULT_WORD_CLOUD_STYLE.shadowOpacity),
-        0,
-        0.8
-      ),
-      spacingScale: clamp(
-        Number(next.spacingScale ?? DEFAULT_WORD_CLOUD_STYLE.spacingScale),
-        0.8,
-        1.3
-      ),
-      minFontSize: minFont,
-      maxFontSize: maxFont,
-      maxWords: clamp(Math.round(Number(next.maxWords ?? DEFAULT_WORD_CLOUD_STYLE.maxWords)), 1, 5)
-    }
-  }
   const badgeFillFor = (style) => lighten(style.accentColor, 0.82)
   const applyFont = (target, style, options) => {
     const font = target && target.font ? target.font : target
@@ -252,9 +196,7 @@
       font.color = next.color
     }
   }
-  const buildPollTitle = (code) => (code ? `Prezo Poll - ${code}` : 'Prezo Poll')
-  const buildWordCloudTitle = (code) =>
-    code ? `Prezo Word Cloud - ${code}` : 'Prezo Word Cloud'
+  const buildPollTitle = (code) => (code ? `Prezo Poll • ${code}` : 'Prezo Poll')
   const resolveApiBaseUrl = (binding) =>
     (binding && binding.apiBaseUrl) || window.PREZO_API_BASE_URL || DEFAULT_API_BASE_URL
 
@@ -310,47 +252,6 @@
       }
     })
   }
-
-  const pickWordCloud = (wordClouds) => {
-    if (!wordClouds || wordClouds.length === 0) {
-      return null
-    }
-    const openCloud = wordClouds.find((cloud) => cloud.status === 'open')
-    if (openCloud) {
-      return openCloud
-    }
-    const sorted = [...wordClouds].sort((a, b) => {
-      const aTime = Date.parse(a.created_at)
-      const bTime = Date.parse(b.created_at)
-      if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
-        return 0
-      }
-      return bTime - aTime
-    })
-    return sorted[0] || wordClouds[0]
-  }
-
-  const buildWordCloudSubtitle = (cloud) => {
-    if (!cloud) {
-      return 'No active word cloud yet.'
-    }
-    return cloud.prompt || 'Pick a word to shape the cloud.'
-  }
-
-  const buildWordCloudMeta = (cloud) => {
-    if (!cloud) {
-      return 'Create and open a word cloud in the host console.'
-    }
-    return cloud.status === 'open' ? 'Voting is live.' : 'Voting is closed.'
-  }
-
-  const WORD_CLOUD_ANCHORS = [
-    { x: 0.16, y: 0.38, width: 0.3, height: 0.16 },
-    { x: 0.52, y: 0.34, width: 0.3, height: 0.16 },
-    { x: 0.28, y: 0.58, width: 0.3, height: 0.16 },
-    { x: 0.62, y: 0.58, width: 0.28, height: 0.16 },
-    { x: 0.44, y: 0.74, width: 0.26, height: 0.14 }
-  ]
 
   const fetchSnapshot = async (binding) => {
     const apiBaseUrl = resolveApiBaseUrl(binding)
@@ -1617,353 +1518,6 @@
     }
   }
 
-  const updateWordCloudWidget = async (sessionId, code, wordClouds) => {
-    const cloud = pickWordCloud(wordClouds || [])
-    const words = cloud ? (cloud.words || []).slice(0, MAX_WORD_CLOUD_WORDS) : []
-    const maxVotes = words.reduce((max, word) => Math.max(max, word.votes), 0)
-
-    await PowerPoint.run(async (context) => {
-      const slides = context.presentation.slides
-      slides.load('items')
-      await context.sync()
-
-      const slideInfos = slides.items.map((slide) => {
-        const sessionTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SESSION_TAG)
-        const pendingTag = slide.tags.getItemOrNullObject(WORD_CLOUD_PENDING_TAG)
-        const shapeTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG)
-        const styleTag = slide.tags.getItemOrNullObject(WORD_CLOUD_STYLE_TAG)
-        sessionTag.load('value')
-        pendingTag.load('value')
-        shapeTag.load('value')
-        styleTag.load('value')
-        return { slide, sessionTag, pendingTag, shapeTag, styleTag }
-      })
-
-      await context.sync()
-
-      for (const info of slideInfos) {
-        const isPending = !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
-        if (!isPending && (info.sessionTag.isNullObject || info.sessionTag.value !== sessionId)) {
-          continue
-        }
-        if (info.shapeTag.isNullObject || !info.shapeTag.value) {
-          continue
-        }
-
-        let shapeIds = null
-        try {
-          shapeIds = JSON.parse(info.shapeTag.value)
-        } catch {
-          shapeIds = null
-        }
-        if (!shapeIds) {
-          continue
-        }
-
-        let style = DEFAULT_WORD_CLOUD_STYLE
-        let applyStyle = false
-        if (!info.styleTag.isNullObject && info.styleTag.value) {
-          try {
-            const parsed = JSON.parse(info.styleTag.value)
-            style = normalizeWordCloudStyle(parsed)
-            applyStyle = Boolean(parsed.lockStyle)
-          } catch {
-            style = DEFAULT_WORD_CLOUD_STYLE
-          }
-        }
-
-        const shadow = shapeIds.shadow
-          ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
-          : null
-        const container = shapeIds.container
-          ? info.slide.shapes.getItemOrNullObject(shapeIds.container)
-          : null
-        const title = shapeIds.title
-          ? info.slide.shapes.getItemOrNullObject(shapeIds.title)
-          : null
-        const subtitle = shapeIds.subtitle
-          ? info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
-          : null
-        const body = shapeIds.body
-          ? info.slide.shapes.getItemOrNullObject(shapeIds.body)
-          : null
-        const wordShapes = (shapeIds.words || []).map((id) =>
-          info.slide.shapes.getItemOrNullObject(id)
-        )
-
-        if (shadow) shadow.load('id')
-        if (container) container.load('id')
-        if (title) title.load('id')
-        if (subtitle) subtitle.load('id')
-        if (body) body.load('id')
-        wordShapes.forEach((shape) => shape.load('id'))
-        await context.sync()
-
-        if (applyStyle) {
-          if (shadow && !shadow.isNullObject) {
-            shadow.fill.setSolidColor(style.shadowColor)
-            shadow.fill.transparency = style.shadowOpacity
-            shadow.lineFormat.visible = false
-          }
-          if (container && !container.isNullObject) {
-            container.fill.setSolidColor(style.panelColor)
-            container.lineFormat.color = style.borderColor
-            container.lineFormat.weight = 1
-          }
-          if (title && !title.isNullObject) {
-            applyFont(title.textFrame.textRange, style, {
-              size: 22,
-              bold: true,
-              color: style.textColor
-            })
-          }
-          if (subtitle && !subtitle.isNullObject) {
-            applyFont(subtitle.textFrame.textRange, style, {
-              size: 13,
-              color: style.mutedColor
-            })
-          }
-          if (body && !body.isNullObject) {
-            applyFont(body.textFrame.textRange, style, {
-              size: 13,
-              color: style.mutedColor
-            })
-          }
-        }
-
-        if (title && !title.isNullObject) {
-          title.textFrame.textRange.text = buildWordCloudTitle(code)
-        }
-        if (subtitle && !subtitle.isNullObject) {
-          subtitle.textFrame.textRange.text = buildWordCloudSubtitle(cloud)
-        }
-        if (body && !body.isNullObject) {
-          body.textFrame.textRange.text = buildWordCloudMeta(cloud)
-        }
-
-        const visibleWords = Math.min(style.maxWords, words.length)
-        wordShapes.forEach((shape, index) => {
-          if (shape.isNullObject) {
-            return
-          }
-          const word = words[index]
-          if (!word || index >= visibleWords) {
-            shape.textFrame.textRange.text = ''
-            return
-          }
-          const ratio = maxVotes > 0 ? word.votes / maxVotes : 0
-          const fontSize = style.minFontSize + (style.maxFontSize - style.minFontSize) * ratio
-          shape.textFrame.textRange.text = word.label
-          shape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
-          applyFont(shape.textFrame.textRange, style, {
-            size: Math.round(fontSize),
-            bold: ratio >= 0.45,
-            color: ratio > 0 ? style.accentColor : style.textColor
-          })
-          shape.fill.transparency = 1
-          shape.lineFormat.visible = false
-        })
-
-        if (isPending) {
-          info.slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
-          info.slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-        }
-      }
-
-      await context.sync()
-    })
-  }
-
-  const insertWordCloudWidget = async (styleOverrides) => {
-    const style = normalizeWordCloudStyle(styleOverrides)
-    const scale = style.spacingScale
-    const maxWords = style.maxWords
-    const binding = await getBinding()
-    const sessionId = binding && binding.sessionId ? binding.sessionId : null
-    const code = binding ? binding.code : null
-    const hasSession = Boolean(sessionId)
-
-    await PowerPoint.run(async (context) => {
-      const slides = context.presentation.getSelectedSlides()
-      slides.load('items')
-      const pageSetup = context.presentation.pageSetup
-      pageSetup.load(['slideWidth', 'slideHeight'])
-      await context.sync()
-
-      const slide = slides.items[0]
-      if (!slide) {
-        throw new Error('Select a slide before inserting a widget.')
-      }
-
-      const existingShapesTag = slide.tags.getItemOrNullObject(WORD_CLOUD_SHAPES_TAG)
-      existingShapesTag.load('value')
-      await context.sync()
-
-      if (!existingShapesTag.isNullObject && existingShapesTag.value) {
-        try {
-          const parsed = JSON.parse(existingShapesTag.value)
-          const ids = [
-            parsed.shadow,
-            parsed.container,
-            parsed.title,
-            parsed.subtitle,
-            parsed.body,
-            ...(parsed.words || [])
-          ].filter(Boolean)
-          const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
-          shapes.forEach((shape) => shape.load('id'))
-          await context.sync()
-          shapes.forEach((shape) => {
-            if (!shape.isNullObject) {
-              shape.delete()
-            }
-          })
-          await context.sync()
-        } catch {
-          // ignore cleanup errors
-        }
-        slide.tags.delete(WORD_CLOUD_SESSION_TAG)
-        slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-        slide.tags.delete(WORD_CLOUD_STYLE_TAG)
-        slide.tags.delete(WORD_CLOUD_SHAPES_TAG)
-      }
-
-      const width = Math.max(380, pageSetup.slideWidth * 0.7)
-      const height = Math.max(280, pageSetup.slideHeight * 0.56)
-      const left = (pageSetup.slideWidth - width) / 2
-      const top = pageSetup.slideHeight * 0.1
-      const padding = 24
-
-      const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
-        left: left + 4,
-        top: top + 6,
-        width,
-        height
-      })
-      shadow.fill.setSolidColor(style.shadowColor)
-      shadow.fill.transparency = style.shadowOpacity
-      shadow.lineFormat.visible = false
-      shadow.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      shadow.tags.add('PrezoWidgetRole', 'word-cloud-shadow')
-
-      const container = slide.shapes.addGeometricShape('RoundRectangle', {
-        left,
-        top,
-        width,
-        height
-      })
-      container.fill.setSolidColor(style.panelColor)
-      container.lineFormat.color = style.borderColor
-      container.lineFormat.weight = 1
-      container.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      container.tags.add('PrezoWidgetRole', 'word-cloud-container')
-
-      const title = slide.shapes.addTextBox(buildWordCloudTitle(code), {
-        left: left + padding,
-        top: top + 18 * scale,
-        width: width - padding * 2,
-        height: 30 * scale
-      })
-      title.textFrame.wordWrap = true
-      applyFont(title.textFrame.textRange, style, {
-        size: 22,
-        bold: true,
-        color: style.textColor
-      })
-      title.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      title.tags.add('PrezoWidgetRole', 'word-cloud-title')
-
-      const subtitle = slide.shapes.addTextBox(
-        hasSession ? 'Audience votes make words grow.' : 'Connect a Prezo session to go live.',
-        {
-          left: left + padding,
-          top: top + 52 * scale,
-          width: width - padding * 2,
-          height: 22 * scale
-        }
-      )
-      subtitle.textFrame.wordWrap = true
-      applyFont(subtitle.textFrame.textRange, style, { size: 13, color: style.mutedColor })
-      subtitle.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      subtitle.tags.add('PrezoWidgetRole', 'word-cloud-subtitle')
-
-      const body = slide.shapes.addTextBox(
-        hasSession ? 'Waiting for word cloud votes...' : 'No active word cloud yet.',
-        {
-          left: left + padding,
-          top: top + 84 * scale,
-          width: width - padding * 2,
-          height: 18 * scale
-        }
-      )
-      body.textFrame.wordWrap = true
-      applyFont(body.textFrame.textRange, style, { size: 13, color: style.mutedColor })
-      body.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-      body.tags.add('PrezoWidgetRole', 'word-cloud-body')
-
-      const wordShapes = []
-      const visibleWords = Math.min(maxWords, MAX_WORD_CLOUD_WORDS)
-      for (let index = 0; index < visibleWords; index += 1) {
-        const anchor = WORD_CLOUD_ANCHORS[index]
-        const wordShape = slide.shapes.addTextBox('', {
-          left: left + width * anchor.x,
-          top: top + height * anchor.y,
-          width: width * anchor.width,
-          height: height * anchor.height
-        })
-        wordShape.textFrame.wordWrap = true
-        wordShape.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
-        applyFont(wordShape.textFrame.textRange, style, {
-          size: style.minFontSize,
-          bold: true,
-          color: style.textColor
-        })
-        wordShape.fill.transparency = 1
-        wordShape.lineFormat.visible = false
-        wordShape.tags.add(WORD_CLOUD_WIDGET_TAG, 'true')
-        wordShape.tags.add('PrezoWidgetRole', 'word-cloud-word')
-        wordShapes.push(wordShape)
-      }
-
-      shadow.load('id')
-      container.load('id')
-      title.load('id')
-      subtitle.load('id')
-      body.load('id')
-      wordShapes.forEach((shape) => shape.load('id'))
-      await context.sync()
-
-      const shapeIds = {
-        shadow: shadow.id,
-        container: container.id,
-        title: title.id,
-        subtitle: subtitle.id,
-        body: body.id,
-        words: wordShapes.map((shape) => shape.id)
-      }
-
-      if (hasSession && sessionId) {
-        slide.tags.add(WORD_CLOUD_SESSION_TAG, sessionId)
-        slide.tags.delete(WORD_CLOUD_PENDING_TAG)
-      } else {
-        slide.tags.add(WORD_CLOUD_PENDING_TAG, 'true')
-        slide.tags.delete(WORD_CLOUD_SESSION_TAG)
-      }
-      slide.tags.add(WORD_CLOUD_STYLE_TAG, JSON.stringify(style))
-      slide.tags.add(WORD_CLOUD_SHAPES_TAG, JSON.stringify(shapeIds))
-      await context.sync()
-    })
-
-    if (hasSession && sessionId) {
-      try {
-        const snapshot = await fetchSnapshot(binding)
-        await updateWordCloudWidget(sessionId, code, snapshot.word_clouds || [])
-      } catch (error) {
-        console.warn('Failed to refresh word cloud widget', error)
-      }
-    }
-  }
-
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -1997,19 +1551,6 @@
         const detail = error && error.message ? error.message : 'Failed to insert poll widget'
         activeDialog.messageChild(
           JSON.stringify({ type: 'error', source: 'poll', message: detail })
-        )
-      }
-    }
-    if (message && message.type === 'insert-word-cloud') {
-      try {
-        await insertWordCloudWidget(message.style)
-        activeDialog.messageChild(JSON.stringify({ type: 'word-cloud-inserted' }))
-        activeDialog.close()
-        activeDialog = null
-      } catch (error) {
-        const detail = error && error.message ? error.message : 'Failed to insert word cloud widget'
-        activeDialog.messageChild(
-          JSON.stringify({ type: 'error', source: 'word-cloud', message: detail })
         )
       }
     }
@@ -2066,5 +1607,4 @@
     }
   })
 })()
-
 

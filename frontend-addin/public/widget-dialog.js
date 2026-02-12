@@ -5,28 +5,20 @@
   const selectView = () => el('view-select')
   const qnaView = () => el('view-qna')
   const pollView = () => el('view-poll')
-  const wordCloudView = () => el('view-word-cloud')
   const openQnaButton = () => el('open-qna')
   const backQnaButton = () => el('back-qna')
   const insertQnaButton = () => el('insert-qna')
   const openPollButton = () => el('open-poll')
   const backPollButton = () => el('back-poll')
   const insertPollButton = () => el('insert-poll')
-  const openWordCloudButton = () => el('open-word-cloud')
-  const backWordCloudButton = () => el('back-word-cloud')
-  const insertWordCloudButton = () => el('insert-word-cloud')
   const statusEl = () => el('status')
   const errorEl = () => el('error')
   const pollStatusEl = () => el('poll-status')
   const pollErrorEl = () => el('poll-error')
-  const wordCloudStatusEl = () => el('word-cloud-status')
-  const wordCloudErrorEl = () => el('word-cloud-error')
   const debugEl = () => el('debug')
   const pollDebugEl = () => el('poll-debug')
-  const wordCloudDebugEl = () => el('word-cloud-debug')
   const previewEl = () => el('qna-preview')
   const pollPreviewEl = () => el('poll-preview')
-  const wordCloudPreviewEl = () => el('word-cloud-preview')
 
   const queryDebug = () => {
     try {
@@ -52,7 +44,6 @@
     const value = lines.join(' | ')
     if (debugEl()) debugEl().textContent = value
     if (pollDebugEl()) pollDebugEl().textContent = value
-    if (wordCloudDebugEl()) wordCloudDebugEl().textContent = value
   }
 
   const qnaInputs = {
@@ -80,19 +71,6 @@
     width: () => el('poll-width'),
     orientation: () => el('poll-orientation'),
     max: () => el('poll-max')
-  }
-  const wordCloudInputs = {
-    font: () => el('word-cloud-font'),
-    text: () => el('word-cloud-text'),
-    muted: () => el('word-cloud-muted'),
-    accent: () => el('word-cloud-accent'),
-    panel: () => el('word-cloud-panel'),
-    border: () => el('word-cloud-border'),
-    shadow: () => el('word-cloud-shadow'),
-    spacing: () => el('word-cloud-spacing'),
-    minFont: () => el('word-cloud-min-font'),
-    maxFont: () => el('word-cloud-max-font'),
-    maxWords: () => el('word-cloud-max-words')
   }
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -148,14 +126,6 @@
     if (pollErrorEl()) pollErrorEl().textContent = text || ''
   }
 
-  const setWordCloudStatus = (text) => {
-    if (wordCloudStatusEl()) wordCloudStatusEl().textContent = text || ''
-  }
-
-  const setWordCloudError = (text) => {
-    if (wordCloudErrorEl()) wordCloudErrorEl().textContent = text || ''
-  }
-
   const setBusy = (busy) => {
     const btn = insertQnaButton()
     if (!btn) return
@@ -168,13 +138,6 @@
     if (!btn) return
     btn.disabled = busy
     btn.textContent = busy ? 'Inserting...' : 'Insert poll'
-  }
-
-  const setWordCloudBusy = (busy) => {
-    const btn = insertWordCloudButton()
-    if (!btn) return
-    btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : 'Insert word cloud'
   }
 
   const readQnaConfig = () => ({
@@ -229,24 +192,6 @@
     maxOptions: clamp(parseInt(pollInputs.max()?.value || '5', 10), 2, 5)
   })
 
-  const readWordCloudConfig = () => {
-    const minFont = clamp(parseInt(wordCloudInputs.minFont()?.value || '20', 10), 14, 64)
-    const maxFont = clamp(parseInt(wordCloudInputs.maxFont()?.value || '56', 10), minFont + 2, 96)
-    return {
-      fontFamily: (wordCloudInputs.font()?.value || '').trim() || null,
-      textColor: wordCloudInputs.text()?.value || '#0f172a',
-      mutedColor: wordCloudInputs.muted()?.value || '#64748b',
-      accentColor: wordCloudInputs.accent()?.value || '#2563eb',
-      panelColor: wordCloudInputs.panel()?.value || '#ffffff',
-      borderColor: wordCloudInputs.border()?.value || '#e2e8f0',
-      shadowOpacity: clamp(parseFloat(wordCloudInputs.shadow()?.value || '0.35'), 0, 0.6),
-      spacingScale: clamp(parseFloat(wordCloudInputs.spacing()?.value || '1'), 0.8, 1.3),
-      minFontSize: minFont,
-      maxFontSize: maxFont,
-      maxWords: clamp(parseInt(wordCloudInputs.maxWords()?.value || '5', 10), 1, 5)
-    }
-  }
-
   const updatePollPreview = () => {
     const preview = pollPreviewEl()
     if (!preview) return
@@ -272,42 +217,10 @@
     })
   }
 
-  const updateWordCloudPreview = () => {
-    const preview = wordCloudPreviewEl()
-    if (!preview) return
-    const config = readWordCloudConfig()
-    preview.style.setProperty('--panel-bg', config.panelColor)
-    preview.style.setProperty('--border', config.borderColor)
-    preview.style.setProperty('--text', config.textColor)
-    preview.style.setProperty('--muted', config.mutedColor)
-    preview.style.setProperty('--accent', config.accentColor)
-    preview.style.setProperty('--shadow-alpha', config.shadowOpacity.toString())
-    preview.style.setProperty('--spacing', config.spacingScale.toString())
-    preview.style.setProperty(
-      '--font-family',
-      config.fontFamily ? `'${config.fontFamily}', 'Sora', sans-serif` : `'Sora', sans-serif`
-    )
-
-    const words = preview.querySelectorAll('.preview-word')
-    words.forEach((word, index) => {
-      if (index >= config.maxWords) {
-        word.style.display = 'none'
-        return
-      }
-      word.style.display = 'inline'
-      const ratio = config.maxWords > 1 ? index / (config.maxWords - 1) : 0
-      const fontSize = Math.round(
-        config.maxFontSize - (config.maxFontSize - config.minFontSize) * ratio
-      )
-      word.style.fontSize = `${fontSize}px`
-    })
-  }
-
   const showView = (view) => {
     if (selectView()) selectView().classList.add('hidden')
     if (qnaView()) qnaView().classList.add('hidden')
     if (pollView()) pollView().classList.add('hidden')
-    if (wordCloudView()) wordCloudView().classList.add('hidden')
     if (view === 'qna' && qnaView()) {
       qnaView().classList.remove('hidden')
       updatePreview()
@@ -316,11 +229,6 @@
     if (view === 'poll' && pollView()) {
       pollView().classList.remove('hidden')
       updatePollPreview()
-      return
-    }
-    if (view === 'word-cloud' && wordCloudView()) {
-      wordCloudView().classList.remove('hidden')
-      updateWordCloudPreview()
       return
     }
     if (selectView()) {
@@ -346,15 +254,6 @@
     )
   }
 
-  const sendWordCloudInsert = () => {
-    setWordCloudError('')
-    setWordCloudStatus('Sending request...')
-    setWordCloudBusy(true)
-    Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-word-cloud', style: readWordCloudConfig() })
-    )
-  }
-
   Office.onReady(() => {
     if (openQnaButton()) {
       openQnaButton().addEventListener('click', () => showView('qna'))
@@ -368,20 +267,11 @@
     if (backPollButton()) {
       backPollButton().addEventListener('click', () => showView('select'))
     }
-    if (openWordCloudButton()) {
-      openWordCloudButton().addEventListener('click', () => showView('word-cloud'))
-    }
-    if (backWordCloudButton()) {
-      backWordCloudButton().addEventListener('click', () => showView('select'))
-    }
     if (insertQnaButton()) {
       insertQnaButton().addEventListener('click', sendInsert)
     }
     if (insertPollButton()) {
       insertPollButton().addEventListener('click', sendPollInsert)
-    }
-    if (insertWordCloudButton()) {
-      insertWordCloudButton().addEventListener('click', sendWordCloudInsert)
     }
 
     Object.values(qnaInputs).forEach((getter) => {
@@ -395,12 +285,6 @@
       if (!input) return
       input.addEventListener('input', updatePollPreview)
       input.addEventListener('change', updatePollPreview)
-    })
-    Object.values(wordCloudInputs).forEach((getter) => {
-      const input = getter()
-      if (!input) return
-      input.addEventListener('input', updateWordCloudPreview)
-      input.addEventListener('change', updateWordCloudPreview)
     })
 
     Office.context.ui.addHandlerAsync(
@@ -418,18 +302,11 @@
         } else if (message && message.type === 'poll-inserted') {
           setPollStatus('Poll widget inserted.')
           setPollBusy(false)
-        } else if (message && message.type === 'word-cloud-inserted') {
-          setWordCloudStatus('Word cloud widget inserted.')
-          setWordCloudBusy(false)
         } else if (message && message.type === 'error') {
           if (message.source === 'poll') {
             setPollStatus('')
             setPollError(message.message || 'Failed to insert poll widget.')
             setPollBusy(false)
-          } else if (message.source === 'word-cloud') {
-            setWordCloudStatus('')
-            setWordCloudError(message.message || 'Failed to insert word cloud widget.')
-            setWordCloudBusy(false)
           } else {
             setStatus('')
             setError(message.message || 'Failed to insert widget.')
@@ -441,7 +318,6 @@
 
     updatePreview()
     updatePollPreview()
-    updateWordCloudPreview()
     renderDebug()
   })
 })()

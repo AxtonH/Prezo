@@ -17,9 +17,6 @@ from .models import (
     Session,
     SessionSnapshot,
     SessionStatus,
-    WordCloud,
-    WordCloudStatus,
-    WordCloudWord,
 )
 
 
@@ -80,23 +77,6 @@ class PollData:
     created_at: datetime
 
 
-@dataclass(slots=True)
-class WordCloudWordData:
-    id: str
-    label: str
-    votes: int
-
-
-@dataclass(slots=True)
-class WordCloudData:
-    id: str
-    session_id: str
-    prompt: str | None
-    words: list[WordCloudWordData]
-    status: WordCloudStatus
-    created_at: datetime
-
-
 class InMemoryStore:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -106,11 +86,8 @@ class InMemoryStore:
         self._questions_by_session: dict[str, list[str]] = defaultdict(list)
         self._polls: dict[str, PollData] = {}
         self._polls_by_session: dict[str, list[str]] = defaultdict(list)
-        self._word_clouds: dict[str, WordCloudData] = {}
-        self._word_clouds_by_session: dict[str, list[str]] = defaultdict(list)
         self._question_votes: dict[str, set[str]] = defaultdict(set)
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
-        self._word_cloud_votes: dict[str, dict[str, str]] = defaultdict(dict)
         self._events_by_session: dict[str, list[Event]] = defaultdict(list)
 
     async def create_session(self, title: str | None) -> Session:
@@ -248,77 +225,6 @@ class InMemoryStore:
             option.votes += 1
             return self._to_poll(poll)
 
-    async def create_word_cloud(
-        self, session_id: str, prompt: str | None, words: list[str]
-    ) -> WordCloud:
-        async with self._lock:
-            self._ensure_session(session_id)
-            normalized_words = self._normalize_words(words)
-            word_cloud_id = uuid.uuid4().hex
-            word_objs = [
-                WordCloudWordData(id=uuid.uuid4().hex, label=label, votes=0)
-                for label in normalized_words
-            ]
-            data = WordCloudData(
-                id=word_cloud_id,
-                session_id=session_id,
-                prompt=prompt.strip() if prompt and prompt.strip() else None,
-                words=word_objs,
-                status=WordCloudStatus.closed,
-                created_at=utc_now(),
-            )
-            self._word_clouds[word_cloud_id] = data
-            self._word_clouds_by_session[session_id].append(word_cloud_id)
-            return self._to_word_cloud(data)
-
-    async def set_word_cloud_status(
-        self, session_id: str, word_cloud_id: str, status: WordCloudStatus
-    ) -> tuple[WordCloud, list[WordCloud]]:
-        async with self._lock:
-            cloud = self._get_word_cloud(session_id, word_cloud_id)
-            closed_clouds: list[WordCloud] = []
-            if status == WordCloudStatus.open:
-                for cloud_id in self._word_clouds_by_session[session_id]:
-                    if cloud_id == word_cloud_id:
-                        continue
-                    existing = self._word_clouds[cloud_id]
-                    if existing.status == WordCloudStatus.open:
-                        existing.status = WordCloudStatus.closed
-                        closed_clouds.append(self._to_word_cloud(existing))
-            cloud.status = status
-            return self._to_word_cloud(cloud), closed_clouds
-
-    async def vote_word_cloud(
-        self,
-        session_id: str,
-        word_cloud_id: str,
-        word_id: str,
-        client_id: str | None,
-    ) -> WordCloud:
-        async with self._lock:
-            cloud = self._get_word_cloud(session_id, word_cloud_id)
-            if cloud.status != WordCloudStatus.open:
-                raise ConflictError("word cloud is closed")
-
-            selected = next((word for word in cloud.words if word.id == word_id), None)
-            if not selected:
-                raise NotFoundError("word not found")
-
-            if client_id:
-                previous_word_id = self._word_cloud_votes[word_cloud_id].get(client_id)
-                if previous_word_id == word_id:
-                    return self._to_word_cloud(cloud)
-                if previous_word_id:
-                    previous = next(
-                        (word for word in cloud.words if word.id == previous_word_id), None
-                    )
-                    if previous and previous.votes > 0:
-                        previous.votes -= 1
-                self._word_cloud_votes[word_cloud_id][client_id] = word_id
-
-            selected.votes += 1
-            return self._to_word_cloud(cloud)
-
     async def snapshot(self, session_id: str) -> SessionSnapshot:
         async with self._lock:
             session = self._sessions.get(session_id)
@@ -332,15 +238,10 @@ class InMemoryStore:
                 self._to_poll(self._polls[pid])
                 for pid in self._polls_by_session[session_id]
             ]
-            word_clouds = [
-                self._to_word_cloud(self._word_clouds[cid])
-                for cid in self._word_clouds_by_session[session_id]
-            ]
             return SessionSnapshot(
                 session=self._to_session(session),
                 questions=questions,
                 polls=polls,
-                word_clouds=word_clouds,
             )
 
     async def record_event(self, session_id: str, event: Event) -> None:
@@ -364,32 +265,6 @@ class InMemoryStore:
         if not poll or poll.session_id != session_id:
             raise NotFoundError("poll not found")
         return poll
-
-    def _get_word_cloud(self, session_id: str, word_cloud_id: str) -> WordCloudData:
-        self._ensure_session(session_id)
-        cloud = self._word_clouds.get(word_cloud_id)
-        if not cloud or cloud.session_id != session_id:
-            raise NotFoundError("word cloud not found")
-        return cloud
-
-    def _normalize_words(self, words: list[str]) -> list[str]:
-        cleaned: list[str] = []
-        seen: set[str] = set()
-        for raw_word in words:
-            word = raw_word.strip()
-            if not word:
-                continue
-            key = word.casefold()
-            if key in seen:
-                continue
-            seen.add(key)
-            cleaned.append(word)
-
-        if len(cleaned) < 2:
-            raise ConflictError("at least two unique words are required")
-        if len(cleaned) > 5:
-            raise ConflictError("word cloud supports up to five words")
-        return cleaned
 
     def _to_session(self, data: SessionData) -> Session:
         return Session(
@@ -422,18 +297,5 @@ class InMemoryStore:
             ],
             status=data.status,
             allow_multiple=data.allow_multiple,
-            created_at=data.created_at,
-        )
-
-    def _to_word_cloud(self, data: WordCloudData) -> WordCloud:
-        return WordCloud(
-            id=data.id,
-            session_id=data.session_id,
-            prompt=data.prompt,
-            words=[
-                WordCloudWord(id=word.id, label=word.label, votes=word.votes)
-                for word in data.words
-            ],
-            status=data.status,
             created_at=data.created_at,
         )

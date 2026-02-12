@@ -1,10 +1,4 @@
-import type {
-  Poll,
-  Question,
-  Session,
-  SessionSnapshot,
-  WordCloud
-} from './types'
+import type { Poll, Question, Session, SessionSnapshot } from './types'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.toString() ?? 'http://localhost:8000'
@@ -85,29 +79,6 @@ export const api = {
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote`, {
       method: 'POST',
       body: JSON.stringify({ option_id: optionId, client_id: clientId ?? null })
-    }),
-  createWordCloud: (sessionId: string, words: string[], prompt?: string) =>
-    request<WordCloud>(`/sessions/${sessionId}/word-clouds`, {
-      method: 'POST',
-      body: JSON.stringify({ words, prompt: prompt?.trim() ? prompt.trim() : null })
-    }),
-  openWordCloud: (sessionId: string, wordCloudId: string) =>
-    request<WordCloud>(`/sessions/${sessionId}/word-clouds/${wordCloudId}/open`, {
-      method: 'POST'
-    }),
-  closeWordCloud: (sessionId: string, wordCloudId: string) =>
-    request<WordCloud>(`/sessions/${sessionId}/word-clouds/${wordCloudId}/close`, {
-      method: 'POST'
-    }),
-  voteWordCloud: (
-    sessionId: string,
-    wordCloudId: string,
-    wordId: string,
-    clientId?: string
-  ) =>
-    request<WordCloud>(`/sessions/${sessionId}/word-clouds/${wordCloudId}/vote`, {
-      method: 'POST',
-      body: JSON.stringify({ word_id: wordId, client_id: clientId ?? null })
     })
 }
 

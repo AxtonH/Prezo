@@ -331,23 +331,6 @@
         bottom: 0;
         left: 0;
       }
-      .preview-word-cloud {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 12px;
-        min-height: 84px;
-        padding: 8px;
-        border: 1px solid var(--border, #e2e8f0);
-        border-radius: 12px;
-        background: var(--surface-2);
-        align-items: center;
-        justify-content: center;
-      }
-      .preview-word {
-        color: var(--accent, #2563eb);
-        line-height: 1;
-        font-weight: 600;
-      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script src="/widget-dialog.js" defer></script>
@@ -383,18 +366,6 @@
             </div>
             <div class="card-actions">
               <button id="open-poll">Customize &amp; insert</button>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">
-              <div class="card-icon" style="background: linear-gradient(135deg, #0f172a, #2563eb)">WC</div>
-              <div>
-                <div class="card-title">Word cloud widget</div>
-                <p class="muted">Shows live word growth based on audience votes.</p>
-              </div>
-            </div>
-            <div class="card-actions">
-              <button id="open-word-cloud">Customize &amp; insert</button>
             </div>
           </div>
         </div>
@@ -435,12 +406,16 @@
             <h2>Style</h2>
             <div class="field">
               <label for="qna-font">Font</label>
-              <input
-                id="qna-font"
-                list="font-options"
-                placeholder="Default / theme font"
-              />
-              <span class="muted">Type any font installed in PowerPoint.</span>
+              <select id="qna-font">
+                <option value="">Default</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
             </div>
             <div class="color-grid">
               <div class="field">
@@ -547,12 +522,16 @@
             <h2>Style</h2>
             <div class="field">
               <label for="poll-font">Font</label>
-              <input
-                id="poll-font"
-                list="font-options"
-                placeholder="Default / theme font"
-              />
-              <span class="muted">Type any font installed in PowerPoint.</span>
+              <select id="poll-font">
+                <option value="">Default</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
             </div>
             <div class="color-grid">
               <div class="field">
@@ -623,125 +602,7 @@
           <div id="poll-debug" class="muted"></div>
         </div>
       </div>
-
-      <div id="view-word-cloud" class="view hidden">
-        <div class="toolbar">
-          <button class="ghost" id="back-word-cloud">Back</button>
-          <h1>Word Cloud Widget</h1>
-        </div>
-        <div class="grid">
-          <div class="panel">
-            <h2>Preview</h2>
-            <div id="word-cloud-preview" class="preview-card">
-              <div>
-                <div class="preview-poll-title">Prezo Word Cloud</div>
-                <div class="preview-poll-question">Audience votes make words grow.</div>
-              </div>
-              <div class="preview-word-cloud">
-                <span class="preview-word" style="font-size: 24px">Launch</span>
-                <span class="preview-word" style="font-size: 18px">Quality</span>
-                <span class="preview-word" style="font-size: 28px">Momentum</span>
-                <span class="preview-word" style="font-size: 16px">Clarity</span>
-                <span class="preview-word" style="font-size: 20px">Ownership</span>
-              </div>
-            </div>
-          </div>
-          <div class="panel">
-            <h2>Style</h2>
-            <div class="field">
-              <label for="word-cloud-font">Font</label>
-              <input
-                id="word-cloud-font"
-                list="font-options"
-                placeholder="Default / theme font"
-              />
-              <span class="muted">Type any font installed in PowerPoint.</span>
-            </div>
-            <div class="color-grid">
-              <div class="field">
-                <label for="word-cloud-text">Primary text</label>
-                <input id="word-cloud-text" type="color" value="#0f172a" />
-              </div>
-              <div class="field">
-                <label for="word-cloud-muted">Muted text</label>
-                <input id="word-cloud-muted" type="color" value="#64748b" />
-              </div>
-              <div class="field">
-                <label for="word-cloud-accent">Accent</label>
-                <input id="word-cloud-accent" type="color" value="#2563eb" />
-              </div>
-            </div>
-            <div class="color-grid">
-              <div class="field">
-                <label for="word-cloud-panel">Panel background</label>
-                <input id="word-cloud-panel" type="color" value="#ffffff" />
-              </div>
-              <div class="field">
-                <label for="word-cloud-border">Border</label>
-                <input id="word-cloud-border" type="color" value="#e2e8f0" />
-              </div>
-              <div class="field">
-                <label for="word-cloud-shadow">Shadow strength</label>
-                <input id="word-cloud-shadow" type="range" min="0" max="0.6" step="0.05" value="0.35" />
-              </div>
-            </div>
-            <div class="field">
-              <label for="word-cloud-spacing">Spacing</label>
-              <select id="word-cloud-spacing">
-                <option value="0.9">Compact</option>
-                <option value="1" selected>Balanced</option>
-                <option value="1.1">Spacious</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="word-cloud-min-font">Minimum word size</label>
-              <input id="word-cloud-min-font" type="range" min="14" max="40" step="1" value="20" />
-            </div>
-            <div class="field">
-              <label for="word-cloud-max-font">Maximum word size</label>
-              <input id="word-cloud-max-font" type="range" min="30" max="84" step="1" value="56" />
-            </div>
-            <div class="field">
-              <label for="word-cloud-max-words">Visible words</label>
-              <select id="word-cloud-max-words">
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5" selected>5</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <div class="actions">
-          <button id="insert-word-cloud">Insert word cloud</button>
-          <div id="word-cloud-status"></div>
-          <div id="word-cloud-error"></div>
-          <div id="word-cloud-debug" class="muted"></div>
-        </div>
-      </div>
     </div>
-    <datalist id="font-options">
-      <option value="Aptos"></option>
-      <option value="Calibri"></option>
-      <option value="Arial"></option>
-      <option value="Verdana"></option>
-      <option value="Tahoma"></option>
-      <option value="Segoe UI"></option>
-      <option value="Trebuchet MS"></option>
-      <option value="Georgia"></option>
-      <option value="Times New Roman"></option>
-      <option value="Garamond"></option>
-      <option value="Cambria"></option>
-      <option value="Candara"></option>
-      <option value="Corbel"></option>
-      <option value="Consolas"></option>
-      <option value="Courier New"></option>
-      <option value="Franklin Gothic Medium"></option>
-      <option value="Gill Sans"></option>
-      <option value="Lucida Sans"></option>
-      <option value="Palatino Linotype"></option>
-      <option value="Rockwell"></option>
-      <option value="Century Gothic"></option>
-    </datalist>
   </body>
 </html>
+

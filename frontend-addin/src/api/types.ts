@@ -1,7 +1,6 @@
 export type SessionStatus = 'active' | 'ended'
 export type QuestionStatus = 'pending' | 'approved' | 'hidden'
 export type PollStatus = 'closed' | 'open'
-export type WordCloudStatus = 'closed' | 'open'
 
 export interface Session {
   id: string
@@ -38,26 +37,10 @@ export interface Poll {
   created_at: string
 }
 
-export interface WordCloudWord {
-  id: string
-  label: string
-  votes: number
-}
-
-export interface WordCloud {
-  id: string
-  session_id: string
-  prompt: string | null
-  words: WordCloudWord[]
-  status: WordCloudStatus
-  created_at: string
-}
-
 export interface SessionSnapshot {
   session: Session
   questions: Question[]
   polls: Poll[]
-  word_clouds: WordCloud[]
 }
 
 export interface SessionEvent {
