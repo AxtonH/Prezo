@@ -13,15 +13,13 @@ async function request<T>(
   options: RequestInit = {},
   requireAuth = false
 ): Promise<T> {
-  const headers: Record<string, string> = {
-    ...jsonHeaders,
-    ...(options.headers ?? {})
-  }
+  const headers = new Headers(options.headers)
+  headers.set('Content-Type', jsonHeaders['Content-Type'])
 
   if (requireAuth) {
     const token = await getAccessToken()
     if (token) {
-      headers.Authorization = `Bearer ${token}`
+      headers.set('Authorization', `Bearer ${token}`)
     }
   }
 
