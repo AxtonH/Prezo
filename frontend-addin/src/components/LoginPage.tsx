@@ -79,6 +79,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {loading ? 'Signing in...' : 'Sign In'}
       </button>
 
+      <button type="button" className="login-signup-btn">
+        Sign Up
+      </button>
+
       <div className="login-divider">
         <span>or</span>
       </div>
