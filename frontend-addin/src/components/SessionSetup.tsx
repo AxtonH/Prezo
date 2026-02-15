@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
 import type { Session } from '../api/types'
+import { resolveJoinUrl } from '../utils/joinUrl'
 
 interface SessionSetupProps {
   session: Session | null
@@ -25,6 +26,8 @@ export function SessionSetup({ session, onCreate }: SessionSetupProps) {
       setIsCreating(false)
     }
   }
+
+  const joinUrl = resolveJoinUrl(session)
 
   if (!session) {
     return (
@@ -60,16 +63,21 @@ export function SessionSetup({ session, onCreate }: SessionSetupProps) {
           <div className="code">{session.code}</div>
           <p className="muted">Share this code or the QR link below.</p>
         </div>
-        {session.join_url ? (
+        {joinUrl ? (
           <div className="qr">
             <QRCodeCanvas
-              value={session.join_url}
+              value={joinUrl}
               size={120}
               fgColor="#1f2937"
               bgColor="#ffffff"
             />
-            <a className="qr-label" href={session.join_url} target="_blank" rel="noreferrer">
-              {session.join_url}
+            <a
+              className="qr-label"
+              href={joinUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {joinUrl}
             </a>
           </div>
         ) : null}

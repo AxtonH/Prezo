@@ -10,11 +10,10 @@ import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { writeSessionBinding } from './office/sessionBinding'
 import { updatePollWidget, updateQnaWidget } from './office/widgetShapes'
+import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
 const HOST_BASE_URL =
   import.meta.env.VITE_HOST_BASE_URL?.toString() ?? window.location.origin
-const AUDIENCE_BASE_URL =
-  import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
 const upsertById = <T extends { id: string }>(items: T[], item: T) => {
   const index = items.findIndex((entry) => entry.id === item.id)
   if (index === -1) {
@@ -270,7 +269,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   )
 
   const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
-  const joinLink = session?.join_url ?? `${AUDIENCE_BASE_URL}/`
+  const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
 
   return (
     <div className="app">
