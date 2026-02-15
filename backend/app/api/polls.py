@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import AuthUser, get_current_user
 from ..deps import get_manager, get_store
 from ..models import Event, Poll, PollCreate, PollStatus, PollVote
 from ..realtime import ConnectionManager
@@ -22,10 +23,11 @@ async def create_poll(
     payload: PollCreate,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Poll:
     try:
         poll = await store.create_poll(
-            session_id, payload.question, payload.options, payload.allow_multiple
+            session_id, payload.question, payload.options, payload.allow_multiple, user.id
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -41,9 +43,10 @@ async def open_poll(
     poll_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Poll:
     try:
-        poll = await store.set_poll_status(session_id, poll_id, PollStatus.open)
+        poll = await store.set_poll_status(session_id, poll_id, PollStatus.open, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     event = make_event("poll_opened", {"poll": poll.model_dump(mode="json")})
@@ -58,9 +61,10 @@ async def close_poll(
     poll_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Poll:
     try:
-        poll = await store.set_poll_status(session_id, poll_id, PollStatus.closed)
+        poll = await store.set_poll_status(session_id, poll_id, PollStatus.closed, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     event = make_event("poll_closed", {"poll": poll.model_dump(mode="json")})

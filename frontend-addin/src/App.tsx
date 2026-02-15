@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
 import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
-import { isAuthenticated, logout } from './auth/auth'
+import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { QaModeration } from './components/QaModeration'
@@ -26,15 +26,51 @@ const upsertById = <T extends { id: string }>(items: T[], item: T) => {
 }
 
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(isAuthenticated)
+  const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof getSession>>>(null)
+  const [authReady, setAuthReady] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getSession()
+      .then((session) => {
+        if (!active) {
+          return
+        }
+        setAuthSession(session)
+        setAuthReady(true)
+      })
+      .catch(() => {
+        if (!active) {
+          return
+        }
+        setAuthSession(null)
+        setAuthReady(true)
+      })
+
+    const { data } = onAuthStateChange((_event, session) => {
+      setAuthSession(session)
+    })
+
+    return () => {
+      active = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
 
   const handleLogout = () => {
-    logout()
-    setLoggedIn(false)
+    void signOut()
   }
 
-  if (!loggedIn) {
-    return <LoginPage onLogin={() => setLoggedIn(true)} />
+  if (!authReady) {
+    return (
+      <div className="app">
+        <p className="muted">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!authSession) {
+    return <LoginPage />
   }
 
   return <HostConsole onLogout={handleLogout} />

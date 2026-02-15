@@ -1,3 +1,4 @@
+import { getAccessToken } from '../auth/auth'
 import type { Poll, Question, Session, SessionSnapshot } from './types'
 
 const API_BASE_URL =
@@ -7,13 +8,26 @@ const jsonHeaders = {
   'Content-Type': 'application/json'
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  requireAuth = false
+): Promise<T> {
+  const headers: Record<string, string> = {
+    ...jsonHeaders,
+    ...(options.headers ?? {})
+  }
+
+  if (requireAuth) {
+    const token = await getAccessToken()
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: {
-      ...jsonHeaders,
-      ...(options.headers ?? {})
-    }
+    headers
   })
 
   if (!response.ok) {
@@ -30,15 +44,15 @@ export const api = {
     request<Session>('/sessions', {
       method: 'POST',
       body: JSON.stringify({ title: title ?? null })
-    }),
+    }, true),
   getSessionByCode: (code: string) =>
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
   getSnapshot: (sessionId: string) =>
     request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`),
   openQna: (sessionId: string) =>
-    request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }),
+    request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }, true),
   closeQna: (sessionId: string) =>
-    request<Session>(`/sessions/${sessionId}/qna/close`, { method: 'POST' }),
+    request<Session>(`/sessions/${sessionId}/qna/close`, { method: 'POST' }, true),
   submitQuestion: (sessionId: string, text: string, clientId?: string) =>
     request<Question>(`/sessions/${sessionId}/questions`, {
       method: 'POST',
@@ -47,11 +61,11 @@ export const api = {
   approveQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/approve`, {
       method: 'POST'
-    }),
+    }, true),
   hideQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/hide`, {
       method: 'POST'
-    }),
+    }, true),
   voteQuestion: (sessionId: string, questionId: string, clientId?: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/vote`, {
       method: 'POST',
@@ -66,15 +80,15 @@ export const api = {
     request<Poll>(`/sessions/${sessionId}/polls`, {
       method: 'POST',
       body: JSON.stringify({ question, options, allow_multiple: allowMultiple })
-    }),
+    }, true),
   openPoll: (sessionId: string, pollId: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/open`, {
       method: 'POST'
-    }),
+    }, true),
   closePoll: (sessionId: string, pollId: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/close`, {
       method: 'POST'
-    }),
+    }, true),
   votePoll: (sessionId: string, pollId: string, optionId: string, clientId?: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote`, {
       method: 'POST',

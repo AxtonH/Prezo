@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import AuthUser, get_current_user
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import Event, Session, SessionCreate, SessionSnapshot
 from ..realtime import ConnectionManager
-from ..store import InMemoryStore, NotFoundError
+from ..store import ConflictError, InMemoryStore, NotFoundError
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -22,9 +23,14 @@ def with_join_url(session: Session) -> Session:
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)
 async def create_session(
-    payload: SessionCreate, store: InMemoryStore = Depends(get_store)
+    payload: SessionCreate,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
 ) -> Session:
-    session = await store.create_session(payload.title)
+    try:
+        session = await store.create_session(payload.title, user.id)
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return with_join_url(session)
 
 
@@ -67,9 +73,10 @@ async def open_qna(
     session_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Session:
     try:
-        session = await store.set_qna_status(session_id, True)
+        session = await store.set_qna_status(session_id, True, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -89,9 +96,10 @@ async def close_qna(
     session_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Session:
     try:
-        session = await store.set_qna_status(session_id, False)
+        session = await store.set_qna_status(session_id, False, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { login } from '../auth/auth'
+import { signIn, signUp } from '../auth/auth'
 
 const AUDIENCE_BASE_URL =
   import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
 
 interface LoginPageProps {
-  onLogin: () => void
+  onLogin?: () => void
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [info, setInfo] = useState<string | null>(null)
+  const [loadingAction, setLoadingAction] = useState<'sign-in' | 'sign-up' | null>(null)
+  const isLoading = loadingAction !== null
   const isPowerPointHost =
     window.Office?.context?.host === window.Office?.HostType?.PowerPoint ||
     new URLSearchParams(window.location.search).has('_host_Info')
@@ -28,17 +30,36 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
   }, [isPowerPointHost])
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    setLoading(true)
+    setInfo(null)
+    setLoadingAction('sign-in')
+    try {
+      await signIn(email, password)
+      onLogin?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in')
+    } finally {
+      setLoadingAction(null)
+    }
+  }
 
-    const user = login(email, password)
-    if (user) {
-      onLogin()
-    } else {
-      setError('Invalid username or password')
-      setLoading(false)
+  const handleSignUp = async () => {
+    setError(null)
+    setInfo(null)
+    if (!email || !password) {
+      setError('Enter your email and password to sign up')
+      return
+    }
+    setLoadingAction('sign-up')
+    try {
+      await signUp(email, password)
+      setInfo('Check your email to confirm your account before signing in.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign up')
+    } finally {
+      setLoadingAction(null)
     }
   }
 
@@ -50,14 +71,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       </div>
 
       <div className="field">
-        <label htmlFor="login-email">Username</label>
+        <label htmlFor="login-email">Email</label>
         <input
           id="login-email"
-          type="text"
-          placeholder="Enter your username"
+          type="email"
+          placeholder="Enter your email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          autoComplete="username"
+          autoComplete="email"
         />
       </div>
 
@@ -74,13 +95,19 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       </div>
 
       {error ? <p className="error">{error}</p> : null}
+      {info ? <p className="muted">{info}</p> : null}
 
-      <button type="submit" className="login-btn" disabled={loading}>
-        {loading ? 'Signing in...' : 'Sign In'}
+      <button type="submit" className="login-btn" disabled={isLoading}>
+        {loadingAction === 'sign-in' ? 'Signing in...' : 'Sign In'}
       </button>
 
-      <button type="button" className="login-signup-btn">
-        Sign Up
+      <button
+        type="button"
+        className="login-signup-btn"
+        disabled={isLoading}
+        onClick={handleSignUp}
+      >
+        {loadingAction === 'sign-up' ? 'Sending...' : 'Sign Up'}
       </button>
 
       <div className="login-divider">

@@ -42,6 +42,7 @@ def generate_code(length: int = 6) -> str:
 @dataclass(slots=True)
 class SessionData:
     id: str
+    user_id: str
     code: str
     title: str | None
     status: SessionStatus
@@ -90,7 +91,7 @@ class InMemoryStore:
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
         self._events_by_session: dict[str, list[Event]] = defaultdict(list)
 
-    async def create_session(self, title: str | None) -> Session:
+    async def create_session(self, title: str | None, user_id: str) -> Session:
         async with self._lock:
             session_id = uuid.uuid4().hex
             code = generate_code()
@@ -98,6 +99,7 @@ class InMemoryStore:
                 code = generate_code()
             data = SessionData(
                 id=session_id,
+                user_id=user_id,
                 code=code,
                 title=title,
                 status=SessionStatus.active,
@@ -108,10 +110,10 @@ class InMemoryStore:
             self._sessions_by_code[code] = session_id
             return self._to_session(data)
 
-    async def get_session(self, session_id: str) -> Session:
+    async def get_session(self, session_id: str, user_id: str | None = None) -> Session:
         async with self._lock:
             data = self._sessions.get(session_id)
-            if not data:
+            if not data or (user_id and data.user_id != user_id):
                 raise NotFoundError("session not found")
             return self._to_session(data)
 
@@ -142,17 +144,24 @@ class InMemoryStore:
             self._questions_by_session[session_id].append(question_id)
             return self._to_question(data)
 
-    async def set_qna_status(self, session_id: str, is_open: bool) -> Session:
+    async def set_qna_status(
+        self, session_id: str, is_open: bool, user_id: str
+    ) -> Session:
         async with self._lock:
-            self._ensure_session(session_id)
+            self._ensure_session(session_id, user_id)
             session = self._sessions[session_id]
             session.qna_open = is_open
             return self._to_session(session)
 
     async def set_question_status(
-        self, session_id: str, question_id: str, status: QuestionStatus
+        self,
+        session_id: str,
+        question_id: str,
+        status: QuestionStatus,
+        user_id: str,
     ) -> Question:
         async with self._lock:
+            self._ensure_session(session_id, user_id)
             question = self._get_question(session_id, question_id)
             question.status = status
             return self._to_question(question)
@@ -170,10 +179,15 @@ class InMemoryStore:
             return self._to_question(question)
 
     async def create_poll(
-        self, session_id: str, question: str, options: list[str], allow_multiple: bool
+        self,
+        session_id: str,
+        question: str,
+        options: list[str],
+        allow_multiple: bool,
+        user_id: str,
     ) -> Poll:
         async with self._lock:
-            self._ensure_session(session_id)
+            self._ensure_session(session_id, user_id)
             poll_id = uuid.uuid4().hex
             option_objs = [
                 PollOptionData(id=uuid.uuid4().hex, label=label, votes=0)
@@ -193,9 +207,10 @@ class InMemoryStore:
             return self._to_poll(data)
 
     async def set_poll_status(
-        self, session_id: str, poll_id: str, status: PollStatus
+        self, session_id: str, poll_id: str, status: PollStatus, user_id: str
     ) -> Poll:
         async with self._lock:
+            self._ensure_session(session_id, user_id)
             poll = self._get_poll(session_id, poll_id)
             poll.status = status
             return self._to_poll(poll)
@@ -248,8 +263,9 @@ class InMemoryStore:
         async with self._lock:
             self._events_by_session[session_id].append(event)
 
-    def _ensure_session(self, session_id: str) -> None:
-        if session_id not in self._sessions:
+    def _ensure_session(self, session_id: str, user_id: str | None = None) -> None:
+        session = self._sessions.get(session_id)
+        if not session or (user_id and session.user_id != user_id):
             raise NotFoundError("session not found")
 
     def _get_question(self, session_id: str, question_id: str) -> QuestionData:

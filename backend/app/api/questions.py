@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import AuthUser, get_current_user
 from ..deps import get_manager, get_store
 from ..models import Event, Question, QuestionCreate, QuestionStatus, QuestionVote
 from ..realtime import ConnectionManager
@@ -43,10 +44,11 @@ async def approve_question(
     question_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Question:
     try:
         question = await store.set_question_status(
-            session_id, question_id, QuestionStatus.approved
+            session_id, question_id, QuestionStatus.approved, user.id
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -64,10 +66,11 @@ async def hide_question(
     question_id: str,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
 ) -> Question:
     try:
         question = await store.set_question_status(
-            session_id, question_id, QuestionStatus.hidden
+            session_id, question_id, QuestionStatus.hidden, user.id
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

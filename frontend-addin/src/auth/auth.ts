@@ -1,34 +1,57 @@
-const STORAGE_KEY = 'prezo_auth'
+import type { Session, User } from '@supabase/supabase-js'
 
-interface AuthUser {
-  email: string
+import { supabase } from './supabaseClient'
+
+export interface AuthUser {
+  id: string
+  email: string | null
 }
 
-const VALID_CREDENTIALS = { email: 'Admin', password: '1234' }
+const EMAIL_REDIRECT_URL = import.meta.env.VITE_SUPABASE_EMAIL_REDIRECT_URL?.toString()
 
-export function login(email: string, password: string): AuthUser | null {
-  if (email === VALID_CREDENTIALS.email && password === VALID_CREDENTIALS.password) {
-    const user: AuthUser = { email }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-    return user
+export async function signIn(email: string, password: string): Promise<User | null> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) {
+    throw new Error(error.message)
   }
-  return null
+  return data.user
 }
 
-export function logout(): void {
-  sessionStorage.removeItem(STORAGE_KEY)
-}
-
-export function getUser(): AuthUser | null {
-  const raw = sessionStorage.getItem(STORAGE_KEY)
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as AuthUser
-  } catch {
-    return null
+export async function signUp(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: EMAIL_REDIRECT_URL ? { emailRedirectTo: EMAIL_REDIRECT_URL } : undefined
+  })
+  if (error) {
+    throw new Error(error.message)
   }
 }
 
-export function isAuthenticated(): boolean {
-  return getUser() !== null
+export async function signOut(): Promise<void> {
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    throw new Error(error.message)
+  }
+}
+
+export async function getSession(): Promise<Session | null> {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) {
+    throw new Error(error.message)
+  }
+  return data.session
+}
+
+export async function getAccessToken(): Promise<string | null> {
+  const session = await getSession()
+  return session?.access_token ?? null
+}
+
+export function onAuthStateChange(
+  callback: (event: string, session: Session | null) => void
+) {
+  return supabase.auth.onAuthStateChange((event, session) => {
+    callback(event, session)
+  })
 }
