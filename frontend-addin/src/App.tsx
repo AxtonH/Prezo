@@ -140,6 +140,12 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [session?.qna_open])
 
   useEffect(() => {
+    if (polls.length > 0) {
+      setShowPolls(true)
+    }
+  }, [polls.length])
+
+  useEffect(() => {
     if (!session) {
       return
     }
