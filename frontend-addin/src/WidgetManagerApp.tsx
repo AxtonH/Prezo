@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { api } from './api/client'
-import type { Question, SessionEvent, SessionSnapshot } from './api/types'
+import type { QnaMode, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import type { SessionBinding } from './office/sessionBinding'
 import { readSessionBinding } from './office/sessionBinding'
@@ -11,19 +11,26 @@ const BINDING_POLL_MS = 3000
 
 export function WidgetManagerApp() {
   const [binding, setBinding] = useState<SessionBinding | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
+  const [qnaMode, setQnaMode] = useState<QnaMode>('audience')
+  const [qnaPrompt, setQnaPrompt] = useState('')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isInserting, setIsInserting] = useState(false)
+  const [isSavingConfig, setIsSavingConfig] = useState(false)
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
       const snapshot = event.payload.snapshot as SessionSnapshot
+      setSession(snapshot.session)
       setQuestions(snapshot.questions)
       return
     }
 
     if (event.payload.session) {
+      const updated = event.payload.session as Session
+      setSession(updated)
       return
     }
 
@@ -66,6 +73,7 @@ export function WidgetManagerApp() {
 
   useEffect(() => {
     if (!binding?.sessionId) {
+      setSession(null)
       setQuestions([])
       return
     }
@@ -73,6 +81,7 @@ export function WidgetManagerApp() {
     api
       .getSnapshot(binding.sessionId)
       .then((snapshot) => {
+        setSession(snapshot.session)
         setQuestions(snapshot.questions)
       })
       .catch((err) => {
@@ -81,13 +90,43 @@ export function WidgetManagerApp() {
   }, [binding?.sessionId])
 
   useEffect(() => {
+    if (!session) {
+      return
+    }
+    setQnaMode(session.qna_mode ?? 'audience')
+    setQnaPrompt(session.qna_prompt ?? '')
+  }, [session?.id, session?.qna_mode, session?.qna_prompt])
+
+  useEffect(() => {
     if (!binding?.sessionId) {
       return
     }
-    void updateQnaWidget(binding.sessionId, binding.code, questions).catch((err) =>
+    void updateQnaWidget(
+      binding.sessionId,
+      binding.code,
+      questions,
+      session?.qna_mode ?? 'audience',
+      session?.qna_prompt ?? null
+    ).catch((err) =>
       console.warn('Failed to update widget shapes', err)
     )
-  }, [questions, binding?.sessionId, binding?.code])
+  }, [questions, binding?.sessionId, binding?.code, session?.qna_mode, session?.qna_prompt])
+
+  const saveQnaConfig = async () => {
+    if (!binding?.sessionId) {
+      throw new Error('Start a session in the host add-in first.')
+    }
+    const prompt = qnaMode === 'prompt' ? qnaPrompt.trim() : ''
+    if (qnaMode === 'prompt' && !prompt) {
+      throw new Error('Enter a prompt question to enable prompt mode.')
+    }
+    const updated = await api.updateQnaConfig(
+      binding.sessionId,
+      qnaMode,
+      prompt || null
+    )
+    setSession(updated)
+  }
 
   const handleInsert = async () => {
     const hasSession = Boolean(binding?.sessionId)
@@ -95,9 +134,20 @@ export function WidgetManagerApp() {
     setStatusMessage(null)
     setIsInserting(true)
     try {
+      if (hasSession) {
+        setIsSavingConfig(true)
+        await saveQnaConfig()
+        setIsSavingConfig(false)
+      }
       await insertQnaWidget(binding?.sessionId ?? null, binding?.code ?? null)
       if (hasSession && binding?.sessionId) {
-        await updateQnaWidget(binding.sessionId, binding.code, questions)
+        await updateQnaWidget(
+          binding.sessionId,
+          binding.code,
+          questions,
+          session?.qna_mode ?? qnaMode,
+          session?.qna_prompt ?? qnaPrompt
+        )
       }
       setStatusMessage(
         hasSession
@@ -107,7 +157,22 @@ export function WidgetManagerApp() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to insert widget')
     } finally {
+      setIsSavingConfig(false)
       setIsInserting(false)
+    }
+  }
+
+  const handleSaveConfig = async () => {
+    setError(null)
+    setStatusMessage(null)
+    setIsSavingConfig(true)
+    try {
+      await saveQnaConfig()
+      setStatusMessage('Q&A settings saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save Q&A settings')
+    } finally {
+      setIsSavingConfig(false)
     }
   }
 
@@ -127,9 +192,51 @@ export function WidgetManagerApp() {
       <div className="panel">
         <h2>Insert the Q&amp;A widget</h2>
         <p className="muted">Adds a live Q&amp;A box to the selected slide.</p>
-        <button onClick={handleInsert} disabled={isInserting}>
-          {isInserting ? 'Inserting...' : 'Insert widget on slide'}
-        </button>
+        <div className="field">
+          <label>Q&amp;A mode</label>
+          <div className="radio-group">
+            <label className="radio">
+              <input
+                type="radio"
+                name="qna-mode"
+                value="audience"
+                checked={qnaMode === 'audience'}
+                onChange={() => setQnaMode('audience')}
+              />
+              Audience questions
+            </label>
+            <label className="radio">
+              <input
+                type="radio"
+                name="qna-mode"
+                value="prompt"
+                checked={qnaMode === 'prompt'}
+                onChange={() => setQnaMode('prompt')}
+              />
+              Host prompt (audience answers)
+            </label>
+          </div>
+        </div>
+        {qnaMode === 'prompt' ? (
+          <div className="field">
+            <label htmlFor="qna-prompt">Prompt question</label>
+            <input
+              id="qna-prompt"
+              value={qnaPrompt}
+              onChange={(event) => setQnaPrompt(event.target.value)}
+              placeholder="What should we cover next?"
+              maxLength={200}
+            />
+          </div>
+        ) : null}
+        <div className="actions">
+          <button onClick={handleSaveConfig} disabled={isSavingConfig || !binding?.sessionId}>
+            {isSavingConfig ? 'Saving...' : 'Save Q&amp;A settings'}
+          </button>
+          <button onClick={handleInsert} disabled={isInserting || isSavingConfig}>
+            {isInserting ? 'Inserting...' : 'Insert widget on slide'}
+          </button>
+        </div>
         {statusMessage ? <p className="muted">{statusMessage}</p> : null}
         {error ? <p className="error">{error}</p> : null}
       </div>

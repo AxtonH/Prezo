@@ -7,7 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ..auth import AuthUser, get_current_user
 from ..config import settings
 from ..deps import get_manager, get_store
-from ..models import Event, Session, SessionCreate, SessionSnapshot, SessionStatus
+from ..models import (
+    Event,
+    QnaConfigUpdate,
+    QnaMode,
+    Session,
+    SessionCreate,
+    SessionSnapshot,
+    SessionStatus,
+)
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
@@ -117,6 +125,37 @@ async def close_qna(
     session = with_join_url(session)
     event = Event(
         type="qna_closed",
+        payload={"session": session.model_dump(mode="json")},
+        ts=datetime.now(timezone.utc),
+    )
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)
+    return session
+
+
+@router.post("/{session_id}/qna/config", response_model=Session)
+async def set_qna_config(
+    session_id: str,
+    payload: QnaConfigUpdate,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> Session:
+    prompt = payload.prompt.strip() if payload.prompt else None
+    if payload.mode == QnaMode.prompt and not prompt:
+        raise HTTPException(
+            status_code=400, detail="Prompt text is required for prompt mode"
+        )
+    if payload.mode != QnaMode.prompt:
+        prompt = None
+    try:
+        session = await store.set_qna_config(session_id, payload.mode, prompt, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    session = with_join_url(session)
+    event = Event(
+        type="qna_config_updated",
         payload={"session": session.model_dump(mode="json")},
         ts=datetime.now(timezone.utc),
     )

@@ -1,5 +1,12 @@
 import { getAccessToken } from '../auth/auth'
-import type { Poll, Question, Session, SessionSnapshot, SessionStatus } from './types'
+import type {
+  Poll,
+  Question,
+  QnaMode,
+  Session,
+  SessionSnapshot,
+  SessionStatus
+} from './types'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.toString() ?? 'http://localhost:8000'
@@ -62,6 +69,11 @@ export const api = {
     request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }, true),
   closeQna: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}/qna/close`, { method: 'POST' }, true),
+  updateQnaConfig: (sessionId: string, mode: QnaMode, prompt?: string | null) =>
+    request<Session>(`/sessions/${sessionId}/qna/config`, {
+      method: 'POST',
+      body: JSON.stringify({ mode, prompt: prompt ?? null })
+    }, true),
   submitQuestion: (sessionId: string, text: string, clientId?: string) =>
     request<Question>(`/sessions/${sessionId}/questions`, {
       method: 'POST',

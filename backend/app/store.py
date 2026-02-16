@@ -12,6 +12,7 @@ from .models import (
     Poll,
     PollOption,
     PollStatus,
+    QnaMode,
     Question,
     QuestionStatus,
     Session,
@@ -47,6 +48,8 @@ class SessionData:
     title: str | None
     status: SessionStatus
     qna_open: bool
+    qna_mode: QnaMode
+    qna_prompt: str | None
     created_at: datetime
 
 
@@ -104,6 +107,8 @@ class InMemoryStore:
                 title=title,
                 status=SessionStatus.active,
                 qna_open=False,
+                qna_mode=QnaMode.audience,
+                qna_prompt=None,
                 created_at=utc_now(),
             )
             self._sessions[session_id] = data
@@ -149,12 +154,17 @@ class InMemoryStore:
                 raise NotFoundError("session not found")
             if not session.qna_open:
                 raise ConflictError("q&a is closed")
+            status = (
+                QuestionStatus.approved
+                if session.qna_mode == QnaMode.prompt
+                else QuestionStatus.pending
+            )
             question_id = uuid.uuid4().hex
             data = QuestionData(
                 id=question_id,
                 session_id=session_id,
                 text=text,
-                status=QuestionStatus.pending,
+                status=status,
                 votes=0,
                 created_at=utc_now(),
             )
@@ -169,6 +179,20 @@ class InMemoryStore:
             self._ensure_session(session_id, user_id)
             session = self._sessions[session_id]
             session.qna_open = is_open
+            return self._to_session(session)
+
+    async def set_qna_config(
+        self,
+        session_id: str,
+        mode: QnaMode,
+        prompt: str | None,
+        user_id: str,
+    ) -> Session:
+        async with self._lock:
+            self._ensure_session(session_id, user_id)
+            session = self._sessions[session_id]
+            session.qna_mode = mode
+            session.qna_prompt = prompt
             return self._to_session(session)
 
     async def set_question_status(
@@ -307,6 +331,8 @@ class InMemoryStore:
             title=data.title,
             status=data.status,
             qna_open=data.qna_open,
+            qna_mode=data.qna_mode,
+            qna_prompt=data.qna_prompt,
             created_at=data.created_at,
         )
 

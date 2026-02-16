@@ -156,10 +156,16 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     if (!session) {
       return
     }
-    void updateQnaWidget(session.id, session.code, questions).catch((err) =>
+    void updateQnaWidget(
+      session.id,
+      session.code,
+      questions,
+      session.qna_mode,
+      session.qna_prompt ?? null
+    ).catch((err) =>
       console.warn('Failed to update widget shapes', err)
     )
-  }, [session?.id, session?.code, questions])
+  }, [session?.id, session?.code, session?.qna_mode, session?.qna_prompt, questions])
 
   useEffect(() => {
     if (!session) {
@@ -183,7 +189,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       void updateQnaWidget(
         currentSession.id,
         currentSession.code,
-        latestQuestionsRef.current
+        latestQuestionsRef.current,
+        currentSession.qna_mode,
+        currentSession.qna_prompt ?? null
       ).catch((err) => console.warn('Failed to refresh Q&A widget shapes', err))
       void updatePollWidget(
         currentSession.id,

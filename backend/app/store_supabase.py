@@ -9,6 +9,7 @@ from .models import (
     Poll,
     PollOption,
     PollStatus,
+    QnaMode,
     Question,
     QuestionStatus,
     Session,
@@ -89,6 +90,8 @@ class SupabaseStore:
                 "title": title,
                 "status": SessionStatus.active.value,
                 "qna_open": False,
+                "qna_mode": QnaMode.audience.value,
+                "qna_prompt": None,
             }
             try:
                 response = await self._request(
@@ -143,19 +146,25 @@ class SupabaseStore:
 
     async def create_question(self, session_id: str, text: str) -> Question:
         session_rows = await self._select(
-            "sessions", {"select": "id,qna_open", "id": f"eq.{session_id}"}
+            "sessions",
+            {"select": "id,qna_open,qna_mode", "id": f"eq.{session_id}"},
         )
         if not session_rows:
             raise NotFoundError("session not found")
         if not session_rows[0].get("qna_open"):
             raise ConflictError("q&a is closed")
 
+        status = (
+            QuestionStatus.approved
+            if session_rows[0].get("qna_mode") == QnaMode.prompt.value
+            else QuestionStatus.pending
+        )
         question_id = str(uuid.uuid4())
         payload = {
             "id": question_id,
             "session_id": session_id,
             "text": text,
-            "status": QuestionStatus.pending.value,
+            "status": status.value,
             "votes": 0,
         }
         response = await self._request(
@@ -172,6 +181,25 @@ class SupabaseStore:
             "sessions",
             params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
             json={"qna_open": is_open},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("session not found")
+        return self._to_session(data[0])
+
+    async def set_qna_config(
+        self,
+        session_id: str,
+        mode: QnaMode,
+        prompt: str | None,
+        user_id: str,
+    ) -> Session:
+        response = await self._request(
+            "PATCH",
+            "sessions",
+            params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+            json={"qna_mode": mode.value, "qna_prompt": prompt},
             prefer="return=representation",
         )
         data = response.json()

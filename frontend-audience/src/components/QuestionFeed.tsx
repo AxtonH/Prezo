@@ -1,20 +1,26 @@
-import type { Question } from '../api/types'
+import type { QnaMode, Question } from '../api/types'
 
 interface QuestionFeedProps {
   approved: Question[]
   pendingCount: number
   onVote: (questionId: string) => Promise<void>
+  mode: QnaMode
 }
 
-export function QuestionFeed({ approved, pendingCount, onVote }: QuestionFeedProps) {
+export function QuestionFeed({ approved, pendingCount, onVote, mode }: QuestionFeedProps) {
+  const isPrompt = mode === 'prompt'
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2>Live Q&amp;A</h2>
-        <span className="badge">Pending {pendingCount}</span>
+        <h2>{isPrompt ? 'Top answers' : 'Live Q&amp;A'}</h2>
+        {!isPrompt ? <span className="badge">Pending {pendingCount}</span> : null}
       </div>
       {approved.length === 0 ? (
-        <p className="muted">No approved questions yet. Check back soon.</p>
+        <p className="muted">
+          {isPrompt
+            ? 'No answers yet. Be the first to respond.'
+            : 'No approved questions yet. Check back soon.'}
+        </p>
       ) : (
         <ul className="list">
           {approved.map((question) => (

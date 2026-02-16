@@ -12,6 +12,11 @@ class SessionStatus(str, Enum):
     ended = "ended"
 
 
+class QnaMode(str, Enum):
+    audience = "audience"
+    prompt = "prompt"
+
+
 class QuestionStatus(str, Enum):
     pending = "pending"
     approved = "approved"
@@ -33,6 +38,8 @@ class Session(BaseModel):
     title: str | None
     status: SessionStatus
     qna_open: bool
+    qna_mode: QnaMode = QnaMode.audience
+    qna_prompt: str | None = None
     created_at: datetime
     join_url: str | None = None
 
@@ -86,6 +93,11 @@ class SessionSnapshot(BaseModel):
     session: Session
     questions: list[Question]
     polls: list[Poll]
+
+
+class QnaConfigUpdate(BaseModel):
+    mode: QnaMode
+    prompt: str | None = Field(default=None, max_length=200)
 
 
 class Event(BaseModel):

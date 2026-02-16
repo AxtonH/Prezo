@@ -1,4 +1,4 @@
-import type { Poll, Question } from '../api/types'
+import type { Poll, QnaMode, Question } from '../api/types'
 
 const WIDGET_TAG = 'PrezoWidget'
 const SESSION_TAG = 'PrezoWidgetSessionId'
@@ -12,7 +12,9 @@ const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
 const MAX_POLL_OPTIONS = 5
 const PANEL_TITLE = 'Questions from your audience'
+const PROMPT_PANEL_TITLE = 'Audience answers'
 const EYEBROW_TEXT = 'PREZO LIVE Q&A'
+const PROMPT_EYEBROW_TEXT = 'PREZO LIVE PROMPT'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
 const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
@@ -83,8 +85,12 @@ const ensurePowerPoint = () => {
   }
 }
 
-const buildTitle = (code?: string | null) =>
-  code ? `Prezo Live Q&A • ${code}` : 'Prezo Live Q&A'
+const buildTitle = (code?: string | null, mode: QnaMode = 'audience', prompt?: string | null) => {
+  if (mode === 'prompt') {
+    return prompt?.trim() ? prompt.trim() : PROMPT_PANEL_TITLE
+  }
+  return code ? `Prezo Live Q&A • ${code}` : 'Prezo Live Q&A'
+}
 
 const buildMeta = (code?: string | null) =>
   code ? `Join code ${code}` : 'Waiting for new questions.'
@@ -243,12 +249,14 @@ const isShapeNullObject = (shape: { isNullObject?: boolean } | null | undefined)
 
 
 
-const buildBody = (questions: Question[]) => {
+const buildBody = (questions: Question[], mode: QnaMode) => {
   const approved = questions.filter((q) => q.status === 'approved')
   if (approved.length === 0) {
-    return 'No approved questions yet.'
+    return mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
   }
-  return approved
+  const sorted =
+    mode === 'prompt' ? [...approved].sort((a, b) => b.votes - a.votes) : approved
+  return sorted
     .slice(0, 6)
     .map((question, index) => `${index + 1}. ${question.text}`)
     .join('\n')
@@ -586,12 +594,18 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
 export async function updateQnaWidget(
   sessionId: string,
   code: string | null | undefined,
-  questions: Question[]
+  questions: Question[],
+  mode: QnaMode = 'audience',
+  prompt?: string | null
 ) {
   ensurePowerPoint()
 
   const pendingCount = questions.filter((q) => q.status === 'pending').length
-  const approved = questions.filter((q) => q.status === 'approved')
+  const approvedRaw = questions.filter((q) => q.status === 'approved')
+  const approved =
+    mode === 'prompt'
+      ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
+      : approvedRaw
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
@@ -745,6 +759,8 @@ export async function updateQnaWidget(
         })
       }
 
+      const panelTitle =
+        mode === 'prompt' ? (prompt?.trim() || PROMPT_PANEL_TITLE) : PANEL_TITLE
       if (!title.isNullObject) {
         const hasNewLayout = Boolean(
           (shapeIds.items && shapeIds.items.length > 0) ||
@@ -752,21 +768,28 @@ export async function updateQnaWidget(
             shapeIds.meta ||
             shapeIds.badge
         )
-        title.textFrame.textRange.text = hasNewLayout ? PANEL_TITLE : buildTitle(code)
+        title.textFrame.textRange.text = hasNewLayout
+          ? panelTitle
+          : buildTitle(code, mode, prompt)
       }
       if (meta && !meta.isNullObject) {
-        meta.textFrame.textRange.text = EYEBROW_TEXT
+        meta.textFrame.textRange.text = mode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
       }
       if (subtitle && !subtitle.isNullObject) {
         subtitle.textFrame.textRange.text = buildMeta(code)
       }
       if (badge && !badge.isNullObject) {
-        badge.textFrame.textRange.text = buildBadge(pendingCount)
+        badge.textFrame.textRange.text =
+          mode === 'prompt' ? `Answers ${approved.length}` : buildBadge(pendingCount)
       }
       if (itemShapes.length > 0) {
         const hasApproved = approved.length > 0
         if (!body.isNullObject) {
-          body.textFrame.textRange.text = hasApproved ? '' : 'No approved questions yet.'
+          body.textFrame.textRange.text = hasApproved
+            ? ''
+            : mode === 'prompt'
+              ? 'No answers yet.'
+              : 'No approved questions yet.'
         }
         itemShapes.forEach((item, index) => {
           if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
@@ -786,7 +809,7 @@ export async function updateQnaWidget(
           item.votes.textFrame.textRange.text = `${question.votes} votes`
         })
       } else if (!body.isNullObject) {
-        body.textFrame.textRange.text = buildBody(questions)
+        body.textFrame.textRange.text = buildBody(questions, mode)
       }
 
       if (isPending) {

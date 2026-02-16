@@ -149,12 +149,18 @@ export default function App() {
             <p className="muted">Stay tuned for real-time updates.</p>
           </div>
           {session.qna_open ? (
-            <QuestionComposer onSubmit={submitQuestion} />
+            <QuestionComposer
+              onSubmit={submitQuestion}
+              mode={session.qna_mode}
+              prompt={session.qna_prompt ?? null}
+            />
           ) : (
             <div className="panel">
-              <h2>Q&amp;A closed</h2>
+              <h2>{session.qna_mode === 'prompt' ? 'Prompt closed' : 'Q&amp;A closed'}</h2>
               <p className="muted">
-                The host hasn&apos;t opened Q&amp;A yet. Check back once it goes live.
+                {session.qna_mode === 'prompt'
+                  ? 'The host hasn&apos;t opened the prompt yet. Check back once it goes live.'
+                  : 'The host hasn&apos;t opened Q&amp;A yet. Check back once it goes live.'}
               </p>
             </div>
           )}
@@ -162,6 +168,7 @@ export default function App() {
             approved={approvedQuestions}
             pendingCount={pendingCount}
             onVote={voteQuestion}
+            mode={session.qna_mode}
           />
           <PollsPanel polls={polls} onVote={votePoll} />
         </div>

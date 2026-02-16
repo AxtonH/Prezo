@@ -1,6 +1,7 @@
 export type SessionStatus = 'active' | 'ended'
 export type QuestionStatus = 'pending' | 'approved' | 'hidden'
 export type PollStatus = 'closed' | 'open'
+export type QnaMode = 'audience' | 'prompt'
 
 export interface Session {
   id: string
@@ -8,6 +9,8 @@ export interface Session {
   title: string | null
   status: SessionStatus
   qna_open: boolean
+  qna_mode: QnaMode
+  qna_prompt?: string | null
   created_at: string
   join_url?: string | null
 }

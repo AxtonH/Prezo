@@ -14,9 +14,18 @@ begin
 end;
 $$ language plpgsql security definer;
 
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'on_auth_user_created'
+  ) then
+    create trigger on_auth_user_created
+      after insert on auth.users
+      for each row execute function public.handle_new_user();
+  end if;
+end $$;
 
 create table if not exists sessions (
   id uuid primary key,
@@ -25,6 +34,8 @@ create table if not exists sessions (
   title text,
   status text not null default 'active',
   qna_open boolean not null default false,
+  qna_mode text not null default 'audience',
+  qna_prompt text,
   created_at timestamptz not null default now()
 );
 

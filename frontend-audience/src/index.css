@@ -183,6 +183,19 @@ p {
   margin-bottom: 14px;
 }
 
+.prompt-card {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.prompt-card p {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
 label {
   font-size: 13px;
   color: var(--muted);
