@@ -380,58 +380,64 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           onShowLess={handleShowLess}
         />
 
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <h2>Q&amp;A</h2>
-              <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
-            </div>
-            <div className="actions">
-              {session?.qna_open ? (
-                <button className="ghost" onClick={closeQna}>
-                  Close Q&amp;A
-                </button>
+        {session ? (
+          <>
+            <div className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Q&amp;A</h2>
+                  <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
+                </div>
+                <div className="actions">
+                  {session?.qna_open ? (
+                    <button className="ghost" onClick={closeQna}>
+                      Close Q&amp;A
+                    </button>
+                  ) : (
+                    <button onClick={openQna} disabled={!session}>
+                      Open Q&amp;A
+                    </button>
+                  )}
+                </div>
+              </div>
+              {session.qna_open ? (
+                <p className="muted">Q&amp;A is open. New questions will appear below.</p>
               ) : (
-                <button onClick={openQna} disabled={!session}>
-                  Open Q&amp;A
-                </button>
+                <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
               )}
             </div>
-          </div>
-          {!session ? (
-            <p className="muted">Create a session to enable Q&amp;A.</p>
-          ) : session.qna_open ? (
-            <p className="muted">Q&amp;A is open. New questions will appear below.</p>
-          ) : (
-            <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
-          )}
-        </div>
 
-        {session?.qna_open && showQna ? (
-          <QaModeration
-            pending={pendingQuestions}
-            approved={approvedQuestions}
-            onApprove={approveQuestion}
-            onHide={hideQuestion}
-          />
-        ) : null}
+            {session.qna_open && showQna ? (
+              <QaModeration
+                pending={pendingQuestions}
+                approved={approvedQuestions}
+                onApprove={approveQuestion}
+                onHide={hideQuestion}
+              />
+            ) : null}
 
-        {!showPolls ? (
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <h2>Polls</h2>
-                <p className="muted">Launch a poll and share it instantly with your audience.</p>
+            {!showPolls ? (
+              <div className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Polls</h2>
+                    <p className="muted">Launch a poll and share it instantly with your audience.</p>
+                  </div>
+                  <button onClick={() => setShowPolls(true)} disabled={!session}>
+                    Start poll
+                  </button>
+                </div>
               </div>
-              <button onClick={() => setShowPolls(true)} disabled={!session}>
-                Start poll
-              </button>
-            </div>
-            {!session ? <p className="muted">Create a session to run polls.</p> : null}
-          </div>
-        ) : (
-          <PollManager polls={polls} onCreate={createPoll} onOpen={openPoll} onClose={closePoll} />
-        )}
+            ) : (
+              <PollManager
+                polls={polls}
+                onCreate={createPoll}
+                onOpen={openPoll}
+                onClose={closePoll}
+              />
+            )}
+          </>
+        ) : null}
       </div>
     </div>
   )
