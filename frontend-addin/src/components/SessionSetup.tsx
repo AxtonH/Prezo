@@ -88,17 +88,32 @@ export function SessionSetup({
               <h3>Resume a session</h3>
               <div className="session-resume-actions">
                 {hasMore && onShowMore ? (
-                  <button type="button" className="ghost" onClick={onShowMore}>
-                    See more
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={onShowMore}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Loading...' : 'See more'}
                   </button>
                 ) : null}
                 {hasLess && onShowLess ? (
-                  <button type="button" className="ghost" onClick={onShowLess}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={onShowLess}
+                    disabled={isLoading}
+                  >
                     Show less
                   </button>
                 ) : null}
                 {onRefresh ? (
-                  <button type="button" className="ghost" onClick={onRefresh}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={onRefresh}
+                    disabled={isLoading}
+                  >
                     Refresh
                   </button>
                 ) : null}

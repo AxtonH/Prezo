@@ -214,14 +214,18 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [])
 
   useEffect(() => {
-    void loadSessions(sessionsLimit)
-  }, [loadSessions, sessionsLimit])
+    void loadSessions(defaultSessionsLimit)
+  }, [loadSessions])
 
   const createSession = async (title: string) => {
     setError(null)
     const created = await api.createSession(title || undefined)
     setSession(created)
-    setRecentSessions((prev) => upsertById(prev, created).slice(0, sessionsLimit))
+    setRecentSessions((prev) => {
+      const next = upsertById(prev, created)
+      const keep = prev.length || sessionsLimit
+      return next.slice(0, keep)
+    })
   }
 
   const resumeSession = async (selected: Session) => {
@@ -308,11 +312,25 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     [questions]
   )
 
+  const visibleSessions = useMemo(
+    () => recentSessions.slice(0, sessionsLimit),
+    [recentSessions, sessionsLimit]
+  )
+
   const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
   const hasMoreSessions =
     sessionsLimit < maxSessionsLimit && recentSessions.length >= sessionsLimit
   const hasLessSessions = sessionsLimit > defaultSessionsLimit
+  const handleShowMore = () => {
+    setSessionsLimit(maxSessionsLimit)
+    if (recentSessions.length < maxSessionsLimit) {
+      void loadSessions(maxSessionsLimit)
+    }
+  }
+  const handleShowLess = () => {
+    setSessionsLimit(defaultSessionsLimit)
+  }
 
   return (
     <div className="app">
@@ -351,15 +369,15 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         <SessionSetup
           session={session}
           onCreate={createSession}
-          recentSessions={recentSessions}
+          recentSessions={visibleSessions}
           isLoading={sessionsLoading}
           loadError={sessionsError}
           onResume={resumeSession}
           onRefresh={() => loadSessions(sessionsLimit)}
           hasMore={hasMoreSessions}
-          onShowMore={() => setSessionsLimit(maxSessionsLimit)}
+          onShowMore={handleShowMore}
           hasLess={hasLessSessions}
-          onShowLess={() => setSessionsLimit(defaultSessionsLimit)}
+          onShowLess={handleShowLess}
         />
 
         <div className="panel">
