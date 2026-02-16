@@ -83,7 +83,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
-  const [sessionsLimit, setSessionsLimit] = useState(3)
+  const defaultSessionsLimit = 3
+  const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
   const [showPolls, setShowPolls] = useState(false)
   const [showQna, setShowQna] = useState(false)
   const latestSessionRef = useRef<Session | null>(null)
@@ -311,6 +312,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
   const hasMoreSessions =
     sessionsLimit < maxSessionsLimit && recentSessions.length >= sessionsLimit
+  const hasLessSessions = sessionsLimit > defaultSessionsLimit
 
   return (
     <div className="app">
@@ -356,6 +358,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           onRefresh={() => loadSessions(sessionsLimit)}
           hasMore={hasMoreSessions}
           onShowMore={() => setSessionsLimit(maxSessionsLimit)}
+          hasLess={hasLessSessions}
+          onShowLess={() => setSessionsLimit(defaultSessionsLimit)}
         />
 
         <div className="panel">

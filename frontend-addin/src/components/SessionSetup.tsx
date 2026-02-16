@@ -14,6 +14,8 @@ interface SessionSetupProps {
   onRefresh?: () => void
   hasMore?: boolean
   onShowMore?: () => void
+  hasLess?: boolean
+  onShowLess?: () => void
 }
 
 export function SessionSetup({
@@ -25,7 +27,9 @@ export function SessionSetup({
   onResume,
   onRefresh,
   hasMore = false,
-  onShowMore
+  onShowMore,
+  hasLess = false,
+  onShowLess
 }: SessionSetupProps) {
   const [title, setTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -86,6 +90,11 @@ export function SessionSetup({
                 {hasMore && onShowMore ? (
                   <button type="button" className="ghost" onClick={onShowMore}>
                     See more
+                  </button>
+                ) : null}
+                {hasLess && onShowLess ? (
+                  <button type="button" className="ghost" onClick={onShowLess}>
+                    Show less
                   </button>
                 ) : null}
                 {onRefresh ? (
