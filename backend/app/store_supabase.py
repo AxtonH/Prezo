@@ -123,6 +123,24 @@ class SupabaseStore:
             raise NotFoundError("session not found")
         return self._to_session(rows[0])
 
+    async def list_sessions(
+        self,
+        user_id: str,
+        status: SessionStatus | None = None,
+        limit: int | None = None,
+    ) -> list[Session]:
+        params = {
+            "select": "*",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.desc",
+        }
+        if status:
+            params["status"] = f"eq.{status.value}"
+        if limit:
+            params["limit"] = str(limit)
+        rows = await self._select("sessions", params)
+        return [self._to_session(row) for row in rows]
+
     async def create_question(self, session_id: str, text: str) -> Question:
         session_rows = await self._select(
             "sessions", {"select": "id,qna_open", "id": f"eq.{session_id}"}

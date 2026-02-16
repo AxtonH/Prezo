@@ -80,6 +80,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [recentSessions, setRecentSessions] = useState<Session[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [showPolls, setShowPolls] = useState(false)
   const [showQna, setShowQna] = useState(false)
   const latestSessionRef = useRef<Session | null>(null)
@@ -194,10 +197,44 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
   }, [session?.id])
 
+  const loadSessions = useCallback(async () => {
+    setSessionsError(null)
+    setSessionsLoading(true)
+    try {
+      const sessions = await api.listSessions('active', 10)
+      setRecentSessions(sessions)
+    } catch (err) {
+      setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
+    } finally {
+      setSessionsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSessions()
+  }, [loadSessions])
+
   const createSession = async (title: string) => {
     setError(null)
     const created = await api.createSession(title || undefined)
     setSession(created)
+    setRecentSessions((prev) => upsertById(prev, created).slice(0, 10))
+  }
+
+  const resumeSession = async (selected: Session) => {
+    setError(null)
+    setQuestions([])
+    setPolls([])
+    setShowQna(false)
+    setShowPolls(false)
+    try {
+      const snapshot = await api.getSnapshot(selected.id)
+      setSession(snapshot.session)
+      setQuestions(snapshot.questions)
+      setPolls(snapshot.polls)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load session')
+    }
   }
 
   const openQna = async () => {
@@ -305,7 +342,15 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       {error ? <p className="error">{error}</p> : null}
 
       <div className="grid">
-        <SessionSetup session={session} onCreate={createSession} />
+        <SessionSetup
+          session={session}
+          onCreate={createSession}
+          recentSessions={recentSessions}
+          isLoading={sessionsLoading}
+          loadError={sessionsError}
+          onResume={resumeSession}
+          onRefresh={loadSessions}
+        />
 
         <div className="panel">
           <div className="panel-header">

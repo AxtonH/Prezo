@@ -124,6 +124,24 @@ class InMemoryStore:
                 raise NotFoundError("session not found")
             return self._to_session(self._sessions[session_id])
 
+    async def list_sessions(
+        self,
+        user_id: str,
+        status: SessionStatus | None = None,
+        limit: int | None = None,
+    ) -> list[Session]:
+        async with self._lock:
+            sessions = [
+                self._to_session(session)
+                for session in self._sessions.values()
+                if session.user_id == user_id
+                and (status is None or session.status == status)
+            ]
+            sessions.sort(key=lambda item: item.created_at, reverse=True)
+            if limit:
+                sessions = sessions[:limit]
+            return sessions
+
     async def create_question(self, session_id: str, text: str) -> Question:
         async with self._lock:
             session = self._sessions.get(session_id)

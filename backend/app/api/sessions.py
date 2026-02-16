@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..auth import AuthUser, get_current_user
 from ..config import settings
 from ..deps import get_manager, get_store
-from ..models import Event, Session, SessionCreate, SessionSnapshot
+from ..models import Event, Session, SessionCreate, SessionSnapshot, SessionStatus
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
@@ -32,6 +32,17 @@ async def create_session(
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return with_join_url(session)
+
+
+@router.get("", response_model=list[Session])
+async def list_sessions(
+    status: SessionStatus | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> list[Session]:
+    sessions = await store.list_sessions(user.id, status=status, limit=limit)
+    return [with_join_url(session) for session in sessions]
 
 
 @router.get("/{session_id}", response_model=Session)

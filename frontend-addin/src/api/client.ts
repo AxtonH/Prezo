@@ -1,5 +1,5 @@
 import { getAccessToken } from '../auth/auth'
-import type { Poll, Question, Session, SessionSnapshot } from './types'
+import type { Poll, Question, Session, SessionSnapshot, SessionStatus } from './types'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.toString() ?? 'http://localhost:8000'
@@ -43,6 +43,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title: title ?? null })
     }, true),
+  listSessions: (status?: SessionStatus, limit = 10) => {
+    const params = new URLSearchParams()
+    if (status) {
+      params.set('status', status)
+    }
+    if (limit) {
+      params.set('limit', limit.toString())
+    }
+    const query = params.toString()
+    return request<Session[]>(`/sessions${query ? `?${query}` : ''}`, {}, true)
+  },
   getSessionByCode: (code: string) =>
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
   getSnapshot: (sessionId: string) =>

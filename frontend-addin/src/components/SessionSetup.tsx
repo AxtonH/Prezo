@@ -7,9 +7,22 @@ import { resolveJoinUrl } from '../utils/joinUrl'
 interface SessionSetupProps {
   session: Session | null
   onCreate: (title: string) => Promise<void>
+  recentSessions?: Session[]
+  isLoading?: boolean
+  loadError?: string | null
+  onResume?: (session: Session) => void
+  onRefresh?: () => void
 }
 
-export function SessionSetup({ session, onCreate }: SessionSetupProps) {
+export function SessionSetup({
+  session,
+  onCreate,
+  recentSessions,
+  isLoading = false,
+  loadError,
+  onResume,
+  onRefresh
+}: SessionSetupProps) {
   const [title, setTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -28,6 +41,17 @@ export function SessionSetup({ session, onCreate }: SessionSetupProps) {
   }
 
   const joinUrl = resolveJoinUrl(session)
+
+  const formatTimestamp = (value: string) => {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) {
+      return ''
+    }
+    return parsed.toLocaleString()
+  }
+
+  const hasRecentSessions = Boolean(recentSessions?.length)
+  const showResumeSection = Boolean(onResume)
 
   if (!session) {
     return (
@@ -50,6 +74,49 @@ export function SessionSetup({ session, onCreate }: SessionSetupProps) {
           {isCreating ? 'Creating...' : 'Create Prezo session'}
         </button>
         {error ? <p className="error">{error}</p> : null}
+        {showResumeSection ? (
+          <div className="session-resume">
+            <div className="panel-header">
+              <h3>Resume a session</h3>
+              {onRefresh ? (
+                <button type="button" className="ghost" onClick={onRefresh}>
+                  Refresh
+                </button>
+              ) : null}
+            </div>
+            {isLoading ? <p className="muted">Loading your recent sessions...</p> : null}
+            {loadError ? <p className="error">{loadError}</p> : null}
+            {!isLoading && !loadError && !hasRecentSessions ? (
+              <p className="muted">No recent sessions yet.</p>
+            ) : null}
+            {hasRecentSessions ? (
+              <ul className="list">
+                {recentSessions?.map((entry) => {
+                  const title = entry.title?.trim() || 'Untitled session'
+                  const timestamp = formatTimestamp(entry.created_at)
+                  const badgeLabel = entry.status === 'active' ? 'Active' : 'Ended'
+                  return (
+                    <li key={entry.id} className="list-item">
+                      <div>
+                        <div className="session-title">{title}</div>
+                        <div className="session-subtitle">
+                          <span className="code-inline">{entry.code}</span>
+                          {timestamp ? ` - ${timestamp}` : ''}
+                        </div>
+                      </div>
+                      <div className="actions">
+                        <span className="badge">{badgeLabel}</span>
+                        <button type="button" className="ghost" onClick={() => onResume?.(entry)}>
+                          Resume
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     )
   }
