@@ -83,11 +83,13 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [sessionsLimit, setSessionsLimit] = useState(3)
   const [showPolls, setShowPolls] = useState(false)
   const [showQna, setShowQna] = useState(false)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
+  const maxSessionsLimit = 100
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -197,11 +199,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
   }, [session?.id])
 
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (limit: number) => {
     setSessionsError(null)
     setSessionsLoading(true)
     try {
-      const sessions = await api.listSessions('active', 10)
+      const sessions = await api.listSessions('active', limit)
       setRecentSessions(sessions)
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
@@ -211,14 +213,14 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [])
 
   useEffect(() => {
-    void loadSessions()
-  }, [loadSessions])
+    void loadSessions(sessionsLimit)
+  }, [loadSessions, sessionsLimit])
 
   const createSession = async (title: string) => {
     setError(null)
     const created = await api.createSession(title || undefined)
     setSession(created)
-    setRecentSessions((prev) => upsertById(prev, created).slice(0, 10))
+    setRecentSessions((prev) => upsertById(prev, created).slice(0, sessionsLimit))
   }
 
   const resumeSession = async (selected: Session) => {
@@ -307,6 +309,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
 
   const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
+  const hasMoreSessions =
+    sessionsLimit < maxSessionsLimit && recentSessions.length >= sessionsLimit
 
   return (
     <div className="app">
@@ -349,7 +353,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           isLoading={sessionsLoading}
           loadError={sessionsError}
           onResume={resumeSession}
-          onRefresh={loadSessions}
+          onRefresh={() => loadSessions(sessionsLimit)}
+          hasMore={hasMoreSessions}
+          onShowMore={() => setSessionsLimit(maxSessionsLimit)}
         />
 
         <div className="panel">

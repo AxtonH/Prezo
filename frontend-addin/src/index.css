@@ -302,6 +302,41 @@ button.ghost {
   border-top: 1px dashed var(--border);
 }
 
+.session-resume-header {
+  align-items: center;
+}
+
+.session-resume-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.session-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 110px;
+}
+
+.session-card-actions {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .session-title {
   font-weight: 600;
   font-size: 15px;
@@ -414,11 +449,19 @@ button.ghost {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .session-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
   .app {
     padding: 20px 16px 32px;
+  }
+
+  .session-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

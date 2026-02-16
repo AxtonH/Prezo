@@ -12,6 +12,8 @@ interface SessionSetupProps {
   loadError?: string | null
   onResume?: (session: Session) => void
   onRefresh?: () => void
+  hasMore?: boolean
+  onShowMore?: () => void
 }
 
 export function SessionSetup({
@@ -21,7 +23,9 @@ export function SessionSetup({
   isLoading = false,
   loadError,
   onResume,
-  onRefresh
+  onRefresh,
+  hasMore = false,
+  onShowMore
 }: SessionSetupProps) {
   const [title, setTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -76,13 +80,20 @@ export function SessionSetup({
         {error ? <p className="error">{error}</p> : null}
         {showResumeSection ? (
           <div className="session-resume">
-            <div className="panel-header">
+            <div className="panel-header session-resume-header">
               <h3>Resume a session</h3>
-              {onRefresh ? (
-                <button type="button" className="ghost" onClick={onRefresh}>
-                  Refresh
-                </button>
-              ) : null}
+              <div className="session-resume-actions">
+                {hasMore && onShowMore ? (
+                  <button type="button" className="ghost" onClick={onShowMore}>
+                    See more
+                  </button>
+                ) : null}
+                {onRefresh ? (
+                  <button type="button" className="ghost" onClick={onRefresh}>
+                    Refresh
+                  </button>
+                ) : null}
+              </div>
             </div>
             {isLoading ? <p className="muted">Loading your recent sessions...</p> : null}
             {loadError ? <p className="error">{loadError}</p> : null}
@@ -90,13 +101,13 @@ export function SessionSetup({
               <p className="muted">No recent sessions yet.</p>
             ) : null}
             {hasRecentSessions ? (
-              <ul className="list">
+              <div className="session-grid">
                 {recentSessions?.map((entry) => {
                   const title = entry.title?.trim() || 'Untitled session'
                   const timestamp = formatTimestamp(entry.created_at)
                   const badgeLabel = entry.status === 'active' ? 'Active' : 'Ended'
                   return (
-                    <li key={entry.id} className="list-item">
+                    <div key={entry.id} className="session-card">
                       <div>
                         <div className="session-title">{title}</div>
                         <div className="session-subtitle">
@@ -104,16 +115,16 @@ export function SessionSetup({
                           {timestamp ? ` - ${timestamp}` : ''}
                         </div>
                       </div>
-                      <div className="actions">
+                      <div className="session-card-actions">
                         <span className="badge">{badgeLabel}</span>
                         <button type="button" className="ghost" onClick={() => onResume?.(entry)}>
                           Resume
                         </button>
                       </div>
-                    </li>
+                    </div>
                   )
                 })}
-              </ul>
+              </div>
             ) : null}
           </div>
         ) : null}
