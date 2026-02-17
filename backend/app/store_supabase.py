@@ -9,6 +9,8 @@ from .models import (
     Poll,
     PollOption,
     PollStatus,
+    QnaPrompt,
+    QnaPromptStatus,
     QnaMode,
     Question,
     QuestionStatus,
@@ -79,6 +81,9 @@ class SupabaseStore:
         ]
         return Poll(options=option_models, **data)
 
+    def _to_prompt(self, data: dict[str, Any]) -> QnaPrompt:
+        return QnaPrompt(**data)
+
     async def create_session(self, title: str | None, user_id: str) -> Session:
         for _ in range(6):
             session_id = str(uuid.uuid4())
@@ -144,25 +149,34 @@ class SupabaseStore:
         rows = await self._select("sessions", params)
         return [self._to_session(row) for row in rows]
 
-    async def create_question(self, session_id: str, text: str) -> Question:
+    async def create_question(
+        self, session_id: str, text: str, prompt_id: str | None = None
+    ) -> Question:
         session_rows = await self._select(
             "sessions",
-            {"select": "id,qna_open,qna_mode", "id": f"eq.{session_id}"},
+            {"select": "id,qna_open", "id": f"eq.{session_id}"},
         )
         if not session_rows:
             raise NotFoundError("session not found")
-        if not session_rows[0].get("qna_open"):
-            raise ConflictError("q&a is closed")
-
-        status = (
-            QuestionStatus.approved
-            if session_rows[0].get("qna_mode") == QnaMode.prompt.value
-            else QuestionStatus.pending
-        )
+        if prompt_id:
+            prompt_rows = await self._select(
+                "qna_prompts",
+                {"select": "*", "id": f"eq.{prompt_id}", "session_id": f"eq.{session_id}"},
+            )
+            if not prompt_rows:
+                raise NotFoundError("prompt not found")
+            if prompt_rows[0].get("status") != QnaPromptStatus.open.value:
+                raise ConflictError("prompt is closed")
+            status = QuestionStatus.pending
+        else:
+            if not session_rows[0].get("qna_open"):
+                raise ConflictError("q&a is closed")
+            status = QuestionStatus.pending
         question_id = str(uuid.uuid4())
         payload = {
             "id": question_id,
             "session_id": session_id,
+            "prompt_id": prompt_id,
             "text": text,
             "status": status.value,
             "votes": 0,
@@ -206,6 +220,43 @@ class SupabaseStore:
         if not data:
             raise NotFoundError("session not found")
         return self._to_session(data[0])
+
+    async def create_qna_prompt(
+        self, session_id: str, prompt: str, user_id: str
+    ) -> QnaPrompt:
+        await self.get_session(session_id, user_id)
+        prompt_id = str(uuid.uuid4())
+        payload = {
+            "id": prompt_id,
+            "session_id": session_id,
+            "prompt": prompt,
+            "status": QnaPromptStatus.closed.value,
+        }
+        response = await self._request(
+            "POST", "qna_prompts", json=payload, prefer="return=representation"
+        )
+        data = response.json()
+        return self._to_prompt(data[0])
+
+    async def set_qna_prompt_status(
+        self,
+        session_id: str,
+        prompt_id: str,
+        status: QnaPromptStatus,
+        user_id: str,
+    ) -> QnaPrompt:
+        await self.get_session(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "qna_prompts",
+            params={"id": f"eq.{prompt_id}", "session_id": f"eq.{session_id}"},
+            json={"status": status.value},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("prompt not found")
+        return self._to_prompt(data[0])
 
     async def set_question_status(
         self,
@@ -432,6 +483,10 @@ class SupabaseStore:
             "questions",
             {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
         )
+        prompts = await self._select(
+            "qna_prompts",
+            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
+        )
         polls = await self._select(
             "polls",
             {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
@@ -453,11 +508,13 @@ class SupabaseStore:
             for poll in polls
         ]
         question_models = [self._to_question(item) for item in questions]
+        prompt_models = [self._to_prompt(item) for item in prompts]
 
         return SessionSnapshot(
             session=session,
             questions=question_models,
             polls=poll_models,
+            prompts=prompt_models,
         )
 
     async def record_event(self, session_id: str, event: object) -> None:

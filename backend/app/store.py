@@ -12,6 +12,8 @@ from .models import (
     Poll,
     PollOption,
     PollStatus,
+    QnaPrompt,
+    QnaPromptStatus,
     QnaMode,
     Question,
     QuestionStatus,
@@ -57,6 +59,7 @@ class SessionData:
 class QuestionData:
     id: str
     session_id: str
+    prompt_id: str | None
     text: str
     status: QuestionStatus
     votes: int
@@ -81,6 +84,15 @@ class PollData:
     created_at: datetime
 
 
+@dataclass(slots=True)
+class QnaPromptData:
+    id: str
+    session_id: str
+    prompt: str
+    status: QnaPromptStatus
+    created_at: datetime
+
+
 class InMemoryStore:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -90,6 +102,8 @@ class InMemoryStore:
         self._questions_by_session: dict[str, list[str]] = defaultdict(list)
         self._polls: dict[str, PollData] = {}
         self._polls_by_session: dict[str, list[str]] = defaultdict(list)
+        self._prompts: dict[str, QnaPromptData] = {}
+        self._prompts_by_session: dict[str, list[str]] = defaultdict(list)
         self._question_votes: dict[str, set[str]] = defaultdict(set)
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
         self._events_by_session: dict[str, list[Event]] = defaultdict(list)
@@ -147,22 +161,29 @@ class InMemoryStore:
                 sessions = sessions[:limit]
             return sessions
 
-    async def create_question(self, session_id: str, text: str) -> Question:
+    async def create_question(
+        self, session_id: str, text: str, prompt_id: str | None = None
+    ) -> Question:
         async with self._lock:
             session = self._sessions.get(session_id)
             if not session:
                 raise NotFoundError("session not found")
-            if not session.qna_open:
-                raise ConflictError("q&a is closed")
-            status = (
-                QuestionStatus.approved
-                if session.qna_mode == QnaMode.prompt
-                else QuestionStatus.pending
-            )
+            if prompt_id:
+                prompt = self._prompts.get(prompt_id)
+                if not prompt or prompt.session_id != session_id:
+                    raise NotFoundError("prompt not found")
+                if prompt.status != QnaPromptStatus.open:
+                    raise ConflictError("prompt is closed")
+                status = QuestionStatus.pending
+            else:
+                if not session.qna_open:
+                    raise ConflictError("q&a is closed")
+                status = QuestionStatus.pending
             question_id = uuid.uuid4().hex
             data = QuestionData(
                 id=question_id,
                 session_id=session_id,
+                prompt_id=prompt_id,
                 text=text,
                 status=status,
                 votes=0,
@@ -194,6 +215,36 @@ class InMemoryStore:
             session.qna_mode = mode
             session.qna_prompt = prompt
             return self._to_session(session)
+
+    async def create_qna_prompt(
+        self, session_id: str, prompt: str, user_id: str
+    ) -> QnaPrompt:
+        async with self._lock:
+            self._ensure_session(session_id, user_id)
+            prompt_id = uuid.uuid4().hex
+            data = QnaPromptData(
+                id=prompt_id,
+                session_id=session_id,
+                prompt=prompt,
+                status=QnaPromptStatus.closed,
+                created_at=utc_now(),
+            )
+            self._prompts[prompt_id] = data
+            self._prompts_by_session[session_id].append(prompt_id)
+            return self._to_prompt(data)
+
+    async def set_qna_prompt_status(
+        self,
+        session_id: str,
+        prompt_id: str,
+        status: QnaPromptStatus,
+        user_id: str,
+    ) -> QnaPrompt:
+        async with self._lock:
+            self._ensure_session(session_id, user_id)
+            prompt = self._get_prompt(session_id, prompt_id)
+            prompt.status = status
+            return self._to_prompt(prompt)
 
     async def set_question_status(
         self,
@@ -295,10 +346,15 @@ class InMemoryStore:
                 self._to_poll(self._polls[pid])
                 for pid in self._polls_by_session[session_id]
             ]
+            prompts = [
+                self._to_prompt(self._prompts[pid])
+                for pid in self._prompts_by_session[session_id]
+            ]
             return SessionSnapshot(
                 session=self._to_session(session),
                 questions=questions,
                 polls=polls,
+                prompts=prompts,
             )
 
     async def record_event(self, session_id: str, event: Event) -> None:
@@ -324,6 +380,13 @@ class InMemoryStore:
             raise NotFoundError("poll not found")
         return poll
 
+    def _get_prompt(self, session_id: str, prompt_id: str) -> QnaPromptData:
+        self._ensure_session(session_id)
+        prompt = self._prompts.get(prompt_id)
+        if not prompt or prompt.session_id != session_id:
+            raise NotFoundError("prompt not found")
+        return prompt
+
     def _to_session(self, data: SessionData) -> Session:
         return Session(
             id=data.id,
@@ -340,9 +403,19 @@ class InMemoryStore:
         return Question(
             id=data.id,
             session_id=data.session_id,
+            prompt_id=data.prompt_id,
             text=data.text,
             status=data.status,
             votes=data.votes,
+            created_at=data.created_at,
+        )
+
+    def _to_prompt(self, data: QnaPromptData) -> QnaPrompt:
+        return QnaPrompt(
+            id=data.id,
+            session_id=data.session_id,
+            prompt=data.prompt,
+            status=data.status,
             created_at=data.created_at,
         )
 

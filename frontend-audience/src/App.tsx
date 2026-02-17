@@ -1,7 +1,14 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { api } from './api/client'
-import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type {
+  Poll,
+  QnaPrompt,
+  Question,
+  Session,
+  SessionEvent,
+  SessionSnapshot
+} from './api/types'
 import { JoinPanel } from './components/JoinPanel'
 import { PollsPanel } from './components/PollsPanel'
 import { QuestionComposer } from './components/QuestionComposer'
@@ -35,6 +42,9 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
+  const [prompts, setPrompts] = useState<QnaPrompt[]>([])
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({})
+  const [promptStatus, setPromptStatus] = useState<Record<string, string>>({})
   const [joinError, setJoinError] = useState<string | null>(null)
 
   const handleEvent = useCallback((event: SessionEvent) => {
@@ -43,6 +53,7 @@ export default function App() {
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
+      setPrompts(snapshot.prompts ?? [])
       return
     }
 
@@ -61,6 +72,11 @@ export default function App() {
     if (event.payload.poll) {
       const poll = event.payload.poll as Poll
       setPolls((prev) => upsertById(prev, poll))
+    }
+
+    if (event.payload.prompt) {
+      const prompt = event.payload.prompt as QnaPrompt
+      setPrompts((prev) => upsertById(prev, prompt))
     }
   }, [])
 
@@ -83,6 +99,19 @@ export default function App() {
     await api.submitQuestion(session.id, text, getClientId())
   }
 
+  const submitPromptAnswer = async (promptId: string) => {
+    if (!session) {
+      return
+    }
+    const draft = promptDrafts[promptId]?.trim()
+    if (!draft) {
+      return
+    }
+    await api.submitQuestion(session.id, draft, getClientId(), promptId)
+    setPromptDrafts((prev) => ({ ...prev, [promptId]: '' }))
+    setPromptStatus((prev) => ({ ...prev, [promptId]: 'Answer submitted for moderation.' }))
+  }
+
   const voteQuestion = async (questionId: string) => {
     if (!session) {
       return
@@ -98,14 +127,16 @@ export default function App() {
   }
 
   const pendingCount = useMemo(
-    () => questions.filter((question) => question.status === 'pending').length,
+    () =>
+      questions.filter((question) => question.status === 'pending' && !question.prompt_id)
+        .length,
     [questions]
   )
 
   const approvedQuestions = useMemo(
     () =>
       questions
-        .filter((question) => question.status === 'approved')
+        .filter((question) => question.status === 'approved' && !question.prompt_id)
         .sort((a, b) => b.votes - a.votes),
     [questions]
   )
@@ -151,24 +182,62 @@ export default function App() {
           {session.qna_open ? (
             <QuestionComposer
               onSubmit={submitQuestion}
-              mode={session.qna_mode}
-              prompt={session.qna_prompt ?? null}
+              mode="audience"
+              prompt={null}
             />
           ) : (
             <div className="panel">
-              <h2>{session.qna_mode === 'prompt' ? 'Prompt closed' : 'Q&amp;A closed'}</h2>
+              <h2>Q&amp;A closed</h2>
               <p className="muted">
-                {session.qna_mode === 'prompt'
-                  ? 'The host hasn&apos;t opened the prompt yet. Check back once it goes live.'
-                  : 'The host hasn&apos;t opened Q&amp;A yet. Check back once it goes live.'}
+                The host hasn&apos;t opened Q&amp;A yet. Check back once it goes live.
               </p>
             </div>
           )}
+          {prompts.length > 0 ? (
+            <div className="panel">
+              <h2>Prompt questions</h2>
+              <p className="muted">Share your thoughts on each prompt below.</p>
+              <div className="prompt-list">
+                {prompts.map((prompt) => (
+                  <div key={prompt.id} className="prompt-entry">
+                    <div>
+                      <h3>{prompt.prompt}</h3>
+                      <span className="muted">
+                        {prompt.status === 'open' ? 'Open' : 'Closed'}
+                      </span>
+                    </div>
+                    {prompt.status === 'open' ? (
+                      <div className="prompt-input">
+                        <input
+                          value={promptDrafts[prompt.id] ?? ''}
+                          onChange={(event) =>
+                            setPromptDrafts((prev) => ({
+                              ...prev,
+                              [prompt.id]: event.target.value
+                            }))
+                          }
+                          placeholder="Type your answer"
+                        />
+                        <button onClick={() => submitPromptAnswer(prompt.id)}>
+                          Send
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="muted">Prompt closed.</p>
+                    )}
+                    {promptStatus[prompt.id] ? (
+                      <p className="muted">{promptStatus[prompt.id]}</p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <QuestionFeed
             approved={approvedQuestions}
             pendingCount={pendingCount}
             onVote={voteQuestion}
-            mode={session.qna_mode}
+            mode="audience"
           />
           <PollsPanel polls={polls} onVote={votePoll} />
         </div>

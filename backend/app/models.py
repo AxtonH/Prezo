@@ -28,6 +28,11 @@ class PollStatus(str, Enum):
     open = "open"
 
 
+class QnaPromptStatus(str, Enum):
+    closed = "closed"
+    open = "open"
+
+
 class SessionCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
 
@@ -47,11 +52,13 @@ class Session(BaseModel):
 class QuestionCreate(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     client_id: str | None = Field(default=None, max_length=64)
+    prompt_id: str | None = Field(default=None, max_length=64)
 
 
 class Question(BaseModel):
     id: str
     session_id: str
+    prompt_id: str | None = None
     text: str
     status: QuestionStatus
     votes: int
@@ -89,10 +96,23 @@ class PollVote(BaseModel):
     client_id: str | None = Field(default=None, max_length=64)
 
 
+class QnaPromptCreate(BaseModel):
+    prompt: str = Field(min_length=1, max_length=200)
+
+
+class QnaPrompt(BaseModel):
+    id: str
+    session_id: str
+    prompt: str
+    status: QnaPromptStatus
+    created_at: datetime
+
+
 class SessionSnapshot(BaseModel):
     session: Session
     questions: list[Question]
     polls: list[Poll]
+    prompts: list[QnaPrompt]
 
 
 class QnaConfigUpdate(BaseModel):

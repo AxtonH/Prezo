@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { api } from './api/client'
-import type { QnaMode, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type {
+  QnaMode,
+  QnaPrompt,
+  Question,
+  Session,
+  SessionEvent,
+  SessionSnapshot
+} from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import type { SessionBinding } from './office/sessionBinding'
 import { readSessionBinding } from './office/sessionBinding'
@@ -13,6 +20,7 @@ export function WidgetManagerApp() {
   const [binding, setBinding] = useState<SessionBinding | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
+  const [prompts, setPrompts] = useState<QnaPrompt[]>([])
   const [qnaMode, setQnaMode] = useState<QnaMode>('audience')
   const [qnaPrompt, setQnaPrompt] = useState('')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
@@ -25,6 +33,7 @@ export function WidgetManagerApp() {
       const snapshot = event.payload.snapshot as SessionSnapshot
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
+      setPrompts(snapshot.prompts ?? [])
       return
     }
 
@@ -43,6 +52,19 @@ export function WidgetManagerApp() {
         }
         const updated = [...prev]
         updated[index] = question
+        return updated
+      })
+    }
+
+    if (event.payload.prompt) {
+      const prompt = event.payload.prompt as QnaPrompt
+      setPrompts((prev) => {
+        const index = prev.findIndex((entry) => entry.id === prompt.id)
+        if (index === -1) {
+          return [prompt, ...prev]
+        }
+        const updated = [...prev]
+        updated[index] = prompt
         return updated
       })
     }
@@ -83,6 +105,7 @@ export function WidgetManagerApp() {
       .then((snapshot) => {
         setSession(snapshot.session)
         setQuestions(snapshot.questions)
+        setPrompts(snapshot.prompts ?? [])
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to load session')
@@ -105,12 +128,11 @@ export function WidgetManagerApp() {
       binding.sessionId,
       binding.code,
       questions,
-      session?.qna_mode ?? 'audience',
-      session?.qna_prompt ?? null
+      prompts
     ).catch((err) =>
       console.warn('Failed to update widget shapes', err)
     )
-  }, [questions, binding?.sessionId, binding?.code, session?.qna_mode, session?.qna_prompt])
+  }, [questions, prompts, binding?.sessionId, binding?.code])
 
   const saveQnaConfig = async () => {
     if (!binding?.sessionId) {
@@ -145,8 +167,7 @@ export function WidgetManagerApp() {
           binding.sessionId,
           binding.code,
           questions,
-          session?.qna_mode ?? qnaMode,
-          session?.qna_prompt ?? qnaPrompt
+          prompts
         )
       }
       setStatusMessage(

@@ -35,10 +35,19 @@ export const api = {
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
   getSnapshot: (sessionId: string) =>
     request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`),
-  submitQuestion: (sessionId: string, text: string, clientId?: string) =>
+  submitQuestion: (
+    sessionId: string,
+    text: string,
+    clientId?: string,
+    promptId?: string | null
+  ) =>
     request<Question>(`/sessions/${sessionId}/questions`, {
       method: 'POST',
-      body: JSON.stringify({ text, client_id: clientId ?? null })
+      body: JSON.stringify({
+        text,
+        client_id: clientId ?? null,
+        prompt_id: promptId ?? null
+      })
     }),
   approveQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/approve`, {

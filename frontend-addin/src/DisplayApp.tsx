@@ -87,12 +87,14 @@ export function DisplayApp() {
   }, [bindingSessionId])
 
   const approvedQuestions = useMemo(
-    () => questions.filter((question) => question.status === 'approved'),
+    () => questions.filter((question) => question.status === 'approved' && !question.prompt_id),
     [questions]
   )
 
   const pendingCount = useMemo(
-    () => questions.filter((question) => question.status === 'pending').length,
+    () =>
+      questions.filter((question) => question.status === 'pending' && !question.prompt_id)
+        .length,
     [questions]
   )
 

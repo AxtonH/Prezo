@@ -3,6 +3,7 @@ import type {
   Poll,
   Question,
   QnaMode,
+  QnaPrompt,
   Session,
   SessionSnapshot,
   SessionStatus
@@ -74,11 +75,33 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mode, prompt: prompt ?? null })
     }, true),
-  submitQuestion: (sessionId: string, text: string, clientId?: string) =>
+  submitQuestion: (
+    sessionId: string,
+    text: string,
+    clientId?: string,
+    promptId?: string | null
+  ) =>
     request<Question>(`/sessions/${sessionId}/questions`, {
       method: 'POST',
-      body: JSON.stringify({ text, client_id: clientId ?? null })
+      body: JSON.stringify({
+        text,
+        client_id: clientId ?? null,
+        prompt_id: promptId ?? null
+      })
     }),
+  createQnaPrompt: (sessionId: string, prompt: string) =>
+    request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    }, true),
+  openQnaPrompt: (sessionId: string, promptId: string) =>
+    request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts/${promptId}/open`, {
+      method: 'POST'
+    }, true),
+  closeQnaPrompt: (sessionId: string, promptId: string) =>
+    request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts/${promptId}/close`, {
+      method: 'POST'
+    }, true),
   approveQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/approve`, {
       method: 'POST'

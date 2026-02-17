@@ -7,8 +7,9 @@
   const SHAPES_TAG = 'PrezoWidgetShapeIds'
   const WIDGET_PENDING_TAG = 'PrezoWidgetPending'
   const WIDGET_STYLE_TAG = 'PrezoWidgetStyle'
-  const QNA_MODE_TAG = 'PrezoWidgetQnaMode'
-  const QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
+  const LEGACY_QNA_MODE_TAG = 'PrezoWidgetQnaMode'
+  const LEGACY_QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
+  const QNA_PROMPT_BINDING_TAG = 'PrezoWidgetPromptId'
   const POLL_WIDGET_TAG = 'PrezoPollWidget'
   const POLL_SESSION_TAG = 'PrezoPollWidgetSessionId'
   const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
@@ -359,10 +360,8 @@
     return response.json()
   }
 
-  const updateQnaWidget = async (sessionId, code, questions, mode, prompt) => {
-    const pendingCount = (questions || []).filter((question) => question.status === 'pending')
-      .length
-    const approvedRaw = (questions || []).filter((question) => question.status === 'approved')
+  const updateQnaWidget = async (sessionId, code, questions, prompts) => {
+    const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
     await PowerPoint.run(async (context) => {
       const slides = context.presentation.slides
       slides.load('items')
@@ -373,15 +372,13 @@
         const pendingTag = slide.tags.getItemOrNullObject(WIDGET_PENDING_TAG)
         const styleTag = slide.tags.getItemOrNullObject(WIDGET_STYLE_TAG)
         const shapeTag = slide.tags.getItemOrNullObject(SHAPES_TAG)
-        const modeTag = slide.tags.getItemOrNullObject(QNA_MODE_TAG)
-        const promptTag = slide.tags.getItemOrNullObject(QNA_PROMPT_TAG)
+        const promptBindingTag = slide.tags.getItemOrNullObject(QNA_PROMPT_BINDING_TAG)
         sessionTag.load('value')
         pendingTag.load('value')
         styleTag.load('value')
         shapeTag.load('value')
-        modeTag.load('value')
-        promptTag.load('value')
-        return { slide, sessionTag, pendingTag, styleTag, shapeTag, modeTag, promptTag }
+        promptBindingTag.load('value')
+        return { slide, sessionTag, pendingTag, styleTag, shapeTag, promptBindingTag }
       })
 
       await context.sync()
@@ -509,26 +506,27 @@
           })
         }
 
-        let resolvedMode = mode === 'prompt' ? 'prompt' : 'audience'
-        let resolvedPrompt = prompt
-        if (!info.modeTag.isNullObject && info.modeTag.value) {
-          resolvedMode = info.modeTag.value === 'prompt' ? 'prompt' : 'audience'
-          if (resolvedMode === 'prompt') {
-            if (!info.promptTag.isNullObject && info.promptTag.value) {
-              resolvedPrompt = info.promptTag.value
-            }
-          } else {
-            resolvedPrompt = null
-          }
-        }
+        const boundPromptId =
+          !info.promptBindingTag.isNullObject && info.promptBindingTag.value
+            ? info.promptBindingTag.value.trim()
+            : ''
+        const boundPrompt = boundPromptId ? promptMap.get(boundPromptId) || null : null
+        const resolvedMode = boundPromptId ? 'prompt' : 'audience'
+        const filteredQuestions = boundPromptId
+          ? (questions || []).filter((question) => question.prompt_id === boundPromptId)
+          : (questions || []).filter((question) => !question.prompt_id)
+        const pendingCount = filteredQuestions.filter((question) => question.status === 'pending')
+          .length
+        const approvedRaw = filteredQuestions.filter((question) => question.status === 'approved')
         const approved =
           resolvedMode === 'prompt'
             ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
             : approvedRaw
-        const bodyText = buildBody(questions, resolvedMode)
+        const bodyText = buildBody(filteredQuestions, resolvedMode)
+        const promptTitle = boundPrompt && boundPrompt.prompt ? boundPrompt.prompt.trim() : ''
         const panelTitle =
           resolvedMode === 'prompt'
-            ? (resolvedPrompt && String(resolvedPrompt).trim()) || PROMPT_PANEL_TITLE
+            ? promptTitle || (boundPromptId ? 'Prompt not found.' : PROMPT_PANEL_TITLE)
             : PANEL_TITLE
         if (title && !title.isNullObject) {
           const hasNewLayout = Boolean(
@@ -539,7 +537,7 @@
           )
           title.textFrame.textRange.text = hasNewLayout
             ? panelTitle
-            : buildTitle(code, resolvedMode, resolvedPrompt)
+            : buildTitle(code, resolvedMode, promptTitle || null)
         }
         if (meta && !meta.isNullObject) {
           meta.textFrame.textRange.text =
@@ -1178,8 +1176,9 @@
         slide.tags.delete(WIDGET_PENDING_TAG)
         slide.tags.delete(WIDGET_STYLE_TAG)
         slide.tags.delete(SHAPES_TAG)
-        slide.tags.delete(QNA_MODE_TAG)
-        slide.tags.delete(QNA_PROMPT_TAG)
+        slide.tags.delete(LEGACY_QNA_MODE_TAG)
+        slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+        slide.tags.delete(QNA_PROMPT_BINDING_TAG)
       }
 
       const width = Math.max(360, pageSetup.slideWidth * 0.68)
@@ -1400,8 +1399,9 @@
         slide.tags.add(WIDGET_PENDING_TAG, 'true')
         slide.tags.delete(SESSION_TAG)
       }
-      slide.tags.delete(QNA_MODE_TAG)
-      slide.tags.delete(QNA_PROMPT_TAG)
+      slide.tags.delete(LEGACY_QNA_MODE_TAG)
+      slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+      slide.tags.delete(QNA_PROMPT_BINDING_TAG)
       slide.tags.add(WIDGET_STYLE_TAG, JSON.stringify(style))
       slide.tags.add(SHAPES_TAG, JSON.stringify(shapeIds))
       await context.sync()
@@ -1414,8 +1414,7 @@
           sessionId,
           code,
           snapshot.questions || [],
-          snapshot.session && snapshot.session.qna_mode,
-          snapshot.session && snapshot.session.qna_prompt
+          snapshot.prompts || []
         )
       } catch (error) {
         console.warn('Failed to refresh Q&A widget', error)

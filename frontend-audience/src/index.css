@@ -279,6 +279,29 @@ button:disabled {
   gap: 16px;
 }
 
+.prompt-list {
+  display: grid;
+  gap: 12px;
+}
+
+.prompt-entry {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 14px;
+  background: var(--surface-2);
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-input {
+  display: flex;
+  gap: 8px;
+}
+
+.prompt-input input {
+  flex: 1;
+}
+
 .poll-card {
   border-radius: 12px;
   border: 1px solid var(--border);

@@ -1,8 +1,9 @@
-import type { Question } from '../api/types'
+import type { QnaPrompt, Question } from '../api/types'
 
 interface QaModerationProps {
   pending: Question[]
   approved: Question[]
+  prompts?: QnaPrompt[]
   onApprove: (questionId: string) => Promise<void>
   onHide: (questionId: string) => Promise<void>
 }
@@ -10,9 +11,19 @@ interface QaModerationProps {
 export function QaModeration({
   pending,
   approved,
+  prompts = [],
   onApprove,
   onHide
 }: QaModerationProps) {
+  const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt.prompt]))
+  const renderSource = (question: Question) => {
+    if (!question.prompt_id) {
+      return 'Audience Q&A'
+    }
+    const promptText = promptMap.get(question.prompt_id)
+    return promptText ? `Prompt: ${promptText}` : 'Prompt: (unknown)'
+  }
+
   return (
     <div className="panel">
       <div className="panel-header">
@@ -30,6 +41,7 @@ export function QaModeration({
                 <li key={question.id} className="list-item">
                   <div>
                     <p>{question.text}</p>
+                    <span className="muted">{renderSource(question)}</span>
                     <span className="muted">{question.votes} votes</span>
                   </div>
                   <div className="actions">
@@ -53,6 +65,7 @@ export function QaModeration({
                 <li key={question.id} className="list-item">
                   <div>
                     <p>{question.text}</p>
+                    <span className="muted">{renderSource(question)}</span>
                     <span className="muted">{question.votes} votes</span>
                   </div>
                   <div className="actions">

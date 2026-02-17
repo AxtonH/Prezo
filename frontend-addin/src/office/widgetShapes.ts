@@ -1,12 +1,13 @@
-import type { Poll, QnaMode, Question } from '../api/types'
+import type { Poll, QnaMode, QnaPrompt, Question } from '../api/types'
 
 const WIDGET_TAG = 'PrezoWidget'
 const SESSION_TAG = 'PrezoWidgetSessionId'
 const SHAPES_TAG = 'PrezoWidgetShapeIds'
 const WIDGET_PENDING_TAG = 'PrezoWidgetPending'
 const WIDGET_STYLE_TAG = 'PrezoWidgetStyle'
-const QNA_MODE_TAG = 'PrezoWidgetQnaMode'
-const QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
+const LEGACY_QNA_MODE_TAG = 'PrezoWidgetQnaMode'
+const LEGACY_QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
+const QNA_PROMPT_BINDING_TAG = 'PrezoWidgetPromptId'
 const POLL_WIDGET_TAG = 'PrezoPollWidget'
 const POLL_SESSION_TAG = 'PrezoPollWidgetSessionId'
 const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
@@ -372,8 +373,9 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       slide.tags.delete(WIDGET_PENDING_TAG)
       slide.tags.delete(WIDGET_STYLE_TAG)
       slide.tags.delete(SHAPES_TAG)
-      slide.tags.delete(QNA_MODE_TAG)
-      slide.tags.delete(QNA_PROMPT_TAG)
+      slide.tags.delete(LEGACY_QNA_MODE_TAG)
+      slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+      slide.tags.delete(QNA_PROMPT_BINDING_TAG)
     }
 
     const width = Math.max(360, pageSetup.slideWidth * 0.68)
@@ -590,8 +592,9 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       slide.tags.add(WIDGET_PENDING_TAG, 'true')
       slide.tags.delete(SESSION_TAG)
     }
-    slide.tags.delete(QNA_MODE_TAG)
-    slide.tags.delete(QNA_PROMPT_TAG)
+    slide.tags.delete(LEGACY_QNA_MODE_TAG)
+    slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+    slide.tags.delete(QNA_PROMPT_BINDING_TAG)
     slide.tags.add(WIDGET_STYLE_TAG, JSON.stringify(style))
     slide.tags.add(SHAPES_TAG, JSON.stringify(shapeIds))
     await context.sync()
@@ -602,13 +605,11 @@ export async function updateQnaWidget(
   sessionId: string,
   code: string | null | undefined,
   questions: Question[],
-  mode: QnaMode = 'audience',
-  prompt?: string | null
+  prompts: QnaPrompt[]
 ) {
   ensurePowerPoint()
 
-  const pendingCount = questions.filter((q) => q.status === 'pending').length
-  const approvedRaw = questions.filter((q) => q.status === 'approved')
+  const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt]))
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
@@ -619,15 +620,13 @@ export async function updateQnaWidget(
       const pendingTag = slide.tags.getItemOrNullObject(WIDGET_PENDING_TAG)
       const styleTag = slide.tags.getItemOrNullObject(WIDGET_STYLE_TAG)
       const shapeTag = slide.tags.getItemOrNullObject(SHAPES_TAG)
-      const modeTag = slide.tags.getItemOrNullObject(QNA_MODE_TAG)
-      const promptTag = slide.tags.getItemOrNullObject(QNA_PROMPT_TAG)
+      const promptBindingTag = slide.tags.getItemOrNullObject(QNA_PROMPT_BINDING_TAG)
       sessionTag.load('value')
       pendingTag.load('value')
       styleTag.load('value')
       shapeTag.load('value')
-      modeTag.load('value')
-      promptTag.load('value')
-      return { slide, sessionTag, pendingTag, styleTag, shapeTag, modeTag, promptTag }
+      promptBindingTag.load('value')
+      return { slide, sessionTag, pendingTag, styleTag, shapeTag, promptBindingTag }
     })
 
     await context.sync()
@@ -766,26 +765,25 @@ export async function updateQnaWidget(
         })
       }
 
-      let resolvedMode: QnaMode = mode === 'prompt' ? 'prompt' : 'audience'
-      let resolvedPrompt = prompt ?? null
-      if (!info.modeTag.isNullObject && info.modeTag.value) {
-        resolvedMode = info.modeTag.value === 'prompt' ? 'prompt' : 'audience'
-        if (resolvedMode === 'prompt') {
-          if (!info.promptTag.isNullObject) {
-            const nextPrompt = info.promptTag.value?.trim()
-            resolvedPrompt = nextPrompt ? nextPrompt : resolvedPrompt
-          }
-        } else {
-          resolvedPrompt = null
-        }
-      }
+      const boundPromptId =
+        !info.promptBindingTag.isNullObject && info.promptBindingTag.value
+          ? info.promptBindingTag.value.trim()
+          : ''
+      const boundPrompt = boundPromptId ? promptMap.get(boundPromptId) ?? null : null
+      const resolvedMode: QnaMode = boundPromptId ? 'prompt' : 'audience'
+      const filteredQuestions = boundPromptId
+        ? questions.filter((q) => q.prompt_id === boundPromptId)
+        : questions.filter((q) => !q.prompt_id)
+      const pendingCount = filteredQuestions.filter((q) => q.status === 'pending').length
+      const approvedRaw = filteredQuestions.filter((q) => q.status === 'approved')
       const approved =
         resolvedMode === 'prompt'
           ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
           : approvedRaw
+      const promptTitle = boundPrompt?.prompt?.trim()
       const panelTitle =
         resolvedMode === 'prompt'
-          ? (resolvedPrompt?.trim() || PROMPT_PANEL_TITLE)
+          ? promptTitle || (boundPromptId ? 'Prompt not found.' : PROMPT_PANEL_TITLE)
           : PANEL_TITLE
       if (!title.isNullObject) {
         const hasNewLayout = Boolean(
@@ -796,7 +794,7 @@ export async function updateQnaWidget(
         )
         title.textFrame.textRange.text = hasNewLayout
           ? panelTitle
-          : buildTitle(code, resolvedMode, resolvedPrompt)
+          : buildTitle(code, resolvedMode, promptTitle ?? null)
       }
       if (meta && !meta.isNullObject) {
         meta.textFrame.textRange.text =
@@ -838,7 +836,7 @@ export async function updateQnaWidget(
           item.votes.textFrame.textRange.text = `${question.votes} votes`
         })
       } else if (!body.isNullObject) {
-        body.textFrame.textRange.text = buildBody(questions, resolvedMode)
+        body.textFrame.textRange.text = buildBody(filteredQuestions, resolvedMode)
       }
 
       if (isPending) {
@@ -1627,8 +1625,7 @@ export async function updatePollWidget(
 
 export async function setQnaWidgetBinding(
   sessionId: string,
-  mode?: QnaMode | null,
-  prompt?: string | null
+  promptId?: string | null
 ) {
   ensurePowerPoint()
 
@@ -1664,16 +1661,12 @@ export async function setQnaWidgetBinding(
       throw new Error('No Q&A widget found on the selected slide.')
     }
 
-    if (!mode) {
-      slide.tags.delete(QNA_MODE_TAG)
-      slide.tags.delete(QNA_PROMPT_TAG)
+    slide.tags.delete(LEGACY_QNA_MODE_TAG)
+    slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+    if (promptId) {
+      slide.tags.add(QNA_PROMPT_BINDING_TAG, promptId)
     } else {
-      slide.tags.add(QNA_MODE_TAG, mode)
-      if (mode === 'prompt') {
-        slide.tags.add(QNA_PROMPT_TAG, prompt?.trim() ?? '')
-      } else {
-        slide.tags.delete(QNA_PROMPT_TAG)
-      }
+      slide.tags.delete(QNA_PROMPT_BINDING_TAG)
     }
 
     slide.tags.add(SESSION_TAG, sessionId)

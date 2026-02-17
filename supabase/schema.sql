@@ -39,9 +39,18 @@ create table if not exists sessions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists qna_prompts (
+  id uuid primary key,
+  session_id uuid not null references sessions(id) on delete cascade,
+  prompt text not null,
+  status text not null default 'closed',
+  created_at timestamptz not null default now()
+);
+
 create table if not exists questions (
   id uuid primary key,
   session_id uuid not null references sessions(id) on delete cascade,
+  prompt_id uuid references qna_prompts(id) on delete cascade,
   text text not null,
   status text not null default 'pending',
   votes integer not null default 0,
@@ -84,6 +93,8 @@ create table if not exists poll_votes (
 
 create index if not exists sessions_user_id_idx on sessions (user_id);
 create index if not exists questions_session_id_idx on questions (session_id);
+create index if not exists questions_prompt_id_idx on questions (prompt_id);
+create index if not exists qna_prompts_session_id_idx on qna_prompts (session_id);
 create index if not exists polls_session_id_idx on polls (session_id);
 create index if not exists poll_options_poll_id_idx on poll_options (poll_id);
 create index if not exists poll_votes_poll_client_idx on poll_votes (poll_id, client_id);

@@ -2,6 +2,7 @@ export type SessionStatus = 'active' | 'ended'
 export type QuestionStatus = 'pending' | 'approved' | 'hidden'
 export type PollStatus = 'closed' | 'open'
 export type QnaMode = 'audience' | 'prompt'
+export type QnaPromptStatus = 'closed' | 'open'
 
 export interface Session {
   id: string
@@ -18,6 +19,7 @@ export interface Session {
 export interface Question {
   id: string
   session_id: string
+  prompt_id?: string | null
   text: string
   status: QuestionStatus
   votes: number
@@ -40,10 +42,19 @@ export interface Poll {
   created_at: string
 }
 
+export interface QnaPrompt {
+  id: string
+  session_id: string
+  prompt: string
+  status: QnaPromptStatus
+  created_at: string
+}
+
 export interface SessionSnapshot {
   session: Session
   questions: Question[]
   polls: Poll[]
+  prompts: QnaPrompt[]
 }
 
 export interface SessionEvent {

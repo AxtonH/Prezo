@@ -25,7 +25,9 @@ async def create_question(
     manager: ConnectionManager = Depends(get_manager),
 ) -> Question:
     try:
-        question = await store.create_question(session_id, payload.text)
+        question = await store.create_question(
+            session_id, payload.text, payload.prompt_id
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:

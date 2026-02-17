@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
-import type { Poll, Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type {
+  Poll,
+  QnaPrompt,
+  Question,
+  Session,
+  SessionEvent,
+  SessionSnapshot
+} from './api/types'
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
+import { PromptManager } from './components/PromptManager'
 import { QaModeration } from './components/QaModeration'
 import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -84,6 +92,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
+  const [prompts, setPrompts] = useState<QnaPrompt[]>([])
   const [error, setError] = useState<string | null>(null)
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
@@ -91,12 +100,12 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const defaultSessionsLimit = 3
   const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
   const [showPolls, setShowPolls] = useState(false)
-  const [showQna, setShowQna] = useState(false)
   const [qnaWidgetStatus, setQnaWidgetStatus] = useState<string | null>(null)
   const [qnaWidgetError, setQnaWidgetError] = useState<string | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
+  const latestPromptsRef = useRef<QnaPrompt[]>([])
   const maxSessionsLimit = 100
 
   const handleEvent = useCallback((event: SessionEvent) => {
@@ -105,6 +114,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
+      setPrompts(snapshot.prompts ?? [])
       return
     }
 
@@ -124,6 +134,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       const poll = event.payload.poll as Poll
       setPolls((prev) => upsertById(prev, poll))
     }
+
+    if (event.payload.prompt) {
+      const prompt = event.payload.prompt as QnaPrompt
+      setPrompts((prev) => upsertById(prev, prompt))
+    }
   }, [])
 
   const socketStatus = useSessionSocket(session?.id ?? null, handleEvent)
@@ -141,10 +156,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [polls])
 
   useEffect(() => {
-    if (session?.qna_open) {
-      setShowQna(true)
-    }
-  }, [session?.qna_open])
+    latestPromptsRef.current = prompts
+  }, [prompts])
 
   useEffect(() => {
     if (polls.length > 0) {
@@ -167,12 +180,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       session.id,
       session.code,
       questions,
-      session.qna_mode,
-      session.qna_prompt ?? null
+      prompts
     ).catch((err) =>
       console.warn('Failed to update widget shapes', err)
     )
-  }, [session?.id, session?.code, session?.qna_mode, session?.qna_prompt, questions])
+  }, [session?.id, session?.code, questions, prompts])
 
   useEffect(() => {
     if (!session) {
@@ -197,8 +209,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         currentSession.id,
         currentSession.code,
         latestQuestionsRef.current,
-        currentSession.qna_mode,
-        currentSession.qna_prompt ?? null
+        latestPromptsRef.current
       ).catch((err) => console.warn('Failed to refresh Q&A widget shapes', err))
       void updatePollWidget(
         currentSession.id,
@@ -253,13 +264,14 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     setError(null)
     setQuestions([])
     setPolls([])
-    setShowQna(false)
+    setPrompts([])
     setShowPolls(false)
     try {
       const snapshot = await api.getSnapshot(selected.id)
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
+      setPrompts(snapshot.prompts ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session')
     }
@@ -271,7 +283,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
     const updated = await api.openQna(session.id)
     setSession(updated)
-    setShowQna(true)
   }
 
   const closeQna = async () => {
@@ -280,7 +291,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
     const updated = await api.closeQna(session.id)
     setSession(updated)
-    setShowQna(false)
   }
 
   const approveQuestion = async (questionId: string) => {
@@ -324,6 +334,28 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     await api.closePoll(session.id, pollId)
   }
 
+  const createPrompt = async (promptText: string) => {
+    if (!session) {
+      return
+    }
+    const created = await api.createQnaPrompt(session.id, promptText)
+    await api.openQnaPrompt(session.id, created.id)
+  }
+
+  const openPrompt = async (promptId: string) => {
+    if (!session) {
+      return
+    }
+    await api.openQnaPrompt(session.id, promptId)
+  }
+
+  const closePrompt = async (promptId: string) => {
+    if (!session) {
+      return
+    }
+    await api.closeQnaPrompt(session.id, promptId)
+  }
+
   const bindPollWidget = async (pollId: string | null) => {
     if (!session) {
       return
@@ -332,45 +364,20 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     await updatePollWidget(session.id, session.code, polls)
   }
 
-  const bindQnaWidgetToCurrent = async () => {
+  const bindQnaWidget = async (promptId: string | null) => {
     if (!session) {
       return
     }
     setQnaWidgetStatus(null)
     setQnaWidgetError(null)
     try {
-      await setQnaWidgetBinding(session.id, session.qna_mode, session.qna_prompt ?? null)
-      await updateQnaWidget(
-        session.id,
-        session.code,
-        questions,
-        session.qna_mode,
-        session.qna_prompt ?? null
+      await setQnaWidgetBinding(session.id, promptId)
+      await updateQnaWidget(session.id, session.code, questions, prompts)
+      setQnaWidgetStatus(
+        promptId
+          ? 'Q&A widget bound to the selected prompt.'
+          : 'Q&A widget bound to audience Q&A.'
       )
-      setQnaWidgetStatus('Q&A widget bound to the current Q&A settings.')
-    } catch (err) {
-      setQnaWidgetError(
-        err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
-      )
-    }
-  }
-
-  const clearQnaWidgetBinding = async () => {
-    if (!session) {
-      return
-    }
-    setQnaWidgetStatus(null)
-    setQnaWidgetError(null)
-    try {
-      await setQnaWidgetBinding(session.id, null)
-      await updateQnaWidget(
-        session.id,
-        session.code,
-        questions,
-        session.qna_mode,
-        session.qna_prompt ?? null
-      )
-      setQnaWidgetStatus('Q&A widget will follow live session settings.')
     } catch (err) {
       setQnaWidgetError(
         err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
@@ -386,6 +393,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     () => questions.filter((question) => question.status === 'approved'),
     [questions]
   )
+  const shouldShowModeration =
+    Boolean(session?.qna_open) ||
+    prompts.length > 0 ||
+    pendingQuestions.length > 0 ||
+    approvedQuestions.length > 0
 
   const visibleSessions = useMemo(
     () => recentSessions.slice(0, sessionsLimit),
@@ -482,28 +494,36 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               )}
               <div className="widget-binding">
                 <p className="muted">
-                  Select a slide with a Q&amp;A widget to lock it to the current settings
-                  or let it follow the live session.
+                  Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A or a
+                  prompt from the list below.
                 </p>
                 <div className="actions">
-                  <button className="ghost" onClick={clearQnaWidgetBinding}>
-                    Follow live Q&amp;A
+                  <button className="ghost" onClick={() => bindQnaWidget(null)}>
+                    Bind to audience Q&amp;A
                   </button>
-                  <button onClick={bindQnaWidgetToCurrent}>Bind to current settings</button>
                 </div>
                 {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
                 {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
               </div>
             </div>
 
-            {session.qna_open && showQna ? (
+            {shouldShowModeration ? (
               <QaModeration
                 pending={pendingQuestions}
                 approved={approvedQuestions}
+                prompts={prompts}
                 onApprove={approveQuestion}
                 onHide={hideQuestion}
               />
             ) : null}
+
+            <PromptManager
+              prompts={prompts}
+              onCreate={createPrompt}
+              onOpen={openPrompt}
+              onClose={closePrompt}
+              onBindWidget={bindQnaWidget}
+            />
 
             {!showPolls ? (
               <div className="panel">
