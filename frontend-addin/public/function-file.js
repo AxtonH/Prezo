@@ -16,7 +16,9 @@
   const MAX_QNA_ITEMS = 4
   const MAX_POLL_OPTIONS = 5
   const PANEL_TITLE = 'Questions from your audience'
+  const PROMPT_PANEL_TITLE = 'Audience answers'
   const EYEBROW_TEXT = 'PREZO LIVE Q&A'
+  const PROMPT_EYEBROW_TEXT = 'PREZO LIVE PROMPT'
   const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
   const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
@@ -71,10 +73,17 @@
       return parseBinding(xmlResult.value)
     })
 
-  const buildTitle = (code) => (code ? `Prezo Live Q&A • ${code}` : 'Prezo Live Q&A')
+  const buildTitle = (code, mode, prompt) => {
+    if (mode === 'prompt') {
+      const safePrompt = prompt && String(prompt).trim()
+      return safePrompt || PROMPT_PANEL_TITLE
+    }
+    return code ? `Prezo Live Q&A • ${code}` : 'Prezo Live Q&A'
+  }
   const buildMeta = (code) =>
     code ? `Join code ${code}` : 'Waiting for new questions.'
-  const buildBadge = (pendingCount) => `Pending ${pendingCount}`
+  const buildBadge = (pendingCount, approvedCount, mode) =>
+    mode === 'prompt' ? `Answers ${approvedCount}` : `Pending ${pendingCount}`
   const DEFAULT_QNA_STYLE = {
     fontFamily: null,
     textColor: '#0f172a',
@@ -200,12 +209,86 @@
   const resolveApiBaseUrl = (binding) =>
     (binding && binding.apiBaseUrl) || window.PREZO_API_BASE_URL || DEFAULT_API_BASE_URL
 
-  const buildBody = (questions) => {
+  const resolveQnaMode = (qna) => {
+    const mode = qna && qna.mode === 'prompt' ? 'prompt' : 'audience'
+    const prompt = qna && typeof qna.prompt === 'string' ? qna.prompt.trim() : ''
+    return { mode, prompt }
+  }
+
+  const getSupabaseAccessToken = () => {
+    try {
+      if (!window.localStorage) return null
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index)
+        if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) {
+          continue
+        }
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        try {
+          const data = JSON.parse(raw)
+          const token =
+            data && (data.access_token || (data.currentSession && data.currentSession.access_token))
+          if (token) {
+            return token
+          }
+        } catch {
+          // ignore JSON parse errors
+        }
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  const updateQnaConfig = async (binding, qna) => {
+    if (!binding || !binding.sessionId || !qna) {
+      return null
+    }
+    const { mode, prompt } = resolveQnaMode(qna)
+    if (mode === 'prompt' && !prompt) {
+      throw new Error('Enter a prompt question to use prompt mode.')
+    }
+    const token = getSupabaseAccessToken()
+    if (!token) {
+      throw new Error('Sign in to update Q&A mode.')
+    }
+    const apiBaseUrl = resolveApiBaseUrl(binding)
+    const response = await fetch(
+      `${apiBaseUrl}/sessions/${encodeURIComponent(binding.sessionId)}/qna/config`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ mode, prompt: mode === 'prompt' ? prompt : null })
+      }
+    )
+    if (!response.ok) {
+      let detail = `Request failed (${response.status})`
+      try {
+        const body = await response.json()
+        if (body && body.detail) {
+          detail = body.detail
+        }
+      } catch {
+        // ignore JSON parse errors
+      }
+      throw new Error(detail)
+    }
+    return response.json()
+  }
+
+  const buildBody = (questions, mode) => {
     const approved = (questions || []).filter((question) => question.status === 'approved')
     if (approved.length === 0) {
-      return 'No approved questions yet.'
+      return mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
     }
-    return approved
+    const sorted =
+      mode === 'prompt' ? [...approved].sort((a, b) => b.votes - a.votes) : approved
+    return sorted
       .slice(0, 6)
       .map((question, index) => `${index + 1}. ${question.text}`)
       .join('\n')
@@ -273,11 +356,16 @@
     return response.json()
   }
 
-  const updateQnaWidget = async (sessionId, code, questions) => {
-    const bodyText = buildBody(questions)
+  const updateQnaWidget = async (sessionId, code, questions, mode, prompt) => {
+    const resolvedMode = mode === 'prompt' ? 'prompt' : 'audience'
+    const bodyText = buildBody(questions, resolvedMode)
     const pendingCount = (questions || []).filter((question) => question.status === 'pending')
       .length
-    const approved = (questions || []).filter((question) => question.status === 'approved')
+    const approvedRaw = (questions || []).filter((question) => question.status === 'approved')
+    const approved =
+      resolvedMode === 'prompt'
+        ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
+        : approvedRaw
     await PowerPoint.run(async (context) => {
       const slides = context.presentation.slides
       slides.load('items')
@@ -420,6 +508,10 @@
           })
         }
 
+        const panelTitle =
+          resolvedMode === 'prompt'
+            ? (prompt && String(prompt).trim()) || PROMPT_PANEL_TITLE
+            : PANEL_TITLE
         if (title && !title.isNullObject) {
           const hasNewLayout = Boolean(
             (shapeIds.items && shapeIds.items.length > 0) ||
@@ -427,21 +519,32 @@
               shapeIds.meta ||
               shapeIds.badge
           )
-          title.textFrame.textRange.text = hasNewLayout ? PANEL_TITLE : buildTitle(code)
+          title.textFrame.textRange.text = hasNewLayout
+            ? panelTitle
+            : buildTitle(code, resolvedMode, prompt)
         }
         if (meta && !meta.isNullObject) {
-          meta.textFrame.textRange.text = EYEBROW_TEXT
+          meta.textFrame.textRange.text =
+            resolvedMode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
         }
         if (subtitle && !subtitle.isNullObject) {
           subtitle.textFrame.textRange.text = buildMeta(code)
         }
         if (badge && !badge.isNullObject) {
-          badge.textFrame.textRange.text = buildBadge(pendingCount)
+          badge.textFrame.textRange.text = buildBadge(
+            pendingCount,
+            approved.length,
+            resolvedMode
+          )
         }
         if (itemShapes.length > 0) {
           const hasApproved = approved.length > 0
           if (body && !body.isNullObject) {
-            body.textFrame.textRange.text = hasApproved ? '' : 'No approved questions yet.'
+            body.textFrame.textRange.text = hasApproved
+              ? ''
+              : resolvedMode === 'prompt'
+                ? 'No answers yet.'
+                : 'No approved questions yet.'
           }
           itemShapes.forEach((item, index) => {
             if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
@@ -979,7 +1082,7 @@
       await context.sync()
     })
   }
-  const insertWidget = async (styleOverrides) => {
+  const insertWidget = async (styleOverrides, qna) => {
     const style = normalizeQnaStyle(styleOverrides)
     const scale = style.spacingScale
     const maxQuestions = style.maxQuestions
@@ -987,6 +1090,11 @@
     const sessionId = binding && binding.sessionId ? binding.sessionId : null
     const code = binding ? binding.code : null
     const hasSession = Boolean(sessionId)
+    const { mode, prompt } = resolveQnaMode(qna)
+    const panelTitle =
+      mode === 'prompt' ? (prompt && String(prompt).trim()) || PROMPT_PANEL_TITLE : PANEL_TITLE
+    const eyebrowText = mode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
+    const emptyBody = mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
 
     await PowerPoint.run(async (context) => {
       const slides = context.presentation.getSelectedSlides()
@@ -1100,7 +1208,7 @@
       container.tags.add(WIDGET_TAG, 'true')
       container.tags.add('PrezoWidgetRole', 'container')
 
-      const meta = slide.shapes.addTextBox(EYEBROW_TEXT, {
+      const meta = slide.shapes.addTextBox(eyebrowText, {
         left: left + paddingX,
         top: headerTop,
         width: Math.max(160, textWidth),
@@ -1114,7 +1222,7 @@
       meta.tags.add(WIDGET_TAG, 'true')
       meta.tags.add('PrezoWidgetRole', 'meta')
 
-      const title = slide.shapes.addTextBox(PANEL_TITLE, {
+      const title = slide.shapes.addTextBox(panelTitle, {
         left: left + paddingX,
         top: titleTop,
         width: Math.max(160, textWidth),
@@ -1154,7 +1262,7 @@
       })
       badge.fill.setSolidColor(badgeFillFor(style))
       badge.lineFormat.visible = false
-      badge.textFrame.textRange.text = buildBadge(0)
+      badge.textFrame.textRange.text = buildBadge(0, 0, mode)
       applyFont(badge.textFrame.textRange.font, style, {
         size: 11,
         bold: true,
@@ -1164,7 +1272,7 @@
       badge.tags.add('PrezoWidgetRole', 'badge')
 
       const body = slide.shapes.addTextBox(
-        hasSession ? 'No approved questions yet.' : PLACEHOLDER_BODY,
+        hasSession ? emptyBody : PLACEHOLDER_BODY,
         {
         left: left + paddingX,
         top: bodyTop,
@@ -1272,7 +1380,13 @@
     if (hasSession && sessionId) {
       try {
         const snapshot = await fetchSnapshot(binding)
-        await updateQnaWidget(sessionId, code, snapshot.questions || [])
+        await updateQnaWidget(
+          sessionId,
+          code,
+          snapshot.questions || [],
+          snapshot.session && snapshot.session.qna_mode,
+          snapshot.session && snapshot.session.qna_prompt
+        )
       } catch (error) {
         console.warn('Failed to refresh Q&A widget', error)
       }
@@ -1530,7 +1644,18 @@
     }
     if (message && message.type === 'insert-qna') {
       try {
-        await insertWidget(message.style)
+        const binding = await getBinding()
+        if (
+          message.qna &&
+          message.qna.mode === 'prompt' &&
+          (!binding || !binding.sessionId)
+        ) {
+          throw new Error('Start a session in the host add-in before using prompt mode.')
+        }
+        if (message.qna && binding && binding.sessionId) {
+          await updateQnaConfig(binding, message.qna)
+        }
+        await insertWidget(message.style, message.qna)
         activeDialog.messageChild(JSON.stringify({ type: 'inserted' }))
         activeDialog.close()
         activeDialog = null

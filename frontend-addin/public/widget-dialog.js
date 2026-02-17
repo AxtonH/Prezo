@@ -19,6 +19,13 @@
   const pollDebugEl = () => el('poll-debug')
   const previewEl = () => el('qna-preview')
   const pollPreviewEl = () => el('poll-preview')
+  const qnaModeInput = () => el('qna-mode')
+  const qnaPromptInput = () => el('qna-prompt')
+  const qnaPromptField = () => el('qna-prompt-field')
+  const qnaModeHint = () => el('qna-mode-hint')
+  const qnaPreviewEyebrow = () => el('qna-preview-eyebrow')
+  const qnaPreviewTitle = () => el('qna-preview-title')
+  const qnaPreviewBadge = () => el('qna-preview-badge')
 
   const queryDebug = () => {
     try {
@@ -153,6 +160,33 @@
     maxQuestions: clamp(parseInt(qnaInputs.max()?.value || '3', 10), 1, 5)
   })
 
+  const readQnaMode = () => ({
+    mode: qnaModeInput()?.value || 'audience',
+    prompt: (qnaPromptInput()?.value || '').trim()
+  })
+
+  const updateModePreview = () => {
+    const { mode, prompt } = readQnaMode()
+    const isPrompt = mode === 'prompt'
+    if (qnaPromptField()) {
+      qnaPromptField().style.display = isPrompt ? 'flex' : 'none'
+    }
+    if (qnaModeHint()) {
+      qnaModeHint().textContent = isPrompt
+        ? 'Audience submits answers and votes on the best ones.'
+        : 'Audience submits questions that you can approve and upvote.'
+    }
+    if (qnaPreviewEyebrow()) {
+      qnaPreviewEyebrow().textContent = isPrompt ? 'PREZO LIVE PROMPT' : 'PREZO LIVE Q&A'
+    }
+    if (qnaPreviewTitle()) {
+      qnaPreviewTitle().textContent = isPrompt ? (prompt || 'Audience answers') : 'Questions from your audience'
+    }
+    if (qnaPreviewBadge()) {
+      qnaPreviewBadge().textContent = isPrompt ? 'Answers 2' : 'Pending 2'
+    }
+  }
+
   const updatePreview = () => {
     const preview = previewEl()
     if (!preview) return
@@ -175,6 +209,8 @@
     items.forEach((item, index) => {
       item.style.display = index < config.maxQuestions ? 'flex' : 'none'
     })
+
+    updateModePreview()
   }
 
   const readPollConfig = () => ({
@@ -238,10 +274,15 @@
 
   const sendInsert = () => {
     setError('')
+    const qna = readQnaMode()
+    if (qna.mode === 'prompt' && !qna.prompt) {
+      setError('Enter a prompt question to use prompt mode.')
+      return
+    }
     setStatus('Sending request...')
     setBusy(true)
     Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-qna', style: readQnaConfig() })
+      JSON.stringify({ type: 'insert-qna', style: readQnaConfig(), qna })
     )
   }
 
@@ -280,6 +321,13 @@
       input.addEventListener('input', updatePreview)
       input.addEventListener('change', updatePreview)
     })
+    if (qnaModeInput()) {
+      qnaModeInput().addEventListener('change', updatePreview)
+    }
+    if (qnaPromptInput()) {
+      qnaPromptInput().addEventListener('input', updatePreview)
+      qnaPromptInput().addEventListener('change', updatePreview)
+    }
     Object.values(pollInputs).forEach((getter) => {
       const input = getter()
       if (!input) return
