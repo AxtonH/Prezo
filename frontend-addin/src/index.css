@@ -320,6 +320,13 @@ button.ghost {
   border-top: 1px dashed var(--border);
 }
 
+.widget-binding,
+.poll-binding {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
 .session-resume-header {
   align-items: center;
 }

@@ -9,7 +9,12 @@ import { QaModeration } from './components/QaModeration'
 import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { writeSessionBinding } from './office/sessionBinding'
-import { updatePollWidget, updateQnaWidget } from './office/widgetShapes'
+import {
+  setPollWidgetBinding,
+  setQnaWidgetBinding,
+  updatePollWidget,
+  updateQnaWidget
+} from './office/widgetShapes'
 import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
 const HOST_BASE_URL =
@@ -87,6 +92,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
   const [showPolls, setShowPolls] = useState(false)
   const [showQna, setShowQna] = useState(false)
+  const [qnaWidgetStatus, setQnaWidgetStatus] = useState<string | null>(null)
+  const [qnaWidgetError, setQnaWidgetError] = useState<string | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
@@ -317,6 +324,60 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     await api.closePoll(session.id, pollId)
   }
 
+  const bindPollWidget = async (pollId: string | null) => {
+    if (!session) {
+      return
+    }
+    await setPollWidgetBinding(session.id, pollId)
+    await updatePollWidget(session.id, session.code, polls)
+  }
+
+  const bindQnaWidgetToCurrent = async () => {
+    if (!session) {
+      return
+    }
+    setQnaWidgetStatus(null)
+    setQnaWidgetError(null)
+    try {
+      await setQnaWidgetBinding(session.id, session.qna_mode, session.qna_prompt ?? null)
+      await updateQnaWidget(
+        session.id,
+        session.code,
+        questions,
+        session.qna_mode,
+        session.qna_prompt ?? null
+      )
+      setQnaWidgetStatus('Q&A widget bound to the current Q&A settings.')
+    } catch (err) {
+      setQnaWidgetError(
+        err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
+      )
+    }
+  }
+
+  const clearQnaWidgetBinding = async () => {
+    if (!session) {
+      return
+    }
+    setQnaWidgetStatus(null)
+    setQnaWidgetError(null)
+    try {
+      await setQnaWidgetBinding(session.id, null)
+      await updateQnaWidget(
+        session.id,
+        session.code,
+        questions,
+        session.qna_mode,
+        session.qna_prompt ?? null
+      )
+      setQnaWidgetStatus('Q&A widget will follow live session settings.')
+    } catch (err) {
+      setQnaWidgetError(
+        err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
+      )
+    }
+  }
+
   const pendingQuestions = useMemo(
     () => questions.filter((question) => question.status === 'pending'),
     [questions]
@@ -419,6 +480,20 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               ) : (
                 <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
               )}
+              <div className="widget-binding">
+                <p className="muted">
+                  Select a slide with a Q&amp;A widget to lock it to the current settings
+                  or let it follow the live session.
+                </p>
+                <div className="actions">
+                  <button className="ghost" onClick={clearQnaWidgetBinding}>
+                    Follow live Q&amp;A
+                  </button>
+                  <button onClick={bindQnaWidgetToCurrent}>Bind to current settings</button>
+                </div>
+                {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
+                {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
+              </div>
             </div>
 
             {session.qna_open && showQna ? (
@@ -448,6 +523,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 onCreate={createPoll}
                 onOpen={openPoll}
                 onClose={closePoll}
+                onBindWidget={bindPollWidget}
               />
             )}
           </>

@@ -7,13 +7,22 @@ interface PollManagerProps {
   onCreate: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
   onOpen: (pollId: string) => Promise<void>
   onClose: (pollId: string) => Promise<void>
+  onBindWidget?: (pollId: string | null) => Promise<void>
 }
 
-export function PollManager({ polls, onCreate, onOpen, onClose }: PollManagerProps) {
+export function PollManager({
+  polls,
+  onCreate,
+  onOpen,
+  onClose,
+  onBindWidget
+}: PollManagerProps) {
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState<string[]>(['', ''])
   const [allowMultiple, setAllowMultiple] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bindingStatus, setBindingStatus] = useState<string | null>(null)
+  const [bindingError, setBindingError] = useState<string | null>(null)
 
   const updateOption = (index: number, value: string) => {
     setOptions((prev) => prev.map((option, idx) => (idx === index ? value : option)))
@@ -41,6 +50,22 @@ export function PollManager({ polls, onCreate, onOpen, onClose }: PollManagerPro
     setQuestion('')
     setOptions(['', ''])
     setAllowMultiple(false)
+  }
+
+  const handleBind = async (pollId: string | null) => {
+    if (!onBindWidget) {
+      return
+    }
+    setBindingStatus(null)
+    setBindingError(null)
+    try {
+      await onBindWidget(pollId)
+      setBindingStatus(
+        pollId ? 'Poll widget linked to the selected poll.' : 'Poll widget will follow the latest poll.'
+      )
+    } catch (err) {
+      setBindingError(err instanceof Error ? err.message : 'Failed to update poll widget binding.')
+    }
   }
 
   return (
@@ -91,6 +116,20 @@ export function PollManager({ polls, onCreate, onOpen, onClose }: PollManagerPro
         </button>
         {error ? <p className="error">{error}</p> : null}
       </div>
+      {onBindWidget ? (
+        <div className="poll-binding">
+          <p className="muted">
+            Select a slide with a poll widget, then choose which poll it should show.
+          </p>
+          <div className="actions">
+            <button className="ghost" onClick={() => handleBind(null)}>
+              Follow latest poll
+            </button>
+          </div>
+          {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
+          {bindingError ? <p className="error">{bindingError}</p> : null}
+        </div>
+      ) : null}
       <div className="poll-list">
         {polls.length === 0 ? (
           <p className="muted">No polls yet. Create one to start collecting votes.</p>
@@ -110,6 +149,11 @@ export function PollManager({ polls, onCreate, onOpen, onClose }: PollManagerPro
                   ) : (
                     <button onClick={() => onOpen(poll.id)}>Open</button>
                   )}
+                  {onBindWidget ? (
+                    <button className="ghost" onClick={() => handleBind(poll.id)}>
+                      Bind widget
+                    </button>
+                  ) : null}
                 </div>
               </li>
             ))}

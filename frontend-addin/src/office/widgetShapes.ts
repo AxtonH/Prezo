@@ -5,11 +5,14 @@ const SESSION_TAG = 'PrezoWidgetSessionId'
 const SHAPES_TAG = 'PrezoWidgetShapeIds'
 const WIDGET_PENDING_TAG = 'PrezoWidgetPending'
 const WIDGET_STYLE_TAG = 'PrezoWidgetStyle'
+const QNA_MODE_TAG = 'PrezoWidgetQnaMode'
+const QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
 const POLL_WIDGET_TAG = 'PrezoPollWidget'
 const POLL_SESSION_TAG = 'PrezoPollWidgetSessionId'
 const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
 const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
+const POLL_BINDING_TAG = 'PrezoPollWidgetPollId'
 const MAX_POLL_OPTIONS = 5
 const PANEL_TITLE = 'Questions from your audience'
 const PROMPT_PANEL_TITLE = 'Audience answers'
@@ -369,6 +372,8 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       slide.tags.delete(WIDGET_PENDING_TAG)
       slide.tags.delete(WIDGET_STYLE_TAG)
       slide.tags.delete(SHAPES_TAG)
+      slide.tags.delete(QNA_MODE_TAG)
+      slide.tags.delete(QNA_PROMPT_TAG)
     }
 
     const width = Math.max(360, pageSetup.slideWidth * 0.68)
@@ -585,6 +590,8 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       slide.tags.add(WIDGET_PENDING_TAG, 'true')
       slide.tags.delete(SESSION_TAG)
     }
+    slide.tags.delete(QNA_MODE_TAG)
+    slide.tags.delete(QNA_PROMPT_TAG)
     slide.tags.add(WIDGET_STYLE_TAG, JSON.stringify(style))
     slide.tags.add(SHAPES_TAG, JSON.stringify(shapeIds))
     await context.sync()
@@ -602,10 +609,6 @@ export async function updateQnaWidget(
 
   const pendingCount = questions.filter((q) => q.status === 'pending').length
   const approvedRaw = questions.filter((q) => q.status === 'approved')
-  const approved =
-    mode === 'prompt'
-      ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
-      : approvedRaw
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
@@ -616,11 +619,15 @@ export async function updateQnaWidget(
       const pendingTag = slide.tags.getItemOrNullObject(WIDGET_PENDING_TAG)
       const styleTag = slide.tags.getItemOrNullObject(WIDGET_STYLE_TAG)
       const shapeTag = slide.tags.getItemOrNullObject(SHAPES_TAG)
+      const modeTag = slide.tags.getItemOrNullObject(QNA_MODE_TAG)
+      const promptTag = slide.tags.getItemOrNullObject(QNA_PROMPT_TAG)
       sessionTag.load('value')
       pendingTag.load('value')
       styleTag.load('value')
       shapeTag.load('value')
-      return { slide, sessionTag, pendingTag, styleTag, shapeTag }
+      modeTag.load('value')
+      promptTag.load('value')
+      return { slide, sessionTag, pendingTag, styleTag, shapeTag, modeTag, promptTag }
     })
 
     await context.sync()
@@ -759,8 +766,27 @@ export async function updateQnaWidget(
         })
       }
 
+      let resolvedMode: QnaMode = mode === 'prompt' ? 'prompt' : 'audience'
+      let resolvedPrompt = prompt ?? null
+      if (!info.modeTag.isNullObject && info.modeTag.value) {
+        resolvedMode = info.modeTag.value === 'prompt' ? 'prompt' : 'audience'
+        if (resolvedMode === 'prompt') {
+          if (!info.promptTag.isNullObject) {
+            const nextPrompt = info.promptTag.value?.trim()
+            resolvedPrompt = nextPrompt ? nextPrompt : resolvedPrompt
+          }
+        } else {
+          resolvedPrompt = null
+        }
+      }
+      const approved =
+        resolvedMode === 'prompt'
+          ? [...approvedRaw].sort((a, b) => b.votes - a.votes)
+          : approvedRaw
       const panelTitle =
-        mode === 'prompt' ? (prompt?.trim() || PROMPT_PANEL_TITLE) : PANEL_TITLE
+        resolvedMode === 'prompt'
+          ? (resolvedPrompt?.trim() || PROMPT_PANEL_TITLE)
+          : PANEL_TITLE
       if (!title.isNullObject) {
         const hasNewLayout = Boolean(
           (shapeIds.items && shapeIds.items.length > 0) ||
@@ -770,24 +796,27 @@ export async function updateQnaWidget(
         )
         title.textFrame.textRange.text = hasNewLayout
           ? panelTitle
-          : buildTitle(code, mode, prompt)
+          : buildTitle(code, resolvedMode, resolvedPrompt)
       }
       if (meta && !meta.isNullObject) {
-        meta.textFrame.textRange.text = mode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
+        meta.textFrame.textRange.text =
+          resolvedMode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
       }
       if (subtitle && !subtitle.isNullObject) {
         subtitle.textFrame.textRange.text = buildMeta(code)
       }
       if (badge && !badge.isNullObject) {
         badge.textFrame.textRange.text =
-          mode === 'prompt' ? `Answers ${approved.length}` : buildBadge(pendingCount)
+          resolvedMode === 'prompt'
+            ? `Answers ${approved.length}`
+            : buildBadge(pendingCount)
       }
       if (itemShapes.length > 0) {
         const hasApproved = approved.length > 0
         if (!body.isNullObject) {
           body.textFrame.textRange.text = hasApproved
             ? ''
-            : mode === 'prompt'
+            : resolvedMode === 'prompt'
               ? 'No answers yet.'
               : 'No approved questions yet.'
         }
@@ -809,7 +838,7 @@ export async function updateQnaWidget(
           item.votes.textFrame.textRange.text = `${question.votes} votes`
         })
       } else if (!body.isNullObject) {
-        body.textFrame.textRange.text = buildBody(questions, mode)
+        body.textFrame.textRange.text = buildBody(questions, resolvedMode)
       }
 
       if (isPending) {
@@ -885,6 +914,7 @@ export async function insertPollWidget(
       slide.tags.delete(POLL_SESSION_TAG)
       slide.tags.delete(POLL_SHAPES_TAG)
       slide.tags.delete(POLL_STYLE_TAG)
+      slide.tags.delete(POLL_BINDING_TAG)
     }
 
     const isVertical = style.orientation === 'vertical'
@@ -1047,6 +1077,7 @@ export async function insertPollWidget(
       slide.tags.add(POLL_PENDING_TAG, 'true')
       slide.tags.delete(POLL_SESSION_TAG)
     }
+    slide.tags.delete(POLL_BINDING_TAG)
     slide.tags.add(POLL_STYLE_TAG, JSON.stringify(style))
     slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(shapeIds))
     await context.sync()
@@ -1060,10 +1091,8 @@ export async function updatePollWidget(
 ) {
   ensurePowerPoint()
 
-  const poll = pickPoll(polls)
+  const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
-  const questionText = buildPollQuestion(poll)
-  const optionData = buildPollOptions(poll)
 
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
@@ -1165,11 +1194,13 @@ export async function updatePollWidget(
       const pendingTag = slide.tags.getItemOrNullObject(POLL_PENDING_TAG)
       const shapeTag = slide.tags.getItemOrNullObject(POLL_SHAPES_TAG)
       const styleTag = slide.tags.getItemOrNullObject(POLL_STYLE_TAG)
+      const bindingTag = slide.tags.getItemOrNullObject(POLL_BINDING_TAG)
       sessionTag.load('value')
       pendingTag.load('value')
       shapeTag.load('value')
       styleTag.load('value')
-      return { slide, sessionTag, pendingTag, shapeTag, styleTag }
+      bindingTag.load('value')
+      return { slide, sessionTag, pendingTag, shapeTag, styleTag, bindingTag }
     })
 
     await context.sync()
@@ -1201,6 +1232,14 @@ export async function updatePollWidget(
           style = DEFAULT_POLL_STYLE
         }
       }
+      const boundPollId =
+        !info.bindingTag.isNullObject && info.bindingTag.value
+          ? info.bindingTag.value.trim()
+          : ''
+      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : pickPoll(polls)
+      const optionData = buildPollOptions(poll)
+      const questionText =
+        boundPollId && !poll ? 'Poll not found.' : buildPollQuestion(poll)
       const isVertical = style.orientation === 'vertical'
       const visibleOptions = poll
         ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
@@ -1528,7 +1567,7 @@ export async function updatePollWidget(
       if (questionShape && !questionShape.isNullObject) {
         questionShape.textFrame.textRange.text = questionText
       } else if (bodyShape && !bodyShape.isNullObject) {
-        bodyShape.textFrame.textRange.text = `${questionText}\n${buildPollOptions(poll)
+        bodyShape.textFrame.textRange.text = `${questionText}\n${optionData
           .map((option, index) => `${index + 1}. ${option.label}`)
           .join('\n')}`
       }
@@ -1582,6 +1621,110 @@ export async function updatePollWidget(
       }
     }
 
+    await context.sync()
+  })
+}
+
+export async function setQnaWidgetBinding(
+  sessionId: string,
+  mode?: QnaMode | null,
+  prompt?: string | null
+) {
+  ensurePowerPoint()
+
+  await PowerPoint.run(async (context) => {
+    const slides = context.presentation.getSelectedSlides()
+    slides.load('items')
+    await context.sync()
+
+    const slide = slides.items[0]
+    if (!slide) {
+      throw new Error('Select a slide containing a Q&A widget.')
+    }
+
+    const shapesTag = slide.tags.getItemOrNullObject(SHAPES_TAG)
+    shapesTag.load('value')
+    await context.sync()
+
+    let hasWidget = !shapesTag.isNullObject && Boolean(shapesTag.value)
+    if (!hasWidget) {
+      const shapes = slide.shapes
+      shapes.load('items')
+      await context.sync()
+      const tagged = shapes.items.map((shape) => {
+        const tag = shape.tags.getItemOrNullObject(WIDGET_TAG)
+        tag.load('value')
+        return tag
+      })
+      await context.sync()
+      hasWidget = tagged.some((tag) => !tag.isNullObject && tag.value === 'true')
+    }
+
+    if (!hasWidget) {
+      throw new Error('No Q&A widget found on the selected slide.')
+    }
+
+    if (!mode) {
+      slide.tags.delete(QNA_MODE_TAG)
+      slide.tags.delete(QNA_PROMPT_TAG)
+    } else {
+      slide.tags.add(QNA_MODE_TAG, mode)
+      if (mode === 'prompt') {
+        slide.tags.add(QNA_PROMPT_TAG, prompt?.trim() ?? '')
+      } else {
+        slide.tags.delete(QNA_PROMPT_TAG)
+      }
+    }
+
+    slide.tags.add(SESSION_TAG, sessionId)
+    slide.tags.delete(WIDGET_PENDING_TAG)
+    await context.sync()
+  })
+}
+
+export async function setPollWidgetBinding(sessionId: string, pollId?: string | null) {
+  ensurePowerPoint()
+
+  await PowerPoint.run(async (context) => {
+    const slides = context.presentation.getSelectedSlides()
+    slides.load('items')
+    await context.sync()
+
+    const slide = slides.items[0]
+    if (!slide) {
+      throw new Error('Select a slide containing a poll widget.')
+    }
+
+    const shapesTag = slide.tags.getItemOrNullObject(POLL_SHAPES_TAG)
+    shapesTag.load('value')
+    await context.sync()
+
+    let hasWidget = !shapesTag.isNullObject && Boolean(shapesTag.value)
+    if (!hasWidget) {
+      const shapes = slide.shapes
+      shapes.load('items')
+      await context.sync()
+      const tagged = shapes.items.map((shape) => {
+        const tag = shape.tags.getItemOrNullObject(POLL_WIDGET_TAG)
+        tag.load('value')
+        return tag
+      })
+      await context.sync()
+      hasWidget = tagged.some((tag) => !tag.isNullObject && tag.value === 'true')
+    }
+
+    if (!hasWidget) {
+      throw new Error('No poll widget found on the selected slide.')
+    }
+
+    if (pollId) {
+      slide.tags.add(POLL_BINDING_TAG, pollId)
+    } else {
+      slide.tags.delete(POLL_BINDING_TAG)
+    }
+
+    slide.tags.add(POLL_SESSION_TAG, sessionId)
+    slide.tags.delete(POLL_PENDING_TAG)
     await context.sync()
   })
 }
