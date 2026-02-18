@@ -311,6 +311,10 @@ button.primary {
   background: var(--primary);
 }
 
+button.full-width {
+  width: 100%;
+}
+
 button.ghost {
   background: transparent;
   color: #0f172a;

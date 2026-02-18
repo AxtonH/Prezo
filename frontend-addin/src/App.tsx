@@ -663,7 +663,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                       Launch a poll and share it instantly with your audience.
                     </p>
                     <button
-                      className="primary"
+                      className="primary full-width"
                       onClick={() => setShowPolls(true)}
                       disabled={!session}
                     >
