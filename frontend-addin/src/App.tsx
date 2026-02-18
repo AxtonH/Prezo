@@ -659,6 +659,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 </div>
                 {isPollsCollapsed ? null : (
                   <div className="panel-body">
+                    <p className="muted">
+                      Launch a poll and share it instantly with your audience.
+                    </p>
                     <button
                       className="primary full-width"
                       onClick={() => setShowPolls(true)}
@@ -666,9 +669,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                     >
                       Start poll
                     </button>
-                    <p className="muted">
-                      Launch a poll and share it instantly with your audience.
-                    </p>
                   </div>
                 )}
               </div>
