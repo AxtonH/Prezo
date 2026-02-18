@@ -296,22 +296,51 @@ button.danger:hover {
   border: 1px solid var(--border);
 }
 
-.prompt-groups {
-  display: flex;
+.prompt-item {
   flex-direction: column;
-  gap: 16px;
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
-.prompt-group {
+.prompt-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
-.prompt-label {
-  font-size: 12px;
-  font-weight: 600;
+.prompt-moderation {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.moderation-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.moderation-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
   color: var(--muted);
+  margin-bottom: 6px;
 }
 
 .actions {

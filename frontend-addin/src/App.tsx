@@ -13,7 +13,6 @@ import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
-import { QaModeration } from './components/QaModeration'
 import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { writeSessionBinding } from './office/sessionBinding'
@@ -399,19 +398,43 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  const pendingQuestions = useMemo(
-    () => questions.filter((question) => question.status === 'pending'),
+  const audiencePending = useMemo(
+    () =>
+      questions.filter(
+        (question) => !question.prompt_id && question.status === 'pending'
+      ),
     [questions]
   )
-  const approvedQuestions = useMemo(
-    () => questions.filter((question) => question.status === 'approved'),
+  const audienceApproved = useMemo(
+    () =>
+      questions.filter(
+        (question) => !question.prompt_id && question.status === 'approved'
+      ),
     [questions]
   )
-  const shouldShowModeration =
-    Boolean(session?.qna_open) ||
-    prompts.length > 0 ||
-    pendingQuestions.length > 0 ||
-    approvedQuestions.length > 0
+
+  const renderQuestionList = (
+    items: Question[],
+    emptyMessage: string,
+    renderActions: (question: Question) => JSX.Element
+  ) => {
+    if (items.length === 0) {
+      return <p className="muted">{emptyMessage}</p>
+    }
+    return (
+      <ul className="list">
+        {items.map((question) => (
+          <li key={question.id} className="list-item">
+            <div>
+              <p>{question.text}</p>
+              <span className="muted">{question.votes} votes</span>
+            </div>
+            <div className="actions">{renderActions(question)}</div>
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
   const visibleSessions = useMemo(
     () => recentSessions.slice(0, sessionsLimit),
@@ -521,23 +544,53 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
                 {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
               </div>
+              <div className="moderation-block">
+                <div className="panel-header">
+                  <h3>Audience Q&amp;A</h3>
+                  <span className="badge">Pending {audiencePending.length}</span>
+                </div>
+                <div className="moderation-columns">
+                  <div>
+                    <div className="section-label">Pending</div>
+                    {renderQuestionList(
+                      audiencePending,
+                      'No questions waiting for approval.',
+                      (question) => (
+                        <>
+                          <button onClick={() => approveQuestion(question.id)}>
+                            Approve
+                          </button>
+                          <button className="ghost" onClick={() => hideQuestion(question.id)}>
+                            Hide
+                          </button>
+                        </>
+                      )
+                    )}
+                  </div>
+                  <div>
+                    <div className="section-label">Approved</div>
+                    {renderQuestionList(
+                      audienceApproved,
+                      'Approved questions will appear here.',
+                      (question) => (
+                        <button className="ghost" onClick={() => hideQuestion(question.id)}>
+                          Hide
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-
-            {shouldShowModeration ? (
-              <QaModeration
-                pending={pendingQuestions}
-                approved={approvedQuestions}
-                prompts={prompts}
-                onApprove={approveQuestion}
-                onHide={hideQuestion}
-              />
-            ) : null}
 
             <PromptManager
               prompts={prompts}
+              questions={questions}
               onCreate={createPrompt}
               onOpen={openPrompt}
               onClose={closePrompt}
+              onApprove={approveQuestion}
+              onHide={hideQuestion}
               onBindWidget={bindQnaWidget}
             />
 

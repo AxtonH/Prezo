@@ -1,20 +1,27 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 
-import type { QnaPrompt } from '../api/types'
+import type { QnaPrompt, Question } from '../api/types'
 
 interface PromptManagerProps {
   prompts: QnaPrompt[]
+  questions: Question[]
   onCreate: (prompt: string) => Promise<void>
   onOpen: (promptId: string) => Promise<void>
   onClose: (promptId: string) => Promise<void>
+  onApprove: (questionId: string) => Promise<void>
+  onHide: (questionId: string) => Promise<void>
   onBindWidget?: (promptId: string | null) => Promise<void>
 }
 
 export function PromptManager({
   prompts,
+  questions,
   onCreate,
   onOpen,
   onClose,
+  onApprove,
+  onHide,
   onBindWidget
 }: PromptManagerProps) {
   const [promptText, setPromptText] = useState('')
@@ -55,6 +62,29 @@ export function PromptManager({
         err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
       )
     }
+  }
+
+  const renderQuestionList = (
+    items: Question[],
+    emptyMessage: string,
+    renderActions: (question: Question) => ReactNode
+  ) => {
+    if (items.length === 0) {
+      return <p className="muted">{emptyMessage}</p>
+    }
+    return (
+      <ul className="list">
+        {items.map((question) => (
+          <li key={question.id} className="list-item">
+            <div>
+              <p>{question.text}</p>
+              <span className="muted">{question.votes} votes</span>
+            </div>
+            <div className="actions">{renderActions(question)}</div>
+          </li>
+        ))}
+      </ul>
+    )
   }
 
   return (
@@ -99,28 +129,80 @@ export function PromptManager({
           <p className="muted">No prompts yet. Create one to start collecting answers.</p>
         ) : (
           <ul className="list">
-            {prompts.map((prompt) => (
-              <li key={prompt.id} className="list-item">
-                <div>
-                  <p>{prompt.prompt}</p>
-                  <span className="muted">
-                    {prompt.status === 'open' ? 'Open' : 'Closed'}
-                  </span>
-                </div>
-                <div className="actions">
-                  {prompt.status === 'open' ? (
-                    <button onClick={() => onClose(prompt.id)}>Close</button>
-                  ) : (
-                    <button onClick={() => onOpen(prompt.id)}>Open</button>
-                  )}
-                  {onBindWidget ? (
-                    <button className="ghost" onClick={() => handleBind(prompt.id)}>
-                      Bind widget
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+            {prompts.map((prompt) => {
+              const promptQuestions = questions.filter(
+                (question) => question.prompt_id === prompt.id
+              )
+              const pending = promptQuestions.filter(
+                (question) => question.status === 'pending'
+              )
+              const approved = promptQuestions.filter(
+                (question) => question.status === 'approved'
+              )
+              const hasQuestions = pending.length > 0 || approved.length > 0
+
+              return (
+                <li key={prompt.id} className="list-item prompt-item">
+                  <div className="prompt-row">
+                    <div>
+                      <p>{prompt.prompt}</p>
+                      <span className="muted">
+                        {prompt.status === 'open' ? 'Open' : 'Closed'}
+                      </span>
+                    </div>
+                    <div className="actions">
+                      {prompt.status === 'open' ? (
+                        <button onClick={() => onClose(prompt.id)}>Close</button>
+                      ) : (
+                        <button onClick={() => onOpen(prompt.id)}>Open</button>
+                      )}
+                      {onBindWidget ? (
+                        <button className="ghost" onClick={() => handleBind(prompt.id)}>
+                          Bind widget
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="prompt-moderation">
+                    {!hasQuestions ? (
+                      <p className="muted">No answers yet.</p>
+                    ) : (
+                      <div className="moderation-columns">
+                        <div>
+                          <div className="section-label">Pending</div>
+                          {renderQuestionList(
+                            pending,
+                            'No answers waiting for approval.',
+                            (question) => (
+                              <>
+                                <button onClick={() => onApprove(question.id)}>
+                                  Approve
+                                </button>
+                                <button className="ghost" onClick={() => onHide(question.id)}>
+                                  Hide
+                                </button>
+                              </>
+                            )
+                          )}
+                        </div>
+                        <div>
+                          <div className="section-label">Approved</div>
+                          {renderQuestionList(
+                            approved,
+                            'No approved answers yet.',
+                            (question) => (
+                              <button className="ghost" onClick={() => onHide(question.id)}>
+                                Hide
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
