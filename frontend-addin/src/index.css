@@ -341,12 +341,11 @@ button.danger:hover {
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
 }
 
 .session-resume-header h3 {
   margin: 0;
-  flex: 1 1 220px;
 }
 
 .session-resume-actions {
