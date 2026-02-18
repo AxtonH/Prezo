@@ -62,6 +62,8 @@ export const api = {
     const query = params.toString()
     return request<Session[]>(`/sessions${query ? `?${query}` : ''}`, {}, true)
   },
+  deleteSession: (sessionId: string) =>
+    request<Session>(`/sessions/${sessionId}`, { method: 'DELETE' }, true),
   getSessionByCode: (code: string) =>
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
   getSnapshot: (sessionId: string) =>

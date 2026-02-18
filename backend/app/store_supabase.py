@@ -149,6 +149,18 @@ class SupabaseStore:
         rows = await self._select("sessions", params)
         return [self._to_session(row) for row in rows]
 
+    async def delete_session(self, session_id: str, user_id: str) -> Session:
+        response = await self._request(
+            "DELETE",
+            "sessions",
+            params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("session not found")
+        return self._to_session(data[0])
+
     async def create_question(
         self, session_id: str, text: str, prompt_id: str | None = None
     ) -> Question:

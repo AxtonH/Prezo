@@ -161,6 +161,30 @@ class InMemoryStore:
                 sessions = sessions[:limit]
             return sessions
 
+    async def delete_session(self, session_id: str, user_id: str) -> Session:
+        async with self._lock:
+            self._ensure_session(session_id, user_id)
+            session = self._sessions.pop(session_id)
+            self._sessions_by_code.pop(session.code, None)
+
+            question_ids = self._questions_by_session.pop(session_id, [])
+            for question_id in question_ids:
+                self._questions.pop(question_id, None)
+                self._question_votes.pop(question_id, None)
+
+            poll_ids = self._polls_by_session.pop(session_id, [])
+            for poll_id in poll_ids:
+                self._polls.pop(poll_id, None)
+                self._poll_votes.pop(poll_id, None)
+
+            prompt_ids = self._prompts_by_session.pop(session_id, [])
+            for prompt_id in prompt_ids:
+                self._prompts.pop(prompt_id, None)
+
+            self._events_by_session.pop(session_id, None)
+
+            return self._to_session(session)
+
     async def create_question(
         self, session_id: str, text: str, prompt_id: str | None = None
     ) -> Question:

@@ -266,6 +266,16 @@ button.ghost {
   border-color: var(--border);
 }
 
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+button.danger:hover {
+  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25);
+}
+
 .list {
   list-style: none;
   padding: 0;
@@ -359,6 +369,12 @@ button.ghost {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.session-card-buttons {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 

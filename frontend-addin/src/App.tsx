@@ -99,6 +99,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const defaultSessionsLimit = 3
   const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const [showPolls, setShowPolls] = useState(false)
   const [qnaWidgetStatus, setQnaWidgetStatus] = useState<string | null>(null)
   const [qnaWidgetError, setQnaWidgetError] = useState<string | null>(null)
@@ -274,6 +275,19 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       setPrompts(snapshot.prompts ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session')
+    }
+  }
+
+  const deleteSession = async (selected: Session) => {
+    setSessionsError(null)
+    setDeletingSessionId(selected.id)
+    try {
+      await api.deleteSession(selected.id)
+      setRecentSessions((prev) => prev.filter((entry) => entry.id !== selected.id))
+    } catch (err) {
+      setSessionsError(err instanceof Error ? err.message : 'Failed to delete session')
+    } finally {
+      setDeletingSessionId(null)
     }
   }
 
@@ -460,6 +474,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           isLoading={sessionsLoading}
           loadError={sessionsError}
           onResume={resumeSession}
+          onDelete={deleteSession}
+          deletingSessionId={deletingSessionId}
           onRefresh={() => loadSessions(sessionsLimit)}
           hasMore={hasMoreSessions}
           onShowMore={handleShowMore}

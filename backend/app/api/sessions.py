@@ -64,6 +64,19 @@ async def get_session(
     return with_join_url(session)
 
 
+@router.delete("/{session_id}", response_model=Session)
+async def delete_session(
+    session_id: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> Session:
+    try:
+        session = await store.delete_session(session_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return with_join_url(session)
+
+
 @router.get("/code/{code}", response_model=Session)
 async def get_session_by_code(
     code: str, store: InMemoryStore = Depends(get_store)

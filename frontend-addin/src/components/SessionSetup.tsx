@@ -11,11 +11,13 @@ interface SessionSetupProps {
   isLoading?: boolean
   loadError?: string | null
   onResume?: (session: Session) => void
+  onDelete?: (session: Session) => void
   onRefresh?: () => void
   hasMore?: boolean
   onShowMore?: () => void
   hasLess?: boolean
   onShowLess?: () => void
+  deletingSessionId?: string | null
 }
 
 export function SessionSetup({
@@ -25,11 +27,13 @@ export function SessionSetup({
   isLoading = false,
   loadError,
   onResume,
+  onDelete,
   onRefresh,
   hasMore = false,
   onShowMore,
   hasLess = false,
-  onShowLess
+  onShowLess,
+  deletingSessionId = null
 }: SessionSetupProps) {
   const [title, setTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -59,7 +63,7 @@ export function SessionSetup({
   }
 
   const hasRecentSessions = Boolean(recentSessions?.length)
-  const showResumeSection = Boolean(onResume)
+  const showResumeSection = Boolean(onResume || onDelete)
 
   if (!session) {
     return (
@@ -141,9 +145,28 @@ export function SessionSetup({
                       </div>
                       <div className="session-card-actions">
                         <span className="badge">{badgeLabel}</span>
-                        <button type="button" className="ghost" onClick={() => onResume?.(entry)}>
-                          Resume
-                        </button>
+                        <div className="session-card-buttons">
+                          {onResume ? (
+                            <button
+                              type="button"
+                              className="ghost"
+                              onClick={() => onResume(entry)}
+                              disabled={deletingSessionId === entry.id}
+                            >
+                              Resume
+                            </button>
+                          ) : null}
+                          {onDelete ? (
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => onDelete(entry)}
+                              disabled={deletingSessionId === entry.id}
+                            >
+                              {deletingSessionId === entry.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   )
