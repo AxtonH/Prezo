@@ -17,8 +17,10 @@ import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { writeSessionBinding } from './office/sessionBinding'
 import {
+  setDiscussionWidgetBinding,
   setPollWidgetBinding,
   setQnaWidgetBinding,
+  updateDiscussionWidget,
   updatePollWidget,
   updateQnaWidget
 } from './office/widgetShapes'
@@ -184,6 +186,14 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     ).catch((err) =>
       console.warn('Failed to update widget shapes', err)
     )
+    void updateDiscussionWidget(
+      session.id,
+      session.code,
+      questions,
+      prompts
+    ).catch((err) =>
+      console.warn('Failed to update open discussion widget shapes', err)
+    )
   }, [session?.id, session?.code, questions, prompts])
 
   useEffect(() => {
@@ -211,6 +221,14 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         latestQuestionsRef.current,
         latestPromptsRef.current
       ).catch((err) => console.warn('Failed to refresh Q&A widget shapes', err))
+      void updateDiscussionWidget(
+        currentSession.id,
+        currentSession.code,
+        latestQuestionsRef.current,
+        latestPromptsRef.current
+      ).catch((err) =>
+        console.warn('Failed to refresh open discussion widget shapes', err)
+      )
       void updatePollWidget(
         currentSession.id,
         currentSession.code,
@@ -398,6 +416,14 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  const bindDiscussionWidget = async (promptId: string | null) => {
+    if (!session) {
+      return
+    }
+    await setDiscussionWidgetBinding(session.id, promptId)
+    await updateDiscussionWidget(session.id, session.code, questions, prompts)
+  }
+
   const audiencePending = useMemo(
     () =>
       questions.filter(
@@ -533,8 +559,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               )}
               <div className="widget-binding">
                 <p className="muted">
-                  Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A or a
-                  prompt from the list below.
+                  Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A.
                 </p>
                 <div className="actions">
                   <button className="ghost" onClick={() => bindQnaWidget(null)}>
@@ -591,7 +616,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               onClose={closePrompt}
               onApprove={approveQuestion}
               onHide={hideQuestion}
-              onBindWidget={bindQnaWidget}
+              onBindDiscussionWidget={bindDiscussionWidget}
             />
 
             {!showPolls ? (

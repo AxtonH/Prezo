@@ -1,31 +1,32 @@
 /* global Office */
 (() => {
-  document.title = 'Prezo Widget'
+  document.title = 'Prezo Widgets'
   const el = (id) => document.getElementById(id)
   const selectView = () => el('view-select')
   const qnaView = () => el('view-qna')
+  const discussionView = () => el('view-discussion')
   const pollView = () => el('view-poll')
   const openQnaButton = () => el('open-qna')
   const backQnaButton = () => el('back-qna')
   const insertQnaButton = () => el('insert-qna')
+  const openDiscussionButton = () => el('open-discussion')
+  const backDiscussionButton = () => el('back-discussion')
+  const insertDiscussionButton = () => el('insert-discussion')
   const openPollButton = () => el('open-poll')
   const backPollButton = () => el('back-poll')
   const insertPollButton = () => el('insert-poll')
   const statusEl = () => el('status')
   const errorEl = () => el('error')
+  const discussionStatusEl = () => el('discussion-status')
+  const discussionErrorEl = () => el('discussion-error')
   const pollStatusEl = () => el('poll-status')
   const pollErrorEl = () => el('poll-error')
   const debugEl = () => el('debug')
+  const discussionDebugEl = () => el('discussion-debug')
   const pollDebugEl = () => el('poll-debug')
   const previewEl = () => el('qna-preview')
+  const discussionPreviewEl = () => el('discussion-preview')
   const pollPreviewEl = () => el('poll-preview')
-  const qnaModeInput = () => el('qna-mode')
-  const qnaPromptInput = () => el('qna-prompt')
-  const qnaPromptField = () => el('qna-prompt-field')
-  const qnaModeHint = () => el('qna-mode-hint')
-  const qnaPreviewEyebrow = () => el('qna-preview-eyebrow')
-  const qnaPreviewTitle = () => el('qna-preview-title')
-  const qnaPreviewBadge = () => el('qna-preview-badge')
 
   const queryDebug = () => {
     try {
@@ -50,6 +51,7 @@
     }
     const value = lines.join(' | ')
     if (debugEl()) debugEl().textContent = value
+    if (discussionDebugEl()) discussionDebugEl().textContent = value
     if (pollDebugEl()) pollDebugEl().textContent = value
   }
 
@@ -64,6 +66,18 @@
     shadow: () => el('qna-shadow'),
     spacing: () => el('qna-spacing'),
     max: () => el('qna-max')
+  }
+  const discussionInputs = {
+    font: () => el('discussion-font'),
+    text: () => el('discussion-text'),
+    muted: () => el('discussion-muted'),
+    accent: () => el('discussion-accent'),
+    panel: () => el('discussion-panel'),
+    card: () => el('discussion-card'),
+    border: () => el('discussion-border'),
+    shadow: () => el('discussion-shadow'),
+    spacing: () => el('discussion-spacing'),
+    max: () => el('discussion-max')
   }
   const pollInputs = {
     font: () => el('poll-font'),
@@ -125,6 +139,14 @@
     if (errorEl()) errorEl().textContent = text || ''
   }
 
+  const setDiscussionStatus = (text) => {
+    if (discussionStatusEl()) discussionStatusEl().textContent = text || ''
+  }
+
+  const setDiscussionError = (text) => {
+    if (discussionErrorEl()) discussionErrorEl().textContent = text || ''
+  }
+
   const setPollStatus = (text) => {
     if (pollStatusEl()) pollStatusEl().textContent = text || ''
   }
@@ -135,6 +157,13 @@
 
   const setBusy = (busy) => {
     const btn = insertQnaButton()
+    if (!btn) return
+    btn.disabled = busy
+    btn.textContent = busy ? 'Inserting...' : 'Insert widget'
+  }
+
+  const setDiscussionBusy = (busy) => {
+    const btn = insertDiscussionButton()
     if (!btn) return
     btn.disabled = busy
     btn.textContent = busy ? 'Inserting...' : 'Insert widget'
@@ -160,32 +189,6 @@
     maxQuestions: clamp(parseInt(qnaInputs.max()?.value || '3', 10), 1, 5)
   })
 
-  const readQnaMode = () => ({
-    mode: qnaModeInput()?.value || 'audience',
-    prompt: (qnaPromptInput()?.value || '').trim()
-  })
-
-  const updateModePreview = () => {
-    const { mode, prompt } = readQnaMode()
-    const isPrompt = mode === 'prompt'
-    if (qnaPromptField()) {
-      qnaPromptField().style.display = isPrompt ? 'flex' : 'none'
-    }
-    if (qnaModeHint()) {
-      qnaModeHint().textContent = isPrompt
-        ? 'Audience submits answers and votes on the best ones.'
-        : 'Audience submits questions that you can approve and upvote.'
-    }
-    if (qnaPreviewEyebrow()) {
-      qnaPreviewEyebrow().textContent = isPrompt ? 'PREZO LIVE PROMPT' : 'PREZO LIVE Q&A'
-    }
-    if (qnaPreviewTitle()) {
-      qnaPreviewTitle().textContent = isPrompt ? (prompt || 'Audience answers') : 'Questions from your audience'
-    }
-    if (qnaPreviewBadge()) {
-      qnaPreviewBadge().textContent = isPrompt ? 'Answers 2' : 'Pending 2'
-    }
-  }
 
   const updatePreview = () => {
     const preview = previewEl()
@@ -210,7 +213,43 @@
       item.style.display = index < config.maxQuestions ? 'flex' : 'none'
     })
 
-    updateModePreview()
+  }
+
+  const readDiscussionConfig = () => ({
+    fontFamily: (discussionInputs.font()?.value || '').trim() || null,
+    textColor: discussionInputs.text()?.value || '#0f172a',
+    mutedColor: discussionInputs.muted()?.value || '#64748b',
+    accentColor: discussionInputs.accent()?.value || '#2563eb',
+    panelColor: discussionInputs.panel()?.value || '#ffffff',
+    cardColor: discussionInputs.card()?.value || '#f8fafc',
+    borderColor: discussionInputs.border()?.value || '#e2e8f0',
+    shadowOpacity: clamp(parseFloat(discussionInputs.shadow()?.value || '0.4'), 0, 0.6),
+    spacingScale: clamp(parseFloat(discussionInputs.spacing()?.value || '1'), 0.8, 1.3),
+    maxQuestions: clamp(parseInt(discussionInputs.max()?.value || '3', 10), 1, 5)
+  })
+
+  const updateDiscussionPreview = () => {
+    const preview = discussionPreviewEl()
+    if (!preview) return
+    const config = readDiscussionConfig()
+    preview.style.setProperty('--panel-bg', config.panelColor)
+    preview.style.setProperty('--card-bg', config.cardColor)
+    preview.style.setProperty('--border', config.borderColor)
+    preview.style.setProperty('--text', config.textColor)
+    preview.style.setProperty('--muted', config.mutedColor)
+    preview.style.setProperty('--badge-bg', lighten(config.accentColor, 0.82))
+    preview.style.setProperty('--badge-text', config.accentColor)
+    preview.style.setProperty('--shadow-alpha', config.shadowOpacity.toString())
+    preview.style.setProperty('--spacing', config.spacingScale.toString())
+    preview.style.setProperty(
+      '--font-family',
+      config.fontFamily ? `'${config.fontFamily}', 'Sora', sans-serif` : `'Sora', sans-serif`
+    )
+
+    const items = preview.querySelectorAll('.preview-item')
+    items.forEach((item, index) => {
+      item.style.display = index < config.maxQuestions ? 'flex' : 'none'
+    })
   }
 
   const readPollConfig = () => ({
@@ -256,10 +295,16 @@
   const showView = (view) => {
     if (selectView()) selectView().classList.add('hidden')
     if (qnaView()) qnaView().classList.add('hidden')
+    if (discussionView()) discussionView().classList.add('hidden')
     if (pollView()) pollView().classList.add('hidden')
     if (view === 'qna' && qnaView()) {
       qnaView().classList.remove('hidden')
       updatePreview()
+      return
+    }
+    if (view === 'discussion' && discussionView()) {
+      discussionView().classList.remove('hidden')
+      updateDiscussionPreview()
       return
     }
     if (view === 'poll' && pollView()) {
@@ -274,15 +319,19 @@
 
   const sendInsert = () => {
     setError('')
-    const qna = readQnaMode()
-    if (qna.mode === 'prompt' && !qna.prompt) {
-      setError('Enter a prompt question to use prompt mode.')
-      return
-    }
     setStatus('Sending request...')
     setBusy(true)
     Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-qna', style: readQnaConfig(), qna })
+      JSON.stringify({ type: 'insert-qna', style: readQnaConfig() })
+    )
+  }
+
+  const sendDiscussionInsert = () => {
+    setDiscussionError('')
+    setDiscussionStatus('Sending request...')
+    setDiscussionBusy(true)
+    Office.context.ui.messageParent(
+      JSON.stringify({ type: 'insert-discussion', style: readDiscussionConfig() })
     )
   }
 
@@ -302,6 +351,12 @@
     if (backQnaButton()) {
       backQnaButton().addEventListener('click', () => showView('select'))
     }
+    if (openDiscussionButton()) {
+      openDiscussionButton().addEventListener('click', () => showView('discussion'))
+    }
+    if (backDiscussionButton()) {
+      backDiscussionButton().addEventListener('click', () => showView('select'))
+    }
     if (openPollButton()) {
       openPollButton().addEventListener('click', () => showView('poll'))
     }
@@ -310,6 +365,9 @@
     }
     if (insertQnaButton()) {
       insertQnaButton().addEventListener('click', sendInsert)
+    }
+    if (insertDiscussionButton()) {
+      insertDiscussionButton().addEventListener('click', sendDiscussionInsert)
     }
     if (insertPollButton()) {
       insertPollButton().addEventListener('click', sendPollInsert)
@@ -321,13 +379,12 @@
       input.addEventListener('input', updatePreview)
       input.addEventListener('change', updatePreview)
     })
-    if (qnaModeInput()) {
-      qnaModeInput().addEventListener('change', updatePreview)
-    }
-    if (qnaPromptInput()) {
-      qnaPromptInput().addEventListener('input', updatePreview)
-      qnaPromptInput().addEventListener('change', updatePreview)
-    }
+    Object.values(discussionInputs).forEach((getter) => {
+      const input = getter()
+      if (!input) return
+      input.addEventListener('input', updateDiscussionPreview)
+      input.addEventListener('change', updateDiscussionPreview)
+    })
     Object.values(pollInputs).forEach((getter) => {
       const input = getter()
       if (!input) return
@@ -347,6 +404,9 @@
         if (message && message.type === 'inserted') {
           setStatus('Widget inserted.')
           setBusy(false)
+        } else if (message && message.type === 'discussion-inserted') {
+          setDiscussionStatus('Open discussion widget inserted.')
+          setDiscussionBusy(false)
         } else if (message && message.type === 'poll-inserted') {
           setPollStatus('Poll widget inserted.')
           setPollBusy(false)
@@ -355,6 +415,12 @@
             setPollStatus('')
             setPollError(message.message || 'Failed to insert poll widget.')
             setPollBusy(false)
+          } else if (message.source === 'discussion') {
+            setDiscussionStatus('')
+            setDiscussionError(
+              message.message || 'Failed to insert open discussion widget.'
+            )
+            setDiscussionBusy(false)
           } else {
             setStatus('')
             setError(message.message || 'Failed to insert widget.')
@@ -365,6 +431,7 @@
     )
 
     updatePreview()
+    updateDiscussionPreview()
     updatePollPreview()
     renderDebug()
   })

@@ -11,7 +11,7 @@ interface PromptManagerProps {
   onClose: (promptId: string) => Promise<void>
   onApprove: (questionId: string) => Promise<void>
   onHide: (questionId: string) => Promise<void>
-  onBindWidget?: (promptId: string | null) => Promise<void>
+  onBindDiscussionWidget?: (promptId: string | null) => Promise<void>
 }
 
 export function PromptManager({
@@ -22,7 +22,7 @@ export function PromptManager({
   onClose,
   onApprove,
   onHide,
-  onBindWidget
+  onBindDiscussionWidget
 }: PromptManagerProps) {
   const [promptText, setPromptText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -45,21 +45,23 @@ export function PromptManager({
   }
 
   const handleBind = async (promptId: string | null) => {
-    if (!onBindWidget) {
+    if (!onBindDiscussionWidget) {
       return
     }
     setBindingStatus(null)
     setBindingError(null)
     try {
-      await onBindWidget(promptId)
+      await onBindDiscussionWidget(promptId)
       setBindingStatus(
         promptId
-          ? 'Q&A widget bound to the selected prompt.'
-          : 'Q&A widget bound to audience Q&A.'
+          ? 'Open discussion widget bound to the selected prompt.'
+          : 'Open discussion widget binding cleared.'
       )
     } catch (err) {
       setBindingError(
-        err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
+        err instanceof Error
+          ? err.message
+          : 'Failed to update open discussion widget binding.'
       )
     }
   }
@@ -90,14 +92,14 @@ export function PromptManager({
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2>Prompt Q&amp;A</h2>
+        <h2>Open discussion</h2>
         <span className="badge">
           Open {prompts.filter((prompt) => prompt.status === 'open').length}
         </span>
       </div>
       <div className="poll-creator">
         <div className="field">
-          <label htmlFor="prompt-question">Prompt question</label>
+          <label htmlFor="prompt-question">Discussion prompt</label>
           <input
             id="prompt-question"
             value={promptText}
@@ -106,13 +108,13 @@ export function PromptManager({
           />
         </div>
         <button className="primary" onClick={handleCreate}>
-          Create &amp; open prompt
+          Create open discussion
         </button>
         {error ? <p className="error">{error}</p> : null}
       </div>
       <div className="poll-list">
         {prompts.length === 0 ? (
-          <p className="muted">No prompts yet. Create one to start collecting answers.</p>
+          <p className="muted">No discussions yet. Create a prompt to collect answers.</p>
         ) : (
           <ul className="list">
             {prompts.map((prompt) => {
@@ -142,7 +144,7 @@ export function PromptManager({
                       ) : (
                         <button onClick={() => onOpen(prompt.id)}>Open</button>
                       )}
-                      {onBindWidget ? (
+                      {onBindDiscussionWidget ? (
                         <button className="ghost" onClick={() => handleBind(prompt.id)}>
                           Bind widget
                         </button>
@@ -192,14 +194,14 @@ export function PromptManager({
           </ul>
         )}
       </div>
-      {onBindWidget ? (
+      {onBindDiscussionWidget ? (
         <div className="poll-binding">
           <p className="muted">
-            Select a slide with a Q&amp;A widget to bind it to a prompt below.
+            Select a slide with an open discussion widget to bind it to a prompt below.
           </p>
           <div className="actions">
             <button className="ghost" onClick={() => handleBind(null)}>
-              Bind to audience Q&amp;A
+              Clear widget binding
             </button>
           </div>
           {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}

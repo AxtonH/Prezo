@@ -10,6 +10,12 @@
   const LEGACY_QNA_MODE_TAG = 'PrezoWidgetQnaMode'
   const LEGACY_QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
   const QNA_PROMPT_BINDING_TAG = 'PrezoWidgetPromptId'
+  const DISCUSSION_WIDGET_TAG = 'PrezoDiscussionWidget'
+  const DISCUSSION_SESSION_TAG = 'PrezoDiscussionWidgetSessionId'
+  const DISCUSSION_SHAPES_TAG = 'PrezoDiscussionWidgetShapeIds'
+  const DISCUSSION_PENDING_TAG = 'PrezoDiscussionWidgetPending'
+  const DISCUSSION_STYLE_TAG = 'PrezoDiscussionWidgetStyle'
+  const DISCUSSION_PROMPT_BINDING_TAG = 'PrezoDiscussionWidgetPromptId'
   const POLL_WIDGET_TAG = 'PrezoPollWidget'
   const POLL_SESSION_TAG = 'PrezoPollWidgetSessionId'
   const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
@@ -23,6 +29,9 @@
   const PROMPT_PANEL_TITLE = 'Audience answers'
   const EYEBROW_TEXT = 'PREZO LIVE Q&A'
   const PROMPT_EYEBROW_TEXT = 'PREZO LIVE PROMPT'
+  const DISCUSSION_PANEL_TITLE = 'Open discussion'
+  const DISCUSSION_EYEBROW_TEXT = 'PREZO OPEN DISCUSSION'
+  const DISCUSSION_EMPTY_BODY = 'Select a prompt to show answers.'
   const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
   const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
@@ -88,6 +97,13 @@
     code ? `Join code ${code}` : 'Waiting for new questions.'
   const buildBadge = (pendingCount, approvedCount, mode) =>
     mode === 'prompt' ? `Answers ${approvedCount}` : `Pending ${pendingCount}`
+  const buildDiscussionTitle = (code, prompt) => {
+    const safePrompt = prompt && String(prompt).trim()
+    if (safePrompt) {
+      return safePrompt
+    }
+    return code ? `Open discussion • ${code}` : DISCUSSION_PANEL_TITLE
+  }
   const DEFAULT_QNA_STYLE = {
     fontFamily: null,
     textColor: '#0f172a',
@@ -1106,6 +1122,225 @@
       await context.sync()
     })
   }
+  const updateDiscussionWidget = async (sessionId, code, questions, prompts) => {
+    const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
+    await PowerPoint.run(async (context) => {
+      const slides = context.presentation.slides
+      slides.load('items')
+      await context.sync()
+
+      const slideInfos = slides.items.map((slide) => {
+        const sessionTag = slide.tags.getItemOrNullObject(DISCUSSION_SESSION_TAG)
+        const pendingTag = slide.tags.getItemOrNullObject(DISCUSSION_PENDING_TAG)
+        const styleTag = slide.tags.getItemOrNullObject(DISCUSSION_STYLE_TAG)
+        const shapeTag = slide.tags.getItemOrNullObject(DISCUSSION_SHAPES_TAG)
+        const promptBindingTag = slide.tags.getItemOrNullObject(DISCUSSION_PROMPT_BINDING_TAG)
+        sessionTag.load('value')
+        pendingTag.load('value')
+        styleTag.load('value')
+        shapeTag.load('value')
+        promptBindingTag.load('value')
+        return { slide, sessionTag, pendingTag, styleTag, shapeTag, promptBindingTag }
+      })
+
+      await context.sync()
+
+      for (const info of slideInfos) {
+        const isPending =
+          !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
+        if (!isPending && (info.sessionTag.isNullObject || info.sessionTag.value !== sessionId)) {
+          continue
+        }
+        if (info.shapeTag.isNullObject || !info.shapeTag.value) {
+          continue
+        }
+
+        let shapeIds = null
+        try {
+          shapeIds = JSON.parse(info.shapeTag.value)
+        } catch {
+          shapeIds = null
+        }
+        if (!shapeIds) {
+          continue
+        }
+
+        let style = DEFAULT_QNA_STYLE
+        let applyStyle = false
+        if (!info.styleTag.isNullObject && info.styleTag.value) {
+          try {
+            const parsed = JSON.parse(info.styleTag.value)
+            style = normalizeQnaStyle(parsed)
+            applyStyle = Boolean(parsed.lockStyle)
+          } catch {
+            style = DEFAULT_QNA_STYLE
+          }
+        }
+
+        const containerShape = shapeIds.container
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.container)
+          : null
+        const shadowShape = shapeIds.shadow
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
+          : null
+        const title = shapeIds.title
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.title)
+          : null
+        const body = shapeIds.body
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.body)
+          : null
+        const subtitle = shapeIds.subtitle
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
+          : null
+        const meta = shapeIds.meta ? info.slide.shapes.getItemOrNullObject(shapeIds.meta) : null
+        const badge = shapeIds.badge
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
+          : null
+        const itemShapes = (shapeIds.items || []).map((item) => {
+          const container = info.slide.shapes.getItemOrNullObject(item.container)
+          const text = info.slide.shapes.getItemOrNullObject(item.text)
+          const votes = info.slide.shapes.getItemOrNullObject(item.votes)
+          container.load('id')
+          text.load('id')
+          votes.load('id')
+          return { container, text, votes }
+        })
+        if (containerShape) containerShape.load('id')
+        if (shadowShape) shadowShape.load('id')
+        if (title) title.load('id')
+        if (body) body.load('id')
+        if (subtitle) subtitle.load('id')
+        if (meta) meta.load('id')
+        if (badge) badge.load('id')
+        await context.sync()
+
+        if (applyStyle) {
+          if (shadowShape && !shadowShape.isNullObject) {
+            shadowShape.fill.setSolidColor(style.shadowColor)
+            shadowShape.fill.transparency = style.shadowOpacity
+            shadowShape.lineFormat.visible = false
+          }
+          if (containerShape && !containerShape.isNullObject) {
+            containerShape.fill.setSolidColor(style.panelColor)
+            containerShape.lineFormat.color = style.borderColor
+            containerShape.lineFormat.weight = 1
+          }
+          if (meta && !meta.isNullObject) {
+            applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+          }
+          if (title && !title.isNullObject) {
+            applyFont(title.textFrame.textRange, style, {
+              size: 18,
+              bold: true,
+              color: style.textColor
+            })
+          }
+          if (subtitle && !subtitle.isNullObject) {
+            applyFont(subtitle.textFrame.textRange, style, { size: 13, color: style.mutedColor })
+          }
+          if (badge && !badge.isNullObject) {
+            badge.fill.setSolidColor(badgeFillFor(style))
+            badge.lineFormat.visible = false
+            applyFont(badge.textFrame.textRange, style, {
+              size: 11,
+              bold: true,
+              color: style.accentColor
+            })
+          }
+          if (body && !body.isNullObject) {
+            applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+          }
+          itemShapes.forEach((item) => {
+            if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
+              return
+            }
+            item.container.fill.setSolidColor(style.cardColor)
+            item.container.lineFormat.color = style.borderColor
+            item.container.lineFormat.weight = 1
+            applyFont(item.text.textFrame.textRange, style, {
+              size: 14,
+              color: style.textColor
+            })
+            applyFont(item.votes.textFrame.textRange, style, {
+              size: 12,
+              color: style.mutedColor
+            })
+          })
+        }
+
+        const boundPromptId =
+          !info.promptBindingTag.isNullObject && info.promptBindingTag.value
+            ? info.promptBindingTag.value.trim()
+            : ''
+        const boundPrompt = boundPromptId ? promptMap.get(boundPromptId) || null : null
+        const filteredQuestions = boundPromptId
+          ? (questions || []).filter((q) => q.prompt_id === boundPromptId)
+          : []
+        const approvedRaw = filteredQuestions.filter((q) => q.status === 'approved')
+        const approved = [...approvedRaw].sort((a, b) => b.votes - a.votes)
+        const promptTitle = boundPrompt && boundPrompt.prompt ? boundPrompt.prompt.trim() : ''
+        const panelTitle =
+          promptTitle || (boundPromptId ? 'Prompt not found.' : DISCUSSION_PANEL_TITLE)
+
+        if (title && !title.isNullObject) {
+          const hasNewLayout = Boolean(
+            (shapeIds.items && shapeIds.items.length > 0) ||
+              shapeIds.subtitle ||
+              shapeIds.meta ||
+              shapeIds.badge
+          )
+          title.textFrame.textRange.text = hasNewLayout
+            ? panelTitle
+            : buildDiscussionTitle(code, promptTitle)
+        }
+        if (meta && !meta.isNullObject) {
+          meta.textFrame.textRange.text = DISCUSSION_EYEBROW_TEXT
+        }
+        if (subtitle && !subtitle.isNullObject) {
+          subtitle.textFrame.textRange.text = buildMeta(code)
+        }
+        if (badge && !badge.isNullObject) {
+          badge.textFrame.textRange.text = `Answers ${approved.length}`
+        }
+        if (itemShapes.length > 0) {
+          const hasApproved = approved.length > 0
+          const emptyBody = boundPromptId ? 'No answers yet.' : DISCUSSION_EMPTY_BODY
+          if (body && !body.isNullObject) {
+            body.textFrame.textRange.text = hasApproved ? '' : emptyBody
+          }
+          itemShapes.forEach((item, index) => {
+            if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
+              return
+            }
+            const question = approved[index]
+            if (!question) {
+              item.container.fill.transparency = 1
+              item.container.lineFormat.visible = false
+              item.text.textFrame.textRange.text = ''
+              item.votes.textFrame.textRange.text = ''
+              return
+            }
+            item.container.fill.transparency = 0
+            item.container.lineFormat.visible = true
+            item.text.textFrame.textRange.text = question.text
+            item.votes.textFrame.textRange.text = `${question.votes} votes`
+          })
+        } else if (body && !body.isNullObject) {
+          body.textFrame.textRange.text = boundPromptId
+            ? buildBody(filteredQuestions, 'prompt')
+            : DISCUSSION_EMPTY_BODY
+        }
+
+        if (isPending) {
+          info.slide.tags.add(DISCUSSION_SESSION_TAG, sessionId)
+          info.slide.tags.delete(DISCUSSION_PENDING_TAG)
+        }
+      }
+
+      await context.sync()
+    })
+  }
+
   const insertWidget = async (styleOverrides, qna) => {
     const style = normalizeQnaStyle(styleOverrides)
     const scale = style.spacingScale
@@ -1422,6 +1657,315 @@
     }
   }
 
+  const insertDiscussionWidget = async (styleOverrides) => {
+    const style = normalizeQnaStyle(styleOverrides)
+    const scale = style.spacingScale
+    const maxQuestions = style.maxQuestions
+    const binding = await getBinding()
+    const sessionId = binding && binding.sessionId ? binding.sessionId : null
+    const code = binding ? binding.code : null
+    const hasSession = Boolean(sessionId)
+    const panelTitle = DISCUSSION_PANEL_TITLE
+    const eyebrowText = DISCUSSION_EYEBROW_TEXT
+    const emptyBody = DISCUSSION_EMPTY_BODY
+
+    await PowerPoint.run(async (context) => {
+      const slides = context.presentation.getSelectedSlides()
+      slides.load('items')
+      const pageSetup = context.presentation.pageSetup
+      pageSetup.load(['slideWidth', 'slideHeight'])
+      await context.sync()
+
+      const slide = slides.items[0]
+      if (!slide) {
+        throw new Error('Select a slide before inserting a widget.')
+      }
+
+      const existingSessionTag = slide.tags.getItemOrNullObject(DISCUSSION_SESSION_TAG)
+      const existingPendingTag = slide.tags.getItemOrNullObject(DISCUSSION_PENDING_TAG)
+      const existingStyleTag = slide.tags.getItemOrNullObject(DISCUSSION_STYLE_TAG)
+      const existingShapesTag = slide.tags.getItemOrNullObject(DISCUSSION_SHAPES_TAG)
+      existingSessionTag.load('value')
+      existingPendingTag.load('value')
+      existingStyleTag.load('value')
+      existingShapesTag.load('value')
+      await context.sync()
+
+      if (!existingShapesTag.isNullObject && existingShapesTag.value) {
+        try {
+          const parsed = JSON.parse(existingShapesTag.value)
+          const itemIds = (parsed.items || []).flatMap((item) => [
+            item.container,
+            item.text,
+            item.votes
+          ])
+          const ids = [
+            parsed.shadow,
+            parsed.container,
+            parsed.title,
+            parsed.subtitle,
+            parsed.meta,
+            parsed.badge,
+            parsed.body,
+            ...itemIds
+          ].filter(Boolean)
+          const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+          shapes.forEach((shape) => shape.load('id'))
+          await context.sync()
+          shapes.forEach((shape) => {
+            if (!shape.isNullObject) {
+              shape.delete()
+            }
+          })
+          await context.sync()
+        } catch {
+          // ignore cleanup errors
+        }
+        slide.tags.delete(DISCUSSION_SESSION_TAG)
+        slide.tags.delete(DISCUSSION_PENDING_TAG)
+        slide.tags.delete(DISCUSSION_STYLE_TAG)
+        slide.tags.delete(DISCUSSION_SHAPES_TAG)
+        slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
+      }
+
+      const width = Math.max(360, pageSetup.slideWidth * 0.68)
+      const height = Math.max(280, pageSetup.slideHeight * 0.52)
+      const left = (pageSetup.slideWidth - width) / 2
+      const top = pageSetup.slideHeight * 0.12
+      const paddingX = 24
+      const headerTop = top + 18 * scale
+      const badgeWidth = 98
+      const badgeHeight = 22
+      const textWidth = width - paddingX * 2 - badgeWidth - 12
+      const eyebrowHeight = 12 * scale
+      const titleHeight = 22 * scale
+      const subtitleHeight = 16 * scale
+      const rowGap = 6 * scale
+      const bodyGap = 12 * scale
+      const titleTop = headerTop + eyebrowHeight + rowGap
+      const subtitleTop = titleTop + titleHeight + rowGap
+      const bodyTop = subtitleTop + subtitleHeight + bodyGap
+      const availableHeight = height - (bodyTop - top) - 16
+      const bodyHeight = availableHeight
+      const itemHeight = 48 * scale
+      const itemGap = 12 * scale
+      const itemWidth = width - paddingX * 2
+      const maxItems = Math.max(
+        1,
+        Math.min(
+          maxQuestions,
+          Math.floor((availableHeight + itemGap) / (itemHeight + itemGap))
+        )
+      )
+
+      const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
+        left: left + 4,
+        top: top + 6,
+        width,
+        height
+      })
+      shadow.fill.setSolidColor(style.shadowColor)
+      shadow.fill.transparency = style.shadowOpacity
+      shadow.lineFormat.visible = false
+      shadow.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      shadow.tags.add('PrezoWidgetRole', 'shadow')
+
+      const container = slide.shapes.addGeometricShape('RoundRectangle', {
+        left,
+        top,
+        width,
+        height
+      })
+      container.fill.setSolidColor(style.panelColor)
+      container.lineFormat.color = style.borderColor
+      container.lineFormat.weight = 1
+      container.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      container.tags.add('PrezoWidgetRole', 'container')
+
+      const meta = slide.shapes.addTextBox(eyebrowText, {
+        left: left + paddingX,
+        top: headerTop,
+        width: Math.max(160, textWidth),
+        height: eyebrowHeight
+      })
+      meta.textFrame.wordWrap = true
+      applyFont(meta.textFrame.textRange.font, style, {
+        size: 11,
+        color: style.mutedColor
+      })
+      meta.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      meta.tags.add('PrezoWidgetRole', 'meta')
+
+      const title = slide.shapes.addTextBox(panelTitle, {
+        left: left + paddingX,
+        top: titleTop,
+        width: Math.max(160, textWidth),
+        height: titleHeight
+      })
+      title.textFrame.wordWrap = true
+      applyFont(title.textFrame.textRange.font, style, {
+        size: 18,
+        bold: true,
+        color: style.textColor
+      })
+      title.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      title.tags.add('PrezoWidgetRole', 'title')
+
+      const subtitle = slide.shapes.addTextBox(
+        hasSession ? buildMeta(code) : PLACEHOLDER_SUBTITLE,
+        {
+        left: left + paddingX,
+        top: subtitleTop,
+        width: Math.max(180, textWidth),
+        height: subtitleHeight
+        }
+      )
+      subtitle.textFrame.wordWrap = true
+      applyFont(subtitle.textFrame.textRange.font, style, {
+        size: 13,
+        color: style.mutedColor
+      })
+      subtitle.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      subtitle.tags.add('PrezoWidgetRole', 'subtitle')
+
+      const badge = slide.shapes.addGeometricShape('RoundRectangle', {
+        left: left + width - paddingX - badgeWidth,
+        top: titleTop,
+        width: badgeWidth,
+        height: badgeHeight
+      })
+      badge.fill.setSolidColor(badgeFillFor(style))
+      badge.lineFormat.visible = false
+      badge.textFrame.textRange.text = 'Answers 0'
+      applyFont(badge.textFrame.textRange.font, style, {
+        size: 11,
+        bold: true,
+        color: style.accentColor
+      })
+      badge.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      badge.tags.add('PrezoWidgetRole', 'badge')
+
+      const body = slide.shapes.addTextBox(
+        hasSession ? emptyBody : PLACEHOLDER_BODY,
+        {
+        left: left + paddingX,
+        top: bodyTop,
+        width: width - paddingX * 2,
+        height: Math.max(80, bodyHeight)
+        }
+      )
+      body.textFrame.wordWrap = true
+      applyFont(body.textFrame.textRange.font, style, {
+        size: 14,
+        color: style.mutedColor
+      })
+      body.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      body.tags.add('PrezoWidgetRole', 'body')
+
+      const itemShapes = []
+      for (let index = 0; index < maxItems; index += 1) {
+        const itemTop = bodyTop + index * (itemHeight + itemGap)
+        const item = slide.shapes.addGeometricShape('RoundRectangle', {
+          left: left + paddingX,
+          top: itemTop,
+          width: itemWidth,
+          height: itemHeight
+        })
+        item.fill.setSolidColor(style.cardColor)
+        item.lineFormat.color = style.borderColor
+        item.lineFormat.weight = 1
+        item.fill.transparency = 1
+        item.lineFormat.visible = false
+        item.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+        item.tags.add('PrezoWidgetRole', 'item')
+
+        const question = slide.shapes.addTextBox('', {
+          left: left + paddingX + 12,
+          top: itemTop + 10 * scale,
+          width: itemWidth - 24,
+          height: 20 * scale
+        })
+        question.textFrame.wordWrap = true
+        applyFont(question.textFrame.textRange.font, style, {
+          size: 14,
+          color: style.textColor
+        })
+        question.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+        question.tags.add('PrezoWidgetRole', 'item-text')
+
+        const votes = slide.shapes.addTextBox('', {
+          left: left + paddingX + 12,
+          top: itemTop + 30 * scale,
+          width: itemWidth - 24,
+          height: 14 * scale
+        })
+        votes.textFrame.wordWrap = true
+        applyFont(votes.textFrame.textRange.font, style, {
+          size: 12,
+          color: style.mutedColor
+        })
+        votes.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+        votes.tags.add('PrezoWidgetRole', 'item-votes')
+
+        itemShapes.push({ container: item, text: question, votes })
+      }
+
+      shadow.load('id')
+      container.load('id')
+      title.load('id')
+      subtitle.load('id')
+      meta.load('id')
+      badge.load('id')
+      body.load('id')
+      itemShapes.forEach((item) => {
+        item.container.load('id')
+        item.text.load('id')
+        item.votes.load('id')
+      })
+      await context.sync()
+
+      const shapeIds = {
+        shadow: shadow.id,
+        container: container.id,
+        title: title.id,
+        subtitle: subtitle.id,
+        meta: meta.id,
+        badge: badge.id,
+        body: body.id,
+        items: itemShapes.map((item) => ({
+          container: item.container.id,
+          text: item.text.id,
+          votes: item.votes.id
+        }))
+      }
+
+      if (hasSession && sessionId) {
+        slide.tags.add(DISCUSSION_SESSION_TAG, sessionId)
+        slide.tags.delete(DISCUSSION_PENDING_TAG)
+      } else {
+        slide.tags.add(DISCUSSION_PENDING_TAG, 'true')
+        slide.tags.delete(DISCUSSION_SESSION_TAG)
+      }
+      slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
+      slide.tags.add(DISCUSSION_STYLE_TAG, JSON.stringify(style))
+      slide.tags.add(DISCUSSION_SHAPES_TAG, JSON.stringify(shapeIds))
+      await context.sync()
+    })
+
+    if (hasSession && sessionId) {
+      try {
+        const snapshot = await fetchSnapshot(binding)
+        await updateDiscussionWidget(
+          sessionId,
+          code,
+          snapshot.questions || [],
+          snapshot.prompts || []
+        )
+      } catch (error) {
+        console.warn('Failed to refresh open discussion widget', error)
+      }
+    }
+  }
   const insertPollWidget = async (styleOverrides) => {
     const style = normalizePollStyle(styleOverrides)
     const scale = style.spacingScale
@@ -1707,6 +2251,20 @@
         const detail = error && error.message ? error.message : 'Failed to insert poll widget'
         activeDialog.messageChild(
           JSON.stringify({ type: 'error', source: 'poll', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'insert-discussion') {
+      try {
+        await insertDiscussionWidget(message.style)
+        activeDialog.messageChild(JSON.stringify({ type: 'discussion-inserted' }))
+        activeDialog.close()
+        activeDialog = null
+      } catch (error) {
+        const detail =
+          error && error.message ? error.message : 'Failed to insert open discussion widget'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'discussion', message: detail })
         )
       }
     }

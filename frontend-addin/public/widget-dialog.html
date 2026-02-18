@@ -95,6 +95,9 @@
       .card-icon.poll {
         background: linear-gradient(135deg, #0f766e, #14b8a6);
       }
+      .card-icon.discussion {
+        background: linear-gradient(135deg, #f97316, #f59e0b);
+      }
       .card-actions {
         display: flex;
         gap: 8px;
@@ -358,6 +361,18 @@
           </div>
           <div class="card">
             <div class="card-header">
+              <div class="card-icon discussion">OD</div>
+              <div>
+                <div class="card-title">Open discussion widget</div>
+                <p class="muted">Highlights answers to a host prompt.</p>
+              </div>
+            </div>
+            <div class="card-actions">
+              <button id="open-discussion">Customize &amp; insert</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
               <div class="card-icon poll">Poll</div>
               <div>
                 <div class="card-title">Poll widget</div>
@@ -474,6 +489,125 @@
           <div id="status"></div>
           <div id="error"></div>
           <div id="debug" class="muted"></div>
+        </div>
+      </div>
+
+      <div id="view-discussion" class="view hidden">
+        <div class="toolbar">
+          <button class="ghost" id="back-discussion">Back</button>
+          <h1>Open Discussion Widget</h1>
+        </div>
+        <div class="grid">
+          <div class="panel">
+            <h2>Preview</h2>
+            <div id="discussion-preview" class="preview-card">
+              <div class="preview-header">
+                <div>
+                  <div id="discussion-preview-eyebrow" class="preview-eyebrow">
+                    PREZO OPEN DISCUSSION
+                  </div>
+                  <div id="discussion-preview-title" class="preview-title">
+                    Open discussion
+                  </div>
+                  <div id="discussion-preview-subtitle" class="preview-subtitle">
+                    Join code XH36BY
+                  </div>
+                </div>
+                <div id="discussion-preview-badge" class="preview-badge">Answers 2</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">We should double down on onboarding.</div>
+                <div class="preview-item-votes">4 votes</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">Partner enablement needs clearer steps.</div>
+                <div class="preview-item-votes">2 votes</div>
+              </div>
+              <div class="preview-item">
+                <div class="preview-item-title">More examples would help adoption.</div>
+                <div class="preview-item-votes">1 vote</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Style</h2>
+            <div class="field">
+              <label for="discussion-font">Font</label>
+              <select id="discussion-font">
+                <option value="">Default</option>
+                <option value="Aptos">Aptos</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Tahoma">Tahoma</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+              </select>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="discussion-text">Primary text</label>
+                <input id="discussion-text" type="color" value="#0f172a" />
+              </div>
+              <div class="field">
+                <label for="discussion-muted">Muted text</label>
+                <input id="discussion-muted" type="color" value="#64748b" />
+              </div>
+              <div class="field">
+                <label for="discussion-accent">Accent</label>
+                <input id="discussion-accent" type="color" value="#2563eb" />
+              </div>
+            </div>
+            <div class="color-grid">
+              <div class="field">
+                <label for="discussion-panel">Panel background</label>
+                <input id="discussion-panel" type="color" value="#ffffff" />
+              </div>
+              <div class="field">
+                <label for="discussion-card">Card background</label>
+                <input id="discussion-card" type="color" value="#f8fafc" />
+              </div>
+              <div class="field">
+                <label for="discussion-border">Border</label>
+                <input id="discussion-border" type="color" value="#e2e8f0" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="discussion-shadow">Shadow strength</label>
+              <input
+                id="discussion-shadow"
+                type="range"
+                min="0"
+                max="0.6"
+                step="0.05"
+                value="0.4"
+              />
+            </div>
+            <div class="field">
+              <label for="discussion-spacing">Spacing</label>
+              <select id="discussion-spacing">
+                <option value="0.9">Compact</option>
+                <option value="1" selected>Balanced</option>
+                <option value="1.1">Spacious</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="discussion-max">Max answers</label>
+              <select id="discussion-max">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="insert-discussion">Insert widget</button>
+          <div id="discussion-status"></div>
+          <div id="discussion-error"></div>
+          <div id="discussion-debug" class="muted"></div>
         </div>
       </div>
 

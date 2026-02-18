@@ -8,6 +8,12 @@ const WIDGET_STYLE_TAG = 'PrezoWidgetStyle'
 const LEGACY_QNA_MODE_TAG = 'PrezoWidgetQnaMode'
 const LEGACY_QNA_PROMPT_TAG = 'PrezoWidgetQnaPrompt'
 const QNA_PROMPT_BINDING_TAG = 'PrezoWidgetPromptId'
+const DISCUSSION_WIDGET_TAG = 'PrezoDiscussionWidget'
+const DISCUSSION_SESSION_TAG = 'PrezoDiscussionWidgetSessionId'
+const DISCUSSION_SHAPES_TAG = 'PrezoDiscussionWidgetShapeIds'
+const DISCUSSION_PENDING_TAG = 'PrezoDiscussionWidgetPending'
+const DISCUSSION_STYLE_TAG = 'PrezoDiscussionWidgetStyle'
+const DISCUSSION_PROMPT_BINDING_TAG = 'PrezoDiscussionWidgetPromptId'
 const POLL_WIDGET_TAG = 'PrezoPollWidget'
 const POLL_SESSION_TAG = 'PrezoPollWidgetSessionId'
 const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
@@ -19,6 +25,8 @@ const PANEL_TITLE = 'Questions from your audience'
 const PROMPT_PANEL_TITLE = 'Audience answers'
 const EYEBROW_TEXT = 'PREZO LIVE Q&A'
 const PROMPT_EYEBROW_TEXT = 'PREZO LIVE PROMPT'
+const DISCUSSION_PANEL_TITLE = 'Open discussion'
+const DISCUSSION_EYEBROW_TEXT = 'PREZO OPEN DISCUSSION'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
 const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
@@ -49,6 +57,37 @@ type PollWidgetShapeIds = {
     bg: string
     fill: string
   }>
+}
+
+type QnaWidgetTags = {
+  widgetTag: string
+  sessionTag: string
+  shapesTag: string
+  pendingTag: string
+  styleTag: string
+  promptBindingTag: string
+  legacyModeTag?: string
+  legacyPromptTag?: string
+}
+
+type QnaWidgetConfig = {
+  tags: QnaWidgetTags
+  eyebrowText: string
+  promptEyebrowText?: string
+  panelTitle: string
+  promptPanelTitle: string
+  promptMissingTitle: string
+  badgeAudienceLabel: string
+  badgePromptLabel: string
+  emptyBodyAudience: string
+  emptyBodyPrompt: string
+  useAudienceWhenUnbound: boolean
+  unboundMode?: QnaMode
+  buildLegacyTitle: (
+    code: string | null | undefined,
+    mode: QnaMode,
+    prompt?: string | null
+  ) => string
 }
 
 type QnaStyleConfig = {
@@ -96,10 +135,31 @@ const buildTitle = (code?: string | null, mode: QnaMode = 'audience', prompt?: s
   return code ? `Prezo Live Q&A • ${code}` : 'Prezo Live Q&A'
 }
 
+const buildDiscussionTitle = (
+  code?: string | null,
+  mode: QnaMode = 'audience',
+  prompt?: string | null
+) => {
+  if (mode === 'prompt' && prompt?.trim()) {
+    return prompt.trim()
+  }
+  return code ? `Open discussion • ${code}` : DISCUSSION_PANEL_TITLE
+}
+
 const buildMeta = (code?: string | null) =>
   code ? `Join code ${code}` : 'Waiting for new questions.'
 
-const buildBadge = (pendingCount: number) => `Pending ${pendingCount}`
+const buildBadgeText = (
+  mode: QnaMode,
+  pendingCount: number,
+  approvedCount: number,
+  config: QnaWidgetConfig
+) => {
+  const label =
+    mode === 'prompt' ? config.badgePromptLabel : config.badgeAudienceLabel
+  const count = mode === 'prompt' ? approvedCount : pendingCount
+  return `${label} ${count}`
+}
 
 const DEFAULT_QNA_STYLE: QnaStyleConfig = {
   fontFamily: null,
@@ -129,6 +189,54 @@ const DEFAULT_POLL_STYLE: PollStyleConfig = {
   orientation: 'horizontal',
   barThicknessScale: 1,
   maxOptions: 5
+}
+
+const QNA_WIDGET_CONFIG: QnaWidgetConfig = {
+  tags: {
+    widgetTag: WIDGET_TAG,
+    sessionTag: SESSION_TAG,
+    shapesTag: SHAPES_TAG,
+    pendingTag: WIDGET_PENDING_TAG,
+    styleTag: WIDGET_STYLE_TAG,
+    promptBindingTag: QNA_PROMPT_BINDING_TAG,
+    legacyModeTag: LEGACY_QNA_MODE_TAG,
+    legacyPromptTag: LEGACY_QNA_PROMPT_TAG
+  },
+  eyebrowText: EYEBROW_TEXT,
+  promptEyebrowText: PROMPT_EYEBROW_TEXT,
+  panelTitle: PANEL_TITLE,
+  promptPanelTitle: PROMPT_PANEL_TITLE,
+  promptMissingTitle: 'Prompt not found.',
+  badgeAudienceLabel: 'Pending',
+  badgePromptLabel: 'Answers',
+  emptyBodyAudience: 'No approved questions yet.',
+  emptyBodyPrompt: 'No answers yet.',
+  useAudienceWhenUnbound: true,
+  unboundMode: 'audience',
+  buildLegacyTitle: buildTitle
+}
+
+const DISCUSSION_WIDGET_CONFIG: QnaWidgetConfig = {
+  tags: {
+    widgetTag: DISCUSSION_WIDGET_TAG,
+    sessionTag: DISCUSSION_SESSION_TAG,
+    shapesTag: DISCUSSION_SHAPES_TAG,
+    pendingTag: DISCUSSION_PENDING_TAG,
+    styleTag: DISCUSSION_STYLE_TAG,
+    promptBindingTag: DISCUSSION_PROMPT_BINDING_TAG
+  },
+  eyebrowText: DISCUSSION_EYEBROW_TEXT,
+  promptEyebrowText: DISCUSSION_EYEBROW_TEXT,
+  panelTitle: DISCUSSION_PANEL_TITLE,
+  promptPanelTitle: DISCUSSION_PANEL_TITLE,
+  promptMissingTitle: 'Prompt not found.',
+  badgeAudienceLabel: 'Answers',
+  badgePromptLabel: 'Answers',
+  emptyBodyAudience: 'Select a prompt to show answers.',
+  emptyBodyPrompt: 'No answers yet.',
+  useAudienceWhenUnbound: false,
+  unboundMode: 'audience',
+  buildLegacyTitle: buildDiscussionTitle
 }
 
 const clamp = (value: number, min: number, max: number) =>
@@ -253,10 +361,14 @@ const isShapeNullObject = (shape: { isNullObject?: boolean } | null | undefined)
 
 
 
-const buildBody = (questions: Question[], mode: QnaMode) => {
+const buildBody = (
+  questions: Question[],
+  mode: QnaMode,
+  config: QnaWidgetConfig
+) => {
   const approved = questions.filter((q) => q.status === 'approved')
   if (approved.length === 0) {
-    return mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
+    return mode === 'prompt' ? config.emptyBodyPrompt : config.emptyBodyAudience
   }
   const sorted =
     mode === 'prompt' ? [...approved].sort((a, b) => b.votes - a.votes) : approved
@@ -480,7 +592,12 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     })
     badge.fill.setSolidColor(badgeFillFor(style))
     badge.lineFormat.visible = false
-    badge.textFrame.textRange.text = buildBadge(0)
+    badge.textFrame.textRange.text = buildBadgeText(
+      'audience',
+      0,
+      0,
+      QNA_WIDGET_CONFIG
+    )
     applyFont(badge.textFrame.textRange, style, {
       size: 11,
       bold: true,
@@ -490,7 +607,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     badge.tags.add('PrezoWidgetRole', 'badge')
 
     const body = slide.shapes.addTextBox(
-      hasSession ? 'No approved questions yet.' : PLACEHOLDER_BODY,
+      hasSession ? QNA_WIDGET_CONFIG.emptyBodyAudience : PLACEHOLDER_BODY,
       {
       left: left + paddingX,
       top: bodyTop,
@@ -601,26 +718,319 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
   })
 }
 
+
+export async function insertDiscussionWidget(sessionId?: string | null, code?: string | null) {
+  ensurePowerPoint()
+
+  const style = normalizeQnaStyle()
+  const scale = style.spacingScale
+  const maxQuestions = style.maxQuestions
+  const hasSession = Boolean(sessionId)
+  await PowerPoint.run(async (context) => {
+    const slides = context.presentation.getSelectedSlides()
+    slides.load('items')
+    const pageSetup = context.presentation.pageSetup
+    pageSetup.load(['slideWidth', 'slideHeight'])
+    await context.sync()
+
+    const slide = slides.items[0]
+    if (!slide) {
+      throw new Error('Select a slide before inserting a widget.')
+    }
+
+    const existingSessionTag = slide.tags.getItemOrNullObject(DISCUSSION_SESSION_TAG)
+    const existingPendingTag = slide.tags.getItemOrNullObject(DISCUSSION_PENDING_TAG)
+    const existingStyleTag = slide.tags.getItemOrNullObject(DISCUSSION_STYLE_TAG)
+    const existingShapesTag = slide.tags.getItemOrNullObject(DISCUSSION_SHAPES_TAG)
+    existingSessionTag.load('value')
+    existingPendingTag.load('value')
+    existingStyleTag.load('value')
+    existingShapesTag.load('value')
+    await context.sync()
+
+    if (!existingShapesTag.isNullObject && existingShapesTag.value) {
+      try {
+        const parsed = JSON.parse(existingShapesTag.value) as Partial<WidgetShapeIds>
+        const itemIds =
+          parsed.items?.flatMap((item) => [item.container, item.text, item.votes]) ?? []
+        const ids = [
+          parsed.shadow,
+          parsed.container,
+          parsed.title,
+          parsed.subtitle,
+          parsed.meta,
+          parsed.badge,
+          parsed.body,
+          ...itemIds
+        ].filter(
+          (value): value is string => Boolean(value)
+        )
+        const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+        shapes.forEach((shape) => shape.load('id'))
+        await context.sync()
+        shapes.forEach((shape) => {
+          if (!shape.isNullObject) {
+            shape.delete()
+          }
+        })
+        await context.sync()
+      } catch {
+        // If parsing fails, we just overwrite tags below.
+      }
+      slide.tags.delete(DISCUSSION_SESSION_TAG)
+      slide.tags.delete(DISCUSSION_PENDING_TAG)
+      slide.tags.delete(DISCUSSION_STYLE_TAG)
+      slide.tags.delete(DISCUSSION_SHAPES_TAG)
+      slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
+    }
+
+    const width = Math.max(360, pageSetup.slideWidth * 0.68)
+    const height = Math.max(280, pageSetup.slideHeight * 0.52)
+    const left = (pageSetup.slideWidth - width) / 2
+    const top = pageSetup.slideHeight * 0.12
+    const paddingX = 24
+    const headerTop = top + 18 * scale
+    const badgeWidth = 98
+    const badgeHeight = 22
+    const textWidth = width - paddingX * 2 - badgeWidth - 12
+    const eyebrowHeight = 12 * scale
+    const titleHeight = 22 * scale
+    const subtitleHeight = 16 * scale
+    const rowGap = 6 * scale
+    const bodyGap = 12 * scale
+    const titleTop = headerTop + eyebrowHeight + rowGap
+    const subtitleTop = titleTop + titleHeight + rowGap
+    const bodyTop = subtitleTop + subtitleHeight + bodyGap
+    const availableHeight = height - (bodyTop - top) - 16
+    const bodyHeight = availableHeight
+    const itemHeight = 48 * scale
+    const itemGap = 12 * scale
+    const itemWidth = width - paddingX * 2
+    const maxItems = Math.max(
+      1,
+      Math.min(
+        maxQuestions,
+        Math.floor((availableHeight + itemGap) / (itemHeight + itemGap))
+      )
+    )
+
+    const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
+      left: left + 4,
+      top: top + 6,
+      width,
+      height
+    })
+    shadow.fill.setSolidColor(style.shadowColor)
+    shadow.fill.transparency = style.shadowOpacity
+    shadow.lineFormat.visible = false
+    shadow.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    shadow.tags.add('PrezoWidgetRole', 'shadow')
+
+    const container = slide.shapes.addGeometricShape('RoundRectangle', {
+      left,
+      top,
+      width,
+      height
+    })
+    container.fill.setSolidColor(style.panelColor)
+    container.lineFormat.color = style.borderColor
+    container.lineFormat.weight = 1
+    container.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    container.tags.add('PrezoWidgetRole', 'container')
+
+    const meta = slide.shapes.addTextBox(DISCUSSION_EYEBROW_TEXT, {
+      left: left + paddingX,
+      top: headerTop,
+      width: Math.max(160, textWidth),
+      height: eyebrowHeight
+    })
+    meta.textFrame.wordWrap = true
+    applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+    meta.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    meta.tags.add('PrezoWidgetRole', 'meta')
+
+    const title = slide.shapes.addTextBox(DISCUSSION_PANEL_TITLE, {
+      left: left + paddingX,
+      top: titleTop,
+      width: Math.max(160, textWidth),
+      height: titleHeight
+    })
+    title.textFrame.wordWrap = true
+    applyFont(title.textFrame.textRange, style, {
+      size: 18,
+      bold: true,
+      color: style.textColor
+    })
+    title.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    title.tags.add('PrezoWidgetRole', 'title')
+
+    const subtitle = slide.shapes.addTextBox(
+      hasSession ? buildMeta(code) : PLACEHOLDER_SUBTITLE,
+      {
+      left: left + paddingX,
+      top: subtitleTop,
+      width: Math.max(180, textWidth),
+      height: subtitleHeight
+      }
+    )
+    subtitle.textFrame.wordWrap = true
+    applyFont(subtitle.textFrame.textRange, style, { size: 13, color: style.mutedColor })
+    subtitle.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    subtitle.tags.add('PrezoWidgetRole', 'subtitle')
+
+    const badge = slide.shapes.addGeometricShape('RoundRectangle', {
+      left: left + width - paddingX - badgeWidth,
+      top: titleTop,
+      width: badgeWidth,
+      height: badgeHeight
+    })
+    badge.fill.setSolidColor(badgeFillFor(style))
+    badge.lineFormat.visible = false
+    badge.textFrame.textRange.text = buildBadgeText(
+      'audience',
+      0,
+      0,
+      DISCUSSION_WIDGET_CONFIG
+    )
+    applyFont(badge.textFrame.textRange, style, {
+      size: 11,
+      bold: true,
+      color: style.accentColor
+    })
+    badge.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    badge.tags.add('PrezoWidgetRole', 'badge')
+
+    const body = slide.shapes.addTextBox(
+      hasSession ? DISCUSSION_WIDGET_CONFIG.emptyBodyAudience : PLACEHOLDER_BODY,
+      {
+      left: left + paddingX,
+      top: bodyTop,
+      width: width - paddingX * 2,
+      height: Math.max(80, bodyHeight)
+      }
+    )
+    body.textFrame.wordWrap = true
+    applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+    body.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    body.tags.add('PrezoWidgetRole', 'body')
+
+    const itemShapes: Array<{
+      container: PowerPoint.Shape
+      text: PowerPoint.Shape
+      votes: PowerPoint.Shape
+    }> = []
+
+    for (let index = 0; index < maxItems; index += 1) {
+      const itemTop = bodyTop + index * (itemHeight + itemGap)
+      const item = slide.shapes.addGeometricShape('RoundRectangle', {
+        left: left + paddingX,
+        top: itemTop,
+        width: itemWidth,
+        height: itemHeight
+      })
+      item.fill.setSolidColor(style.cardColor)
+      item.lineFormat.color = style.borderColor
+      item.lineFormat.weight = 1
+      item.fill.transparency = 1
+      item.lineFormat.visible = false
+      item.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      item.tags.add('PrezoWidgetRole', 'item')
+
+      const question = slide.shapes.addTextBox('', {
+        left: left + paddingX + 12,
+        top: itemTop + 10 * scale,
+        width: itemWidth - 24,
+        height: 20 * scale
+      })
+      question.textFrame.wordWrap = true
+      applyFont(question.textFrame.textRange, style, {
+        size: 14,
+        color: style.textColor
+      })
+      question.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      question.tags.add('PrezoWidgetRole', 'item-text')
+
+      const votes = slide.shapes.addTextBox('', {
+        left: left + paddingX + 12,
+        top: itemTop + 30 * scale,
+        width: itemWidth - 24,
+        height: 14 * scale
+      })
+      votes.textFrame.wordWrap = true
+      applyFont(votes.textFrame.textRange, style, {
+        size: 12,
+        color: style.mutedColor
+      })
+      votes.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      votes.tags.add('PrezoWidgetRole', 'item-votes')
+
+      itemShapes.push({ container: item, text: question, votes })
+    }
+
+    shadow.load('id')
+    container.load('id')
+    title.load('id')
+    subtitle.load('id')
+    meta.load('id')
+    badge.load('id')
+    body.load('id')
+    itemShapes.forEach((item) => {
+      item.container.load('id')
+      item.text.load('id')
+      item.votes.load('id')
+    })
+    await context.sync()
+
+    const shapeIds: WidgetShapeIds = {
+      shadow: shadow.id,
+      container: container.id,
+      title: title.id,
+      subtitle: subtitle.id,
+      meta: meta.id,
+      badge: badge.id,
+      body: body.id,
+      items: itemShapes.map((item) => ({
+        container: item.container.id,
+        text: item.text.id,
+        votes: item.votes.id
+      }))
+    }
+
+    if (hasSession && sessionId) {
+      slide.tags.add(DISCUSSION_SESSION_TAG, sessionId)
+      slide.tags.delete(DISCUSSION_PENDING_TAG)
+    } else {
+      slide.tags.add(DISCUSSION_PENDING_TAG, 'true')
+      slide.tags.delete(DISCUSSION_SESSION_TAG)
+    }
+    slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
+    slide.tags.add(DISCUSSION_STYLE_TAG, JSON.stringify(style))
+    slide.tags.add(DISCUSSION_SHAPES_TAG, JSON.stringify(shapeIds))
+    await context.sync()
+  })
+}
 export async function updateQnaWidget(
   sessionId: string,
   code: string | null | undefined,
   questions: Question[],
-  prompts: QnaPrompt[]
+  prompts: QnaPrompt[],
+  config: QnaWidgetConfig = QNA_WIDGET_CONFIG
 ) {
   ensurePowerPoint()
 
   const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt]))
+  const tags = config.tags
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
     await context.sync()
 
     const slideInfos = slides.items.map((slide) => {
-      const sessionTag = slide.tags.getItemOrNullObject(SESSION_TAG)
-      const pendingTag = slide.tags.getItemOrNullObject(WIDGET_PENDING_TAG)
-      const styleTag = slide.tags.getItemOrNullObject(WIDGET_STYLE_TAG)
-      const shapeTag = slide.tags.getItemOrNullObject(SHAPES_TAG)
-      const promptBindingTag = slide.tags.getItemOrNullObject(QNA_PROMPT_BINDING_TAG)
+      const sessionTag = slide.tags.getItemOrNullObject(tags.sessionTag)
+      const pendingTag = slide.tags.getItemOrNullObject(tags.pendingTag)
+      const styleTag = slide.tags.getItemOrNullObject(tags.styleTag)
+      const shapeTag = slide.tags.getItemOrNullObject(tags.shapesTag)
+      const promptBindingTag = slide.tags.getItemOrNullObject(tags.promptBindingTag)
       sessionTag.load('value')
       pendingTag.load('value')
       styleTag.load('value')
@@ -770,10 +1180,13 @@ export async function updateQnaWidget(
           ? info.promptBindingTag.value.trim()
           : ''
       const boundPrompt = boundPromptId ? promptMap.get(boundPromptId) ?? null : null
-      const resolvedMode: QnaMode = boundPromptId ? 'prompt' : 'audience'
+      const resolvedMode: QnaMode =
+        boundPromptId ? 'prompt' : config.unboundMode ?? 'audience'
       const filteredQuestions = boundPromptId
         ? questions.filter((q) => q.prompt_id === boundPromptId)
-        : questions.filter((q) => !q.prompt_id)
+        : config.useAudienceWhenUnbound
+          ? questions.filter((q) => !q.prompt_id)
+          : []
       const pendingCount = filteredQuestions.filter((q) => q.status === 'pending').length
       const approvedRaw = filteredQuestions.filter((q) => q.status === 'approved')
       const approved =
@@ -783,8 +1196,9 @@ export async function updateQnaWidget(
       const promptTitle = boundPrompt?.prompt?.trim()
       const panelTitle =
         resolvedMode === 'prompt'
-          ? promptTitle || (boundPromptId ? 'Prompt not found.' : PROMPT_PANEL_TITLE)
-          : PANEL_TITLE
+          ? promptTitle ||
+            (boundPromptId ? config.promptMissingTitle : config.promptPanelTitle)
+          : config.panelTitle
       if (!title.isNullObject) {
         const hasNewLayout = Boolean(
           (shapeIds.items && shapeIds.items.length > 0) ||
@@ -794,20 +1208,24 @@ export async function updateQnaWidget(
         )
         title.textFrame.textRange.text = hasNewLayout
           ? panelTitle
-          : buildTitle(code, resolvedMode, promptTitle ?? null)
+          : config.buildLegacyTitle(code, resolvedMode, promptTitle ?? null)
       }
       if (meta && !meta.isNullObject) {
         meta.textFrame.textRange.text =
-          resolvedMode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
+          resolvedMode === 'prompt'
+            ? config.promptEyebrowText ?? config.eyebrowText
+            : config.eyebrowText
       }
       if (subtitle && !subtitle.isNullObject) {
         subtitle.textFrame.textRange.text = buildMeta(code)
       }
       if (badge && !badge.isNullObject) {
-        badge.textFrame.textRange.text =
-          resolvedMode === 'prompt'
-            ? `Answers ${approved.length}`
-            : buildBadge(pendingCount)
+        badge.textFrame.textRange.text = buildBadgeText(
+          resolvedMode,
+          pendingCount,
+          approved.length,
+          config
+        )
       }
       if (itemShapes.length > 0) {
         const hasApproved = approved.length > 0
@@ -815,8 +1233,8 @@ export async function updateQnaWidget(
           body.textFrame.textRange.text = hasApproved
             ? ''
             : resolvedMode === 'prompt'
-              ? 'No answers yet.'
-              : 'No approved questions yet.'
+              ? config.emptyBodyPrompt
+              : config.emptyBodyAudience
         }
         itemShapes.forEach((item, index) => {
           if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
@@ -836,12 +1254,12 @@ export async function updateQnaWidget(
           item.votes.textFrame.textRange.text = `${question.votes} votes`
         })
       } else if (!body.isNullObject) {
-        body.textFrame.textRange.text = buildBody(filteredQuestions, resolvedMode)
+        body.textFrame.textRange.text = buildBody(filteredQuestions, resolvedMode, config)
       }
 
       if (isPending) {
-        info.slide.tags.add(SESSION_TAG, sessionId)
-        info.slide.tags.delete(WIDGET_PENDING_TAG)
+        info.slide.tags.add(tags.sessionTag, sessionId)
+        info.slide.tags.delete(tags.pendingTag)
       }
     }
 
@@ -1623,6 +2041,15 @@ export async function updatePollWidget(
   })
 }
 
+export async function updateDiscussionWidget(
+  sessionId: string,
+  code: string | null | undefined,
+  questions: Question[],
+  prompts: QnaPrompt[]
+) {
+  await updateQnaWidget(sessionId, code, questions, prompts, DISCUSSION_WIDGET_CONFIG)
+}
+
 export async function setQnaWidgetBinding(
   sessionId: string,
   promptId?: string | null
@@ -1671,6 +2098,56 @@ export async function setQnaWidgetBinding(
 
     slide.tags.add(SESSION_TAG, sessionId)
     slide.tags.delete(WIDGET_PENDING_TAG)
+    await context.sync()
+  })
+}
+
+export async function setDiscussionWidgetBinding(
+  sessionId: string,
+  promptId?: string | null
+) {
+  ensurePowerPoint()
+
+  await PowerPoint.run(async (context) => {
+    const slides = context.presentation.getSelectedSlides()
+    slides.load('items')
+    await context.sync()
+
+    const slide = slides.items[0]
+    if (!slide) {
+      throw new Error('Select a slide containing an open discussion widget.')
+    }
+
+    const shapesTag = slide.tags.getItemOrNullObject(DISCUSSION_SHAPES_TAG)
+    shapesTag.load('value')
+    await context.sync()
+
+    let hasWidget = !shapesTag.isNullObject && Boolean(shapesTag.value)
+    if (!hasWidget) {
+      const shapes = slide.shapes
+      shapes.load('items')
+      await context.sync()
+      const tagged = shapes.items.map((shape) => {
+        const tag = shape.tags.getItemOrNullObject(DISCUSSION_WIDGET_TAG)
+        tag.load('value')
+        return tag
+      })
+      await context.sync()
+      hasWidget = tagged.some((tag) => !tag.isNullObject && tag.value === 'true')
+    }
+
+    if (!hasWidget) {
+      throw new Error('No open discussion widget found on the selected slide.')
+    }
+
+    if (promptId) {
+      slide.tags.add(DISCUSSION_PROMPT_BINDING_TAG, promptId)
+    } else {
+      slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
+    }
+
+    slide.tags.add(DISCUSSION_SESSION_TAG, sessionId)
+    slide.tags.delete(DISCUSSION_PENDING_TAG)
     await context.sync()
   })
 }
