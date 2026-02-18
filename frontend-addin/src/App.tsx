@@ -655,21 +655,16 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                     />
                     <h2>Polls</h2>
                   </div>
-                  <div className="actions">
-                    {isPollsCollapsed ? (
-                      <span className="badge">Open {openPollCount}</span>
-                    ) : (
-                      <button onClick={() => setShowPolls(true)} disabled={!session}>
-                        Start poll
-                      </button>
-                    )}
-                  </div>
+                  <span className="badge">Open {openPollCount}</span>
                 </div>
                 {isPollsCollapsed ? null : (
                   <div className="panel-body">
                     <p className="muted">
                       Launch a poll and share it instantly with your audience.
                     </p>
+                    <button onClick={() => setShowPolls(true)} disabled={!session}>
+                      Start poll
+                    </button>
                   </div>
                 )}
               </div>
