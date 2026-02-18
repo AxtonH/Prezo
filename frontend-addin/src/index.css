@@ -296,6 +296,24 @@ button.danger:hover {
   border: 1px solid var(--border);
 }
 
+.prompt-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.prompt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prompt-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .actions {
   display: flex;
   gap: 8px;
