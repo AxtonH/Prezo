@@ -110,20 +110,6 @@ export function PromptManager({
         </button>
         {error ? <p className="error">{error}</p> : null}
       </div>
-      {onBindWidget ? (
-        <div className="poll-binding">
-          <p className="muted">
-            Select a slide with a Q&amp;A widget to bind it to a prompt below.
-          </p>
-          <div className="actions">
-            <button className="ghost" onClick={() => handleBind(null)}>
-              Bind to audience Q&amp;A
-            </button>
-          </div>
-          {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
-          {bindingError ? <p className="error">{bindingError}</p> : null}
-        </div>
-      ) : null}
       <div className="poll-list">
         {prompts.length === 0 ? (
           <p className="muted">No prompts yet. Create one to start collecting answers.</p>
@@ -206,6 +192,20 @@ export function PromptManager({
           </ul>
         )}
       </div>
+      {onBindWidget ? (
+        <div className="poll-binding">
+          <p className="muted">
+            Select a slide with a Q&amp;A widget to bind it to a prompt below.
+          </p>
+          <div className="actions">
+            <button className="ghost" onClick={() => handleBind(null)}>
+              Bind to audience Q&amp;A
+            </button>
+          </div>
+          {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
+          {bindingError ? <p className="error">{bindingError}</p> : null}
+        </div>
+      ) : null}
     </div>
   )
 }
