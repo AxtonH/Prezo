@@ -215,14 +215,6 @@ export function PromptManager({
           </div>
           {onBindDiscussionWidget ? (
             <div className="poll-binding">
-              <p className="muted">
-                Select a slide with an open discussion widget to bind it to a prompt below.
-              </p>
-              <div className="actions">
-                <button className="ghost" onClick={() => handleBind(null)}>
-                  Clear widget binding
-                </button>
-              </div>
               {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
               {bindingError ? <p className="error">{bindingError}</p> : null}
             </div>
