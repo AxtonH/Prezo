@@ -8,7 +8,7 @@
   <Version>1.0.0.1</Version>
   <ProviderName>Prezo</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="Prezo Host" />
+  <DisplayName DefaultValue="Prezo" />
   <Description DefaultValue="Prezo live Q&amp;A and polls inside PowerPoint." />
   <IconUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-32.png" />
   <SupportUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
