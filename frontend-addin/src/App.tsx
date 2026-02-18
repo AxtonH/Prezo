@@ -440,6 +440,10 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       ),
     [questions]
   )
+  const openPollCount = useMemo(
+    () => polls.filter((poll) => poll.status === 'open').length,
+    [polls]
+  )
 
   const renderQuestionList = (
     items: Question[],
@@ -549,7 +553,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                   <h2>Q&amp;A</h2>
                 </div>
                 <div className="actions">
-                  {session?.qna_open ? (
+                  {isQnaCollapsed ? (
+                    <span className="badge">Open {session?.qna_open ? 1 : 0}</span>
+                  ) : session?.qna_open ? (
                     <button className="ghost" onClick={closeQna}>
                       Close Q&amp;A
                     </button>
@@ -649,9 +655,15 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                     />
                     <h2>Polls</h2>
                   </div>
-                  <button onClick={() => setShowPolls(true)} disabled={!session}>
-                    Start poll
-                  </button>
+                  <div className="actions">
+                    {isPollsCollapsed ? (
+                      <span className="badge">Open {openPollCount}</span>
+                    ) : (
+                      <button onClick={() => setShowPolls(true)} disabled={!session}>
+                        Start poll
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {isPollsCollapsed ? null : (
                   <div className="panel-body">
