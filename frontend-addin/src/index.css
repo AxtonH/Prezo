@@ -339,6 +339,7 @@ button.danger:hover {
 
 .session-resume-header {
   align-items: center;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 10px;
 }
