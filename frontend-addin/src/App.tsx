@@ -102,6 +102,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const [showPolls, setShowPolls] = useState(false)
+  const [isQnaCollapsed, setIsQnaCollapsed] = useState(false)
+  const [isPollsCollapsed, setIsPollsCollapsed] = useState(false)
   const [qnaWidgetStatus, setQnaWidgetStatus] = useState<string | null>(null)
   const [qnaWidgetError, setQnaWidgetError] = useState<string | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
@@ -536,9 +538,15 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           <>
             <div className="panel">
               <div className="panel-header">
-                <div>
+                <div className="panel-title">
+                  <button
+                    type="button"
+                    className="collapse-toggle"
+                    aria-expanded={!isQnaCollapsed}
+                    aria-label={isQnaCollapsed ? 'Expand Q&A section' : 'Collapse Q&A section'}
+                    onClick={() => setIsQnaCollapsed((prev) => !prev)}
+                  />
                   <h2>Q&amp;A</h2>
-                  <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
                 </div>
                 <div className="actions">
                   {session?.qna_open ? (
@@ -552,60 +560,67 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                   )}
                 </div>
               </div>
-              {session.qna_open ? (
-                <p className="muted">Q&amp;A is open. New questions will appear below.</p>
-              ) : (
-                <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
+              {isQnaCollapsed ? null : (
+                <div className="panel-body">
+                  <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
+                  {session.qna_open ? (
+                    <p className="muted">Q&amp;A is open. New questions will appear below.</p>
+                  ) : (
+                    <p className="muted">
+                      Q&amp;A is closed. Open it to start collecting questions.
+                    </p>
+                  )}
+                  <div className="widget-binding">
+                    <p className="muted">
+                      Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A.
+                    </p>
+                    <div className="actions">
+                      <button className="ghost" onClick={() => bindQnaWidget(null)}>
+                        Bind to audience Q&amp;A
+                      </button>
+                    </div>
+                    {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
+                    {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
+                  </div>
+                  <div className="moderation-block">
+                    <div className="panel-header">
+                      <h3>Audience Q&amp;A</h3>
+                      <span className="badge">Pending {audiencePending.length}</span>
+                    </div>
+                    <div className="moderation-columns">
+                      <div>
+                        <div className="section-label">Pending</div>
+                        {renderQuestionList(
+                          audiencePending,
+                          'No questions waiting for approval.',
+                          (question) => (
+                            <>
+                              <button onClick={() => approveQuestion(question.id)}>
+                                Approve
+                              </button>
+                              <button className="ghost" onClick={() => hideQuestion(question.id)}>
+                                Hide
+                              </button>
+                            </>
+                          )
+                        )}
+                      </div>
+                      <div>
+                        <div className="section-label">Approved</div>
+                        {renderQuestionList(
+                          audienceApproved,
+                          'Approved questions will appear here.',
+                          (question) => (
+                            <button className="ghost" onClick={() => hideQuestion(question.id)}>
+                              Hide
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               )}
-              <div className="widget-binding">
-                <p className="muted">
-                  Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A.
-                </p>
-                <div className="actions">
-                  <button className="ghost" onClick={() => bindQnaWidget(null)}>
-                    Bind to audience Q&amp;A
-                  </button>
-                </div>
-                {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
-                {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
-              </div>
-              <div className="moderation-block">
-                <div className="panel-header">
-                  <h3>Audience Q&amp;A</h3>
-                  <span className="badge">Pending {audiencePending.length}</span>
-                </div>
-                <div className="moderation-columns">
-                  <div>
-                    <div className="section-label">Pending</div>
-                    {renderQuestionList(
-                      audiencePending,
-                      'No questions waiting for approval.',
-                      (question) => (
-                        <>
-                          <button onClick={() => approveQuestion(question.id)}>
-                            Approve
-                          </button>
-                          <button className="ghost" onClick={() => hideQuestion(question.id)}>
-                            Hide
-                          </button>
-                        </>
-                      )
-                    )}
-                  </div>
-                  <div>
-                    <div className="section-label">Approved</div>
-                    {renderQuestionList(
-                      audienceApproved,
-                      'Approved questions will appear here.',
-                      (question) => (
-                        <button className="ghost" onClick={() => hideQuestion(question.id)}>
-                          Hide
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
 
             <PromptManager
@@ -622,14 +637,29 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             {!showPolls ? (
               <div className="panel">
                 <div className="panel-header">
-                  <div>
+                  <div className="panel-title">
+                    <button
+                      type="button"
+                      className="collapse-toggle"
+                      aria-expanded={!isPollsCollapsed}
+                      aria-label={
+                        isPollsCollapsed ? 'Expand polls section' : 'Collapse polls section'
+                      }
+                      onClick={() => setIsPollsCollapsed((prev) => !prev)}
+                    />
                     <h2>Polls</h2>
-                    <p className="muted">Launch a poll and share it instantly with your audience.</p>
                   </div>
                   <button onClick={() => setShowPolls(true)} disabled={!session}>
                     Start poll
                   </button>
                 </div>
+                {isPollsCollapsed ? null : (
+                  <div className="panel-body">
+                    <p className="muted">
+                      Launch a poll and share it instantly with your audience.
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <PollManager

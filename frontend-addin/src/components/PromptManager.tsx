@@ -24,6 +24,7 @@ export function PromptManager({
   onHide,
   onBindDiscussionWidget
 }: PromptManagerProps) {
+  const [isCollapsed, setIsCollapsed] = useState(false)
   const [promptText, setPromptText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [bindingStatus, setBindingStatus] = useState<string | null>(null)
@@ -92,122 +93,142 @@ export function PromptManager({
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2>Open discussion</h2>
+        <div className="panel-title">
+          <button
+            type="button"
+            className="collapse-toggle"
+            aria-expanded={!isCollapsed}
+            aria-label={
+              isCollapsed
+                ? 'Expand open discussion section'
+                : 'Collapse open discussion section'
+            }
+            onClick={() => setIsCollapsed((prev) => !prev)}
+          />
+          <h2>Open discussion</h2>
+        </div>
         <span className="badge">
           Open {prompts.filter((prompt) => prompt.status === 'open').length}
         </span>
       </div>
-      <div className="poll-creator">
-        <div className="field">
-          <label htmlFor="prompt-question">Discussion prompt</label>
-          <input
-            id="prompt-question"
-            value={promptText}
-            onChange={(event) => setPromptText(event.target.value)}
-            placeholder="What should we cover next?"
-          />
-        </div>
-        <button className="primary" onClick={handleCreate}>
-          Create open discussion
-        </button>
-        {error ? <p className="error">{error}</p> : null}
-      </div>
-      <div className="poll-list">
-        {prompts.length === 0 ? (
-          <p className="muted">No discussions yet. Create a prompt to collect answers.</p>
-        ) : (
-          <ul className="list">
-            {prompts.map((prompt) => {
-              const promptQuestions = questions.filter(
-                (question) => question.prompt_id === prompt.id
-              )
-              const pending = promptQuestions.filter(
-                (question) => question.status === 'pending'
-              )
-              const approved = promptQuestions.filter(
-                (question) => question.status === 'approved'
-              )
-              const hasQuestions = pending.length > 0 || approved.length > 0
+      {isCollapsed ? null : (
+        <div className="panel-body">
+          <div className="poll-creator">
+            <div className="field">
+              <label htmlFor="prompt-question">Discussion prompt</label>
+              <input
+                id="prompt-question"
+                value={promptText}
+                onChange={(event) => setPromptText(event.target.value)}
+                placeholder="What should we cover next?"
+              />
+            </div>
+            <button className="primary" onClick={handleCreate}>
+              Create open discussion
+            </button>
+            {error ? <p className="error">{error}</p> : null}
+          </div>
+          <div className="poll-list">
+            {prompts.length === 0 ? (
+              <p className="muted">No discussions yet. Create a prompt to collect answers.</p>
+            ) : (
+              <ul className="list">
+                {prompts.map((prompt) => {
+                  const promptQuestions = questions.filter(
+                    (question) => question.prompt_id === prompt.id
+                  )
+                  const pending = promptQuestions.filter(
+                    (question) => question.status === 'pending'
+                  )
+                  const approved = promptQuestions.filter(
+                    (question) => question.status === 'approved'
+                  )
+                  const hasQuestions = pending.length > 0 || approved.length > 0
 
-              return (
-                <li key={prompt.id} className="list-item prompt-item">
-                  <div className="prompt-row">
-                    <div>
-                      <p>{prompt.prompt}</p>
-                      <span className="muted">
-                        {prompt.status === 'open' ? 'Open' : 'Closed'}
-                      </span>
-                    </div>
-                    <div className="actions">
-                      {prompt.status === 'open' ? (
-                        <button onClick={() => onClose(prompt.id)}>Close</button>
-                      ) : (
-                        <button onClick={() => onOpen(prompt.id)}>Open</button>
-                      )}
-                      {onBindDiscussionWidget ? (
-                        <button className="ghost" onClick={() => handleBind(prompt.id)}>
-                          Bind widget
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="prompt-moderation">
-                    {!hasQuestions ? (
-                      <p className="muted">No answers yet.</p>
-                    ) : (
-                      <div className="moderation-columns">
+                  return (
+                    <li key={prompt.id} className="list-item prompt-item">
+                      <div className="prompt-row">
                         <div>
-                          <div className="section-label">Pending</div>
-                          {renderQuestionList(
-                            pending,
-                            'No answers waiting for approval.',
-                            (question) => (
-                              <>
-                                <button onClick={() => onApprove(question.id)}>
-                                  Approve
-                                </button>
-                                <button className="ghost" onClick={() => onHide(question.id)}>
-                                  Hide
-                                </button>
-                              </>
-                            )
-                          )}
+                          <p>{prompt.prompt}</p>
+                          <span className="muted">
+                            {prompt.status === 'open' ? 'Open' : 'Closed'}
+                          </span>
                         </div>
-                        <div>
-                          <div className="section-label">Approved</div>
-                          {renderQuestionList(
-                            approved,
-                            'No approved answers yet.',
-                            (question) => (
-                              <button className="ghost" onClick={() => onHide(question.id)}>
-                                Hide
-                              </button>
-                            )
+                        <div className="actions">
+                          {prompt.status === 'open' ? (
+                            <button onClick={() => onClose(prompt.id)}>Close</button>
+                          ) : (
+                            <button onClick={() => onOpen(prompt.id)}>Open</button>
                           )}
+                          {onBindDiscussionWidget ? (
+                            <button className="ghost" onClick={() => handleBind(prompt.id)}>
+                              Bind widget
+                            </button>
+                          ) : null}
                         </div>
                       </div>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-      {onBindDiscussionWidget ? (
-        <div className="poll-binding">
-          <p className="muted">
-            Select a slide with an open discussion widget to bind it to a prompt below.
-          </p>
-          <div className="actions">
-            <button className="ghost" onClick={() => handleBind(null)}>
-              Clear widget binding
-            </button>
+                      <div className="prompt-moderation">
+                        {!hasQuestions ? (
+                          <p className="muted">No answers yet.</p>
+                        ) : (
+                          <div className="moderation-columns">
+                            <div>
+                              <div className="section-label">Pending</div>
+                              {renderQuestionList(
+                                pending,
+                                'No answers waiting for approval.',
+                                (question) => (
+                                  <>
+                                    <button onClick={() => onApprove(question.id)}>
+                                      Approve
+                                    </button>
+                                    <button
+                                      className="ghost"
+                                      onClick={() => onHide(question.id)}
+                                    >
+                                      Hide
+                                    </button>
+                                  </>
+                                )
+                              )}
+                            </div>
+                            <div>
+                              <div className="section-label">Approved</div>
+                              {renderQuestionList(
+                                approved,
+                                'No approved answers yet.',
+                                (question) => (
+                                  <button className="ghost" onClick={() => onHide(question.id)}>
+                                    Hide
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </div>
-          {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
-          {bindingError ? <p className="error">{bindingError}</p> : null}
+          {onBindDiscussionWidget ? (
+            <div className="poll-binding">
+              <p className="muted">
+                Select a slide with an open discussion widget to bind it to a prompt below.
+              </p>
+              <div className="actions">
+                <button className="ghost" onClick={() => handleBind(null)}>
+                  Clear widget binding
+                </button>
+              </div>
+              {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
+              {bindingError ? <p className="error">{bindingError}</p> : null}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
