@@ -110,6 +110,19 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
   const latestPromptsRef = useRef<QnaPrompt[]>([])
+  const pollWidgetUpdateRef = useRef<{
+    inFlight: boolean
+    queued: boolean
+    sessionId: string | null
+    code: string | null
+    polls: Poll[]
+  }>({
+    inFlight: false,
+    queued: false,
+    sessionId: null,
+    code: null,
+    polls: []
+  })
   const maxSessionsLimit = 100
 
   const handleEvent = useCallback((event: SessionEvent) => {
@@ -198,14 +211,47 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     )
   }, [session?.id, session?.code, questions, prompts])
 
+  const schedulePollWidgetUpdate = useCallback(
+    (sessionId: string, code: string | null, nextPolls: Poll[]) => {
+      const state = pollWidgetUpdateRef.current
+      state.sessionId = sessionId
+      state.code = code
+      state.polls = nextPolls
+      if (state.inFlight) {
+        state.queued = true
+        return
+      }
+
+      const runUpdate = async () => {
+        const current = pollWidgetUpdateRef.current
+        if (!current.sessionId) {
+          return
+        }
+        current.inFlight = true
+        try {
+          await updatePollWidget(current.sessionId, current.code, current.polls)
+        } catch (err) {
+          console.warn('Failed to update poll widget shapes', err)
+        } finally {
+          current.inFlight = false
+          if (current.queued) {
+            current.queued = false
+            runUpdate()
+          }
+        }
+      }
+
+      runUpdate()
+    },
+    []
+  )
+
   useEffect(() => {
     if (!session) {
       return
     }
-    void updatePollWidget(session.id, session.code, polls).catch((err) =>
-      console.warn('Failed to update poll widget shapes', err)
-    )
-  }, [session?.id, session?.code, polls])
+    schedulePollWidgetUpdate(session.id, session.code, polls)
+  }, [session?.id, session?.code, polls, schedulePollWidgetUpdate])
 
   useEffect(() => {
     if (!session || !window.Office?.context?.document?.addHandlerAsync) {
@@ -231,11 +277,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       ).catch((err) =>
         console.warn('Failed to refresh open discussion widget shapes', err)
       )
-      void updatePollWidget(
+      schedulePollWidgetUpdate(
         currentSession.id,
         currentSession.code,
         latestPollsRef.current
-      ).catch((err) => console.warn('Failed to refresh poll widget shapes', err))
+      )
     }
 
     Office.context.document.addHandlerAsync(
@@ -394,7 +440,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       return
     }
     await setPollWidgetBinding(session.id, pollId)
-    await updatePollWidget(session.id, session.code, polls)
+    schedulePollWidgetUpdate(session.id, session.code, polls)
   }
 
   const bindQnaWidget = async (promptId: string | null) => {
