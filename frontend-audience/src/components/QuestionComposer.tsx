@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import type { QnaMode, Question } from '../api/types'
 
@@ -9,8 +9,6 @@ interface QuestionComposerProps {
   approvedQuestions?: Question[]
   onUpvote?: (questionId: string) => Promise<void>
 }
-
-const PREVIEW_COUNT = 3
 
 export function QuestionComposer({
   onSubmit,
@@ -50,11 +48,7 @@ export function QuestionComposer({
   }
 
   const isPrompt = mode === 'prompt'
-  const visibleQuestions = useMemo(
-    () => (isExpanded ? approvedQuestions : approvedQuestions.slice(0, PREVIEW_COUNT)),
-    [approvedQuestions, isExpanded]
-  )
-  const hasMoreQuestions = approvedQuestions.length > PREVIEW_COUNT
+  const visibleQuestions = isExpanded ? approvedQuestions : []
 
   const handleUpvote = async (questionId: string) => {
     if (!onUpvote || votingQuestionIds[questionId] || upvotedQuestionIds[questionId]) {
@@ -100,10 +94,10 @@ export function QuestionComposer({
       {!isPrompt ? (
         <div className="top-questions">
           <div className="top-questions-header">
-            <h3>Most upvoted questions</h3>
+            <h3>View questions</h3>
             <div className="top-questions-actions">
               <span className="badge">{approvedQuestions.length}</span>
-              {hasMoreQuestions ? (
+              {approvedQuestions.length > 0 ? (
                 <button
                   type="button"
                   className={`top-questions-toggle${isExpanded ? ' is-expanded' : ''}`}
@@ -115,6 +109,8 @@ export function QuestionComposer({
           </div>
           {approvedQuestions.length === 0 ? (
             <p className="muted">No approved questions yet.</p>
+          ) : !isExpanded ? (
+            <p className="muted">Click the arrow to view approved questions.</p>
           ) : (
             <>
               <ul className="list">
