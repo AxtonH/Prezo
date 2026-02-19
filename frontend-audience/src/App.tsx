@@ -288,7 +288,12 @@ export default function App() {
     () =>
       questions
         .filter((question) => question.status === 'approved' && !question.prompt_id)
-        .sort((a, b) => b.votes - a.votes),
+        .sort((a, b) => {
+          if (b.votes !== a.votes) {
+            return b.votes - a.votes
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        }),
     [questions]
   )
 

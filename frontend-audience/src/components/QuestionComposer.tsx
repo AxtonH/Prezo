@@ -10,6 +10,8 @@ interface QuestionComposerProps {
   onUpvote?: (questionId: string) => Promise<void>
 }
 
+const PREVIEW_COUNT = 3
+
 export function QuestionComposer({
   onSubmit,
   mode,
@@ -49,10 +51,10 @@ export function QuestionComposer({
 
   const isPrompt = mode === 'prompt'
   const visibleQuestions = useMemo(
-    () => (isExpanded ? approvedQuestions : approvedQuestions.slice(0, 5)),
+    () => (isExpanded ? approvedQuestions : approvedQuestions.slice(0, PREVIEW_COUNT)),
     [approvedQuestions, isExpanded]
   )
-  const hasMoreQuestions = approvedQuestions.length > 5
+  const hasMoreQuestions = approvedQuestions.length > PREVIEW_COUNT
 
   const handleUpvote = async (questionId: string) => {
     if (!onUpvote || votingQuestionIds[questionId] || upvotedQuestionIds[questionId]) {
