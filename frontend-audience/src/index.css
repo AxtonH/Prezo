@@ -369,6 +369,15 @@ button:disabled {
   font-size: 14px;
 }
 
+.debug-panel {
+  border-style: dashed;
+}
+
+.debug-panel p {
+  font-size: 12px;
+  word-break: break-word;
+}
+
 @keyframes riseIn {
   from {
     opacity: 0;

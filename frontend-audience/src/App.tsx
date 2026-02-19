@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 
-import { api } from './api/client'
+import { api, API_BASE_URL } from './api/client'
 import type {
   Poll,
   QnaPrompt,
@@ -39,6 +39,20 @@ const parseJoinCode = () => {
 }
 
 export default function App() {
+  const [debugEnabled] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false
+    }
+    const params = new URLSearchParams(window.location.search)
+    return params.has('debug') || window.localStorage.getItem('prezo-debug') === '1'
+  })
+  const [debugInfo, setDebugInfo] = useState<{
+    lastPollVote: string | null
+    lastQuestionVote: string | null
+  }>({
+    lastPollVote: null,
+    lastQuestionVote: null
+  })
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
@@ -124,11 +138,43 @@ export default function App() {
     setPromptStatus((prev) => ({ ...prev, [promptId]: 'Answer submitted for moderation.' }))
   }
 
+  const logPollDebug = (message: string, isError = false) => {
+    if (!debugEnabled) {
+      return
+    }
+    const entry = `${new Date().toISOString()} ${message}`
+    if (isError) {
+      console.error(entry)
+    } else {
+      console.info(entry)
+    }
+    setDebugInfo((prev) => ({ ...prev, lastPollVote: entry }))
+  }
+
+  const logQuestionDebug = (message: string, isError = false) => {
+    if (!debugEnabled) {
+      return
+    }
+    const entry = `${new Date().toISOString()} ${message}`
+    if (isError) {
+      console.error(entry)
+    } else {
+      console.info(entry)
+    }
+    setDebugInfo((prev) => ({ ...prev, lastQuestionVote: entry }))
+  }
+
   const voteQuestion = async (questionId: string) => {
     if (!session) {
       return
     }
+    logQuestionDebug(
+      `voteQuestion attempt session=${session.id} question=${questionId} api=${API_BASE_URL}`
+    )
     if (questionVoteHistoryRef.current.has(questionId)) {
+      logQuestionDebug(
+        `voteQuestion ignored (already voted) session=${session.id} question=${questionId}`
+      )
       return
     }
     questionVoteHistoryRef.current.add(questionId)
@@ -141,7 +187,16 @@ export default function App() {
     )
     try {
       await api.voteQuestion(session.id, questionId, getClientId())
+      logQuestionDebug(
+        `voteQuestion success session=${session.id} question=${questionId}`
+      )
     } catch (err) {
+      logQuestionDebug(
+        `voteQuestion error session=${session.id} question=${questionId} error=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        true
+      )
       const snapshot = await api.getSnapshot(session.id).catch(() => null)
       if (snapshot) {
         setQuestions(snapshot.questions)
@@ -153,6 +208,9 @@ export default function App() {
     if (!session) {
       return
     }
+    logPollDebug(
+      `votePoll attempt session=${session.id} poll=${pollId} option=${optionId} api=${API_BASE_URL}`
+    )
     let allowMultiple = false
     let shouldSend = false
     setPolls((prev) =>
@@ -189,13 +247,25 @@ export default function App() {
       })
     )
     if (!shouldSend) {
+      logPollDebug(
+        `votePoll ignored (poll not found in state) session=${session.id} poll=${pollId}`
+      )
       return
     }
 
     if (allowMultiple) {
       try {
         await api.votePoll(session.id, pollId, optionId, getClientId())
+        logPollDebug(
+          `votePoll success session=${session.id} poll=${pollId} option=${optionId}`
+        )
       } catch (err) {
+        logPollDebug(
+          `votePoll error session=${session.id} poll=${pollId} option=${optionId} error=${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          true
+        )
         const snapshot = await api.getSnapshot(session.id).catch(() => null)
         if (snapshot) {
           setPolls(snapshot.polls)
@@ -216,7 +286,16 @@ export default function App() {
     const sendVote = async (targetOptionId: string) => {
       try {
         await api.votePoll(session.id, pollId, targetOptionId, getClientId())
+        logPollDebug(
+          `votePoll success session=${session.id} poll=${pollId} option=${targetOptionId}`
+        )
       } catch (err) {
+        logPollDebug(
+          `votePoll error session=${session.id} poll=${pollId} option=${targetOptionId} error=${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          true
+        )
         const snapshot = await api.getSnapshot(session.id).catch(() => null)
         if (snapshot) {
           setPolls(snapshot.polls)
@@ -353,6 +432,21 @@ export default function App() {
           <PollsPanel polls={polls} onVote={votePoll} />
         </div>
       )}
+      {debugEnabled ? (
+        <div className="panel debug-panel">
+          <h2>Debug</h2>
+          <p className="muted">API: {API_BASE_URL}</p>
+          <p className="muted">Session: {session?.id ?? 'none'}</p>
+          <p className="muted">Socket: {session ? socketStatus : 'disconnected'}</p>
+          <p className="muted">Polls: {polls.length}</p>
+          <p className="muted">Prompts: {prompts.length}</p>
+          <p className="muted">Questions: {questions.length}</p>
+          <p className="muted">Last poll vote: {debugInfo.lastPollVote ?? 'none'}</p>
+          <p className="muted">
+            Last question vote: {debugInfo.lastQuestionVote ?? 'none'}
+          </p>
+        </div>
+      ) : null}
     </div>
   )
 }

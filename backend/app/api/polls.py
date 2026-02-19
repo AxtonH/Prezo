@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -11,6 +12,7 @@ from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
 router = APIRouter(prefix="/sessions/{session_id}/polls", tags=["polls"])
+logger = logging.getLogger("prezo.polls")
 
 
 def make_event(event_type: str, payload: dict) -> Event:
@@ -81,6 +83,13 @@ async def vote_poll(
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
 ) -> Poll:
+    logger.info(
+        "poll_vote session=%s poll=%s option=%s client=%s",
+        session_id,
+        poll_id,
+        payload.option_id,
+        payload.client_id,
+    )
     try:
         poll = await store.vote_poll(
             session_id, poll_id, payload.option_id, payload.client_id
