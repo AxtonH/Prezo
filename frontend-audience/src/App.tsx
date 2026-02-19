@@ -47,6 +47,9 @@ export default function App() {
   const [promptStatus, setPromptStatus] = useState<Record<string, string>>({})
   const [joinError, setJoinError] = useState<string | null>(null)
   const pollVoteHistoryRef = useRef<Record<string, Set<string>>>({})
+  const pollVotePendingRef = useRef<
+    Record<string, { inFlight: boolean; queuedOptionId: string | null }>
+  >({})
   const questionVoteHistoryRef = useRef<Set<string>>(new Set())
 
   const handleEvent = useCallback((event: SessionEvent) => {
@@ -89,6 +92,7 @@ export default function App() {
     try {
       const sessionData = await api.getSessionByCode(code)
       pollVoteHistoryRef.current = {}
+      pollVotePendingRef.current = {}
       questionVoteHistoryRef.current = new Set()
       setSession(sessionData)
       const snapshot = await api.getSnapshot(sessionData.id)
@@ -124,16 +128,17 @@ export default function App() {
     if (!session) {
       return
     }
-    if (!questionVoteHistoryRef.current.has(questionId)) {
-      questionVoteHistoryRef.current.add(questionId)
-      setQuestions((prev) =>
-        prev.map((question) =>
-          question.id === questionId
-            ? { ...question, votes: question.votes + 1 }
-            : question
-        )
-      )
+    if (questionVoteHistoryRef.current.has(questionId)) {
+      return
     }
+    questionVoteHistoryRef.current.add(questionId)
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? { ...question, votes: question.votes + 1 }
+          : question
+      )
+    )
     try {
       await api.voteQuestion(session.id, questionId, getClientId())
     } catch (err) {
@@ -148,11 +153,14 @@ export default function App() {
     if (!session) {
       return
     }
+    let didChange = false
+    let allowMultiple = false
     setPolls((prev) =>
       prev.map((poll) => {
         if (poll.id !== pollId) {
           return poll
         }
+        allowMultiple = poll.allow_multiple
         const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
         if (history.has(optionId)) {
           return poll
@@ -165,6 +173,7 @@ export default function App() {
         }
         nextHistory.add(optionId)
         pollVoteHistoryRef.current[pollId] = nextHistory
+        didChange = true
         const removeSet = new Set(removeIds)
         const nextOptions = poll.options.map((option) => {
           let votes = option.votes
@@ -179,14 +188,53 @@ export default function App() {
         return { ...poll, options: nextOptions }
       })
     )
-    try {
-      await api.votePoll(session.id, pollId, optionId, getClientId())
-    } catch (err) {
-      const snapshot = await api.getSnapshot(session.id).catch(() => null)
-      if (snapshot) {
-        setPolls(snapshot.polls)
+    if (!didChange) {
+      return
+    }
+
+    if (allowMultiple) {
+      try {
+        await api.votePoll(session.id, pollId, optionId, getClientId())
+      } catch (err) {
+        const snapshot = await api.getSnapshot(session.id).catch(() => null)
+        if (snapshot) {
+          setPolls(snapshot.polls)
+        }
+      }
+      return
+    }
+
+    const pending = pollVotePendingRef.current[pollId]
+    if (pending?.inFlight) {
+      pollVotePendingRef.current[pollId] = {
+        inFlight: true,
+        queuedOptionId: optionId
+      }
+      return
+    }
+
+    const sendVote = async (targetOptionId: string) => {
+      try {
+        await api.votePoll(session.id, pollId, targetOptionId, getClientId())
+      } catch (err) {
+        const snapshot = await api.getSnapshot(session.id).catch(() => null)
+        if (snapshot) {
+          setPolls(snapshot.polls)
+        }
       }
     }
+
+    pollVotePendingRef.current[pollId] = { inFlight: true, queuedOptionId: null }
+    let currentOptionId = optionId
+    await sendVote(currentOptionId)
+    let queued = pollVotePendingRef.current[pollId]?.queuedOptionId
+    while (queued && queued !== currentOptionId) {
+      pollVotePendingRef.current[pollId] = { inFlight: true, queuedOptionId: null }
+      await sendVote(queued)
+      currentOptionId = queued
+      queued = pollVotePendingRef.current[pollId]?.queuedOptionId
+    }
+    pollVotePendingRef.current[pollId] = { inFlight: false, queuedOptionId: null }
   }
 
   const pendingCount = useMemo(
