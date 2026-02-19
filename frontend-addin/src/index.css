@@ -357,6 +357,74 @@ button.danger:hover {
   border: 1px solid var(--border);
 }
 
+.poll-item {
+  align-items: flex-start;
+}
+
+.poll-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poll-item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.poll-item-header p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.poll-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.poll-breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poll-breakdown-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.poll-breakdown-meta .muted {
+  font-size: 13px;
+}
+
+.poll-breakdown-bar {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #dbe1ea;
+}
+
+.poll-breakdown-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.18s ease;
+}
+
+.poll-item .actions {
+  align-self: flex-start;
+}
+
 .prompt-item {
   flex-direction: column;
   align-items: stretch;
@@ -658,6 +726,14 @@ button.danger:hover {
 
   .session-card-buttons button {
     flex: 1 1 auto;
+  }
+
+  .poll-item {
+    flex-direction: column;
+  }
+
+  .poll-item .actions {
+    width: 100%;
   }
 }
 
