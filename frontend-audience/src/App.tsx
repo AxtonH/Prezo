@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
 import type {
@@ -46,6 +46,8 @@ export default function App() {
   const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({})
   const [promptStatus, setPromptStatus] = useState<Record<string, string>>({})
   const [joinError, setJoinError] = useState<string | null>(null)
+  const pollVoteHistoryRef = useRef<Record<string, Set<string>>>({})
+  const questionVoteHistoryRef = useRef<Set<string>>(new Set())
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -86,7 +88,13 @@ export default function App() {
     setJoinError(null)
     try {
       const sessionData = await api.getSessionByCode(code)
+      pollVoteHistoryRef.current = {}
+      questionVoteHistoryRef.current = new Set()
       setSession(sessionData)
+      const snapshot = await api.getSnapshot(sessionData.id)
+      setQuestions(snapshot.questions)
+      setPolls(snapshot.polls)
+      setPrompts(snapshot.prompts ?? [])
     } catch (err) {
       setJoinError(err instanceof Error ? err.message : 'Session not found')
     }
@@ -116,14 +124,69 @@ export default function App() {
     if (!session) {
       return
     }
-    await api.voteQuestion(session.id, questionId, getClientId())
+    if (!questionVoteHistoryRef.current.has(questionId)) {
+      questionVoteHistoryRef.current.add(questionId)
+      setQuestions((prev) =>
+        prev.map((question) =>
+          question.id === questionId
+            ? { ...question, votes: question.votes + 1 }
+            : question
+        )
+      )
+    }
+    try {
+      await api.voteQuestion(session.id, questionId, getClientId())
+    } catch (err) {
+      const snapshot = await api.getSnapshot(session.id).catch(() => null)
+      if (snapshot) {
+        setQuestions(snapshot.questions)
+      }
+    }
   }
 
   const votePoll = async (pollId: string, optionId: string) => {
     if (!session) {
       return
     }
-    await api.votePoll(session.id, pollId, optionId, getClientId())
+    setPolls((prev) =>
+      prev.map((poll) => {
+        if (poll.id !== pollId) {
+          return poll
+        }
+        const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
+        if (history.has(optionId)) {
+          return poll
+        }
+        const nextHistory = new Set(history)
+        let removeIds: string[] = []
+        if (!poll.allow_multiple && nextHistory.size > 0) {
+          removeIds = Array.from(nextHistory)
+          nextHistory.clear()
+        }
+        nextHistory.add(optionId)
+        pollVoteHistoryRef.current[pollId] = nextHistory
+        const removeSet = new Set(removeIds)
+        const nextOptions = poll.options.map((option) => {
+          let votes = option.votes
+          if (removeSet.has(option.id)) {
+            votes = Math.max(0, votes - 1)
+          }
+          if (option.id === optionId) {
+            votes += 1
+          }
+          return votes === option.votes ? option : { ...option, votes }
+        })
+        return { ...poll, options: nextOptions }
+      })
+    )
+    try {
+      await api.votePoll(session.id, pollId, optionId, getClientId())
+    } catch (err) {
+      const snapshot = await api.getSnapshot(session.id).catch(() => null)
+      if (snapshot) {
+        setPolls(snapshot.polls)
+      }
+    }
   }
 
   const pendingCount = useMemo(
