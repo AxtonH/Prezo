@@ -20,7 +20,7 @@ export function QuestionComposer({
   const [text, setText] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [visibleCount, setVisibleCount] = useState(5)
+  const [isExpanded, setIsExpanded] = useState(false)
   const [votingQuestionIds, setVotingQuestionIds] = useState<Record<string, boolean>>({})
   const [upvotedQuestionIds, setUpvotedQuestionIds] = useState<Record<string, boolean>>({})
 
@@ -49,10 +49,10 @@ export function QuestionComposer({
 
   const isPrompt = mode === 'prompt'
   const visibleQuestions = useMemo(
-    () => approvedQuestions.slice(0, visibleCount),
-    [approvedQuestions, visibleCount]
+    () => (isExpanded ? approvedQuestions : approvedQuestions.slice(0, 5)),
+    [approvedQuestions, isExpanded]
   )
-  const hasMoreQuestions = approvedQuestions.length > visibleCount
+  const hasMoreQuestions = approvedQuestions.length > 5
 
   const handleUpvote = async (questionId: string) => {
     if (!onUpvote || votingQuestionIds[questionId] || upvotedQuestionIds[questionId]) {
@@ -99,7 +99,17 @@ export function QuestionComposer({
         <div className="top-questions">
           <div className="top-questions-header">
             <h3>Most upvoted questions</h3>
-            <span className="badge">{approvedQuestions.length}</span>
+            <div className="top-questions-actions">
+              <span className="badge">{approvedQuestions.length}</span>
+              {hasMoreQuestions ? (
+                <button
+                  type="button"
+                  className={`top-questions-toggle${isExpanded ? ' is-expanded' : ''}`}
+                  aria-label={isExpanded ? 'Show fewer questions' : 'Show all questions'}
+                  onClick={() => setIsExpanded((prev) => !prev)}
+                />
+              ) : null}
+            </div>
           </div>
           {approvedQuestions.length === 0 ? (
             <p className="muted">No approved questions yet.</p>
@@ -126,14 +136,6 @@ export function QuestionComposer({
                   )
                 })}
               </ul>
-              {hasMoreQuestions ? (
-                <button
-                  className="subtle"
-                  onClick={() => setVisibleCount((prev) => prev + 5)}
-                >
-                  Show more
-                </button>
-              ) : null}
             </>
           )}
         </div>
