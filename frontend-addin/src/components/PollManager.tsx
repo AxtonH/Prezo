@@ -147,7 +147,6 @@ export function PollManager({
                       <div className="poll-item-main">
                         <div className="poll-item-header">
                           <p>{poll.question}</p>
-                          <span className="muted">{totalVotes} votes</span>
                         </div>
                         <div className="poll-breakdown">
                           {poll.options.map((option) => {
@@ -157,12 +156,7 @@ export function PollManager({
                               <div key={option.id} className="poll-breakdown-row">
                                 <div className="poll-breakdown-meta">
                                   <span>{option.label}</span>
-                                  <span className="muted">
-                                    {option.votes} votes - {percentage}%
-                                  </span>
-                                </div>
-                                <div className="poll-breakdown-bar">
-                                  <span style={{ width: `${percentage}%` }}></span>
+                                  <span className="muted">{percentage}%</span>
                                 </div>
                               </div>
                             )

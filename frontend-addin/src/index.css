@@ -398,27 +398,12 @@ button.danger:hover {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   font-size: 14px;
 }
 
 .poll-breakdown-meta .muted {
   font-size: 13px;
-}
-
-.poll-breakdown-bar {
-  width: 100%;
-  height: 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #dbe1ea;
-}
-
-.poll-breakdown-bar span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--primary);
-  transition: width 0.18s ease;
 }
 
 .poll-item .actions {
