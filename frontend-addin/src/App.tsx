@@ -190,6 +190,27 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [session?.id, session?.code])
 
   useEffect(() => {
+    if (!session?.id) {
+      return
+    }
+    const interval = window.setInterval(() => {
+      void api
+        .getSnapshot(session.id)
+        .then((snapshot) => {
+          setSession(snapshot.session)
+          setQuestions(snapshot.questions)
+          setPolls(snapshot.polls)
+          setPrompts(snapshot.prompts ?? [])
+        })
+        .catch(() => {})
+    }, 2500)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [session?.id])
+
+  useEffect(() => {
     if (!session) {
       return
     }
