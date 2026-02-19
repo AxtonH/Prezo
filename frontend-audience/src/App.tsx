@@ -155,12 +155,14 @@ export default function App() {
     }
     let didChange = false
     let allowMultiple = false
+    let shouldSend = false
     setPolls((prev) =>
       prev.map((poll) => {
         if (poll.id !== pollId) {
           return poll
         }
         allowMultiple = poll.allow_multiple
+        shouldSend = true
         const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
         if (history.has(optionId)) {
           return poll
@@ -188,7 +190,7 @@ export default function App() {
         return { ...poll, options: nextOptions }
       })
     )
-    if (!didChange) {
+    if (!shouldSend) {
       return
     }
 
