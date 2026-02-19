@@ -140,26 +140,52 @@ export function PollManager({
               <p className="muted">No polls yet. Create one to start collecting votes.</p>
             ) : (
               <ul className="list">
-                {polls.map((poll) => (
-                  <li key={poll.id} className="list-item poll-summary-item">
-                    <div>
-                      <p>{poll.question}</p>
-                      <span className="muted">{poll.status === 'open' ? 'Active' : 'Closed'}</span>
-                    </div>
-                    <div className="actions">
-                      {poll.status === 'open' ? (
-                        <button onClick={() => onClose(poll.id)}>Close</button>
-                      ) : (
-                        <button onClick={() => onOpen(poll.id)}>Open</button>
-                      )}
-                      {onBindWidget ? (
-                        <button className="ghost" onClick={() => handleBind(poll.id)}>
-                          Bind widget
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
+                {polls.map((poll) => {
+                  const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0)
+                  return (
+                    <li key={poll.id} className="list-item poll-preview-item">
+                      <div className="poll-preview-main">
+                        <div className="poll-preview-head">
+                          <p className="poll-preview-question">{poll.question}</p>
+                          <span className="muted poll-preview-status">
+                            {poll.status === 'open' ? 'Active' : 'Closed'} • {totalVotes} votes
+                          </span>
+                        </div>
+                        <div className="poll-preview-options">
+                          {poll.options.map((option) => {
+                            const percentage =
+                              totalVotes > 0
+                                ? Math.round((option.votes / totalVotes) * 100)
+                                : 0
+                            return (
+                              <div key={option.id} className="poll-option-row">
+                                <div className="poll-option-meta">
+                                  <span className="poll-option-label">{option.label}</span>
+                                  <span className="muted">{percentage}%</span>
+                                </div>
+                                <div className="poll-option-track">
+                                  <span style={{ width: `${percentage}%` }}></span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                      <div className="actions poll-preview-actions">
+                        {poll.status === 'open' ? (
+                          <button onClick={() => onClose(poll.id)}>Close</button>
+                        ) : (
+                          <button onClick={() => onOpen(poll.id)}>Open</button>
+                        )}
+                        {onBindWidget ? (
+                          <button className="ghost" onClick={() => handleBind(poll.id)}>
+                            Bind widget
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>

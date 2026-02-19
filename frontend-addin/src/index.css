@@ -357,12 +357,75 @@ button.danger:hover {
   border: 1px solid var(--border);
 }
 
-.poll-summary-item {
+.poll-preview-item {
   align-items: flex-start;
-  flex-wrap: wrap;
+  gap: 14px;
 }
 
-.poll-summary-item .actions {
+.poll-preview-main {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.poll-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.poll-preview-question {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.poll-preview-status {
+  font-size: 12px;
+}
+
+.poll-preview-options {
+  display: grid;
+  gap: 8px;
+}
+
+.poll-option-row {
+  display: grid;
+  gap: 5px;
+}
+
+.poll-option-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.poll-option-label {
+  font-size: 14px;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.poll-option-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #dbe1ea;
+  overflow: hidden;
+}
+
+.poll-option-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width 0.18s ease;
+}
+
+.poll-preview-actions {
   margin-left: auto;
   flex-wrap: wrap;
 }
@@ -670,14 +733,19 @@ button.danger:hover {
     flex: 1 1 auto;
   }
 
-  .poll-summary-item {
+  .poll-preview-item {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .poll-summary-item .actions {
+  .poll-preview-actions {
     width: 100%;
     margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .poll-preview-actions button {
+    flex: 1 1 120px;
   }
 
 }
