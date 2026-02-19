@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { api, API_BASE_URL } from './api/client'
 import type {
@@ -61,6 +61,7 @@ export default function App() {
   const pollVotePendingRef = useRef<
     Record<string, { inFlight: boolean; queuedOptionId: string | null }>
   >({})
+  const questionVoteHistoryRef = useRef<Set<string>>(new Set())
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -103,6 +104,7 @@ export default function App() {
       const sessionData = await api.getSessionByCode(code)
       pollVoteHistoryRef.current = {}
       pollVotePendingRef.current = {}
+      questionVoteHistoryRef.current = new Set()
       setSession(sessionData)
       const snapshot = await api.getSnapshot(sessionData.id)
       setQuestions(snapshot.questions)
@@ -144,6 +146,29 @@ export default function App() {
       console.info(entry)
     }
     setDebugInfo((prev) => ({ ...prev, lastPollVote: entry }))
+  }
+
+  const voteQuestion = async (questionId: string) => {
+    if (!session || questionVoteHistoryRef.current.has(questionId)) {
+      return
+    }
+    questionVoteHistoryRef.current.add(questionId)
+    setQuestions((prev) =>
+      prev.map((question) =>
+        question.id === questionId
+          ? { ...question, votes: question.votes + 1 }
+          : question
+      )
+    )
+    try {
+      await api.voteQuestion(session.id, questionId, getClientId())
+    } catch {
+      questionVoteHistoryRef.current.delete(questionId)
+      const snapshot = await api.getSnapshot(session.id).catch(() => null)
+      if (snapshot) {
+        setQuestions(snapshot.questions)
+      }
+    }
   }
 
   const votePoll = async (pollId: string, optionId: string) => {
@@ -259,6 +284,14 @@ export default function App() {
     pollVotePendingRef.current[pollId] = { inFlight: false, queuedOptionId: null }
   }
 
+  const approvedQuestions = useMemo(
+    () =>
+      questions
+        .filter((question) => question.status === 'approved' && !question.prompt_id)
+        .sort((a, b) => b.votes - a.votes),
+    [questions]
+  )
+
   const joinCode = parseJoinCode()
   const joinLink = session?.join_url ?? `${AUDIENCE_BASE_URL}/`
 
@@ -302,6 +335,8 @@ export default function App() {
               onSubmit={submitQuestion}
               mode="audience"
               prompt={null}
+              approvedQuestions={approvedQuestions}
+              onUpvote={voteQuestion}
             />
           ) : (
             <div className="panel">

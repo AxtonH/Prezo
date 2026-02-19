@@ -1,17 +1,28 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
-import type { QnaMode } from '../api/types'
+import type { QnaMode, Question } from '../api/types'
 
 interface QuestionComposerProps {
   onSubmit: (text: string) => Promise<void>
   mode: QnaMode
   prompt?: string | null
+  approvedQuestions?: Question[]
+  onUpvote?: (questionId: string) => Promise<void>
 }
 
-export function QuestionComposer({ onSubmit, mode, prompt }: QuestionComposerProps) {
+export function QuestionComposer({
+  onSubmit,
+  mode,
+  prompt,
+  approvedQuestions = [],
+  onUpvote
+}: QuestionComposerProps) {
   const [text, setText] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [visibleCount, setVisibleCount] = useState(5)
+  const [votingQuestionIds, setVotingQuestionIds] = useState<Record<string, boolean>>({})
+  const [upvotedQuestionIds, setUpvotedQuestionIds] = useState<Record<string, boolean>>({})
 
   const handleSubmit = async () => {
     const trimmed = text.trim()
@@ -37,6 +48,28 @@ export function QuestionComposer({ onSubmit, mode, prompt }: QuestionComposerPro
   }
 
   const isPrompt = mode === 'prompt'
+  const visibleQuestions = useMemo(
+    () => approvedQuestions.slice(0, visibleCount),
+    [approvedQuestions, visibleCount]
+  )
+  const hasMoreQuestions = approvedQuestions.length > visibleCount
+
+  const handleUpvote = async (questionId: string) => {
+    if (!onUpvote || votingQuestionIds[questionId] || upvotedQuestionIds[questionId]) {
+      return
+    }
+    setVotingQuestionIds((prev) => ({ ...prev, [questionId]: true }))
+    try {
+      await onUpvote(questionId)
+      setUpvotedQuestionIds((prev) => ({ ...prev, [questionId]: true }))
+    } finally {
+      setVotingQuestionIds((prev) => {
+        const next = { ...prev }
+        delete next[questionId]
+        return next
+      })
+    }
+  }
 
   return (
     <div className="panel">
@@ -62,6 +95,49 @@ export function QuestionComposer({ onSubmit, mode, prompt }: QuestionComposerPro
         {isSending ? 'Sending...' : isPrompt ? 'Submit answer' : 'Submit question'}
       </button>
       {error ? <p className="error">{error}</p> : null}
+      {!isPrompt ? (
+        <div className="top-questions">
+          <div className="top-questions-header">
+            <h3>Most upvoted questions</h3>
+            <span className="badge">{approvedQuestions.length}</span>
+          </div>
+          {approvedQuestions.length === 0 ? (
+            <p className="muted">No approved questions yet.</p>
+          ) : (
+            <>
+              <ul className="list">
+                {visibleQuestions.map((question) => {
+                  const isVoting = votingQuestionIds[question.id] ?? false
+                  const hasUpvoted = upvotedQuestionIds[question.id] ?? false
+                  return (
+                    <li key={question.id} className="list-item top-question-item">
+                      <div className="top-question-main">
+                        <p>{question.text}</p>
+                        <span className="muted">{question.votes} votes</span>
+                      </div>
+                      <button
+                        className={hasUpvoted ? 'subtle' : ''}
+                        onClick={() => handleUpvote(question.id)}
+                        disabled={isVoting || hasUpvoted}
+                      >
+                        {isVoting ? 'Voting...' : hasUpvoted ? 'Upvoted' : 'Upvote'}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+              {hasMoreQuestions ? (
+                <button
+                  className="subtle"
+                  onClick={() => setVisibleCount((prev) => prev + 5)}
+                >
+                  Show more
+                </button>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   )
 }
