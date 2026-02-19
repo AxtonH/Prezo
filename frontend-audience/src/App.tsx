@@ -153,7 +153,6 @@ export default function App() {
     if (!session) {
       return
     }
-    let didChange = false
     let allowMultiple = false
     let shouldSend = false
     setPolls((prev) =>
@@ -175,7 +174,6 @@ export default function App() {
         }
         nextHistory.add(optionId)
         pollVoteHistoryRef.current[pollId] = nextHistory
-        didChange = true
         const removeSet = new Set(removeIds)
         const nextOptions = poll.options.map((option) => {
           let votes = option.votes
