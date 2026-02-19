@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import { api, API_BASE_URL } from './api/client'
 import type {
@@ -12,7 +12,6 @@ import type {
 import { JoinPanel } from './components/JoinPanel'
 import { PollsPanel } from './components/PollsPanel'
 import { QuestionComposer } from './components/QuestionComposer'
-import { QuestionFeed } from './components/QuestionFeed'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { getClientId } from './utils/clientId'
 
@@ -48,10 +47,8 @@ export default function App() {
   })
   const [debugInfo, setDebugInfo] = useState<{
     lastPollVote: string | null
-    lastQuestionVote: string | null
   }>({
-    lastPollVote: null,
-    lastQuestionVote: null
+    lastPollVote: null
   })
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -64,7 +61,6 @@ export default function App() {
   const pollVotePendingRef = useRef<
     Record<string, { inFlight: boolean; queuedOptionId: string | null }>
   >({})
-  const questionVoteHistoryRef = useRef<Set<string>>(new Set())
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -107,7 +103,6 @@ export default function App() {
       const sessionData = await api.getSessionByCode(code)
       pollVoteHistoryRef.current = {}
       pollVotePendingRef.current = {}
-      questionVoteHistoryRef.current = new Set()
       setSession(sessionData)
       const snapshot = await api.getSnapshot(sessionData.id)
       setQuestions(snapshot.questions)
@@ -149,59 +144,6 @@ export default function App() {
       console.info(entry)
     }
     setDebugInfo((prev) => ({ ...prev, lastPollVote: entry }))
-  }
-
-  const logQuestionDebug = (message: string, isError = false) => {
-    if (!debugEnabled) {
-      return
-    }
-    const entry = `${new Date().toISOString()} ${message}`
-    if (isError) {
-      console.error(entry)
-    } else {
-      console.info(entry)
-    }
-    setDebugInfo((prev) => ({ ...prev, lastQuestionVote: entry }))
-  }
-
-  const voteQuestion = async (questionId: string) => {
-    if (!session) {
-      return
-    }
-    logQuestionDebug(
-      `voteQuestion attempt session=${session.id} question=${questionId} api=${API_BASE_URL}`
-    )
-    if (questionVoteHistoryRef.current.has(questionId)) {
-      logQuestionDebug(
-        `voteQuestion ignored (already voted) session=${session.id} question=${questionId}`
-      )
-      return
-    }
-    questionVoteHistoryRef.current.add(questionId)
-    setQuestions((prev) =>
-      prev.map((question) =>
-        question.id === questionId
-          ? { ...question, votes: question.votes + 1 }
-          : question
-      )
-    )
-    try {
-      await api.voteQuestion(session.id, questionId, getClientId())
-      logQuestionDebug(
-        `voteQuestion success session=${session.id} question=${questionId}`
-      )
-    } catch (err) {
-      logQuestionDebug(
-        `voteQuestion error session=${session.id} question=${questionId} error=${
-          err instanceof Error ? err.message : String(err)
-        }`,
-        true
-      )
-      const snapshot = await api.getSnapshot(session.id).catch(() => null)
-      if (snapshot) {
-        setQuestions(snapshot.questions)
-      }
-    }
   }
 
   const votePoll = async (pollId: string, optionId: string) => {
@@ -317,21 +259,6 @@ export default function App() {
     pollVotePendingRef.current[pollId] = { inFlight: false, queuedOptionId: null }
   }
 
-  const pendingCount = useMemo(
-    () =>
-      questions.filter((question) => question.status === 'pending' && !question.prompt_id)
-        .length,
-    [questions]
-  )
-
-  const approvedQuestions = useMemo(
-    () =>
-      questions
-        .filter((question) => question.status === 'approved' && !question.prompt_id)
-        .sort((a, b) => b.votes - a.votes),
-    [questions]
-  )
-
   const joinCode = parseJoinCode()
   const joinLink = session?.join_url ?? `${AUDIENCE_BASE_URL}/`
 
@@ -424,12 +351,6 @@ export default function App() {
               </div>
             </div>
           ) : null}
-          <QuestionFeed
-            approved={approvedQuestions}
-            pendingCount={pendingCount}
-            onVote={voteQuestion}
-            mode="audience"
-          />
           <PollsPanel polls={polls} onVote={votePoll} />
         </div>
       )}
@@ -443,9 +364,6 @@ export default function App() {
           <p className="muted">Prompts: {prompts.length}</p>
           <p className="muted">Questions: {questions.length}</p>
           <p className="muted">Last poll vote: {debugInfo.lastPollVote ?? 'none'}</p>
-          <p className="muted">
-            Last question vote: {debugInfo.lastQuestionVote ?? 'none'}
-          </p>
         </div>
       ) : null}
     </div>
