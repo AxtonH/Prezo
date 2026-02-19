@@ -98,8 +98,7 @@ export function PromptManager({
         <div className="panel-title">
           <button
             type="button"
-            className="collapse-toggle"
-            aria-expanded={!isCollapsed}
+            className={`collapse-toggle${isCollapsed ? '' : ' is-expanded'}`}
             aria-label={
               isCollapsed
                 ? 'Expand open discussion section'

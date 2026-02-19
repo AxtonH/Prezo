@@ -77,8 +77,7 @@ export function PollManager({
         <div className="panel-title">
           <button
             type="button"
-            className="collapse-toggle"
-            aria-expanded={!isCollapsed}
+            className={`collapse-toggle${isCollapsed ? '' : ' is-expanded'}`}
             aria-label={isCollapsed ? 'Expand polls section' : 'Collapse polls section'}
             onClick={() => setIsCollapsed((prev) => !prev)}
           />

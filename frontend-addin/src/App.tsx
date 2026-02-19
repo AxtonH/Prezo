@@ -614,8 +614,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 <div className="panel-title">
                   <button
                     type="button"
-                    className="collapse-toggle"
-                    aria-expanded={!isQnaCollapsed}
+                    className={`collapse-toggle${isQnaCollapsed ? '' : ' is-expanded'}`}
                     aria-label={isQnaCollapsed ? 'Expand Q&A section' : 'Collapse Q&A section'}
                     onClick={() => setIsQnaCollapsed((prev) => !prev)}
                   />
@@ -715,8 +714,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                   <div className="panel-title">
                     <button
                       type="button"
-                      className="collapse-toggle"
-                      aria-expanded={!isPollsCollapsed}
+                      className={`collapse-toggle${isPollsCollapsed ? '' : ' is-expanded'}`}
                       aria-label={
                         isPollsCollapsed ? 'Expand polls section' : 'Collapse polls section'
                       }
