@@ -29,6 +29,8 @@ export function PromptManager({
   const [error, setError] = useState<string | null>(null)
   const [bindingStatus, setBindingStatus] = useState<string | null>(null)
   const [bindingError, setBindingError] = useState<string | null>(null)
+  const openCount = prompts.filter((prompt) => prompt.status === 'open').length
+  const statusLabel = openCount > 0 ? `Active ${openCount}` : 'Inactive'
 
   const handleCreate = async () => {
     const trimmed = promptText.trim()
@@ -107,9 +109,7 @@ export function PromptManager({
           />
           <h2>Open discussion</h2>
         </div>
-        <span className="badge">
-          Open {prompts.filter((prompt) => prompt.status === 'open').length}
-        </span>
+        <span className="badge">{statusLabel}</span>
       </div>
       {isCollapsed ? null : (
         <div className="panel-body">

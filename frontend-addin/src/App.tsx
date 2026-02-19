@@ -444,6 +444,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     () => polls.filter((poll) => poll.status === 'open').length,
     [polls]
   )
+  const qnaStatusLabel = session?.qna_open ? 'Active 1' : 'Inactive'
+  const pollStatusLabel = openPollCount > 0 ? `Active ${openPollCount}` : 'Inactive'
 
   const renderQuestionList = (
     items: Question[],
@@ -554,7 +556,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 </div>
                 <div className="actions">
                   {isQnaCollapsed ? (
-                    <span className="badge">Open {session?.qna_open ? 1 : 0}</span>
+                    <span className="badge">{qnaStatusLabel}</span>
                   ) : session?.qna_open ? (
                     <button className="ghost" onClick={closeQna}>
                       Close Q&amp;A
@@ -655,7 +657,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                     />
                     <h2>Polls</h2>
                   </div>
-                  <span className="badge">Open {openPollCount}</span>
+                  <span className="badge">{pollStatusLabel}</span>
                 </div>
                 {isPollsCollapsed ? null : (
                   <div className="panel-body">

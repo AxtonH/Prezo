@@ -24,6 +24,8 @@ export function PollManager({
   const [error, setError] = useState<string | null>(null)
   const [bindingStatus, setBindingStatus] = useState<string | null>(null)
   const [bindingError, setBindingError] = useState<string | null>(null)
+  const activeCount = polls.filter((poll) => poll.status === 'open').length
+  const statusLabel = activeCount > 0 ? `Active ${activeCount}` : 'Inactive'
 
   const updateOption = (index: number, value: string) => {
     setOptions((prev) => prev.map((option, idx) => (idx === index ? value : option)))
@@ -82,7 +84,7 @@ export function PollManager({
           />
           <h2>Polls</h2>
         </div>
-        <span className="badge">Active {polls.filter((poll) => poll.status === 'open').length}</span>
+        <span className="badge">{statusLabel}</span>
       </div>
       {isCollapsed ? null : (
         <div className="panel-body">
