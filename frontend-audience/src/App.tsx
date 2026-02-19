@@ -296,6 +296,14 @@ export default function App() {
         }),
     [questions]
   )
+  const activePolls = useMemo(
+    () => polls.filter((poll) => poll.status === 'open'),
+    [polls]
+  )
+  const activePrompts = useMemo(
+    () => prompts.filter((prompt) => prompt.status === 'open'),
+    [prompts]
+  )
 
   const joinCode = parseJoinCode()
   const joinLink = session?.join_url ?? `${AUDIENCE_BASE_URL}/`
@@ -343,20 +351,13 @@ export default function App() {
               approvedQuestions={approvedQuestions}
               onUpvote={voteQuestion}
             />
-          ) : (
-            <div className="panel">
-              <h2>Q&amp;A closed</h2>
-              <p className="muted">
-                The host hasn&apos;t opened Q&amp;A yet. Check back once it goes live.
-              </p>
-            </div>
-          )}
-          {prompts.length > 0 ? (
+          ) : null}
+          {activePrompts.length > 0 ? (
             <div className="panel">
               <h2>Prompt questions</h2>
               <p className="muted">Share your thoughts on each prompt below.</p>
               <div className="prompt-list">
-                {prompts.map((prompt) => (
+                {activePrompts.map((prompt) => (
                   <div key={prompt.id} className="prompt-entry">
                     <div>
                       <h3>{prompt.prompt}</h3>
@@ -380,9 +381,7 @@ export default function App() {
                           Send
                         </button>
                       </div>
-                    ) : (
-                      <p className="muted">Prompt closed.</p>
-                    )}
+                    ) : null}
                     {promptStatus[prompt.id] ? (
                       <p className="muted">{promptStatus[prompt.id]}</p>
                     ) : null}
@@ -391,7 +390,9 @@ export default function App() {
               </div>
             </div>
           ) : null}
-          <PollsPanel polls={polls} onVote={votePoll} />
+          {activePolls.length > 0 ? (
+            <PollsPanel polls={activePolls} onVote={votePoll} />
+          ) : null}
         </div>
       )}
       {debugEnabled ? (
