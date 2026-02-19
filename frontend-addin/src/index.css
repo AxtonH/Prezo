@@ -358,12 +358,15 @@ button.danger:hover {
 }
 
 .poll-preview-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  gap: 14px;
+  column-gap: 10px;
+  row-gap: 8px;
 }
 
 .poll-preview-main {
-  flex: 1 1 280px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -426,8 +429,9 @@ button.danger:hover {
 }
 
 .poll-preview-actions {
-  margin-left: auto;
   flex-wrap: wrap;
+  align-self: flex-start;
+  justify-content: flex-end;
 }
 
 .prompt-item {
@@ -734,13 +738,11 @@ button.danger:hover {
   }
 
   .poll-preview-item {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
   }
 
   .poll-preview-actions {
     width: 100%;
-    margin-left: 0;
     justify-content: flex-start;
   }
 
