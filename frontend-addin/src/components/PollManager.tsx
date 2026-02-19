@@ -130,14 +130,6 @@ export function PollManager({
           </div>
           {onBindWidget ? (
             <div className="poll-binding">
-              <p className="muted">
-                Select a slide with a poll widget, then choose which poll it should show.
-              </p>
-              <div className="actions">
-                <button className="ghost" onClick={() => handleBind(null)}>
-                  Follow latest poll
-                </button>
-              </div>
               {bindingStatus ? <p className="muted">{bindingStatus}</p> : null}
               {bindingError ? <p className="error">{bindingError}</p> : null}
             </div>
