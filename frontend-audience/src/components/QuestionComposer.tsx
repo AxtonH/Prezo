@@ -110,7 +110,7 @@ export function QuestionComposer({
           {approvedQuestions.length === 0 ? (
             <p className="muted">No approved questions yet.</p>
           ) : !isExpanded ? (
-            <p className="muted">Click the arrow to view approved questions.</p>
+            <p className="muted">Click the arrow to view and upvote questions.</p>
           ) : (
             <>
               <ul className="list">
