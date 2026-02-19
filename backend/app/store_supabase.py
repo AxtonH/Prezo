@@ -418,15 +418,70 @@ class SupabaseStore:
 
         if client_id:
             if not poll.get("allow_multiple"):
-                existing = await self._select(
+                existing_votes = await self._select(
+                    "poll_votes",
+                    {
+                        "select": "id, option_id",
+                        "poll_id": f"eq.{poll_id}",
+                        "client_id": f"eq.{client_id}",
+                    },
+                )
+                if existing_votes:
+                    if any(row.get("option_id") == option_id for row in existing_votes):
+                        options = await self._select(
+                            "poll_options",
+                            {
+                                "select": "*",
+                                "poll_id": f"eq.{poll_id}",
+                                "order": "position.asc",
+                            },
+                        )
+                        return self._to_poll(poll, options)
+
+                    await self._request(
+                        "DELETE",
+                        "poll_votes",
+                        params={
+                            "poll_id": f"eq.{poll_id}",
+                            "client_id": f"eq.{client_id}",
+                        },
+                    )
+                    for row in existing_votes:
+                        previous_option_id = row.get("option_id")
+                        if not previous_option_id:
+                            continue
+                        previous_option_rows = await self._select(
+                            "poll_options",
+                            {
+                                "select": "id, votes",
+                                "poll_id": f"eq.{poll_id}",
+                                "id": f"eq.{previous_option_id}",
+                            },
+                        )
+                        if not previous_option_rows:
+                            continue
+                        previous_option = previous_option_rows[0]
+                        updated_prev_votes = max(
+                            0, (previous_option.get("votes") or 0) - 1
+                        )
+                        await self._request(
+                            "PATCH",
+                            "poll_options",
+                            params={"id": f"eq.{previous_option_id}"},
+                            json={"votes": updated_prev_votes},
+                            prefer="return=representation",
+                        )
+            else:
+                existing_option = await self._select(
                     "poll_votes",
                     {
                         "select": "id",
                         "poll_id": f"eq.{poll_id}",
                         "client_id": f"eq.{client_id}",
+                        "option_id": f"eq.{option_id}",
                     },
                 )
-                if existing:
+                if existing_option:
                     options = await self._select(
                         "poll_options",
                         {
@@ -436,26 +491,6 @@ class SupabaseStore:
                         },
                     )
                     return self._to_poll(poll, options)
-
-            existing_option = await self._select(
-                "poll_votes",
-                {
-                    "select": "id",
-                    "poll_id": f"eq.{poll_id}",
-                    "client_id": f"eq.{client_id}",
-                    "option_id": f"eq.{option_id}",
-                },
-            )
-            if existing_option:
-                options = await self._select(
-                    "poll_options",
-                    {
-                        "select": "*",
-                        "poll_id": f"eq.{poll_id}",
-                        "order": "position.asc",
-                    },
-                )
-                return self._to_poll(poll, options)
 
             await self._request(
                 "POST",

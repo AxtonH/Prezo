@@ -343,17 +343,23 @@ class InMemoryStore:
             poll = self._get_poll(session_id, poll_id)
             if poll.status != PollStatus.open:
                 raise ConflictError("poll is closed")
+            option = next((opt for opt in poll.options if opt.id == option_id), None)
+            if not option:
+                raise NotFoundError("option not found")
             if client_id:
                 history = self._poll_votes[poll_id].get(client_id, set())
                 if option_id in history:
                     return self._to_poll(poll)
                 if not poll.allow_multiple and history:
-                    return self._to_poll(poll)
+                    for previous_id in list(history):
+                        previous_option = next(
+                            (opt for opt in poll.options if opt.id == previous_id), None
+                        )
+                        if previous_option:
+                            previous_option.votes = max(0, previous_option.votes - 1)
+                    history = set()
                 history.add(option_id)
                 self._poll_votes[poll_id][client_id] = history
-            option = next((opt for opt in poll.options if opt.id == option_id), None)
-            if not option:
-                raise NotFoundError("option not found")
             option.votes += 1
             return self._to_poll(poll)
 
