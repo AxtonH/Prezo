@@ -208,31 +208,38 @@ export default function App() {
     if (!session) {
       return
     }
+    const poll = polls.find((entry) => entry.id === pollId)
+    if (!poll) {
+      logPollDebug(
+        `votePoll ignored (poll not found in state) session=${session.id} poll=${pollId}`
+      )
+      return
+    }
     logPollDebug(
       `votePoll attempt session=${session.id} poll=${pollId} option=${optionId} api=${API_BASE_URL}`
     )
-    let allowMultiple = false
-    let shouldSend = false
+    const allowMultiple = poll.allow_multiple
+    const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
+    if (history.has(optionId)) {
+      logPollDebug(
+        `votePoll ignored (already selected) session=${session.id} poll=${pollId} option=${optionId}`
+      )
+      return
+    }
+    const nextHistory = new Set(history)
+    let removeIds: string[] = []
+    if (!allowMultiple && nextHistory.size > 0) {
+      removeIds = Array.from(nextHistory)
+      nextHistory.clear()
+    }
+    nextHistory.add(optionId)
+    pollVoteHistoryRef.current[pollId] = nextHistory
+    const removeSet = new Set(removeIds)
     setPolls((prev) =>
       prev.map((poll) => {
         if (poll.id !== pollId) {
           return poll
         }
-        allowMultiple = poll.allow_multiple
-        shouldSend = true
-        const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
-        if (history.has(optionId)) {
-          return poll
-        }
-        const nextHistory = new Set(history)
-        let removeIds: string[] = []
-        if (!poll.allow_multiple && nextHistory.size > 0) {
-          removeIds = Array.from(nextHistory)
-          nextHistory.clear()
-        }
-        nextHistory.add(optionId)
-        pollVoteHistoryRef.current[pollId] = nextHistory
-        const removeSet = new Set(removeIds)
         const nextOptions = poll.options.map((option) => {
           let votes = option.votes
           if (removeSet.has(option.id)) {
@@ -246,12 +253,6 @@ export default function App() {
         return { ...poll, options: nextOptions }
       })
     )
-    if (!shouldSend) {
-      logPollDebug(
-        `votePoll ignored (poll not found in state) session=${session.id} poll=${pollId}`
-      )
-      return
-    }
 
     if (allowMultiple) {
       try {
