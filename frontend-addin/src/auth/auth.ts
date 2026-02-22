@@ -9,8 +9,19 @@ export interface AuthUser {
 
 const EMAIL_REDIRECT_URL = import.meta.env.VITE_SUPABASE_EMAIL_REDIRECT_URL?.toString()
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+function isDuplicateSignUpResponse(user: User | null): boolean {
+  return Array.isArray(user?.identities) && user.identities.length === 0
+}
+
 export async function signIn(email: string, password: string): Promise<User | null> {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: normalizeEmail(email),
+    password
+  })
   if (error) {
     throw new Error(error.message)
   }
@@ -18,13 +29,17 @@ export async function signIn(email: string, password: string): Promise<User | nu
 }
 
 export async function signUp(email: string, password: string): Promise<void> {
-  const { error } = await supabase.auth.signUp({
-    email,
+  const normalizedEmail = normalizeEmail(email)
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
     password,
     options: EMAIL_REDIRECT_URL ? { emailRedirectTo: EMAIL_REDIRECT_URL } : undefined
   })
   if (error) {
     throw new Error(error.message)
+  }
+  if (isDuplicateSignUpResponse(data.user)) {
+    throw new Error('An account with this email already exists. Sign in instead.')
   }
 }
 
