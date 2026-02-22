@@ -430,7 +430,8 @@ button.danger:hover {
 
 .poll-preview-actions {
   flex-wrap: wrap;
-  align-self: flex-start;
+  align-self: center;
+  align-items: center;
   justify-content: flex-end;
 }
 
