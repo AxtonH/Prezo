@@ -45,6 +45,7 @@ class Session(BaseModel):
     qna_open: bool
     qna_mode: QnaMode = QnaMode.audience
     qna_prompt: str | None = None
+    allow_host_join: bool = False
     created_at: datetime
     join_url: str | None = None
 
@@ -118,6 +119,14 @@ class SessionSnapshot(BaseModel):
 class QnaConfigUpdate(BaseModel):
     mode: QnaMode
     prompt: str | None = Field(default=None, max_length=200)
+
+
+class HostJoinRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+
+
+class HostAccessUpdate(BaseModel):
+    allow_host_join: bool
 
 
 class Event(BaseModel):

@@ -31,6 +31,10 @@ class ConflictError(Exception):
     pass
 
 
+class PermissionDeniedError(Exception):
+    pass
+
+
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -52,6 +56,7 @@ class SessionData:
     qna_open: bool
     qna_mode: QnaMode
     qna_prompt: str | None
+    allow_host_join: bool
     created_at: datetime
 
 
@@ -107,6 +112,7 @@ class InMemoryStore:
         self._question_votes: dict[str, set[str]] = defaultdict(set)
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
         self._events_by_session: dict[str, list[Event]] = defaultdict(list)
+        self._session_hosts: dict[str, set[str]] = defaultdict(set)
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         async with self._lock:
@@ -123,16 +129,20 @@ class InMemoryStore:
                 qna_open=False,
                 qna_mode=QnaMode.audience,
                 qna_prompt=None,
+                allow_host_join=False,
                 created_at=utc_now(),
             )
             self._sessions[session_id] = data
             self._sessions_by_code[code] = session_id
+            self._session_hosts[session_id].add(user_id)
             return self._to_session(data)
 
     async def get_session(self, session_id: str, user_id: str | None = None) -> Session:
         async with self._lock:
+            if user_id:
+                self._ensure_host_access(session_id, user_id)
             data = self._sessions.get(session_id)
-            if not data or (user_id and data.user_id != user_id):
+            if not data:
                 raise NotFoundError("session not found")
             return self._to_session(data)
 
@@ -153,7 +163,7 @@ class InMemoryStore:
             sessions = [
                 self._to_session(session)
                 for session in self._sessions.values()
-                if session.user_id == user_id
+                if user_id in self._session_hosts.get(session.id, set())
                 and (status is None or session.status == status)
             ]
             sessions.sort(key=lambda item: item.created_at, reverse=True)
@@ -163,7 +173,7 @@ class InMemoryStore:
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_owner_access(session_id, user_id)
             session = self._sessions.pop(session_id)
             self._sessions_by_code.pop(session.code, None)
 
@@ -182,7 +192,33 @@ class InMemoryStore:
                 self._prompts.pop(prompt_id, None)
 
             self._events_by_session.pop(session_id, None)
+            self._session_hosts.pop(session_id, None)
 
+            return self._to_session(session)
+
+    async def join_session_as_host(self, code: str, user_id: str) -> Session:
+        async with self._lock:
+            session_id = self._sessions_by_code.get(code.upper())
+            if not session_id:
+                raise NotFoundError("session not found")
+            session = self._sessions[session_id]
+            hosts = self._session_hosts[session_id]
+            if user_id in hosts:
+                return self._to_session(session)
+            if not session.allow_host_join:
+                raise PermissionDeniedError(
+                    "The original host has not allowed additional hosts for this session."
+                )
+            hosts.add(user_id)
+            return self._to_session(session)
+
+    async def set_host_join_access(
+        self, session_id: str, allow_host_join: bool, user_id: str
+    ) -> Session:
+        async with self._lock:
+            self._ensure_owner_access(session_id, user_id)
+            session = self._sessions[session_id]
+            session.allow_host_join = allow_host_join
             return self._to_session(session)
 
     async def create_question(
@@ -221,7 +257,7 @@ class InMemoryStore:
         self, session_id: str, is_open: bool, user_id: str
     ) -> Session:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             session = self._sessions[session_id]
             session.qna_open = is_open
             return self._to_session(session)
@@ -234,7 +270,7 @@ class InMemoryStore:
         user_id: str,
     ) -> Session:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             session = self._sessions[session_id]
             session.qna_mode = mode
             session.qna_prompt = prompt
@@ -244,7 +280,7 @@ class InMemoryStore:
         self, session_id: str, prompt: str, user_id: str
     ) -> QnaPrompt:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             prompt_id = uuid.uuid4().hex
             data = QnaPromptData(
                 id=prompt_id,
@@ -265,7 +301,7 @@ class InMemoryStore:
         user_id: str,
     ) -> QnaPrompt:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             prompt = self._get_prompt(session_id, prompt_id)
             prompt.status = status
             return self._to_prompt(prompt)
@@ -278,7 +314,7 @@ class InMemoryStore:
         user_id: str,
     ) -> Question:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             question = self._get_question(session_id, question_id)
             question.status = status
             return self._to_question(question)
@@ -304,7 +340,7 @@ class InMemoryStore:
         user_id: str,
     ) -> Poll:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             poll_id = uuid.uuid4().hex
             option_objs = [
                 PollOptionData(id=uuid.uuid4().hex, label=label, votes=0)
@@ -327,7 +363,7 @@ class InMemoryStore:
         self, session_id: str, poll_id: str, status: PollStatus, user_id: str
     ) -> Poll:
         async with self._lock:
-            self._ensure_session(session_id, user_id)
+            self._ensure_host_access(session_id, user_id)
             poll = self._get_poll(session_id, poll_id)
             poll.status = status
             return self._to_poll(poll)
@@ -391,10 +427,26 @@ class InMemoryStore:
         async with self._lock:
             self._events_by_session[session_id].append(event)
 
-    def _ensure_session(self, session_id: str, user_id: str | None = None) -> None:
+    def _ensure_session(self, session_id: str) -> None:
         session = self._sessions.get(session_id)
-        if not session or (user_id and session.user_id != user_id):
+        if not session:
             raise NotFoundError("session not found")
+
+    def _ensure_host_access(self, session_id: str, user_id: str) -> None:
+        session = self._sessions.get(session_id)
+        if not session:
+            raise NotFoundError("session not found")
+        if user_id not in self._session_hosts.get(session_id, set()):
+            raise NotFoundError("session not found")
+
+    def _ensure_owner_access(self, session_id: str, user_id: str) -> None:
+        session = self._sessions.get(session_id)
+        if not session:
+            raise NotFoundError("session not found")
+        if session.user_id != user_id:
+            raise PermissionDeniedError(
+                "Only the original host can perform this action."
+            )
 
     def _get_question(self, session_id: str, question_id: str) -> QuestionData:
         self._ensure_session(session_id)
@@ -426,6 +478,7 @@ class InMemoryStore:
             qna_open=data.qna_open,
             qna_mode=data.qna_mode,
             qna_prompt=data.qna_prompt,
+            allow_host_join=data.allow_host_join,
             created_at=data.created_at,
         )
 

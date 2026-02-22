@@ -18,7 +18,12 @@ from .models import (
     SessionSnapshot,
     SessionStatus,
 )
-from .store import ConflictError, NotFoundError, generate_code
+from .store import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    generate_code,
+)
 
 
 class SupabaseError(Exception):
@@ -67,8 +72,44 @@ class SupabaseStore:
         response = await self._request("GET", table, params=params)
         return response.json()
 
+    async def _get_session_row(self, session_id: str) -> dict[str, Any]:
+        rows = await self._select("sessions", {"select": "*", "id": f"eq.{session_id}"})
+        if not rows:
+            raise NotFoundError("session not found")
+        return rows[0]
+
+    async def _has_cohost_access(self, session_id: str, user_id: str) -> bool:
+        rows = await self._select(
+            "session_hosts",
+            {
+                "select": "session_id",
+                "session_id": f"eq.{session_id}",
+                "user_id": f"eq.{user_id}",
+            },
+        )
+        return bool(rows)
+
+    async def _ensure_host_access(self, session_id: str, user_id: str) -> dict[str, Any]:
+        session = await self._get_session_row(session_id)
+        if session.get("user_id") == user_id:
+            return session
+        if await self._has_cohost_access(session_id, user_id):
+            return session
+        raise NotFoundError("session not found")
+
+    async def _ensure_owner_access(
+        self, session_id: str, user_id: str
+    ) -> dict[str, Any]:
+        session = await self._get_session_row(session_id)
+        if session.get("user_id") != user_id:
+            raise PermissionDeniedError(
+                "Only the original host can perform this action."
+            )
+        return session
+
     def _to_session(self, data: dict[str, Any]) -> Session:
         payload = {k: v for k, v in data.items() if k != "user_id"}
+        payload.setdefault("allow_host_join", False)
         return Session(**payload)
 
     def _to_question(self, data: dict[str, Any]) -> Question:
@@ -97,6 +138,7 @@ class SupabaseStore:
                 "qna_open": False,
                 "qna_mode": QnaMode.audience.value,
                 "qna_prompt": None,
+                "allow_host_join": False,
             }
             try:
                 response = await self._request(
@@ -115,13 +157,11 @@ class SupabaseStore:
         raise ConflictError("failed to allocate session code")
 
     async def get_session(self, session_id: str, user_id: str | None = None) -> Session:
-        params = {"select": "*", "id": f"eq.{session_id}"}
         if user_id:
-            params["user_id"] = f"eq.{user_id}"
-        rows = await self._select("sessions", params)
-        if not rows:
-            raise NotFoundError("session not found")
-        return self._to_session(rows[0])
+            row = await self._ensure_host_access(session_id, user_id)
+            return self._to_session(row)
+        row = await self._get_session_row(session_id)
+        return self._to_session(row)
 
     async def get_session_by_code(self, code: str) -> Session:
         rows = await self._select(
@@ -137,23 +177,105 @@ class SupabaseStore:
         status: SessionStatus | None = None,
         limit: int | None = None,
     ) -> list[Session]:
-        params = {
+        owned_params = {
             "select": "*",
             "user_id": f"eq.{user_id}",
             "order": "created_at.desc",
         }
+        owned_rows = await self._select("sessions", owned_params)
+
+        cohost_links = await self._select(
+            "session_hosts",
+            {"select": "session_id", "user_id": f"eq.{user_id}"},
+        )
+        cohost_ids = sorted(
+            {
+                str(row.get("session_id"))
+                for row in cohost_links
+                if row.get("session_id")
+            }
+        )
+        cohost_rows: list[dict[str, Any]] = []
+        if cohost_ids:
+            in_list = ",".join(f'"{session_id}"' for session_id in cohost_ids)
+            cohost_rows = await self._select(
+                "sessions",
+                {"select": "*", "id": f"in.({in_list})", "order": "created_at.desc"},
+            )
+
+        rows_by_id: dict[str, dict[str, Any]] = {}
+        for row in owned_rows:
+            rows_by_id[row["id"]] = row
+        for row in cohost_rows:
+            rows_by_id.setdefault(row["id"], row)
+
+        rows = list(rows_by_id.values())
         if status:
-            params["status"] = f"eq.{status.value}"
+            rows = [row for row in rows if row.get("status") == status.value]
+        rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
         if limit:
-            params["limit"] = str(limit)
-        rows = await self._select("sessions", params)
+            rows = rows[:limit]
         return [self._to_session(row) for row in rows]
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
+        await self._ensure_owner_access(session_id, user_id)
         response = await self._request(
             "DELETE",
             "sessions",
             params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("session not found")
+        return self._to_session(data[0])
+
+    async def join_session_as_host(self, code: str, user_id: str) -> Session:
+        rows = await self._select(
+            "sessions", {"select": "*", "code": f"eq.{code.upper()}"}
+        )
+        if not rows:
+            raise NotFoundError("session not found")
+        session = rows[0]
+        session_id = session["id"]
+        owner_id = session.get("user_id")
+
+        if owner_id == user_id:
+            return self._to_session(session)
+        if await self._has_cohost_access(session_id, user_id):
+            return self._to_session(session)
+        if not session.get("allow_host_join", False):
+            raise PermissionDeniedError(
+                "The original host has not allowed additional hosts for this session."
+            )
+
+        try:
+            await self._request(
+                "POST",
+                "session_hosts",
+                json={
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "approved_by": owner_id,
+                },
+                prefer="return=representation",
+            )
+        except SupabaseError as exc:
+            if exc.status_code != 409:
+                raise
+
+        updated = await self._get_session_row(session_id)
+        return self._to_session(updated)
+
+    async def set_host_join_access(
+        self, session_id: str, allow_host_join: bool, user_id: str
+    ) -> Session:
+        await self._ensure_owner_access(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "sessions",
+            params={"id": f"eq.{session_id}"},
+            json={"allow_host_join": allow_host_join},
             prefer="return=representation",
         )
         data = response.json()
@@ -202,10 +324,11 @@ class SupabaseStore:
     async def set_qna_status(
         self, session_id: str, is_open: bool, user_id: str
     ) -> Session:
+        await self._ensure_host_access(session_id, user_id)
         response = await self._request(
             "PATCH",
             "sessions",
-            params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+            params={"id": f"eq.{session_id}"},
             json={"qna_open": is_open},
             prefer="return=representation",
         )
@@ -221,10 +344,11 @@ class SupabaseStore:
         prompt: str | None,
         user_id: str,
     ) -> Session:
+        await self._ensure_host_access(session_id, user_id)
         response = await self._request(
             "PATCH",
             "sessions",
-            params={"id": f"eq.{session_id}", "user_id": f"eq.{user_id}"},
+            params={"id": f"eq.{session_id}"},
             json={"qna_mode": mode.value, "qna_prompt": prompt},
             prefer="return=representation",
         )

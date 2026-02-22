@@ -51,6 +51,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title: title ?? null })
     }, true),
+  joinSessionAsHost: (code: string) =>
+    request<Session>('/sessions/host-join', {
+      method: 'POST',
+      body: JSON.stringify({ code })
+    }, true),
+  updateHostAccess: (sessionId: string, allowHostJoin: boolean) =>
+    request<Session>(`/sessions/${sessionId}/host-access`, {
+      method: 'POST',
+      body: JSON.stringify({ allow_host_join: allowHostJoin })
+    }, true),
   listSessions: (status?: SessionStatus, limit = 10) => {
     const params = new URLSearchParams()
     if (status) {

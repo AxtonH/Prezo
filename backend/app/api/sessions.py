@@ -9,6 +9,8 @@ from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
     Event,
+    HostAccessUpdate,
+    HostJoinRequest,
     QnaConfigUpdate,
     QnaMode,
     Session,
@@ -17,7 +19,12 @@ from ..models import (
     SessionStatus,
 )
 from ..realtime import ConnectionManager
-from ..store import ConflictError, InMemoryStore, NotFoundError
+from ..store import (
+    ConflictError,
+    InMemoryStore,
+    NotFoundError,
+    PermissionDeniedError,
+)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -40,6 +47,49 @@ async def create_session(
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return with_join_url(session)
+
+
+@router.post("/host-join", response_model=Session)
+async def join_session_as_host(
+    payload: HostJoinRequest,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> Session:
+    try:
+        session = await store.join_session_as_host(payload.code.strip().upper(), user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return with_join_url(session)
+
+
+@router.post("/{session_id}/host-access", response_model=Session)
+async def update_host_access(
+    session_id: str,
+    payload: HostAccessUpdate,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> Session:
+    try:
+        session = await store.set_host_join_access(
+            session_id, payload.allow_host_join, user.id
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    session = with_join_url(session)
+    event = Event(
+        type="host_access_updated",
+        payload={"session": session.model_dump(mode="json")},
+        ts=datetime.now(timezone.utc),
+    )
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)
+    return session
 
 
 @router.get("", response_model=list[Session])
@@ -74,6 +124,8 @@ async def delete_session(
         session = await store.delete_session(session_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return with_join_url(session)
 
 

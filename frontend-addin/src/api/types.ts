@@ -9,6 +9,7 @@ export interface Session {
   code: string
   title: string | null
   status: SessionStatus
+  allow_host_join: boolean
   qna_open: boolean
   qna_mode: QnaMode
   qna_prompt?: string | null

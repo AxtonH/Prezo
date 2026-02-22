@@ -336,15 +336,62 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     void loadSessions(defaultSessionsLimit)
   }, [loadSessions])
 
+  const hydrateSession = async (selected: Session) => {
+    const snapshot = await api.getSnapshot(selected.id)
+    setSession(snapshot.session)
+    setQuestions(snapshot.questions)
+    setPolls(snapshot.polls)
+    setPrompts(snapshot.prompts ?? [])
+    setShowPolls(snapshot.polls.length > 0)
+  }
+
   const createSession = async (title: string) => {
     setError(null)
     const created = await api.createSession(title || undefined)
     setSession(created)
+    setQuestions([])
+    setPolls([])
+    setPrompts([])
+    setShowPolls(false)
     setRecentSessions((prev) => {
       const next = upsertById(prev, created)
       const keep = prev.length || sessionsLimit
       return next.slice(0, keep)
     })
+  }
+
+  const joinSessionByCode = async (code: string) => {
+    setError(null)
+    try {
+      const joined = await api.joinSessionAsHost(code.trim().toUpperCase())
+      await hydrateSession(joined)
+      setRecentSessions((prev) => {
+        const next = upsertById(prev, joined)
+        const keep = prev.length || sessionsLimit
+        return next.slice(0, keep)
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to join session'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const setHostJoinAccess = async (allowHostJoin: boolean) => {
+    if (!session) {
+      return
+    }
+    setError(null)
+    try {
+      const updated = await api.updateHostAccess(session.id, allowHostJoin)
+      setSession(updated)
+      setRecentSessions((prev) => upsertById(prev, updated))
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to update host join access'
+      setError(message)
+      throw new Error(message)
+    }
   }
 
   const resumeSession = async (selected: Session) => {
@@ -354,11 +401,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     setPrompts([])
     setShowPolls(false)
     try {
-      const snapshot = await api.getSnapshot(selected.id)
-      setSession(snapshot.session)
-      setQuestions(snapshot.questions)
-      setPolls(snapshot.polls)
-      setPrompts(snapshot.prompts ?? [])
+      await hydrateSession(selected)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session')
     }
@@ -594,6 +637,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         <SessionSetup
           session={session}
           onCreate={createSession}
+          onJoinByCode={joinSessionByCode}
+          onSetHostJoinAccess={setHostJoinAccess}
           recentSessions={visibleSessions}
           isLoading={sessionsLoading}
           loadError={sessionsError}

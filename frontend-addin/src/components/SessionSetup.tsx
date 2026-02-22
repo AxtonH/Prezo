@@ -7,6 +7,8 @@ import { resolveJoinUrl } from '../utils/joinUrl'
 interface SessionSetupProps {
   session: Session | null
   onCreate: (title: string) => Promise<void>
+  onJoinByCode?: (code: string) => Promise<void>
+  onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
   recentSessions?: Session[]
   isLoading?: boolean
   loadError?: string | null
@@ -23,6 +25,8 @@ interface SessionSetupProps {
 export function SessionSetup({
   session,
   onCreate,
+  onJoinByCode,
+  onSetHostJoinAccess,
   recentSessions,
   isLoading = false,
   loadError,
@@ -36,19 +40,48 @@ export function SessionSetup({
   deletingSessionId = null
 }: SessionSetupProps) {
   const [title, setTitle] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
+  const [isStarting, setIsStarting] = useState(false)
+  const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isJoinMode = joinCode.trim().length > 0
 
-  const handleCreate = async () => {
+  const handleStart = async () => {
     setError(null)
-    setIsCreating(true)
+    setIsStarting(true)
     try {
-      await onCreate(title.trim())
-      setTitle('')
+      const normalizedCode = joinCode.trim().toUpperCase()
+      if (normalizedCode) {
+        if (!onJoinByCode) {
+          throw new Error('Host join is unavailable.')
+        }
+        await onJoinByCode(normalizedCode)
+        setJoinCode('')
+      } else {
+        await onCreate(title.trim())
+        setTitle('')
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create session')
+      setError(err instanceof Error ? err.message : 'Failed to start session')
     } finally {
-      setIsCreating(false)
+      setIsStarting(false)
+    }
+  }
+
+  const handleHostJoinAccessToggle = async () => {
+    if (!session || !onSetHostJoinAccess) {
+      return
+    }
+    setError(null)
+    setIsUpdatingHostAccess(true)
+    try {
+      await onSetHostJoinAccess(!session.allow_host_join)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to update co-host access'
+      )
+    } finally {
+      setIsUpdatingHostAccess(false)
     }
   }
 
@@ -82,8 +115,21 @@ export function SessionSetup({
             placeholder="Quarterly kickoff"
           />
         </div>
-        <button className="primary" onClick={handleCreate} disabled={isCreating}>
-          {isCreating ? 'Creating...' : 'Create Prezo session'}
+        <div className="field">
+          <label htmlFor="join-code">Host join code (optional)</label>
+          <input
+            id="join-code"
+            value={joinCode}
+            onChange={(event) => setJoinCode(event.target.value)}
+            placeholder="Enter a code to join another host session"
+          />
+          <p className="muted">
+            Enter a join code to join an existing host session. Leave blank to create
+            a new one.
+          </p>
+        </div>
+        <button className="primary" onClick={handleStart} disabled={isStarting}>
+          {isStarting ? (isJoinMode ? 'Joining...' : 'Creating...') : 'Start session'}
         </button>
         {error ? <p className="error">{error}</p> : null}
         {showResumeSection ? (
@@ -207,6 +253,30 @@ export function SessionSetup({
           </div>
         ) : null}
       </div>
+      {onSetHostJoinAccess ? (
+        <div className="field">
+          <label htmlFor="host-access-toggle">Co-host access</label>
+          <p className="muted">
+            {session.allow_host_join
+              ? 'Enabled. Hosts with this code can join your host console session.'
+              : 'Disabled. Only the original host can use this host console session.'}
+          </p>
+          <button
+            id="host-access-toggle"
+            type="button"
+            className="ghost"
+            disabled={isUpdatingHostAccess}
+            onClick={handleHostJoinAccessToggle}
+          >
+            {isUpdatingHostAccess
+              ? 'Saving...'
+              : session.allow_host_join
+                ? 'Disable host joining'
+                : 'Allow host joining'}
+          </button>
+        </div>
+      ) : null}
+      {error ? <p className="error">{error}</p> : null}
     </div>
   )
 }
