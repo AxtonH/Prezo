@@ -361,7 +361,7 @@ button.danger:hover {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  column-gap: 10px;
+  column-gap: 20px;
   row-gap: 8px;
 }
 
