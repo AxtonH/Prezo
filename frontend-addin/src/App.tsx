@@ -689,18 +689,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                       Q&amp;A is closed. Open it to start collecting questions.
                     </p>
                   )}
-                  <div className="widget-binding">
-                    <p className="muted">
-                      Select a slide with a Q&amp;A widget to bind it to the audience Q&amp;A.
-                    </p>
-                    <div className="actions">
-                      <button className="ghost" onClick={() => bindQnaWidget(null)}>
-                        Bind to audience Q&amp;A
-                      </button>
-                    </div>
-                    {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
-                    {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
-                  </div>
                   <div className="moderation-block">
                     <div className="panel-header">
                       <h3>Audience Q&amp;A</h3>
@@ -737,6 +725,15 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                         )}
                       </div>
                     </div>
+                  </div>
+                  <div className="widget-binding">
+                    <div className="actions">
+                      <button className="ghost" onClick={() => bindQnaWidget(null)}>
+                        Bind to audience Q&amp;A
+                      </button>
+                    </div>
+                    {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
+                    {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
                   </div>
                 </div>
               )}
