@@ -24,7 +24,7 @@ export function PromptManager({
   onHide,
   onBindDiscussionWidget
 }: PromptManagerProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const [promptText, setPromptText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [bindingStatus, setBindingStatus] = useState<string | null>(null)

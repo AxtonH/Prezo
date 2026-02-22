@@ -17,7 +17,7 @@ export function PollManager({
   onClose,
   onBindWidget
 }: PollManagerProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState<string[]>(['', ''])
   const [allowMultiple, setAllowMultiple] = useState(false)
