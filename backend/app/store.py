@@ -135,7 +135,7 @@ class InMemoryStore:
             self._sessions[session_id] = data
             self._sessions_by_code[code] = session_id
             self._session_hosts[session_id].add(user_id)
-            return self._to_session(data)
+            return self._to_session(data, user_id)
 
     async def get_session(self, session_id: str, user_id: str | None = None) -> Session:
         async with self._lock:
@@ -144,7 +144,7 @@ class InMemoryStore:
             data = self._sessions.get(session_id)
             if not data:
                 raise NotFoundError("session not found")
-            return self._to_session(data)
+            return self._to_session(data, user_id)
 
     async def get_session_by_code(self, code: str) -> Session:
         async with self._lock:
@@ -161,7 +161,7 @@ class InMemoryStore:
     ) -> list[Session]:
         async with self._lock:
             sessions = [
-                self._to_session(session)
+                self._to_session(session, user_id)
                 for session in self._sessions.values()
                 if user_id in self._session_hosts.get(session.id, set())
                 and (status is None or session.status == status)
@@ -194,7 +194,7 @@ class InMemoryStore:
             self._events_by_session.pop(session_id, None)
             self._session_hosts.pop(session_id, None)
 
-            return self._to_session(session)
+            return self._to_session(session, user_id)
 
     async def join_session_as_host(self, code: str, user_id: str) -> Session:
         async with self._lock:
@@ -204,13 +204,13 @@ class InMemoryStore:
             session = self._sessions[session_id]
             hosts = self._session_hosts[session_id]
             if user_id in hosts:
-                return self._to_session(session)
+                return self._to_session(session, user_id)
             if not session.allow_host_join:
                 raise PermissionDeniedError(
                     "The original host has not allowed additional hosts for this session."
                 )
             hosts.add(user_id)
-            return self._to_session(session)
+            return self._to_session(session, user_id)
 
     async def set_host_join_access(
         self, session_id: str, allow_host_join: bool, user_id: str
@@ -219,7 +219,7 @@ class InMemoryStore:
             self._ensure_owner_access(session_id, user_id)
             session = self._sessions[session_id]
             session.allow_host_join = allow_host_join
-            return self._to_session(session)
+            return self._to_session(session, user_id)
 
     async def create_question(
         self, session_id: str, text: str, prompt_id: str | None = None
@@ -260,7 +260,7 @@ class InMemoryStore:
             self._ensure_host_access(session_id, user_id)
             session = self._sessions[session_id]
             session.qna_open = is_open
-            return self._to_session(session)
+            return self._to_session(session, user_id)
 
     async def set_qna_config(
         self,
@@ -274,7 +274,7 @@ class InMemoryStore:
             session = self._sessions[session_id]
             session.qna_mode = mode
             session.qna_prompt = prompt
-            return self._to_session(session)
+            return self._to_session(session, user_id)
 
     async def create_qna_prompt(
         self, session_id: str, prompt: str, user_id: str
@@ -469,7 +469,9 @@ class InMemoryStore:
             raise NotFoundError("prompt not found")
         return prompt
 
-    def _to_session(self, data: SessionData) -> Session:
+    def _to_session(
+        self, data: SessionData, viewer_user_id: str | None = None
+    ) -> Session:
         return Session(
             id=data.id,
             code=data.code,
@@ -479,6 +481,11 @@ class InMemoryStore:
             qna_mode=data.qna_mode,
             qna_prompt=data.qna_prompt,
             allow_host_join=data.allow_host_join,
+            is_original_host=(
+                data.user_id == viewer_user_id
+                if viewer_user_id is not None
+                else None
+            ),
             created_at=data.created_at,
         )
 

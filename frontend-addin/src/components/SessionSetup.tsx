@@ -69,7 +69,7 @@ export function SessionSetup({
   }
 
   const handleHostJoinAccessToggle = async () => {
-    if (!session || !onSetHostJoinAccess) {
+    if (!session || !onSetHostJoinAccess || session.is_original_host !== true) {
       return
     }
     setError(null)
@@ -253,7 +253,7 @@ export function SessionSetup({
           </div>
         ) : null}
       </div>
-      {onSetHostJoinAccess ? (
+      {onSetHostJoinAccess && session.is_original_host === true ? (
         <div className="field">
           <label htmlFor="host-access-toggle">Co-host access</label>
           <p className="muted">

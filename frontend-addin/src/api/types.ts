@@ -10,6 +10,7 @@ export interface Session {
   title: string | null
   status: SessionStatus
   allow_host_join: boolean
+  is_original_host?: boolean | null
   qna_open: boolean
   qna_mode: QnaMode
   qna_prompt?: string | null

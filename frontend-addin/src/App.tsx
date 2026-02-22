@@ -38,6 +38,22 @@ const upsertById = <T extends { id: string }>(items: T[], item: T) => {
   return updated
 }
 
+const withPreservedHostRole = (
+  next: Session,
+  fallback?: Session | null
+): Session => {
+  if (next.is_original_host === true || next.is_original_host === false) {
+    return next
+  }
+  if (!fallback) {
+    return next
+  }
+  return {
+    ...next,
+    is_original_host: fallback.is_original_host
+  }
+}
+
 export default function App() {
   const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof getSession>>>(null)
   const [authReady, setAuthReady] = useState(false)
@@ -128,7 +144,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
       const snapshot = event.payload.snapshot as SessionSnapshot
-      setSession(snapshot.session)
+      setSession((previous) => withPreservedHostRole(snapshot.session, previous))
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
       setPrompts(snapshot.prompts ?? [])
@@ -137,7 +153,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
 
     if (event.payload.session) {
       const updated = event.payload.session as Session
-      setSession(updated)
+      setSession((previous) => withPreservedHostRole(updated, previous))
       return
     }
 
@@ -197,7 +213,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       void api
         .getSnapshot(session.id)
         .then((snapshot) => {
-          setSession(snapshot.session)
+          setSession((previous) => withPreservedHostRole(snapshot.session, previous))
           setQuestions(snapshot.questions)
           setPolls(snapshot.polls)
           setPrompts(snapshot.prompts ?? [])
@@ -338,7 +354,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
 
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
-    setSession(snapshot.session)
+    setSession((previous) =>
+      withPreservedHostRole(snapshot.session, previous ?? selected)
+    )
     setQuestions(snapshot.questions)
     setPolls(snapshot.polls)
     setPrompts(snapshot.prompts ?? [])
@@ -348,7 +366,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const createSession = async (title: string) => {
     setError(null)
     const created = await api.createSession(title || undefined)
-    setSession(created)
+    setSession((previous) => withPreservedHostRole(created, previous))
     setQuestions([])
     setPolls([])
     setPrompts([])
@@ -384,7 +402,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     setError(null)
     try {
       const updated = await api.updateHostAccess(session.id, allowHostJoin)
-      setSession(updated)
+      setSession((previous) => withPreservedHostRole(updated, previous))
       setRecentSessions((prev) => upsertById(prev, updated))
     } catch (err) {
       const message =
@@ -425,7 +443,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       return
     }
     const updated = await api.openQna(session.id)
-    setSession(updated)
+    setSession((previous) => withPreservedHostRole(updated, previous))
   }
 
   const closeQna = async () => {
@@ -433,7 +451,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       return
     }
     const updated = await api.closeQna(session.id)
-    setSession(updated)
+    setSession((previous) => withPreservedHostRole(updated, previous))
   }
 
   const approveQuestion = async (questionId: string) => {

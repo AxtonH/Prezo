@@ -107,9 +107,15 @@ class SupabaseStore:
             )
         return session
 
-    def _to_session(self, data: dict[str, Any]) -> Session:
+    def _to_session(
+        self, data: dict[str, Any], viewer_user_id: str | None = None
+    ) -> Session:
+        is_original_host: bool | None = None
+        if viewer_user_id is not None:
+            is_original_host = data.get("user_id") == viewer_user_id
         payload = {k: v for k, v in data.items() if k != "user_id"}
         payload.setdefault("allow_host_join", False)
+        payload["is_original_host"] = is_original_host
         return Session(**payload)
 
     def _to_question(self, data: dict[str, Any]) -> Question:
@@ -153,13 +159,13 @@ class SupabaseStore:
                 raise
             data = response.json()
             if data:
-                return self._to_session(data[0])
+                return self._to_session(data[0], user_id)
         raise ConflictError("failed to allocate session code")
 
     async def get_session(self, session_id: str, user_id: str | None = None) -> Session:
         if user_id:
             row = await self._ensure_host_access(session_id, user_id)
-            return self._to_session(row)
+            return self._to_session(row, user_id)
         row = await self._get_session_row(session_id)
         return self._to_session(row)
 
@@ -215,7 +221,7 @@ class SupabaseStore:
         rows.sort(key=lambda row: str(row.get("created_at", "")), reverse=True)
         if limit:
             rows = rows[:limit]
-        return [self._to_session(row) for row in rows]
+        return [self._to_session(row, user_id) for row in rows]
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         await self._ensure_owner_access(session_id, user_id)
@@ -228,7 +234,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
-        return self._to_session(data[0])
+        return self._to_session(data[0], user_id)
 
     async def join_session_as_host(self, code: str, user_id: str) -> Session:
         rows = await self._select(
@@ -241,9 +247,9 @@ class SupabaseStore:
         owner_id = session.get("user_id")
 
         if owner_id == user_id:
-            return self._to_session(session)
+            return self._to_session(session, user_id)
         if await self._has_cohost_access(session_id, user_id):
-            return self._to_session(session)
+            return self._to_session(session, user_id)
         if not session.get("allow_host_join", False):
             raise PermissionDeniedError(
                 "The original host has not allowed additional hosts for this session."
@@ -265,7 +271,7 @@ class SupabaseStore:
                 raise
 
         updated = await self._get_session_row(session_id)
-        return self._to_session(updated)
+        return self._to_session(updated, user_id)
 
     async def set_host_join_access(
         self, session_id: str, allow_host_join: bool, user_id: str
@@ -281,7 +287,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
-        return self._to_session(data[0])
+        return self._to_session(data[0], user_id)
 
     async def create_question(
         self, session_id: str, text: str, prompt_id: str | None = None
@@ -335,7 +341,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
-        return self._to_session(data[0])
+        return self._to_session(data[0], user_id)
 
     async def set_qna_config(
         self,
@@ -355,7 +361,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
-        return self._to_session(data[0])
+        return self._to_session(data[0], user_id)
 
     async def create_qna_prompt(
         self, session_id: str, prompt: str, user_id: str

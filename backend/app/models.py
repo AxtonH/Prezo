@@ -46,6 +46,7 @@ class Session(BaseModel):
     qna_mode: QnaMode = QnaMode.audience
     qna_prompt: str | None = None
     allow_host_join: bool = False
+    is_original_host: bool | None = None
     created_at: datetime
     join_url: str | None = None
 
