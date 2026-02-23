@@ -54,6 +54,7 @@ type PollWidgetShapeIds = {
   group?: string
   items?: Array<{
     label: string
+    group?: string
     bg: string
     fill: string
   }>
@@ -1302,7 +1303,8 @@ export async function insertPollWidget(
       if (!existingShapesTag.isNullObject && existingShapesTag.value) {
         try {
           const parsed = JSON.parse(existingShapesTag.value) as Partial<PollWidgetShapeIds>
-          const itemIds = parsed.items?.flatMap((item) => [item.label, item.bg, item.fill]) ?? []
+          const itemIds =
+            parsed.items?.flatMap((item) => [item.label, item.group, item.bg, item.fill]) ?? []
           const ids = (parsed.group
             ? [parsed.group]
             : [
@@ -1402,6 +1404,7 @@ export async function insertPollWidget(
     const fullBarWidth = width - paddingX * 2
     const itemShapes: Array<{
       label: PowerPoint.Shape
+      group: PowerPoint.Shape
       bg: PowerPoint.Shape
       fill: PowerPoint.Shape
     }> = []
@@ -1462,10 +1465,15 @@ export async function insertPollWidget(
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
+      const barGroup = slide.shapes.addGroup([bg, fill])
+      barGroup.tags.add(POLL_WIDGET_TAG, 'true')
+      barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+
       label.load('id')
+      barGroup.load('id')
       bg.load('id')
       fill.load('id')
-      itemShapes.push({ label, bg, fill })
+      itemShapes.push({ label, group: barGroup, bg, fill })
     }
 
     shadow.load('id')
@@ -1481,6 +1489,7 @@ export async function insertPollWidget(
       question: question.id,
       items: itemShapes.map((item) => ({
         label: item.label.id,
+        group: item.group.id,
         bg: item.bg.id,
         fill: item.fill.id
       }))
@@ -1535,6 +1544,7 @@ export async function updatePollWidget(
       const labels: PowerPoint.Shape[] = []
       const bars: PowerPoint.Shape[] = []
       const fills: PowerPoint.Shape[] = []
+      const barGroups: PowerPoint.Shape[] = []
       let container: PowerPoint.Shape | null = null
       let shadow: PowerPoint.Shape | null = null
       let title: PowerPoint.Shape | null = null
@@ -1573,26 +1583,85 @@ export async function updatePollWidget(
             case 'poll-bar-fill':
               fills.push(shape)
               return
+            case 'poll-bar-group':
+              barGroups.push(shape)
+              return
             default:
               return
           }
         }
       })
 
-      if (!title || !container || labels.length === 0 || bars.length === 0 || fills.length === 0) {
-        return null
+      type PollBarItem = {
+        group?: PowerPoint.Shape
+        bg: PowerPoint.Shape
+        fill: PowerPoint.Shape
+      }
+
+      const groupedBarItems: PollBarItem[] = []
+      if (barGroups.length > 0) {
+        const groupScopes = barGroups.map((shape) => ({
+          shape,
+          scope: shape.group.shapes
+        }))
+        groupScopes.forEach(({ scope }) => scope.load('items'))
+        await context.sync()
+
+        const taggedGroups = groupScopes.map(({ shape, scope }) => {
+          const taggedShapes = scope.items.map((child) => {
+            const roleTag = child.tags.getItemOrNullObject('PrezoWidgetRole')
+            roleTag.load('value')
+            child.load(['id', 'left', 'top', 'width', 'height'])
+            return { child, roleTag }
+          })
+          return { shape, taggedShapes }
+        })
+        await context.sync()
+
+        taggedGroups.forEach(({ shape, taggedShapes }) => {
+          let bg: PowerPoint.Shape | null = null
+          let fill: PowerPoint.Shape | null = null
+          taggedShapes.forEach(({ child, roleTag }) => {
+            if (roleTag.isNullObject || !roleTag.value) {
+              return
+            }
+            if (roleTag.value === 'poll-bar-bg') {
+              bg = child
+              return
+            }
+            if (roleTag.value === 'poll-bar-fill') {
+              fill = child
+            }
+          })
+          if (bg && fill) {
+            groupedBarItems.push({ group: shape, bg, fill })
+          }
+        })
       }
 
       const sortKey = (shape: PowerPoint.Shape) =>
         isVerticalLayout ? shape.left : shape.top
       labels.sort((a, b) => sortKey(a) - sortKey(b))
-      bars.sort((a, b) => sortKey(a) - sortKey(b))
-      fills.sort((a, b) => sortKey(a) - sortKey(b))
-      const itemCount = Math.min(labels.length, bars.length, fills.length)
+
+      const barItems: PollBarItem[] =
+        groupedBarItems.length > 0
+          ? groupedBarItems
+          : Array.from({ length: Math.min(bars.length, fills.length) }, (_, index) => ({
+              bg: bars[index],
+              fill: fills[index]
+            }))
+      barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
+
+      if (!title || !container || labels.length === 0 || barItems.length === 0) {
+        return null
+      }
+
+      const itemCount = Math.min(labels.length, barItems.length)
       const items = Array.from({ length: itemCount }, (_, index) => ({
         label: getShapeId(labels[index]) as string,
-        bg: getShapeId(bars[index]) as string,
-        fill: getShapeId(fills[index]) as string
+        group: getShapeId(barItems[index].group),
+        bg: getShapeId(barItems[index].bg) as string,
+        fill: getShapeId(barItems[index].fill) as string
       }))
 
       return {
@@ -1717,12 +1786,26 @@ export async function updatePollWidget(
 
       let itemShapes = (shapeIds.items ?? []).map((item) => {
         const label = resolveShape(item.label)
-        const bg = resolveShape(item.bg)
-        const fill = resolveShape(item.fill)
+        const itemGroup = item.group
+          ? shapeScope
+            ? shapeScope.getItemOrNullObject(item.group)
+            : info.slide.shapes.getItemOrNullObject(item.group)
+          : null
+        if (itemGroup) {
+          itemGroup.load('id')
+        }
+        const barScope =
+          itemGroup && !itemGroup.isNullObject ? itemGroup.group.shapes : shapeScope
+        const bg = barScope
+          ? barScope.getItemOrNullObject(item.bg)
+          : info.slide.shapes.getItemOrNullObject(item.bg)
+        const fill = barScope
+          ? barScope.getItemOrNullObject(item.fill)
+          : info.slide.shapes.getItemOrNullObject(item.fill)
         label.load('id')
-        bg.load(['id', 'width', 'left'])
-        fill.load('id')
-        return { label, bg, fill }
+        bg.load(['id', 'width', 'left', 'height', 'top'])
+        fill.load(['id', 'width', 'left', 'height', 'top'])
+        return { label, group: itemGroup, bg, fill }
       })
 
       await context.sync()
@@ -1751,6 +1834,7 @@ export async function updatePollWidget(
         const labels: PowerPoint.Shape[] = []
         const bars: PowerPoint.Shape[] = []
         const fills: PowerPoint.Shape[] = []
+        const barGroups: PowerPoint.Shape[] = []
         let taggedContainer: PowerPoint.Shape | null = null
         let taggedShadow: PowerPoint.Shape | null = null
         let taggedTitle: PowerPoint.Shape | null = null
@@ -1785,21 +1869,78 @@ export async function updatePollWidget(
             case 'poll-bar-fill':
               fills.push(shape)
               break
+            case 'poll-bar-group':
+              barGroups.push(shape)
+              break
             default:
               break
           }
         })
 
-        const sortKey = (shape: PowerPoint.Shape) =>
-          isVertical ? shape.left : shape.top
+        type PollBarItem = {
+          group?: PowerPoint.Shape
+          bg: PowerPoint.Shape
+          fill: PowerPoint.Shape
+        }
+
+        const groupedBarItems: PollBarItem[] = []
+        if (barGroups.length > 0) {
+          const groupScopes = barGroups.map((shape) => ({
+            shape,
+            scope: shape.group.shapes
+          }))
+          groupScopes.forEach(({ scope }) => scope.load('items'))
+          await context.sync()
+
+          const taggedGroups = groupScopes.map(({ shape, scope }) => {
+            const taggedShapes = scope.items.map((child) => {
+              const roleTag = child.tags.getItemOrNullObject('PrezoWidgetRole')
+              roleTag.load('value')
+              child.load(['id', 'left', 'top', 'width', 'height'])
+              return { child, roleTag }
+            })
+            return { shape, taggedShapes }
+          })
+          await context.sync()
+
+          taggedGroups.forEach(({ shape, taggedShapes }) => {
+            let bg: PowerPoint.Shape | null = null
+            let fill: PowerPoint.Shape | null = null
+            taggedShapes.forEach(({ child, roleTag }) => {
+              if (roleTag.isNullObject || !roleTag.value) {
+                return
+              }
+              if (roleTag.value === 'poll-bar-bg') {
+                bg = child
+                return
+              }
+              if (roleTag.value === 'poll-bar-fill') {
+                fill = child
+              }
+            })
+            if (bg && fill) {
+              groupedBarItems.push({ group: shape, bg, fill })
+            }
+          })
+        }
+
+        const sortKey = (shape: PowerPoint.Shape) => (isVertical ? shape.left : shape.top)
         labels.sort((a, b) => sortKey(a) - sortKey(b))
-        bars.sort((a, b) => sortKey(a) - sortKey(b))
-        fills.sort((a, b) => sortKey(a) - sortKey(b))
-        const itemCount = Math.min(labels.length, bars.length, fills.length)
+        const barItems: PollBarItem[] =
+          groupedBarItems.length > 0
+            ? groupedBarItems
+            : Array.from({ length: Math.min(bars.length, fills.length) }, (_, index) => ({
+                bg: bars[index],
+                fill: fills[index]
+              }))
+        barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
+
+        const itemCount = Math.min(labels.length, barItems.length)
         const taggedItems = Array.from({ length: itemCount }, (_, index) => ({
           label: labels[index],
-          bg: bars[index],
-          fill: fills[index]
+          group: barItems[index].group ?? null,
+          bg: barItems[index].bg,
+          fill: barItems[index].fill
         }))
 
         if (taggedContainer) {
@@ -1820,8 +1961,11 @@ export async function updatePollWidget(
         if (taggedItems.length > 0) {
           itemShapes = taggedItems.map((item) => {
             item.label.load('id')
+            if (item.group) {
+              item.group.load('id')
+            }
             item.bg.load(['id', 'width', 'left', 'height', 'top'])
-            item.fill.load('id')
+            item.fill.load(['id', 'width', 'left', 'height', 'top'])
             return item
           })
           await context.sync()
@@ -1854,12 +1998,133 @@ export async function updatePollWidget(
               taggedItems.length > 0
                 ? taggedItems.map((item) => ({
                     label: getShapeId(item.label) as string,
+                    group: getShapeId(item.group),
                     bg: getShapeId(item.bg) as string,
                     fill: getShapeId(item.fill) as string
                   }))
                 : shapeIds.items
           }
           info.slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(resolvedShapeIds))
+        }
+      }
+
+      if (!shapeScope) {
+        const legacyBarItems = itemShapes
+          .map((item, index) => ({ item, index }))
+          .filter(
+            ({ item }) =>
+              (!item.group || item.group.isNullObject) &&
+              !item.bg.isNullObject &&
+              !item.fill.isNullObject
+          )
+
+        if (legacyBarItems.length > 0) {
+          const createdGroups = legacyBarItems.map(({ item, index }) => {
+            const barGroup = info.slide.shapes.addGroup([item.bg, item.fill])
+            barGroup.tags.add(POLL_WIDGET_TAG, 'true')
+            barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+            barGroup.load('id')
+            const groupItems = barGroup.group.shapes
+            groupItems.load('items')
+            return { index, barGroup, groupItems }
+          })
+          await context.sync()
+
+          const taggedGroups = createdGroups.map(({ index, barGroup, groupItems }) => {
+            const taggedItems = groupItems.items.map((child) => {
+              const roleTag = child.tags.getItemOrNullObject('PrezoWidgetRole')
+              roleTag.load('value')
+              child.load(['id', 'width', 'left', 'height', 'top'])
+              return { child, roleTag }
+            })
+            return { index, barGroup, taggedItems }
+          })
+          await context.sync()
+
+          const groupedByIndex = new Map<
+            number,
+            { group: PowerPoint.Shape; bg: PowerPoint.Shape; fill: PowerPoint.Shape }
+          >()
+
+          taggedGroups.forEach(({ index, barGroup, taggedItems }) => {
+            let bg: PowerPoint.Shape | null = null
+            let fill: PowerPoint.Shape | null = null
+            taggedItems.forEach(({ child, roleTag }) => {
+              if (roleTag.isNullObject || !roleTag.value) {
+                return
+              }
+              if (roleTag.value === 'poll-bar-bg') {
+                bg = child
+                return
+              }
+              if (roleTag.value === 'poll-bar-fill') {
+                fill = child
+              }
+            })
+            if (!bg && taggedItems[0]) {
+              bg = taggedItems[0].child
+            }
+            if (!fill && taggedItems[1]) {
+              fill = taggedItems[1].child
+            }
+            if (bg && fill) {
+              groupedByIndex.set(index, { group: barGroup, bg, fill })
+            }
+          })
+
+          if (groupedByIndex.size > 0) {
+            itemShapes = itemShapes.map((item, index) => {
+              const grouped = groupedByIndex.get(index)
+              if (!grouped) {
+                return item
+              }
+              return {
+                label: item.label,
+                group: grouped.group,
+                bg: grouped.bg,
+                fill: grouped.fill
+              }
+            })
+
+            const migratedItems: Array<{
+              label: string
+              group?: string
+              bg: string
+              fill: string
+            }> = []
+            itemShapes.forEach((item) => {
+              const labelId = getShapeId(item.label)
+              const groupId = getShapeId(item.group)
+              const bgId = getShapeId(item.bg)
+              const fillId = getShapeId(item.fill)
+              if (!labelId || !bgId || !fillId) {
+                return
+              }
+              const migratedItem: {
+                label: string
+                group?: string
+                bg: string
+                fill: string
+              } = {
+                label: labelId,
+                bg: bgId,
+                fill: fillId
+              }
+              if (groupId) {
+                migratedItem.group = groupId
+              }
+              migratedItems.push(migratedItem)
+            })
+
+            if (migratedItems.length > 0) {
+              const migratedShapeIds: PollWidgetShapeIds = {
+                ...shapeIds,
+                items: migratedItems
+              }
+              shapeIds = migratedShapeIds
+              info.slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(migratedShapeIds))
+            }
+          }
         }
       }
 
@@ -1894,77 +2159,11 @@ export async function updatePollWidget(
           })
         }
       }
-      const scale = style.spacingScale
-      const paddingX = 24
-      const optionStartOffset = 108 * scale
-      const barThickness = 10 * scale * style.barThicknessScale
-      const rowHeight = Math.max(34 * scale, barThickness + 18)
-      const verticalLabelHeight = 16 * scale
-      let fullBarWidth: number | null = null
-      let optionStartTop: number | null = null
-      let columnCount: number | null = null
-      let columnWidth: number | null = null
-      let verticalBarWidth: number | null = null
-      let verticalBarAreaHeight: number | null = null
-      if (container && !container.isNullObject) {
-        fullBarWidth = container.width - paddingX * 2
-        optionStartTop = container.top + optionStartOffset
-        columnCount = Math.max(1, visibleOptions)
-        columnWidth = fullBarWidth / columnCount
-        const baseBarWidth = columnWidth * 0.85
-        verticalBarWidth = Math.min(
-          columnWidth * 0.95,
-          Math.max(6, baseBarWidth * style.barThicknessScale)
-        )
-        verticalBarAreaHeight = Math.max(
-          60 * scale,
-          container.height - optionStartOffset - verticalLabelHeight - 24
-        )
-      }
-      itemShapes.forEach((item, index) => {
+      itemShapes.forEach((item) => {
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
           return
         }
         applyFont(item.label.textFrame.textRange, style, { size: 13, color: style.textColor })
-        if (container && !container.isNullObject && fullBarWidth !== null && optionStartTop !== null) {
-          if (isVertical) {
-            const safeColumnCount = columnCount || Math.max(1, visibleOptions)
-            const safeColumnWidth = columnWidth || fullBarWidth
-            const safeBarWidth = verticalBarWidth || Math.max(6, safeColumnWidth * 0.85)
-            const safeIndex = Math.min(index, safeColumnCount - 1)
-            const columnLeft = container.left + paddingX + safeColumnWidth * safeIndex
-            const barLeft = columnLeft + (safeColumnWidth - safeBarWidth) / 2
-            const barTop = optionStartTop
-            const barHeight = verticalBarAreaHeight || 60 * scale
-            item.label.left = columnLeft
-            item.label.top = barTop + barHeight + 6
-            item.label.width = safeColumnWidth
-            item.label.height = verticalLabelHeight
-            item.label.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Center'
-            item.bg.left = barLeft
-            item.bg.top = barTop
-            item.bg.width = safeBarWidth
-            item.bg.height = barHeight
-            item.fill.left = barLeft
-            item.fill.width = safeBarWidth
-          } else {
-            const barLeft = container.left + paddingX
-            const rowTop = optionStartTop + rowHeight * index
-            item.label.left = barLeft
-            item.label.top = rowTop
-            item.label.width = fullBarWidth
-            item.label.height = 16
-            item.label.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Left'
-            item.bg.left = barLeft
-            item.bg.top = rowTop + 18
-            item.bg.width = fullBarWidth
-            item.bg.height = barThickness
-            item.fill.left = barLeft
-            item.fill.top = rowTop + 18
-            item.fill.width = fullBarWidth
-            item.fill.height = barThickness
-          }
-        }
         if (applyStyle) {
           item.bg.fill.setSolidColor(style.barColor)
           item.bg.lineFormat.visible = false
