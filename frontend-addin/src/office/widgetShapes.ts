@@ -1633,6 +1633,17 @@ export async function updatePollWidget(
               fill = child
             }
           })
+          if (!bg || !fill) {
+            const ranked = [...taggedShapes]
+              .map(({ child }) => child)
+              .sort((a, b) => b.width * b.height - a.width * a.height)
+            if (!bg) {
+              bg = ranked[0] ?? null
+            }
+            if (!fill) {
+              fill = ranked.find((shape) => shape.id !== bg?.id) ?? ranked[1] ?? null
+            }
+          }
           if (bg && fill) {
             groupedBarItems.push({ group: shape, bg, fill })
           }
@@ -1784,7 +1795,7 @@ export async function updatePollWidget(
         bodyShape.load('id')
       }
 
-      let itemShapes = (shapeIds.items ?? []).map((item) => {
+      const itemEntries = (shapeIds.items ?? []).map((item) => {
         const label = resolveShape(item.label)
         const itemGroup = item.group
           ? shapeScope
@@ -1794,18 +1805,29 @@ export async function updatePollWidget(
         if (itemGroup) {
           itemGroup.load('id')
         }
-        const barScope =
-          itemGroup && !itemGroup.isNullObject ? itemGroup.group.shapes : shapeScope
-        const bg = barScope
-          ? barScope.getItemOrNullObject(item.bg)
-          : info.slide.shapes.getItemOrNullObject(item.bg)
-        const fill = barScope
-          ? barScope.getItemOrNullObject(item.fill)
-          : info.slide.shapes.getItemOrNullObject(item.fill)
         label.load('id')
+        return {
+          label,
+          group: itemGroup,
+          bgId: item.bg,
+          fillId: item.fill
+        }
+      })
+
+      await context.sync()
+
+      let itemShapes = itemEntries.map((entry) => {
+        const barScope =
+          entry.group && !entry.group.isNullObject ? entry.group.group.shapes : shapeScope
+        const bg = barScope
+          ? barScope.getItemOrNullObject(entry.bgId)
+          : info.slide.shapes.getItemOrNullObject(entry.bgId)
+        const fill = barScope
+          ? barScope.getItemOrNullObject(entry.fillId)
+          : info.slide.shapes.getItemOrNullObject(entry.fillId)
         bg.load(['id', 'width', 'left', 'height', 'top'])
         fill.load(['id', 'width', 'left', 'height', 'top'])
-        return { label, group: itemGroup, bg, fill }
+        return { label: entry.label, group: entry.group, bg, fill }
       })
 
       await context.sync()
@@ -1918,6 +1940,17 @@ export async function updatePollWidget(
                 fill = child
               }
             })
+            if (!bg || !fill) {
+              const ranked = [...taggedShapes]
+                .map(({ child }) => child)
+                .sort((a, b) => b.width * b.height - a.width * a.height)
+              if (!bg) {
+                bg = ranked[0] ?? null
+              }
+              if (!fill) {
+                fill = ranked.find((shape) => shape.id !== bg?.id) ?? ranked[1] ?? null
+              }
+            }
             if (bg && fill) {
               groupedBarItems.push({ group: shape, bg, fill })
             }
