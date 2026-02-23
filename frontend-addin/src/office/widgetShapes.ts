@@ -20,6 +20,7 @@ const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
 const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
 const POLL_BINDING_TAG = 'PrezoPollWidgetPollId'
+const POLL_TEXT_SYNC_TAG = 'PrezoPollWidgetAutoText'
 const MAX_POLL_OPTIONS = 5
 const PANEL_TITLE = 'Questions from your audience'
 const PROMPT_PANEL_TITLE = 'Audience answers'
@@ -359,6 +360,70 @@ const getShapeId = (shape: { id: string } | null | undefined) =>
 
 const isShapeNullObject = (shape: { isNullObject?: boolean } | null | undefined) =>
   Boolean(shape?.isNullObject)
+
+const looksLikeAutoPollText = (value: string) => {
+  const text = value.trim()
+  if (!text) {
+    return true
+  }
+  if (text.startsWith('Prezo Poll')) {
+    return true
+  }
+  if (text.startsWith('Live poll:') || text.startsWith('Poll:')) {
+    return true
+  }
+  if (text === 'No polls yet.' || text === 'Poll not found.') {
+    return true
+  }
+  return /\(\d+\)\s*(?:•|â€¢)\s*\d+%$/.test(text)
+}
+
+type PollTextSyncState = {
+  shape: PowerPoint.Shape
+  autoTag: PowerPoint.Tag
+}
+
+const loadPollTextSyncState = (
+  shape: PowerPoint.Shape | null | undefined
+): PollTextSyncState | null => {
+  if (!shape || isShapeNullObject(shape)) {
+    return null
+  }
+  const autoTag = shape.tags.getItemOrNullObject(POLL_TEXT_SYNC_TAG)
+  autoTag.load('value')
+  shape.textFrame.textRange.load('text')
+  return { shape, autoTag }
+}
+
+const syncPollText = (
+  state: PollTextSyncState | null,
+  nextText: string,
+  options?: { force?: boolean }
+) => {
+  if (!state || isShapeNullObject(state.shape)) {
+    return
+  }
+  const currentText = state.shape.textFrame.textRange.text ?? ''
+  const force = Boolean(options?.force)
+
+  if (state.autoTag.isNullObject) {
+    if (force || currentText === nextText || looksLikeAutoPollText(currentText)) {
+      state.shape.textFrame.textRange.text = nextText
+      state.shape.tags.add(POLL_TEXT_SYNC_TAG, nextText)
+      return
+    }
+    state.shape.tags.add(POLL_TEXT_SYNC_TAG, currentText)
+    return
+  }
+
+  const lastAutoText = state.autoTag.value ?? ''
+  if (!force && currentText !== lastAutoText) {
+    return
+  }
+
+  state.shape.textFrame.textRange.text = nextText
+  state.shape.tags.add(POLL_TEXT_SYNC_TAG, nextText)
+}
 
 
 
@@ -1388,6 +1453,7 @@ export async function insertPollWidget(
     })
     title.tags.add(POLL_WIDGET_TAG, 'true')
     title.tags.add('PrezoWidgetRole', 'poll-title')
+    title.tags.add(POLL_TEXT_SYNC_TAG, buildPollTitle(code))
 
     const question = slide.shapes.addTextBox('No polls yet.', {
       left: left + 24,
@@ -1399,6 +1465,7 @@ export async function insertPollWidget(
     applyFont(question.textFrame.textRange, style, { size: 14, color: style.mutedColor })
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
+    question.tags.add(POLL_TEXT_SYNC_TAG, 'No polls yet.')
 
     const optionStartTop = top + optionStartOffset
     const fullBarWidth = width - paddingX * 2
@@ -1436,6 +1503,7 @@ export async function insertPollWidget(
       label.textFrame.textRange.paragraphFormat.horizontalAlignment = isVertical ? 'Center' : 'Left'
       label.tags.add(POLL_WIDGET_TAG, 'true')
       label.tags.add('PrezoWidgetRole', 'poll-label')
+      label.tags.add(POLL_TEXT_SYNC_TAG, showItem ? `Option ${index + 1}` : '')
 
       const barTop = isVertical ? verticalBarTop : rowTop + 18
       const bg = slide.shapes.addGeometricShape('Rectangle', {
@@ -2204,20 +2272,28 @@ export async function updatePollWidget(
           item.fill.lineFormat.visible = false
         }
       })
+
+      const titleTextState = loadPollTextSyncState(title)
+      const questionTextState = loadPollTextSyncState(questionShape)
+      const bodyTextState = loadPollTextSyncState(bodyShape)
+      const labelTextStates = itemShapes.map((item) => loadPollTextSyncState(item.label))
+      await context.sync()
+
       if (groupShape && !groupShape.isNullObject) {
         groupShape.rotation = 0
       }
 
-      if (!title.isNullObject) {
-        title.textFrame.textRange.text = titleText
-      }
+      syncPollText(titleTextState, titleText)
 
       if (questionShape && !questionShape.isNullObject) {
-        questionShape.textFrame.textRange.text = questionText
+        syncPollText(questionTextState, questionText)
       } else if (bodyShape && !bodyShape.isNullObject) {
-        bodyShape.textFrame.textRange.text = `${questionText}\n${optionData
-          .map((option, index) => `${index + 1}. ${option.label}`)
-          .join('\n')}`
+        syncPollText(
+          bodyTextState,
+          `${questionText}\n${optionData
+            .map((option, index) => `${index + 1}. ${option.label}`)
+            .join('\n')}`
+        )
       }
 
       itemShapes.forEach((item, index) => {
@@ -2226,7 +2302,7 @@ export async function updatePollWidget(
           return
         }
         if (!data || index >= visibleOptions) {
-          item.label.textFrame.textRange.text = ''
+          syncPollText(labelTextStates[index] ?? null, '', { force: true })
           if (isVertical) {
             const barHeight = item.bg.height
             item.fill.height = 2
@@ -2243,7 +2319,7 @@ export async function updatePollWidget(
           item.bg.fill.transparency = hasPollData ? 1 : 0.35
           return
         }
-        item.label.textFrame.textRange.text = data.label
+        syncPollText(labelTextStates[index] ?? null, data.label)
         if (isVertical) {
           const barHeight = item.bg.height
           const fillHeight = Math.max(2, barHeight * data.ratio)
