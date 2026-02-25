@@ -38,7 +38,8 @@
     pollTimer: null,
     fetchPromise: null,
     isUnloading: false,
-    lastRenderKey: ''
+    lastRenderKey: '',
+    raceRows: new Map()
   }
 
   const el = {
@@ -92,6 +93,12 @@
     barRadius: 999,
     questionSize: 62,
     labelSize: 24,
+    visualMode: 'classic',
+    raceCar: '🏎️',
+    raceCarSize: 30,
+    raceTrackColor: '#adcfff',
+    raceTrackOpacity: 0.2,
+    raceSpeed: 0.78,
     logoUrl: '',
     logoWidth: 140,
     logoOpacity: 1,
@@ -127,6 +134,12 @@
     { id: 'theme-bar-radius', key: 'barRadius', type: 'number' },
     { id: 'theme-question-size', key: 'questionSize', type: 'number' },
     { id: 'theme-label-size', key: 'labelSize', type: 'number' },
+    { id: 'theme-visual-mode', key: 'visualMode', type: 'text' },
+    { id: 'theme-race-car', key: 'raceCar', type: 'text' },
+    { id: 'theme-race-car-size', key: 'raceCarSize', type: 'number' },
+    { id: 'theme-race-track-color', key: 'raceTrackColor', type: 'color' },
+    { id: 'theme-race-track-opacity', key: 'raceTrackOpacity', type: 'number' },
+    { id: 'theme-race-speed', key: 'raceSpeed', type: 'number' },
     { id: 'theme-logo-url', key: 'logoUrl', type: 'text' },
     { id: 'theme-logo-width', key: 'logoWidth', type: 'number' },
     { id: 'theme-logo-opacity', key: 'logoOpacity', type: 'number' },
@@ -201,6 +214,9 @@
       input.addEventListener(eventName, () => {
         const value = readControlValue(input, spec.type)
         updateTheme({ [spec.key]: value })
+        if (spec.key === 'visualMode' && state.snapshot) {
+          renderFromSnapshot(true)
+        }
       })
     }
 
@@ -568,7 +584,19 @@
 
     const totalVotes = getTotalVotes(poll)
     el.question.textContent = asText(poll.question) || 'Untitled poll'
+    if (currentTheme.visualMode === 'race') {
+      renderRaceOptions(poll, totalVotes)
+    } else {
+      renderClassicOptions(poll, totalVotes)
+    }
+    updateMeta(poll, totalVotes)
+    updateFooter()
+  }
 
+  function renderClassicOptions(poll, totalVotes) {
+    if (state.raceRows.size > 0 || el.options.classList.contains('race-mode')) {
+      clearRaceRows()
+    }
     const fragment = document.createDocumentFragment()
     for (const option of poll.options || []) {
       const votes = toInt(option.votes)
@@ -603,11 +631,98 @@
     }
 
     el.options.replaceChildren(fragment)
-    updateMeta(poll, totalVotes)
-    updateFooter()
+  }
+
+  function renderRaceOptions(poll, totalVotes) {
+    el.options.classList.add('race-mode')
+    const rowHeight = 86
+    const options = Array.isArray(poll.options) ? poll.options : []
+    const sorted = [...options].sort((left, right) => {
+      const voteDiff = toInt(right.votes) - toInt(left.votes)
+      if (voteDiff !== 0) {
+        return voteDiff
+      }
+      return asText(left.label).localeCompare(asText(right.label))
+    })
+
+    const visibleIds = new Set()
+    for (let index = 0; index < sorted.length; index += 1) {
+      const option = sorted[index]
+      const optionId = asText(option.id) || `option-${index}`
+      visibleIds.add(optionId)
+
+      let row = state.raceRows.get(optionId)
+      if (!row) {
+        row = createRaceRow()
+        state.raceRows.set(optionId, row)
+        el.options.appendChild(row)
+      }
+
+      const votes = toInt(option.votes)
+      const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
+
+      row.label.textContent = asText(option.label) || 'Option'
+      row.stats.textContent = `${votes} (${pct}%)`
+      row.fill.style.width = `${pct}%`
+      row.car.style.left = `${pct}%`
+      row.car.textContent = normalizeRaceCar(currentTheme.raceCar)
+      row.root.style.transform = `translateY(${index * rowHeight}px)`
+      row.root.classList.toggle('leading', index === 0)
+      row.root.style.zIndex = String(200 - index)
+    }
+
+    for (const [optionId, row] of state.raceRows) {
+      if (visibleIds.has(optionId)) {
+        continue
+      }
+      row.root.remove()
+      state.raceRows.delete(optionId)
+    }
+
+    el.options.style.height = `${Math.max(sorted.length * rowHeight, 0)}px`
+  }
+
+  function createRaceRow() {
+    const root = document.createElement('div')
+    root.className = 'race-row'
+
+    const top = document.createElement('div')
+    top.className = 'race-top'
+
+    const label = document.createElement('span')
+    label.className = 'race-label'
+
+    const stats = document.createElement('span')
+    stats.className = 'stats'
+
+    const track = document.createElement('div')
+    track.className = 'race-track'
+
+    const fill = document.createElement('div')
+    fill.className = 'race-fill'
+
+    const car = document.createElement('div')
+    car.className = 'race-car'
+    car.textContent = normalizeRaceCar(currentTheme.raceCar)
+
+    top.append(label, stats)
+    track.append(fill, car)
+    root.append(top, track)
+
+    return { root, label, stats, fill, car }
+  }
+
+  function clearRaceRows() {
+    for (const row of state.raceRows.values()) {
+      row.root.remove()
+    }
+    state.raceRows.clear()
+    el.options.classList.remove('race-mode')
+    el.options.style.height = ''
   }
 
   function renderMissingSession() {
+    clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
     el.question.textContent = 'Missing required query param'
@@ -621,6 +736,7 @@
   }
 
   function renderMissingPoll() {
+    clearRaceRows()
     const message =
       state.pollSelector.mode === 'id'
         ? `Poll "${state.pollSelector.explicitId}" was not found in this session.`
@@ -636,6 +752,7 @@
   }
 
   function renderError(message) {
+    clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
     el.question.textContent = 'Unable to load poll data'
@@ -818,6 +935,9 @@
     saveThemeLibrary(themeLibrary)
     saveThemeDraft(currentTheme)
     el.themeName.value = name
+    if (state.snapshot) {
+      renderFromSnapshot(true)
+    }
     showThemeFeedback(`Theme "${name}" loaded.`, 'success')
   }
 
@@ -877,6 +997,9 @@
       saveThemeLibrary(themeLibrary)
       refreshThemeSelect(importedName)
       el.themeName.value = importedName
+      if (state.snapshot) {
+        renderFromSnapshot(true)
+      }
       showThemeFeedback(`Theme "${importedName}" imported.`, 'success')
     } catch {
       showThemeFeedback('Invalid theme file.', 'error')
@@ -890,6 +1013,9 @@
     applyTheme(currentTheme)
     syncThemeControls()
     saveThemeDraft(currentTheme)
+    if (state.snapshot) {
+      renderFromSnapshot(true)
+    }
     showThemeFeedback('Theme reset to defaults.', 'success')
   }
 
@@ -937,6 +1063,9 @@
     root.setProperty('--question-size', `${theme.questionSize}px`)
     root.setProperty('--label-size', `${theme.labelSize}px`)
     root.setProperty('--grid-opacity', `${theme.gridOpacity}`)
+    root.setProperty('--race-track', hexToRgba(theme.raceTrackColor, theme.raceTrackOpacity))
+    root.setProperty('--race-car-size', `${theme.raceCarSize}px`)
+    root.setProperty('--race-speed-ms', `${Math.round(theme.raceSpeed * 1000)}ms`)
 
     el.bgImage.style.backgroundImage = theme.bgImageUrl
       ? `url("${theme.bgImageUrl.replace(/"/g, '\\"')}")`
@@ -962,6 +1091,7 @@
       left: `${theme.assetX}%`,
       top: `${theme.assetY}%`
     })
+    syncRaceThemeVisuals()
   }
 
   function applyImageAsset(node, options) {
@@ -985,6 +1115,12 @@
     }
     if (options.top) {
       node.style.top = options.top
+    }
+  }
+
+  function syncRaceThemeVisuals() {
+    for (const row of state.raceRows.values()) {
+      row.car.textContent = normalizeRaceCar(currentTheme.raceCar)
     }
   }
 
@@ -1146,6 +1282,12 @@
       barRadius: clamp(incoming.barRadius, 0, 999, defaultTheme.barRadius),
       questionSize: clamp(incoming.questionSize, 42, 90, defaultTheme.questionSize),
       labelSize: clamp(incoming.labelSize, 14, 36, defaultTheme.labelSize),
+      visualMode: sanitizeVisualMode(incoming.visualMode, defaultTheme.visualMode),
+      raceCar: normalizeRaceCar(incoming.raceCar),
+      raceCarSize: clamp(incoming.raceCarSize, 20, 56, defaultTheme.raceCarSize),
+      raceTrackColor: sanitizeHex(incoming.raceTrackColor, defaultTheme.raceTrackColor),
+      raceTrackOpacity: clamp(incoming.raceTrackOpacity, 0, 1, defaultTheme.raceTrackOpacity),
+      raceSpeed: clamp(incoming.raceSpeed, 0.35, 1.8, defaultTheme.raceSpeed),
       logoUrl: sanitizeUrl(incoming.logoUrl, defaultTheme.logoUrl),
       logoWidth: clamp(incoming.logoWidth, 40, 280, defaultTheme.logoWidth),
       logoOpacity: clamp(incoming.logoOpacity, 0, 1, defaultTheme.logoOpacity),
@@ -1166,6 +1308,22 @@
       return fallback
     }
     return text.replace(/[{};]/g, '').slice(0, 120)
+  }
+
+  function sanitizeVisualMode(value, fallback) {
+    const mode = asText(value).toLowerCase()
+    if (mode === 'race' || mode === 'classic') {
+      return mode
+    }
+    return fallback
+  }
+
+  function normalizeRaceCar(value) {
+    const text = asText(value)
+    if (!text) {
+      return defaultTheme.raceCar
+    }
+    return Array.from(text).slice(0, 2).join('')
   }
 
   function sanitizeUrl(value, fallback) {

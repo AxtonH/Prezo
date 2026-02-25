@@ -76,6 +76,24 @@
         </section>
 
         <section>
+          <h3>Game Animation</h3>
+          <label>
+            Visual mode
+            <select id="theme-visual-mode">
+              <option value="classic">Classic bars</option>
+              <option value="race">Race mode</option>
+            </select>
+          </label>
+          <label>Car icon<input id="theme-race-car" type="text" maxlength="4" placeholder="🏎️" /></label>
+          <div class="grid">
+            <label>Car size<input id="theme-race-car-size" type="range" min="20" max="56" step="1" /></label>
+            <label>Race speed<input id="theme-race-speed" type="range" min="0.35" max="1.8" step="0.01" /></label>
+            <label>Track color<input id="theme-race-track-color" type="color" /></label>
+            <label>Track opacity<input id="theme-race-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+          </div>
+        </section>
+
+        <section>
           <h3>Custom Assets</h3>
           <label class="check">Enable drag mode<input id="drag-mode-enabled" type="checkbox" /></label>
           <p class="note">Drag mode applies to visible logo and overlay asset.</p>
