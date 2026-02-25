@@ -38,7 +38,8 @@
     pollTimer: null,
     fetchPromise: null,
     isUnloading: false,
-    lastRenderKey: ''
+    lastRenderKey: '',
+    raceRows: new Map()
   }
 
   const el = {
@@ -647,52 +648,110 @@
       return asText(left.label).localeCompare(asText(right.label))
     })
 
-    const fragment = document.createDocumentFragment()
+    const firstTops = new Map()
+    for (const row of state.raceRows.values()) {
+      firstTops.set(row.root, row.root.getBoundingClientRect().top)
+    }
+
+    const orderedIds = []
+    const liveIds = new Set()
     for (let index = 0; index < sorted.length; index += 1) {
       const option = sorted[index]
+      const optionId = asText(option.id) || `option-${index}`
+      liveIds.add(optionId)
+      orderedIds.push(optionId)
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
-      const root = document.createElement('article')
-      root.className = 'race-option'
-      if (index === 0) {
-        root.classList.add('leading')
+      let row = state.raceRows.get(optionId)
+      if (!row) {
+        row = createRaceRow()
+        state.raceRows.set(optionId, row)
       }
-
-      const top = document.createElement('div')
-      top.className = 'race-top'
-
-      const label = document.createElement('span')
-      label.className = 'race-label'
-      label.textContent = asText(option.label) || 'Option'
-
-      const stats = document.createElement('span')
-      stats.className = 'stats'
-      stats.textContent = `${votes} (${pct}%)`
-
-      const track = document.createElement('div')
-      track.className = 'race-track'
-
-      const fill = document.createElement('div')
-      fill.className = 'race-fill'
-      fill.style.width = `${pct}%`
-
-      const car = document.createElement('div')
-      car.className = 'race-car'
-      car.style.left = `${pct}%`
-      applyRaceCarContent(car)
-
-      top.append(label, stats)
-      track.append(fill, car)
-      root.append(top, track)
-      fragment.appendChild(root)
+      row.label.textContent = asText(option.label) || 'Option'
+      row.stats.textContent = `${votes} (${pct}%)`
+      row.fill.style.width = `${pct}%`
+      row.car.style.left = `${pct}%`
+      row.root.classList.toggle('leading', index === 0)
+      applyRaceCarContent(row.car)
     }
 
-    el.options.replaceChildren(fragment)
+    for (const [optionId, row] of state.raceRows) {
+      if (liveIds.has(optionId)) {
+        continue
+      }
+      row.root.remove()
+      state.raceRows.delete(optionId)
+    }
+
+    for (const optionId of orderedIds) {
+      const row = state.raceRows.get(optionId)
+      if (!row) {
+        continue
+      }
+      el.options.appendChild(row.root)
+    }
+
+    for (const optionId of orderedIds) {
+      const row = state.raceRows.get(optionId)
+      if (!row) {
+        continue
+      }
+      const firstTop = firstTops.get(row.root)
+      if (firstTop == null) {
+        continue
+      }
+      const lastTop = row.root.getBoundingClientRect().top
+      const deltaY = firstTop - lastTop
+      if (Math.abs(deltaY) < 0.5) {
+        row.root.style.transform = ''
+        continue
+      }
+      row.root.style.transition = 'none'
+      row.root.style.transform = `translateY(${deltaY}px)`
+      row.root.getBoundingClientRect()
+      row.root.style.transition =
+        'transform var(--race-speed-ms) cubic-bezier(0.2, 0.9, 0.25, 1)'
+      row.root.style.transform = 'translateY(0)'
+    }
+
     el.options.style.height = ''
   }
 
+  function createRaceRow() {
+    const root = document.createElement('article')
+    root.className = 'race-option'
+
+    const top = document.createElement('div')
+    top.className = 'race-top'
+
+    const label = document.createElement('span')
+    label.className = 'race-label'
+
+    const stats = document.createElement('span')
+    stats.className = 'stats'
+
+    const track = document.createElement('div')
+    track.className = 'race-track'
+
+    const fill = document.createElement('div')
+    fill.className = 'race-fill'
+
+    const car = document.createElement('div')
+    car.className = 'race-car'
+
+    top.append(label, stats)
+    track.append(fill, car)
+    root.append(top, track)
+
+    return { root, label, stats, fill, car }
+  }
+
   function clearRaceRows() {
+    for (const row of state.raceRows.values()) {
+      row.root.remove()
+    }
+    state.raceRows.clear()
     el.options.classList.remove('race-mode')
     el.options.style.height = ''
   }
