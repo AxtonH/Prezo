@@ -49,6 +49,7 @@
     settingsBackdrop: must('settings-backdrop'),
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
+    dragModeEnabled: must('drag-mode-enabled'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
     saveTheme: must('save-theme'),
@@ -93,6 +94,8 @@
     logoUrl: '',
     logoWidth: 140,
     logoOpacity: 1,
+    logoX: 88,
+    logoY: 10,
     assetUrl: '',
     assetWidth: 320,
     assetOpacity: 0.45,
@@ -126,6 +129,8 @@
     { id: 'theme-logo-url', key: 'logoUrl', type: 'text' },
     { id: 'theme-logo-width', key: 'logoWidth', type: 'number' },
     { id: 'theme-logo-opacity', key: 'logoOpacity', type: 'number' },
+    { id: 'theme-logo-x', key: 'logoX', type: 'number' },
+    { id: 'theme-logo-y', key: 'logoY', type: 'number' },
     { id: 'theme-asset-url', key: 'assetUrl', type: 'text' },
     { id: 'theme-asset-width', key: 'assetWidth', type: 'number' },
     { id: 'theme-asset-opacity', key: 'assetOpacity', type: 'number' },
@@ -140,12 +145,17 @@
 
   let themeLibrary = loadThemeLibrary()
   let currentTheme = loadInitialTheme(themeLibrary)
+  const dragState = {
+    enabled: false,
+    active: null
+  }
 
   init()
 
   function init() {
     setupSettingsPanel()
     setupThemeEditor()
+    setupDragInteractions()
     applyTheme(currentTheme)
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
@@ -203,6 +213,103 @@
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
+  }
+
+  function setupDragInteractions() {
+    el.dragModeEnabled.addEventListener('change', () => {
+      setDragMode(Boolean(el.dragModeEnabled.checked))
+    })
+
+    attachDragBehavior(el.customLogo, 'logoX', 'logoY')
+    attachDragBehavior(el.customAsset, 'assetX', 'assetY')
+  }
+
+  function setDragMode(enabled) {
+    dragState.enabled = Boolean(enabled)
+    el.dragModeEnabled.checked = dragState.enabled
+    document.body.classList.toggle('drag-mode', dragState.enabled)
+    showThemeFeedback(
+      dragState.enabled
+        ? 'Drag mode enabled. Drag logo/asset on canvas, then Save theme.'
+        : 'Drag mode disabled.',
+      'success'
+    )
+  }
+
+  function attachDragBehavior(node, xKey, yKey) {
+    node.addEventListener('pointerdown', (event) => {
+      if (!dragState.enabled || node.classList.contains('hidden')) {
+        return
+      }
+      if (event.button !== 0) {
+        return
+      }
+      const wrapRect = document.querySelector('.wrap')?.getBoundingClientRect()
+      if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
+        return
+      }
+
+      event.preventDefault()
+      dragState.active = {
+        node,
+        xKey,
+        yKey,
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startX: clamp(currentTheme[xKey], 0, 100, 50),
+        startY: clamp(currentTheme[yKey], 0, 100, 50)
+      }
+      node.classList.add('dragging')
+      try {
+        node.setPointerCapture(event.pointerId)
+      } catch {}
+    })
+
+    node.addEventListener('pointermove', (event) => {
+      const active = dragState.active
+      if (!active || active.node !== node || active.pointerId !== event.pointerId) {
+        return
+      }
+      const wrapRect = document.querySelector('.wrap')?.getBoundingClientRect()
+      if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
+        return
+      }
+
+      event.preventDefault()
+      const deltaXPercent = ((event.clientX - active.startClientX) / wrapRect.width) * 100
+      const deltaYPercent = ((event.clientY - active.startClientY) / wrapRect.height) * 100
+      const nextX = clamp(active.startX + deltaXPercent, 0, 100, active.startX)
+      const nextY = clamp(active.startY + deltaYPercent, 0, 100, active.startY)
+
+      updateTheme(
+        {
+          [active.xKey]: nextX,
+          [active.yKey]: nextY
+        },
+        { persist: false }
+      )
+      syncSingleControlValue(active.xKey, nextX)
+      syncSingleControlValue(active.yKey, nextY)
+    })
+
+    const release = (event) => {
+      const active = dragState.active
+      if (!active || active.node !== node || active.pointerId !== event.pointerId) {
+        return
+      }
+
+      node.classList.remove('dragging')
+      try {
+        node.releasePointerCapture(event.pointerId)
+      } catch {}
+      dragState.active = null
+      saveThemeDraft(currentTheme)
+      showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+    }
+
+    node.addEventListener('pointerup', release)
+    node.addEventListener('pointercancel', release)
   }
 
   function renderInitialState() {
@@ -774,7 +881,8 @@
     showThemeFeedback('Theme reset to defaults.', 'success')
   }
 
-  function updateTheme(partialTheme) {
+  function updateTheme(partialTheme, options = {}) {
+    const persist = options.persist !== false
     const nextTheme = {
       ...currentTheme,
       ...partialTheme
@@ -792,7 +900,9 @@
 
     currentTheme = sanitizeTheme(nextTheme)
     applyTheme(currentTheme)
-    saveThemeDraft(currentTheme)
+    if (persist) {
+      saveThemeDraft(currentTheme)
+    }
   }
 
   function applyTheme(theme) {
@@ -828,7 +938,9 @@
     applyImageAsset(el.customLogo, {
       url: theme.logoUrl,
       width: `${theme.logoWidth}px`,
-      opacity: `${theme.logoOpacity}`
+      opacity: `${theme.logoOpacity}`,
+      left: `${theme.logoX}%`,
+      top: `${theme.logoY}%`
     })
 
     applyImageAsset(el.customAsset, {
@@ -877,6 +989,22 @@
         input.value = value == null ? '' : String(value)
       }
     }
+  }
+
+  function syncSingleControlValue(themeKey, value) {
+    const spec = themeControls.find((entry) => entry.key === themeKey)
+    if (!spec) {
+      return
+    }
+    const input = controlElements[spec.id]
+    if (!input) {
+      return
+    }
+    if (spec.type === 'checkbox') {
+      input.checked = Boolean(value)
+      return
+    }
+    input.value = value == null ? '' : String(Math.round(Number(value)))
   }
 
   function refreshThemeSelect(selectedName) {
@@ -1009,6 +1137,8 @@
       logoUrl: sanitizeUrl(incoming.logoUrl, defaultTheme.logoUrl),
       logoWidth: clamp(incoming.logoWidth, 40, 280, defaultTheme.logoWidth),
       logoOpacity: clamp(incoming.logoOpacity, 0, 1, defaultTheme.logoOpacity),
+      logoX: clamp(incoming.logoX, 0, 100, defaultTheme.logoX),
+      logoY: clamp(incoming.logoY, 0, 100, defaultTheme.logoY),
       assetUrl: sanitizeUrl(incoming.assetUrl, defaultTheme.assetUrl),
       assetWidth: clamp(incoming.assetWidth, 60, 720, defaultTheme.assetWidth),
       assetOpacity: clamp(incoming.assetOpacity, 0, 1, defaultTheme.assetOpacity),

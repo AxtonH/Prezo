@@ -77,6 +77,7 @@
 
         <section>
           <h3>Custom Assets</h3>
+          <label class="check">Enable drag mode<input id="drag-mode-enabled" type="checkbox" /></label>
           <label>Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
           <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
           <label>Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
@@ -84,6 +85,8 @@
           <div class="grid">
             <label>Logo width<input id="theme-logo-width" type="range" min="40" max="280" step="1" /></label>
             <label>Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Logo X<input id="theme-logo-x" type="range" min="0" max="100" step="1" /></label>
+            <label>Logo Y<input id="theme-logo-y" type="range" min="0" max="100" step="1" /></label>
             <label>Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
             <label>Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
             <label>Asset X<input id="theme-asset-x" type="range" min="0" max="100" step="1" /></label>
@@ -95,14 +98,14 @@
     </aside>
 
     <main class="wrap">
-      <img id="custom-asset" class="custom-asset hidden" alt="Custom asset" />
+      <img id="custom-logo" class="custom-logo draggable-layer hidden" alt="Custom logo" />
+      <img id="custom-asset" class="custom-asset draggable-layer hidden" alt="Custom asset" />
       <section class="head">
         <div>
           <p class="eyebrow">Prezo Game Mode PoC</p>
           <h1 id="question">Waiting for poll data...</h1>
         </div>
         <div class="head-right">
-          <img id="custom-logo" class="custom-logo hidden" alt="Custom logo" />
           <div class="meta">
             <span class="dot"></span>
             <span id="status">connecting</span>

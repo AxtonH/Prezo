@@ -263,11 +263,6 @@ body {
   box-shadow: 0 24px 80px rgba(3, 7, 23, 0.6);
 }
 
-.wrap > :not(.custom-asset) {
-  position: relative;
-  z-index: 2;
-}
-
 .custom-asset {
   position: absolute;
   top: 50%;
@@ -278,6 +273,11 @@ body {
   pointer-events: none;
   object-fit: contain;
   z-index: 1;
+}
+
+.wrap > :not(.custom-asset):not(.custom-logo) {
+  position: relative;
+  z-index: 2;
 }
 
 .head {
@@ -295,8 +295,14 @@ body {
 }
 
 .custom-logo {
-  max-height: 58px;
+  position: absolute;
+  top: 10%;
+  left: 88%;
+  width: 140px;
+  max-width: 34%;
+  transform: translate(-50%, -50%);
   object-fit: contain;
+  z-index: 4;
 }
 
 .custom-logo.hidden {
@@ -305,6 +311,24 @@ body {
 
 .hidden {
   display: none;
+}
+
+.draggable-layer {
+  pointer-events: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.drag-mode .draggable-layer:not(.hidden) {
+  pointer-events: auto;
+  cursor: grab;
+  outline: 1px dashed rgba(141, 195, 255, 0.9);
+  outline-offset: 3px;
+}
+
+.drag-mode .draggable-layer.dragging {
+  cursor: grabbing;
+  outline-color: rgba(86, 160, 255, 1);
 }
 
 .eyebrow {
