@@ -94,6 +94,7 @@
     labelSize: 24,
     visualMode: 'classic',
     raceCar: '🏎️',
+    raceCarImageUrl: '',
     raceCarSize: 30,
     raceTrackColor: '#adcfff',
     raceTrackOpacity: 0.2,
@@ -135,6 +136,7 @@
     { id: 'theme-label-size', key: 'labelSize', type: 'number' },
     { id: 'theme-visual-mode', key: 'visualMode', type: 'select' },
     { id: 'theme-race-car', key: 'raceCar', type: 'text' },
+    { id: 'theme-race-car-image-url', key: 'raceCarImageUrl', type: 'text' },
     { id: 'theme-race-car-size', key: 'raceCarSize', type: 'number' },
     { id: 'theme-race-track-color', key: 'raceTrackColor', type: 'color' },
     { id: 'theme-race-track-opacity', key: 'raceTrackOpacity', type: 'number' },
@@ -228,6 +230,7 @@
     el.resetTheme.addEventListener('click', resetThemeDraft)
 
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
+    bindImageUpload('theme-race-car-upload', 'raceCarImageUrl', 'Race car image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
   }
@@ -676,8 +679,8 @@
 
       const car = document.createElement('div')
       car.className = 'race-car'
-      car.textContent = normalizeRaceCar(currentTheme.raceCar)
       car.style.left = `${pct}%`
+      applyRaceCarContent(car)
 
       top.append(label, stats)
       track.append(fill, car)
@@ -1101,8 +1104,21 @@
   function syncRaceThemeVisuals() {
     const cars = el.options.querySelectorAll('.race-car')
     for (const car of cars) {
-      car.textContent = normalizeRaceCar(currentTheme.raceCar)
+      applyRaceCarContent(car)
     }
+  }
+
+  function applyRaceCarContent(carNode) {
+    const imageUrl = asText(currentTheme.raceCarImageUrl)
+    if (imageUrl) {
+      carNode.textContent = ''
+      carNode.style.backgroundImage = `url("${imageUrl.replace(/"/g, '\\"')}")`
+      carNode.classList.add('image-car')
+      return
+    }
+    carNode.style.backgroundImage = 'none'
+    carNode.classList.remove('image-car')
+    carNode.textContent = normalizeRaceCar(currentTheme.raceCar)
   }
 
   function syncThemeControls() {
@@ -1265,6 +1281,7 @@
       labelSize: clamp(incoming.labelSize, 14, 36, defaultTheme.labelSize),
       visualMode: sanitizeVisualMode(incoming.visualMode, defaultTheme.visualMode),
       raceCar: normalizeRaceCar(incoming.raceCar),
+      raceCarImageUrl: sanitizeUrl(incoming.raceCarImageUrl, defaultTheme.raceCarImageUrl),
       raceCarSize: clamp(incoming.raceCarSize, 20, 56, defaultTheme.raceCarSize),
       raceTrackColor: sanitizeHex(incoming.raceTrackColor, defaultTheme.raceTrackColor),
       raceTrackOpacity: clamp(incoming.raceTrackOpacity, 0, 1, defaultTheme.raceTrackOpacity),
