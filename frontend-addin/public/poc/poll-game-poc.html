@@ -4,393 +4,116 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Prezo Poll Game PoC</title>
-    <style>
-      :root {
-        --bg-a: #04112b;
-        --bg-b: #0a2457;
-        --panel: rgba(4, 12, 32, 0.76);
-        --panel-border: rgba(121, 190, 255, 0.36);
-        --text-main: #e8f2ff;
-        --text-sub: #90a5c3;
-        --track: rgba(207, 221, 240, 0.2);
-        --fill-a: #37d0ff;
-        --fill-b: #2d6bff;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      html,
-      body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        font-family: "Segoe UI", "Trebuchet MS", sans-serif;
-        color: var(--text-main);
-        background: radial-gradient(120% 120% at 10% 0%, #0f3c91, transparent 60%),
-          radial-gradient(100% 120% at 90% 10%, #0a7db8, transparent 55%),
-          linear-gradient(140deg, var(--bg-a), var(--bg-b));
-        overflow: hidden;
-      }
-
-      .grid-bg {
-        position: fixed;
-        inset: 0;
-        background-image: linear-gradient(
-            to right,
-            rgba(147, 193, 255, 0.1) 1px,
-            transparent 1px
-          ),
-          linear-gradient(to bottom, rgba(147, 193, 255, 0.08) 1px, transparent 1px);
-        background-size: 48px 48px;
-        opacity: 0.14;
-        pointer-events: none;
-      }
-
-      .wrap {
-        width: min(1100px, 92vw);
-        margin: min(7vh, 56px) auto 0;
-        padding: 24px 28px 30px;
-        border: 1px solid var(--panel-border);
-        border-radius: 22px;
-        background: var(--panel);
-        backdrop-filter: blur(3px);
-        box-shadow: 0 24px 80px rgba(3, 7, 23, 0.6);
-      }
-
-      .head {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 16px;
-      }
-
-      .eyebrow {
-        margin: 0 0 8px;
-        font-size: 12px;
-        letter-spacing: 0.24em;
-        text-transform: uppercase;
-        color: #8dc2ff;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: clamp(26px, 3.2vw, 42px);
-        line-height: 1.08;
-        max-width: 900px;
-      }
-
-      .meta {
-        display: inline-flex;
-        align-items: center;
-        gap: 10px;
-        border: 1px solid rgba(143, 190, 255, 0.33);
-        border-radius: 999px;
-        padding: 8px 14px;
-        font-size: 14px;
-        color: var(--text-sub);
-        white-space: nowrap;
-      }
-
-      .dot {
-        width: 9px;
-        height: 9px;
-        border-radius: 999px;
-        background: #58f08c;
-        box-shadow: 0 0 0 0 rgba(88, 240, 140, 0.75);
-        animation: pulse 1.8s infinite;
-      }
-
-      .state {
-        margin-top: 18px;
-      }
-
-      .option {
-        margin-top: 14px;
-      }
-
-      .label-row {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 7px;
-      }
-
-      .label {
-        font-size: clamp(16px, 2vw, 24px);
-        font-weight: 700;
-        line-height: 1.2;
-      }
-
-      .stats {
-        color: var(--text-sub);
-        font-size: clamp(14px, 1.5vw, 20px);
-      }
-
-      .track {
-        position: relative;
-        width: 100%;
-        height: clamp(16px, 2.1vw, 28px);
-        border-radius: 999px;
-        background: var(--track);
-        overflow: hidden;
-      }
-
-      .fill {
-        position: absolute;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 0%;
-        border-radius: 999px;
-        background: linear-gradient(90deg, var(--fill-a), var(--fill-b));
-        transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
-        box-shadow: 0 0 20px rgba(55, 206, 255, 0.43);
-      }
-
-      .empty {
-        color: var(--text-sub);
-        font-size: 18px;
-        margin-top: 18px;
-      }
-
-      .footer {
-        margin-top: 20px;
-        color: #8ea3c4;
-        font-size: 13px;
-      }
-
-      .footer code {
-        color: #c9e4ff;
-      }
-
-      @keyframes pulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(88, 240, 140, 0.6);
-        }
-        70% {
-          box-shadow: 0 0 0 8px rgba(88, 240, 140, 0);
-        }
-        100% {
-          box-shadow: 0 0 0 0 rgba(88, 240, 140, 0);
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="/poc/poll-game-poc.css" />
   </head>
   <body>
-    <div class="grid-bg"></div>
+    <div id="bg-image" class="bg-image"></div>
+    <div id="bg-overlay" class="bg-overlay"></div>
+    <div id="grid-bg" class="grid-bg"></div>
+
+    <button id="settings-toggle" class="settings-toggle" type="button">Settings</button>
+    <div id="settings-backdrop" class="settings-backdrop"></div>
+    <aside id="settings-panel" class="settings-panel">
+      <div class="panel-head">
+        <h2>Design Settings</h2>
+        <button id="settings-close" type="button">Close</button>
+      </div>
+      <div class="panel-body">
+        <section>
+          <h3>Themes</h3>
+          <div class="row">
+            <input id="theme-name" type="text" placeholder="Theme name" />
+            <button id="save-theme" type="button">Save</button>
+          </div>
+          <div class="row">
+            <select id="theme-select"></select>
+            <button id="load-theme" type="button">Load</button>
+            <button id="delete-theme" type="button" class="danger">Delete</button>
+          </div>
+          <div class="row">
+            <button id="export-theme" type="button">Export</button>
+            <label class="file-btn">
+              Import
+              <input id="import-theme" type="file" accept=".json,application/json" />
+            </label>
+            <button id="reset-theme" type="button" class="ghost">Reset</button>
+          </div>
+          <p id="theme-feedback" class="note"></p>
+        </section>
+
+        <section>
+          <h3>Background</h3>
+          <label>Image URL<input id="theme-bg-image-url" type="text" placeholder="https://..." /></label>
+          <label>Upload image<input id="theme-bg-image-upload" type="file" accept="image/*" /></label>
+          <div class="grid">
+            <label>Gradient A<input id="theme-bg-a" type="color" /></label>
+            <label>Gradient B<input id="theme-bg-b" type="color" /></label>
+            <label>Overlay color<input id="theme-overlay-color" type="color" /></label>
+            <label>Image opacity<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Overlay opacity<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
+            <label class="check">Show grid<input id="theme-grid-visible" type="checkbox" /></label>
+          </div>
+        </section>
+
+        <section>
+          <h3>Poll Look</h3>
+          <div class="grid">
+            <label>Panel color<input id="theme-panel-color" type="color" /></label>
+            <label>Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Panel border<input id="theme-panel-border" type="color" /></label>
+            <label>Main text<input id="theme-text-main" type="color" /></label>
+            <label>Muted text<input id="theme-text-sub" type="color" /></label>
+            <label>Track color<input id="theme-track-color" type="color" /></label>
+            <label>Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Fill A<input id="theme-fill-a" type="color" /></label>
+            <label>Fill B<input id="theme-fill-b" type="color" /></label>
+            <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
+            <label>Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
+            <label>Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
+            <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
+          </div>
+        </section>
+
+        <section>
+          <h3>Custom Assets</h3>
+          <label>Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
+          <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
+          <label>Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
+          <label>Upload overlay asset<input id="theme-asset-upload" type="file" accept="image/*" /></label>
+          <div class="grid">
+            <label>Logo width<input id="theme-logo-width" type="range" min="40" max="280" step="1" /></label>
+            <label>Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
+            <label>Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
+            <label>Asset X<input id="theme-asset-x" type="range" min="0" max="100" step="1" /></label>
+            <label>Asset Y<input id="theme-asset-y" type="range" min="0" max="100" step="1" /></label>
+            <label>Font family<input id="theme-font-family" type="text" /></label>
+          </div>
+        </section>
+      </div>
+    </aside>
+
     <main class="wrap">
+      <img id="custom-asset" class="custom-asset hidden" alt="Custom asset" />
       <section class="head">
         <div>
           <p class="eyebrow">Prezo Game Mode PoC</p>
           <h1 id="question">Waiting for poll data...</h1>
         </div>
-        <div class="meta">
-          <span class="dot"></span>
-          <span id="status">connecting</span>
-          <span id="votes">0 votes</span>
+        <div class="head-right">
+          <img id="custom-logo" class="custom-logo hidden" alt="Custom logo" />
+          <div class="meta">
+            <span class="dot"></span>
+            <span id="status">connecting</span>
+            <span id="votes">0 votes</span>
+          </div>
         </div>
       </section>
-      <section class="state" id="options"></section>
-      <p class="footer" id="footer"></p>
+      <section id="options" class="state"></section>
+      <p id="footer" class="footer"></p>
     </main>
 
-    <script>
-      ;(() => {
-        const params = new URLSearchParams(window.location.search)
-        const rawSessionId = params.get("sessionId")
-        const initialSessionId = rawSessionId ? rawSessionId.trim() : ""
-        const rawCode =
-          params.get("code") || params.get("joinCode") || params.get("sessionCode")
-        const sessionCode = rawCode ? rawCode.trim().toUpperCase() : ""
-        const boundPollId = params.get("pollId")
-        const apiBase = params.get("apiBase") || window.location.origin
-        const statusEl = document.getElementById("status")
-        const votesEl = document.getElementById("votes")
-        const questionEl = document.getElementById("question")
-        const optionsEl = document.getElementById("options")
-        const footerEl = document.getElementById("footer")
-        const wsBase = (() => {
-          const url = new URL(apiBase)
-          const protocol = url.protocol === "https:" ? "wss:" : "ws:"
-          return `${protocol}//${url.host}`
-        })()
-
-        let socket = null
-        let latestSnapshot = null
-        let resolvedSessionId = initialSessionId || null
-
-        const setStatus = (value) => {
-          statusEl.textContent = value
-        }
-
-        const renderFooter = () => {
-          const identityParts = []
-          if (resolvedSessionId) {
-            identityParts.push(`session: <code>${resolvedSessionId}</code>`)
-          }
-          if (sessionCode) {
-            identityParts.push(`code: <code>${sessionCode}</code>`)
-          }
-          if (identityParts.length === 0) {
-            identityParts.push("session: <code>n/a</code>")
-          }
-          footerEl.innerHTML =
-            identityParts.join(", ") +
-            (boundPollId ? `, poll: <code>${boundPollId}</code>` : ", poll: latest/open")
-        }
-
-        const resolveSessionId = async () => {
-          if (resolvedSessionId) {
-            return resolvedSessionId
-          }
-          if (!sessionCode) {
-            return null
-          }
-          setStatus("resolving code")
-          const response = await fetch(
-            `${apiBase}/sessions/code/${encodeURIComponent(sessionCode)}`
-          )
-          if (!response.ok) {
-            throw new Error(`Session code lookup failed (${response.status})`)
-          }
-          const session = await response.json()
-          if (!session?.id || typeof session.id !== "string") {
-            throw new Error("Session code lookup returned no session id")
-          }
-          resolvedSessionId = session.id
-          return resolvedSessionId
-        }
-
-        const choosePoll = (snapshot) => {
-          const polls = snapshot?.polls || []
-          if (polls.length === 0) {
-            return null
-          }
-          if (boundPollId) {
-            const found = polls.find((poll) => poll.id === boundPollId)
-            return found || null
-          }
-          return polls.find((poll) => poll.status === "open") || polls[0]
-        }
-
-        const renderPoll = (snapshot) => {
-          const poll = choosePoll(snapshot)
-          if (!poll) {
-            questionEl.textContent = "No poll available"
-            votesEl.textContent = "0 votes"
-            optionsEl.innerHTML = `<p class="empty">Create and open a poll to start this game surface.</p>`
-            return
-          }
-
-          const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0)
-          questionEl.textContent = poll.question
-          votesEl.textContent = `${totalVotes} votes`
-          const rows = poll.options
-            .map((option) => {
-              const ratio = totalVotes > 0 ? option.votes / totalVotes : 0
-              const percent = Math.round(ratio * 100)
-              const escapedLabel = option.label
-                .replaceAll("&", "&amp;")
-                .replaceAll("<", "&lt;")
-                .replaceAll(">", "&gt;")
-              return `
-                <article class="option">
-                  <div class="label-row">
-                    <span class="label">${escapedLabel}</span>
-                    <span class="stats">${option.votes} (${percent}%)</span>
-                  </div>
-                  <div class="track">
-                    <span class="fill" style="width:${percent}%"></span>
-                  </div>
-                </article>
-              `
-            })
-            .join("")
-          optionsEl.innerHTML = rows
-        }
-
-        const hydrate = async () => {
-          try {
-            resolvedSessionId = await resolveSessionId()
-          } catch (err) {
-            setStatus("code lookup error")
-            questionEl.textContent = "Session lookup failed"
-            optionsEl.innerHTML = `<p class="empty">${String(err?.message || err)}</p>`
-            renderFooter()
-            return
-          }
-
-          if (!resolvedSessionId) {
-            setStatus("missing session")
-            questionEl.textContent = "Missing required query param"
-            optionsEl.innerHTML =
-              `<p class="empty">Open with <code>?sessionId=&lt;id&gt;</code> or <code>?code=&lt;join_code&gt;</code></p>`
-            renderFooter()
-            return
-          }
-          renderFooter()
-
-          try {
-            setStatus("loading")
-            const response = await fetch(
-              `${apiBase}/sessions/${resolvedSessionId}/snapshot`
-            )
-            if (!response.ok) {
-              throw new Error(`Snapshot request failed (${response.status})`)
-            }
-            latestSnapshot = await response.json()
-            renderPoll(latestSnapshot)
-            setStatus("live")
-          } catch (err) {
-            setStatus("snapshot error")
-            optionsEl.innerHTML = `<p class="empty">${String(err?.message || err)}</p>`
-          }
-        }
-
-        const connect = () => {
-          if (!resolvedSessionId) {
-            return
-          }
-          if (socket) {
-            socket.close()
-          }
-          socket = new WebSocket(`${wsBase}/ws/sessions/${resolvedSessionId}`)
-          setStatus("connecting")
-          socket.addEventListener("open", () => setStatus("live"))
-          socket.addEventListener("close", () => {
-            setStatus("reconnecting")
-            window.setTimeout(connect, 1200)
-          })
-          socket.addEventListener("message", (event) => {
-            try {
-              const message = JSON.parse(event.data)
-              if (message.type === "session_snapshot" && message.payload?.snapshot) {
-                latestSnapshot = message.payload.snapshot
-              } else if (latestSnapshot) {
-                if (message.payload?.poll) {
-                  const next = message.payload.poll
-                  const polls = latestSnapshot.polls || []
-                  const index = polls.findIndex((poll) => poll.id === next.id)
-                  if (index >= 0) {
-                    polls[index] = next
-                  } else {
-                    polls.unshift(next)
-                  }
-                  latestSnapshot.polls = polls
-                }
-              }
-              renderPoll(latestSnapshot)
-            } catch {
-              // ignore malformed socket messages in the PoC
-            }
-          })
-        }
-
-        hydrate().then(connect)
-      })()
-    </script>
+    <script src="/poc/poll-game-poc.js"></script>
   </body>
 </html>
