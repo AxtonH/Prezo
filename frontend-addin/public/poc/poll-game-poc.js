@@ -38,8 +38,7 @@
     pollTimer: null,
     fetchPromise: null,
     isUnloading: false,
-    lastRenderKey: '',
-    raceRows: new Map()
+    lastRenderKey: ''
   }
 
   const el = {
@@ -595,7 +594,7 @@
   }
 
   function renderClassicOptions(poll, totalVotes) {
-    if (state.raceRows.size > 0 || el.options.classList.contains('race-mode')) {
+    if (el.options.classList.contains('race-mode')) {
       clearRaceRows()
     }
     const fragment = document.createDocumentFragment()
@@ -635,12 +634,7 @@
   }
 
   function renderRaceOptions(poll, totalVotes) {
-    if (!el.options.classList.contains('race-mode')) {
-      el.options.innerHTML = ''
-      state.raceRows.clear()
-    }
     el.options.classList.add('race-mode')
-    const rowHeight = 86
     const options = Array.isArray(poll.options) ? poll.options : []
     const sorted = [...options].sort((left, right) => {
       const voteDiff = toInt(right.votes) - toInt(left.votes)
@@ -650,78 +644,52 @@
       return asText(left.label).localeCompare(asText(right.label))
     })
 
-    const visibleIds = new Set()
+    const fragment = document.createDocumentFragment()
     for (let index = 0; index < sorted.length; index += 1) {
       const option = sorted[index]
-      const optionId = asText(option.id) || `option-${index}`
-      visibleIds.add(optionId)
-
-      let row = state.raceRows.get(optionId)
-      if (!row) {
-        row = createRaceRow()
-        state.raceRows.set(optionId, row)
-        el.options.appendChild(row)
-      }
-
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
-      row.label.textContent = asText(option.label) || 'Option'
-      row.stats.textContent = `${votes} (${pct}%)`
-      row.fill.style.width = `${pct}%`
-      row.car.style.left = `${pct}%`
-      row.car.textContent = normalizeRaceCar(currentTheme.raceCar)
-      row.root.style.transform = `translateY(${index * rowHeight}px)`
-      row.root.classList.toggle('leading', index === 0)
-      row.root.style.zIndex = String(200 - index)
-    }
-
-    for (const [optionId, row] of state.raceRows) {
-      if (visibleIds.has(optionId)) {
-        continue
+      const root = document.createElement('article')
+      root.className = 'race-option'
+      if (index === 0) {
+        root.classList.add('leading')
       }
-      row.root.remove()
-      state.raceRows.delete(optionId)
+
+      const top = document.createElement('div')
+      top.className = 'race-top'
+
+      const label = document.createElement('span')
+      label.className = 'race-label'
+      label.textContent = asText(option.label) || 'Option'
+
+      const stats = document.createElement('span')
+      stats.className = 'stats'
+      stats.textContent = `${votes} (${pct}%)`
+
+      const track = document.createElement('div')
+      track.className = 'race-track'
+
+      const fill = document.createElement('div')
+      fill.className = 'race-fill'
+      fill.style.width = `${pct}%`
+
+      const car = document.createElement('div')
+      car.className = 'race-car'
+      car.textContent = normalizeRaceCar(currentTheme.raceCar)
+      car.style.left = `${pct}%`
+
+      top.append(label, stats)
+      track.append(fill, car)
+      root.append(top, track)
+      fragment.appendChild(root)
     }
 
-    el.options.style.height = `${Math.max(sorted.length * rowHeight, 0)}px`
-  }
-
-  function createRaceRow() {
-    const root = document.createElement('div')
-    root.className = 'race-row'
-
-    const top = document.createElement('div')
-    top.className = 'race-top'
-
-    const label = document.createElement('span')
-    label.className = 'race-label'
-
-    const stats = document.createElement('span')
-    stats.className = 'stats'
-
-    const track = document.createElement('div')
-    track.className = 'race-track'
-
-    const fill = document.createElement('div')
-    fill.className = 'race-fill'
-
-    const car = document.createElement('div')
-    car.className = 'race-car'
-    car.textContent = normalizeRaceCar(currentTheme.raceCar)
-
-    top.append(label, stats)
-    track.append(fill, car)
-    root.append(top, track)
-
-    return { root, label, stats, fill, car }
+    el.options.replaceChildren(fragment)
+    el.options.style.height = ''
   }
 
   function clearRaceRows() {
-    for (const row of state.raceRows.values()) {
-      row.root.remove()
-    }
-    state.raceRows.clear()
     el.options.classList.remove('race-mode')
     el.options.style.height = ''
   }
@@ -1131,8 +1099,9 @@
   }
 
   function syncRaceThemeVisuals() {
-    for (const row of state.raceRows.values()) {
-      row.car.textContent = normalizeRaceCar(currentTheme.raceCar)
+    const cars = el.options.querySelectorAll('.race-car')
+    for (const car of cars) {
+      car.textContent = normalizeRaceCar(currentTheme.raceCar)
     }
   }
 
