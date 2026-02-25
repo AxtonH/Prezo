@@ -45,6 +45,7 @@
     bgImage: must('bg-image'),
     bgOverlay: must('bg-overlay'),
     gridBg: must('grid-bg'),
+    wrap: must('canvas-wrap'),
     settingsToggle: must('settings-toggle'),
     settingsBackdrop: must('settings-backdrop'),
     settingsPanel: must('settings-panel'),
@@ -220,6 +221,10 @@
       setDragMode(Boolean(el.dragModeEnabled.checked))
     })
 
+    window.addEventListener('pointermove', handleDragPointerMove)
+    window.addEventListener('pointerup', handleDragPointerRelease)
+    window.addEventListener('pointercancel', handleDragPointerRelease)
+
     attachDragBehavior(el.customLogo, 'logoX', 'logoY')
     attachDragBehavior(el.customAsset, 'assetX', 'assetY')
   }
@@ -228,6 +233,10 @@
     dragState.enabled = Boolean(enabled)
     el.dragModeEnabled.checked = dragState.enabled
     document.body.classList.toggle('drag-mode', dragState.enabled)
+    if (!dragState.enabled && dragState.active) {
+      dragState.active.node.classList.remove('dragging')
+      dragState.active = null
+    }
     showThemeFeedback(
       dragState.enabled
         ? 'Drag mode enabled. Drag logo/asset on canvas, then Save theme.'
@@ -241,10 +250,10 @@
       if (!dragState.enabled || node.classList.contains('hidden')) {
         return
       }
-      if (event.button !== 0) {
+      if (event.pointerType === 'mouse' && event.button !== 0) {
         return
       }
-      const wrapRect = document.querySelector('.wrap')?.getBoundingClientRect()
+      const wrapRect = getWrapRect()
       if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
         return
       }
@@ -265,51 +274,54 @@
         node.setPointerCapture(event.pointerId)
       } catch {}
     })
+  }
 
-    node.addEventListener('pointermove', (event) => {
-      const active = dragState.active
-      if (!active || active.node !== node || active.pointerId !== event.pointerId) {
-        return
-      }
-      const wrapRect = document.querySelector('.wrap')?.getBoundingClientRect()
-      if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
-        return
-      }
-
-      event.preventDefault()
-      const deltaXPercent = ((event.clientX - active.startClientX) / wrapRect.width) * 100
-      const deltaYPercent = ((event.clientY - active.startClientY) / wrapRect.height) * 100
-      const nextX = clamp(active.startX + deltaXPercent, 0, 100, active.startX)
-      const nextY = clamp(active.startY + deltaYPercent, 0, 100, active.startY)
-
-      updateTheme(
-        {
-          [active.xKey]: nextX,
-          [active.yKey]: nextY
-        },
-        { persist: false }
-      )
-      syncSingleControlValue(active.xKey, nextX)
-      syncSingleControlValue(active.yKey, nextY)
-    })
-
-    const release = (event) => {
-      const active = dragState.active
-      if (!active || active.node !== node || active.pointerId !== event.pointerId) {
-        return
-      }
-
-      node.classList.remove('dragging')
-      try {
-        node.releasePointerCapture(event.pointerId)
-      } catch {}
-      dragState.active = null
-      saveThemeDraft(currentTheme)
-      showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+  function handleDragPointerMove(event) {
+    const active = dragState.active
+    if (!active || active.pointerId !== event.pointerId) {
+      return
+    }
+    const wrapRect = getWrapRect()
+    if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
+      return
     }
 
-    node.addEventListener('pointerup', release)
-    node.addEventListener('pointercancel', release)
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+    const deltaXPercent = ((event.clientX - active.startClientX) / wrapRect.width) * 100
+    const deltaYPercent = ((event.clientY - active.startClientY) / wrapRect.height) * 100
+    const nextX = clamp(active.startX + deltaXPercent, 0, 100, active.startX)
+    const nextY = clamp(active.startY + deltaYPercent, 0, 100, active.startY)
+
+    updateTheme(
+      {
+        [active.xKey]: nextX,
+        [active.yKey]: nextY
+      },
+      { persist: false }
+    )
+    syncSingleControlValue(active.xKey, nextX)
+    syncSingleControlValue(active.yKey, nextY)
+  }
+
+  function handleDragPointerRelease(event) {
+    const active = dragState.active
+    if (!active || active.pointerId !== event.pointerId) {
+      return
+    }
+
+    active.node.classList.remove('dragging')
+    try {
+      active.node.releasePointerCapture(event.pointerId)
+    } catch {}
+    dragState.active = null
+    saveThemeDraft(currentTheme)
+    showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+  }
+
+  function getWrapRect() {
+    return el.wrap.getBoundingClientRect()
   }
 
   function renderInitialState() {

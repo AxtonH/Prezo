@@ -78,6 +78,7 @@
         <section>
           <h3>Custom Assets</h3>
           <label class="check">Enable drag mode<input id="drag-mode-enabled" type="checkbox" /></label>
+          <p class="note">Drag mode applies to visible logo and overlay asset.</p>
           <label>Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
           <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
           <label>Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
@@ -97,7 +98,7 @@
       </div>
     </aside>
 
-    <main class="wrap">
+    <main id="canvas-wrap" class="wrap">
       <img id="custom-logo" class="custom-logo draggable-layer hidden" alt="Custom logo" />
       <img id="custom-asset" class="custom-asset draggable-layer hidden" alt="Custom asset" />
       <section class="head">
