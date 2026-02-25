@@ -134,7 +134,7 @@
     { id: 'theme-bar-radius', key: 'barRadius', type: 'number' },
     { id: 'theme-question-size', key: 'questionSize', type: 'number' },
     { id: 'theme-label-size', key: 'labelSize', type: 'number' },
-    { id: 'theme-visual-mode', key: 'visualMode', type: 'text' },
+    { id: 'theme-visual-mode', key: 'visualMode', type: 'select' },
     { id: 'theme-race-car', key: 'raceCar', type: 'text' },
     { id: 'theme-race-car-size', key: 'raceCarSize', type: 'number' },
     { id: 'theme-race-track-color', key: 'raceTrackColor', type: 'color' },
@@ -210,7 +210,8 @@
       if (!input) {
         continue
       }
-      const eventName = spec.type === 'checkbox' ? 'change' : 'input'
+      const eventName =
+        spec.type === 'checkbox' || spec.type === 'select' ? 'change' : 'input'
       input.addEventListener(eventName, () => {
         const value = readControlValue(input, spec.type)
         updateTheme({ [spec.key]: value })
@@ -634,6 +635,10 @@
   }
 
   function renderRaceOptions(poll, totalVotes) {
+    if (!el.options.classList.contains('race-mode')) {
+      el.options.innerHTML = ''
+      state.raceRows.clear()
+    }
     el.options.classList.add('race-mode')
     const rowHeight = 86
     const options = Array.isArray(poll.options) ? poll.options : []
@@ -1038,6 +1043,13 @@
 
     currentTheme = sanitizeTheme(nextTheme)
     applyTheme(currentTheme)
+    if (
+      partialTheme &&
+      Object.prototype.hasOwnProperty.call(partialTheme, 'visualMode') &&
+      state.snapshot
+    ) {
+      renderFromSnapshot(true)
+    }
     if (persist) {
       saveThemeDraft(currentTheme)
     }
