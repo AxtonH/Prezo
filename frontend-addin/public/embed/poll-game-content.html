@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prezo Game Content Add-in (PoC)</title>
+    <style>
+      :root {
+        --bg: #06183a;
+        --bg-accent: #0f2f68;
+        --panel: #0b1f47;
+        --panel-border: #2c4f84;
+        --text: #d5e7ff;
+        --muted: #91a9cb;
+        --line: #2a4f86;
+        --btn: #2d6bff;
+        --btn-hover: #2558d1;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+        color: var(--text);
+        background: linear-gradient(145deg, var(--bg), var(--bg-accent));
+      }
+
+      .app {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+      }
+
+      .bar {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(4, 12, 32, 0.76);
+      }
+
+      .bar-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .status {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .meta {
+        margin: 6px 0 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .setup {
+        border-top: 1px solid var(--line);
+        margin-top: 8px;
+        padding-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .field label {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .field input {
+        width: 100%;
+        border: 1px solid var(--panel-border);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 8px;
+        font-size: 12px;
+      }
+
+      .actions {
+        display: flex;
+        align-items: end;
+        gap: 8px;
+      }
+
+      .actions button {
+        border: 0;
+        border-radius: 8px;
+        background: var(--btn);
+        color: #fff;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .actions button:hover {
+        background: var(--btn-hover);
+      }
+
+      .frame-wrap {
+        position: relative;
+        flex: 1;
+      }
+
+      iframe {
+        border: 0;
+        width: 100%;
+        height: 100%;
+        background: #03102b;
+      }
+
+      .overlay {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 28px;
+        background: rgba(2, 8, 22, 0.88);
+        color: var(--muted);
+      }
+
+      .overlay.visible {
+        display: flex;
+      }
+    </style>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="bar">
+        <div class="bar-top">
+          <p class="title">Prezo Game Embed PoC</p>
+          <span class="status" id="status">initializing</span>
+        </div>
+        <p class="meta" id="meta">Waiting for session binding...</p>
+        <div class="setup">
+          <div class="field">
+            <label for="session-id">Session ID</label>
+            <input id="session-id" type="text" placeholder="UUID" />
+          </div>
+          <div class="field">
+            <label for="session-code">Join Code</label>
+            <input id="session-code" type="text" placeholder="9H6B22" />
+          </div>
+          <div class="field">
+            <label for="api-base">API Base</label>
+            <input
+              id="api-base"
+              type="text"
+              value="https://prezo-backend-production.up.railway.app"
+            />
+          </div>
+          <div class="actions">
+            <button id="connect-btn" type="button">Connect</button>
+          </div>
+        </div>
+      </header>
+      <section class="frame-wrap">
+        <iframe id="game-frame" title="Prezo game surface"></iframe>
+        <div class="overlay visible" id="overlay">
+          <div>
+            Enter a Session ID or Join Code, or run the Prezo Host add-in first so this
+            add-in can auto-read the session binding from the presentation.
+          </div>
+        </div>
+      </section>
+    </div>
+    <script>
+      ;(() => {
+        const PREZO_NAMESPACE = "https://prezo.app/session-binding"
+        const params = new URLSearchParams(window.location.search)
+        const pollId = params.get("pollId")
+
+        const statusEl = document.getElementById("status")
+        const metaEl = document.getElementById("meta")
+        const sessionIdInput = document.getElementById("session-id")
+        const sessionCodeInput = document.getElementById("session-code")
+        const apiBaseInput = document.getElementById("api-base")
+        const connectBtn = document.getElementById("connect-btn")
+        const frame = document.getElementById("game-frame")
+        const overlay = document.getElementById("overlay")
+
+        const setStatus = (value) => {
+          statusEl.textContent = value
+        }
+
+        const setMeta = (message) => {
+          metaEl.textContent = message
+        }
+
+        const parseBindingXml = (xml) => {
+          try {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(xml, "application/xml")
+            const readNode = (name) =>
+              doc.getElementsByTagNameNS(PREZO_NAMESPACE, name)[0]?.textContent ||
+              doc.getElementsByTagName(name)[0]?.textContent ||
+              ""
+            const sessionId = readNode("sessionId")
+            if (!sessionId) {
+              return null
+            }
+            return {
+              sessionId,
+              code: readNode("code"),
+              apiBaseUrl: readNode("apiBaseUrl")
+            }
+          } catch {
+            return null
+          }
+        }
+
+        const getPartsByNamespace = (namespace) =>
+          new Promise((resolve, reject) => {
+            if (!window.Office?.context?.document?.customXmlParts) {
+              resolve([])
+              return
+            }
+            Office.context.document.customXmlParts.getByNamespaceAsync(namespace, (result) => {
+              if (result.status === Office.AsyncResultStatus.Succeeded) {
+                resolve(result.value || [])
+              } else {
+                reject(result.error)
+              }
+            })
+          })
+
+        const getXml = (part) =>
+          new Promise((resolve, reject) => {
+            part.getXmlAsync((result) => {
+              if (result.status === Office.AsyncResultStatus.Succeeded) {
+                resolve(result.value)
+              } else {
+                reject(result.error)
+              }
+            })
+          })
+
+        const readBindingFromDocument = async () => {
+          try {
+            const parts = await getPartsByNamespace(PREZO_NAMESPACE)
+            if (!parts || parts.length === 0) {
+              return null
+            }
+            const xml = await getXml(parts[0])
+            return parseBindingXml(xml)
+          } catch {
+            return null
+          }
+        }
+
+        const applyConfig = ({ sessionId, code, apiBaseUrl }) => {
+          if (sessionId) {
+            sessionIdInput.value = sessionId
+          }
+          if (code) {
+            sessionCodeInput.value = code.toUpperCase()
+          }
+          if (apiBaseUrl) {
+            apiBaseInput.value = apiBaseUrl
+          }
+        }
+
+        const connect = () => {
+          const sessionId = sessionIdInput.value.trim()
+          const code = sessionCodeInput.value.trim().toUpperCase()
+          const apiBase = apiBaseInput.value.trim()
+
+          if (!sessionId && !code) {
+            overlay.classList.add("visible")
+            setStatus("missing session")
+            setMeta("Provide a Session ID or Join Code.")
+            return
+          }
+
+          const qs = new URLSearchParams()
+          if (sessionId) {
+            qs.set("sessionId", sessionId)
+          }
+          if (!sessionId && code) {
+            qs.set("code", code)
+          }
+          if (apiBase) {
+            qs.set("apiBase", apiBase)
+          }
+          if (pollId) {
+            qs.set("pollId", pollId)
+          }
+
+          const target = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
+          frame.src = target
+          overlay.classList.remove("visible")
+          setStatus("connected")
+          setMeta(`Loaded game surface (${sessionId ? "sessionId" : "code"} mode).`)
+        }
+
+        const init = async () => {
+          setStatus("loading")
+          const binding = await readBindingFromDocument()
+          if (binding) {
+            applyConfig(binding)
+            setMeta("Session binding found in presentation. Loading game surface...")
+            connect()
+            return
+          }
+
+          const querySessionId = (params.get("sessionId") || "").trim()
+          const queryCode = (params.get("code") || "").trim().toUpperCase()
+          const queryApiBase = (params.get("apiBase") || "").trim()
+          if (querySessionId || queryCode) {
+            applyConfig({
+              sessionId: querySessionId,
+              code: queryCode,
+              apiBaseUrl: queryApiBase
+            })
+            connect()
+            return
+          }
+
+          setStatus("awaiting input")
+          setMeta("No document binding found. Enter session details below.")
+        }
+
+        connectBtn.addEventListener("click", connect)
+        sessionIdInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            connect()
+          }
+        })
+        sessionCodeInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            connect()
+          }
+        })
+
+        if (window.Office?.onReady) {
+          Office.onReady(() => {
+            init()
+          })
+        } else {
+          init()
+        }
+      })()
+    </script>
+  </body>
+</html>

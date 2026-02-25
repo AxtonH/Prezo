@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="ContentApp">
+  <Id>0885b291-af1d-4808-a2f8-6a3ee4c61e5e</Id>
+  <Version>1.0.0.1</Version>
+  <ProviderName>Prezo</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Prezo Game Surface (PoC)" />
+  <Description DefaultValue="Embeds a live Prezo poll game surface directly on a slide." />
+  <IconUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/prezo-icon-80.png" />
+  <SupportUrl DefaultValue="https://prezo-frontend-addin-production.up.railway.app/" />
+  <AppDomains>
+    <AppDomain>https://prezo-frontend-addin-production.up.railway.app</AppDomain>
+    <AppDomain>https://prezo-backend-production.up.railway.app</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://prezo-frontend-addin-production.up.railway.app/embed/poll-game-content" />
+    <RequestedHeight>600</RequestedHeight>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <AllowSnapshot>true</AllowSnapshot>
+</OfficeApp>
