@@ -775,10 +775,22 @@
   }
 
   function updateTheme(partialTheme) {
-    currentTheme = sanitizeTheme({
+    const nextTheme = {
       ...currentTheme,
       ...partialTheme
-    })
+    }
+    const includesBgUrl =
+      partialTheme &&
+      Object.prototype.hasOwnProperty.call(partialTheme, 'bgImageUrl') &&
+      asText(partialTheme.bgImageUrl)
+    const includesBgOpacity =
+      partialTheme &&
+      Object.prototype.hasOwnProperty.call(partialTheme, 'bgImageOpacity')
+    if (includesBgUrl && !includesBgOpacity && Number(nextTheme.bgImageOpacity) <= 0.01) {
+      nextTheme.bgImageOpacity = 0.55
+    }
+
+    currentTheme = sanitizeTheme(nextTheme)
     applyTheme(currentTheme)
     saveThemeDraft(currentTheme)
   }
@@ -1017,9 +1029,6 @@
   function sanitizeUrl(value, fallback) {
     const text = asText(value)
     if (!text) {
-      return fallback
-    }
-    if (text.length > 1_000_000) {
       return fallback
     }
     return text
