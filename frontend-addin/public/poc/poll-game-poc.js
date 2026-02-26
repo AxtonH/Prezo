@@ -712,6 +712,7 @@
       el.options.appendChild(row.root)
     }
 
+    const flipRows = []
     for (const optionId of orderedIds) {
       const row = state.raceRows.get(optionId)
       if (!row) {
@@ -719,20 +720,35 @@
       }
       const firstTop = firstTops.get(row.root)
       if (firstTop == null) {
+        row.root.style.transition = ''
+        row.root.style.transform = ''
         continue
       }
       const lastTop = row.root.getBoundingClientRect().top
       const deltaY = firstTop - lastTop
       if (Math.abs(deltaY) < 0.5) {
+        row.root.style.transition = ''
         row.root.style.transform = ''
         continue
       }
-      row.root.style.transition = 'none'
-      row.root.style.transform = `translateY(${deltaY}px)`
-      row.root.getBoundingClientRect()
-      row.root.style.transition =
-        'transform var(--race-speed-ms) cubic-bezier(0.2, 0.9, 0.25, 1)'
-      row.root.style.transform = 'translateY(0)'
+      flipRows.push({ row: row.root, deltaY })
+    }
+
+    if (flipRows.length > 0) {
+      for (const entry of flipRows) {
+        entry.row.style.transition = 'none'
+        entry.row.style.transform = `translateY(${entry.deltaY}px)`
+      }
+
+      // Force style flush so all rows start from inverted position together.
+      void el.options.offsetHeight
+
+      requestAnimationFrame(() => {
+        for (const entry of flipRows) {
+          entry.row.style.transition = ''
+          entry.row.style.transform = ''
+        }
+      })
     }
 
     el.options.style.height = ''
