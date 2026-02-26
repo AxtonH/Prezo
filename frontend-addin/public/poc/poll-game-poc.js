@@ -46,7 +46,9 @@
     raceRows: new Map(),
     racePollId: null,
     raceAnimFrameId: null,
-    raceAnimLastTs: 0
+    raceAnimLastTs: 0,
+    ribbonLayoutRaf: null,
+    ribbonResizeObserver: null
   }
 
   const el = {
@@ -190,6 +192,7 @@
     setupSettingsPanel()
     setupThemeEditor()
     setupDragInteractions()
+    setupRibbonOffsetTracking()
     applyTheme(currentTheme)
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
@@ -254,6 +257,35 @@
     })
   }
 
+  function setupRibbonOffsetTracking() {
+    if (typeof ResizeObserver === 'function') {
+      state.ribbonResizeObserver = new ResizeObserver(() => {
+        scheduleRibbonOffsetUpdate()
+      })
+      state.ribbonResizeObserver.observe(el.settingsRibbon)
+    }
+    window.addEventListener('resize', scheduleRibbonOffsetUpdate)
+    scheduleRibbonOffsetUpdate()
+  }
+
+  function scheduleRibbonOffsetUpdate() {
+    if (state.ribbonLayoutRaf != null) {
+      return
+    }
+    state.ribbonLayoutRaf = requestAnimationFrame(() => {
+      state.ribbonLayoutRaf = null
+      updateRibbonOffset()
+    })
+  }
+
+  function updateRibbonOffset() {
+    const offset =
+      ribbonState.hidden || el.settingsRibbon.classList.contains('hidden')
+        ? 0
+        : Math.max(0, Math.ceil(el.settingsRibbon.getBoundingClientRect().height))
+    document.documentElement.style.setProperty('--ribbon-offset', `${offset}px`)
+  }
+
   function setActiveRibbonTab(tabName, options = {}) {
     const persist = options.persist !== false
     const availableTabs = new Set(
@@ -277,6 +309,7 @@
         localStorage.setItem(RIBBON_TAB_KEY, nextTab)
       } catch {}
     }
+    scheduleRibbonOffsetUpdate()
   }
 
   function setRibbonCollapsed(collapsed, options = {}) {
@@ -292,6 +325,7 @@
         localStorage.setItem(RIBBON_COLLAPSED_KEY, ribbonState.collapsed ? '1' : '0')
       } catch {}
     }
+    scheduleRibbonOffsetUpdate()
   }
 
   function setRibbonHidden(hidden, options = {}) {
@@ -308,6 +342,7 @@
         localStorage.setItem(RIBBON_HIDDEN_KEY, ribbonState.hidden ? '1' : '0')
       } catch {}
     }
+    scheduleRibbonOffsetUpdate()
   }
 
   function setRibbonAdvanced(advanced, options = {}) {
@@ -323,6 +358,7 @@
         localStorage.setItem(RIBBON_ADVANCED_KEY, ribbonState.advanced ? '1' : '0')
       } catch {}
     }
+    scheduleRibbonOffsetUpdate()
   }
 
   function setupThemeEditor() {
@@ -1729,6 +1765,15 @@
   function handleUnload() {
     state.isUnloading = true
     stopSnapshotPolling()
+    window.removeEventListener('resize', scheduleRibbonOffsetUpdate)
+    if (state.ribbonResizeObserver) {
+      state.ribbonResizeObserver.disconnect()
+      state.ribbonResizeObserver = null
+    }
+    if (state.ribbonLayoutRaf != null) {
+      cancelAnimationFrame(state.ribbonLayoutRaf)
+      state.ribbonLayoutRaf = null
+    }
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null
