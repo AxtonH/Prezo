@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/public/poc/poll-game-poc.*)"
+    ]
+  }
+}

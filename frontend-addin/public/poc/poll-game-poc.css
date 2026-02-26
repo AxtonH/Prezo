@@ -21,11 +21,11 @@
   --race-car-size: 30px;
   --race-speed-ms: 780ms;
   --ribbon-strip-height: 42px;
-  --ribbon-panel-height: 130px;
+  --ribbon-panel-height: 155px;
   --ribbon-open-height: calc(var(--ribbon-strip-height) + var(--ribbon-panel-height));
   --ribbon-compact-height: var(--ribbon-strip-height);
   --ribbon-offset: var(--ribbon-open-height);
-  --canvas-scale: 0.86;
+  --canvas-scale: 0.85;
 }
 
 * {
@@ -78,6 +78,7 @@ body {
   z-index: 28;
   border-bottom: 1px solid rgba(145, 179, 217, 0.52);
   background: rgba(246, 251, 255, 0.93);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   box-shadow: 0 7px 18px rgba(74, 108, 148, 0.12);
 }
@@ -91,8 +92,10 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: var(--ribbon-strip-height);
-  padding: 4px 12px;
+  height: var(--ribbon-strip-height);
+  flex-shrink: 0;
+  padding: 0 12px;
+  overflow: hidden;
 }
 
 .ribbon-brand {
@@ -117,8 +120,14 @@ body {
 
 .ribbon-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex-shrink: 1;
   gap: 2px;
+  overflow-x: auto;
+}
+
+.ribbon-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .ribbon-tab {
@@ -203,6 +212,23 @@ body {
   padding-top: 4px;
 }
 
+.panel-body::-webkit-scrollbar {
+  height: 5px;
+}
+
+.panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-body::-webkit-scrollbar-thumb {
+  background: rgba(145, 179, 217, 0.5);
+  border-radius: 4px;
+}
+
+.panel-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 148, 200, 0.72);
+}
+
 .ribbon-pane {
   display: none;
   height: 100%;
@@ -224,9 +250,28 @@ body {
 .ribbon-group {
   min-width: 280px;
   border-right: 1px solid rgba(172, 198, 227, 0.58);
-  padding: 6px 12px;
+  padding: 6px 12px 4px;
   background: transparent;
   height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ribbon-group::-webkit-scrollbar {
+  width: 4px;
+}
+
+.ribbon-group::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ribbon-group::-webkit-scrollbar-thumb {
+  background: rgba(145, 179, 217, 0.55);
+  border-radius: 4px;
+}
+
+.ribbon-group::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 148, 200, 0.75);
 }
 
 .ribbon-group.group-compact {
@@ -471,6 +516,7 @@ body.ribbon-advanced .advanced-control.note {
   border: 1px solid var(--panel-border);
   border-radius: 22px;
   background: var(--panel-bg);
+  -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
   transform-origin: top center;
@@ -531,6 +577,7 @@ body.ribbon-advanced .advanced-control.note {
 .draggable-layer {
   pointer-events: none;
   touch-action: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -746,31 +793,31 @@ h1 {
 
   :root {
     --ribbon-strip-height: 40px;
-    --ribbon-panel-height: 122px;
+    --ribbon-panel-height: 148px;
   }
 
   .ribbon-strip {
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
-    padding: 6px 8px;
+    padding: 0 8px;
+    height: var(--ribbon-strip-height);
+    overflow: hidden;
   }
 
   .ribbon-brand {
     min-width: 0;
+    flex-shrink: 1;
   }
 
   .ribbon-tabs {
-    width: 100%;
-    order: 3;
+    flex-shrink: 1;
     overflow-x: auto;
-    white-space: nowrap;
-    flex-wrap: nowrap;
-    padding-bottom: 2px;
   }
 
   .ribbon-actions {
     margin-left: auto;
+    flex-shrink: 0;
   }
 
   .settings-panel {

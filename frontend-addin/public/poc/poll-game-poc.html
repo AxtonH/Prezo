@@ -18,10 +18,10 @@
           <strong>Prezo Ribbon</strong>
         </div>
         <div class="ribbon-tabs" role="tablist" aria-label="Editor sections">
-          <button class="ribbon-tab active" data-ribbon-tab="home" type="button">Home</button>
-          <button class="ribbon-tab" data-ribbon-tab="look" type="button">Design</button>
-          <button class="ribbon-tab" data-ribbon-tab="motion" type="button">Motion</button>
-          <button class="ribbon-tab" data-ribbon-tab="assets" type="button">Assets</button>
+          <button class="ribbon-tab active" role="tab" data-ribbon-tab="home" type="button">Home</button>
+          <button class="ribbon-tab" role="tab" data-ribbon-tab="look" type="button">Design</button>
+          <button class="ribbon-tab" role="tab" data-ribbon-tab="motion" type="button">Motion</button>
+          <button class="ribbon-tab" role="tab" data-ribbon-tab="assets" type="button">Assets</button>
         </div>
         <div class="ribbon-actions">
           <button
@@ -48,7 +48,7 @@
                   <button id="save-theme" type="button">Save</button>
                 </div>
                 <div class="row">
-                  <select id="theme-select"></select>
+                  <select id="theme-select" aria-label="Saved themes"></select>
                   <button id="load-theme" type="button">Load</button>
                   <button id="delete-theme" type="button" class="danger">Delete</button>
                 </div>
