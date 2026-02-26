@@ -21,6 +21,7 @@
   --race-car-size: 30px;
   --race-speed-ms: 780ms;
   --ribbon-offset: 108px;
+  --canvas-scale: 1;
 }
 
 * {
@@ -232,7 +233,7 @@ body {
 }
 
 .ribbon-group.group-assets {
-  min-width: 420px;
+  min-width: 380px;
 }
 
 .ribbon-group:last-child {
@@ -463,6 +464,9 @@ body.ribbon-advanced .advanced-control.note {
   background: var(--panel-bg);
   backdrop-filter: blur(3px);
   box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
+  transform-origin: top center;
+  transform: scale(var(--canvas-scale));
+  transition: transform 170ms ease, margin 170ms ease;
 }
 
 .custom-asset {

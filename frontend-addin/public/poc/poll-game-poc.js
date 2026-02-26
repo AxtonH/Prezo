@@ -48,7 +48,9 @@
     raceAnimFrameId: null,
     raceAnimLastTs: 0,
     ribbonLayoutRaf: null,
-    ribbonResizeObserver: null
+    ribbonResizeObserver: null,
+    canvasLayoutRaf: null,
+    canvasResizeObserver: null
   }
 
   const el = {
@@ -193,6 +195,7 @@
     setupThemeEditor()
     setupDragInteractions()
     setupRibbonOffsetTracking()
+    setupCanvasFitBehavior()
     applyTheme(currentTheme)
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
@@ -284,6 +287,62 @@
         ? 0
         : Math.max(0, Math.ceil(el.settingsRibbon.getBoundingClientRect().height))
     document.documentElement.style.setProperty('--ribbon-offset', `${offset}px`)
+    scheduleCanvasFitUpdate()
+  }
+
+  function setupCanvasFitBehavior() {
+    el.wrap.addEventListener('pointerdown', handleCanvasPointerDown)
+
+    if (typeof ResizeObserver === 'function') {
+      state.canvasResizeObserver = new ResizeObserver(() => {
+        scheduleCanvasFitUpdate()
+      })
+      state.canvasResizeObserver.observe(el.wrap)
+    }
+
+    window.addEventListener('resize', scheduleCanvasFitUpdate)
+    scheduleCanvasFitUpdate()
+  }
+
+  function handleCanvasPointerDown(event) {
+    if (ribbonState.hidden || dragState.enabled) {
+      return
+    }
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return
+    }
+    setRibbonHidden(true)
+  }
+
+  function scheduleCanvasFitUpdate() {
+    if (state.canvasLayoutRaf != null) {
+      return
+    }
+    state.canvasLayoutRaf = requestAnimationFrame(() => {
+      state.canvasLayoutRaf = null
+      updateCanvasScale()
+    })
+  }
+
+  function updateCanvasScale() {
+    const shouldFit = !ribbonState.hidden
+    if (!shouldFit) {
+      document.documentElement.style.setProperty('--canvas-scale', '1')
+      return
+    }
+
+    const wrapStyle = getComputedStyle(el.wrap)
+    const marginTop = Number.parseFloat(wrapStyle.marginTop) || 0
+    const marginBottom = Number.parseFloat(wrapStyle.marginBottom) || 0
+    const availableHeight = Math.max(120, window.innerHeight - marginTop - marginBottom - 10)
+    const availableWidth = Math.max(120, window.innerWidth - 20)
+
+    const contentHeight = Math.max(1, el.wrap.scrollHeight)
+    const contentWidth = Math.max(1, el.wrap.scrollWidth)
+    const heightScale = availableHeight / contentHeight
+    const widthScale = availableWidth / contentWidth
+    const scale = Math.min(1, heightScale, widthScale)
+    document.documentElement.style.setProperty('--canvas-scale', `${scale}`)
   }
 
   function setActiveRibbonTab(tabName, options = {}) {
@@ -1765,14 +1824,24 @@
   function handleUnload() {
     state.isUnloading = true
     stopSnapshotPolling()
+    el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     window.removeEventListener('resize', scheduleRibbonOffsetUpdate)
+    window.removeEventListener('resize', scheduleCanvasFitUpdate)
     if (state.ribbonResizeObserver) {
       state.ribbonResizeObserver.disconnect()
       state.ribbonResizeObserver = null
     }
+    if (state.canvasResizeObserver) {
+      state.canvasResizeObserver.disconnect()
+      state.canvasResizeObserver = null
+    }
     if (state.ribbonLayoutRaf != null) {
       cancelAnimationFrame(state.ribbonLayoutRaf)
       state.ribbonLayoutRaf = null
+    }
+    if (state.canvasLayoutRaf != null) {
+      cancelAnimationFrame(state.canvasLayoutRaf)
+      state.canvasLayoutRaf = null
     }
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
