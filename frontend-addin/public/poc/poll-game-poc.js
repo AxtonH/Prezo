@@ -3,6 +3,9 @@
   const DEFAULT_POLL_SELECTOR = 'latest/open'
   const THEME_LIBRARY_KEY = 'prezo.poll-game-poc.themes.v1'
   const THEME_DRAFT_KEY = 'prezo.poll-game-poc.theme-draft.v1'
+  const RIBBON_TAB_KEY = 'prezo.poll-game-poc.ribbon-tab.v1'
+  const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
+  const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
 
   const query = new URLSearchParams(window.location.search)
 
@@ -50,7 +53,9 @@
     bgOverlay: must('bg-overlay'),
     gridBg: must('grid-bg'),
     wrap: must('canvas-wrap'),
+    settingsRibbon: must('settings-ribbon'),
     settingsToggle: must('settings-toggle'),
+    settingsMinimized: must('settings-minimized'),
     settingsBackdrop: must('settings-backdrop'),
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
@@ -73,35 +78,37 @@
     customLogo: must('custom-logo'),
     customAsset: must('custom-asset')
   }
+  const ribbonTabs = [...document.querySelectorAll('.ribbon-tab')]
+  const ribbonPanes = [...document.querySelectorAll('.ribbon-pane')]
 
   const defaultTheme = Object.freeze({
     bgImageUrl: '',
     bgImageOpacity: 0,
-    bgA: '#04112b',
-    bgB: '#0a2457',
-    overlayColor: '#04112b',
-    overlayOpacity: 0.3,
+    bgA: '#f4f8ff',
+    bgB: '#dff0ff',
+    overlayColor: '#eef5ff',
+    overlayOpacity: 0.22,
     gridVisible: true,
-    gridOpacity: 0.14,
-    panelColor: '#040c20',
-    panelOpacity: 0.76,
-    panelBorder: '#79beff',
-    textMain: '#e8f2ff',
-    textSub: '#90a5c3',
-    trackColor: '#cfddf0',
-    trackOpacity: 0.2,
-    fillA: '#37d0ff',
-    fillB: '#2d6bff',
+    gridOpacity: 0.1,
+    panelColor: '#ffffff',
+    panelOpacity: 0.82,
+    panelBorder: '#9bc5ef',
+    textMain: '#16375e',
+    textSub: '#55769d',
+    trackColor: '#c7d8ea',
+    trackOpacity: 0.58,
+    fillA: '#64c8ff',
+    fillB: '#4a89ff',
     barHeight: 24,
     barRadius: 999,
     questionSize: 62,
     labelSize: 24,
     visualMode: 'classic',
-    raceCar: '🏎️',
+    raceCar: 'car',
     raceCarImageUrl: '',
     raceCarSize: 30,
-    raceTrackColor: '#adcfff',
-    raceTrackOpacity: 0.2,
+    raceTrackColor: '#d7e6f6',
+    raceTrackOpacity: 0.88,
     raceSpeed: 0.78,
     logoUrl: '',
     logoWidth: 140,
@@ -110,7 +117,7 @@
     logoY: 10,
     assetUrl: '',
     assetWidth: 320,
-    assetOpacity: 0.45,
+    assetOpacity: 0.38,
     assetX: 50,
     assetY: 50,
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
@@ -168,6 +175,11 @@
     enabled: false,
     active: null
   }
+  const ribbonState = {
+    activeTab: 'home',
+    collapsed: false,
+    hidden: false
+  }
 
   init()
 
@@ -184,29 +196,111 @@
   }
 
   function setupSettingsPanel() {
-    const open = () => {
-      el.settingsPanel.classList.add('open')
-      el.settingsBackdrop.classList.add('visible')
+    const storedTab = asText(safeStorageGet(RIBBON_TAB_KEY))
+    setActiveRibbonTab(storedTab || 'home', { persist: false })
+    setRibbonCollapsed(safeStorageGet(RIBBON_COLLAPSED_KEY) === '1', { persist: false })
+    setRibbonHidden(safeStorageGet(RIBBON_HIDDEN_KEY) === '1', { persist: false })
+
+    for (const tab of ribbonTabs) {
+      tab.addEventListener('click', () => {
+        const nextTab = asText(tab.dataset.ribbonTab)
+        setActiveRibbonTab(nextTab)
+        if (ribbonState.hidden) {
+          setRibbonHidden(false)
+        }
+        if (ribbonState.collapsed) {
+          setRibbonCollapsed(false)
+        }
+      })
     }
-    const close = () => {
-      el.settingsPanel.classList.remove('open')
-      el.settingsBackdrop.classList.remove('visible')
-    }
+
     el.settingsToggle.addEventListener('click', () => {
-      const isOpen = el.settingsPanel.classList.contains('open')
-      if (isOpen) {
-        close()
+      if (ribbonState.hidden) {
+        setRibbonHidden(false)
+      }
+      setRibbonCollapsed(!ribbonState.collapsed)
+    })
+    el.settingsClose.addEventListener('click', () => {
+      setRibbonHidden(true)
+    })
+    el.settingsMinimized.addEventListener('click', () => {
+      setRibbonHidden(false)
+      setRibbonCollapsed(false)
+    })
+    el.settingsBackdrop.addEventListener('click', () => {
+      if (!ribbonState.hidden) {
+        setRibbonCollapsed(true)
+      }
+    })
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') {
         return
       }
-      open()
-    })
-    el.settingsClose.addEventListener('click', close)
-    el.settingsBackdrop.addEventListener('click', close)
-    window.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        close()
+      if (ribbonState.hidden) {
+        return
       }
+      if (!ribbonState.collapsed) {
+        setRibbonCollapsed(true)
+        return
+      }
+      setRibbonHidden(true)
     })
+  }
+
+  function setActiveRibbonTab(tabName, options = {}) {
+    const persist = options.persist !== false
+    const availableTabs = new Set(
+      ribbonTabs.map((tab) => asText(tab.dataset.ribbonTab)).filter(Boolean)
+    )
+    const nextTab = availableTabs.has(tabName) ? tabName : 'home'
+    ribbonState.activeTab = nextTab
+
+    for (const tab of ribbonTabs) {
+      const tabId = asText(tab.dataset.ribbonTab)
+      const isActive = tabId === nextTab
+      tab.classList.toggle('active', isActive)
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
+    }
+    for (const pane of ribbonPanes) {
+      const paneId = asText(pane.dataset.ribbonPane)
+      pane.classList.toggle('active', paneId === nextTab)
+    }
+    if (persist) {
+      try {
+        localStorage.setItem(RIBBON_TAB_KEY, nextTab)
+      } catch {}
+    }
+  }
+
+  function setRibbonCollapsed(collapsed, options = {}) {
+    const persist = options.persist !== false
+    ribbonState.collapsed = Boolean(collapsed)
+
+    el.settingsPanel.classList.toggle('open', !ribbonState.collapsed)
+    document.body.classList.toggle('ribbon-collapsed', ribbonState.collapsed && !ribbonState.hidden)
+    el.settingsToggle.textContent = ribbonState.collapsed ? 'Expand Ribbon' : 'Minimize Ribbon'
+
+    if (persist) {
+      try {
+        localStorage.setItem(RIBBON_COLLAPSED_KEY, ribbonState.collapsed ? '1' : '0')
+      } catch {}
+    }
+  }
+
+  function setRibbonHidden(hidden, options = {}) {
+    const persist = options.persist !== false
+    ribbonState.hidden = Boolean(hidden)
+
+    el.settingsRibbon.classList.toggle('hidden', ribbonState.hidden)
+    el.settingsMinimized.classList.toggle('hidden', !ribbonState.hidden)
+    document.body.classList.toggle('ribbon-hidden', ribbonState.hidden)
+    document.body.classList.toggle('ribbon-collapsed', ribbonState.collapsed && !ribbonState.hidden)
+
+    if (persist) {
+      try {
+        localStorage.setItem(RIBBON_HIDDEN_KEY, ribbonState.hidden ? '1' : '0')
+      } catch {}
+    }
   }
 
   function setupThemeEditor() {
@@ -1318,9 +1412,25 @@
       return sanitizeTheme(library.themes[library.activeName])
     }
     if (draft) {
+      if (isLegacyDarkTheme(draft)) {
+        saveThemeDraft(defaultTheme)
+        return clone(defaultTheme)
+      }
       return draft
     }
     return clone(defaultTheme)
+  }
+
+  function isLegacyDarkTheme(theme) {
+    if (!theme || typeof theme !== 'object') {
+      return false
+    }
+    return (
+      asText(theme.bgA).toLowerCase() === '#04112b' &&
+      asText(theme.bgB).toLowerCase() === '#0a2457' &&
+      asText(theme.panelColor).toLowerCase() === '#040c20' &&
+      asText(theme.textMain).toLowerCase() === '#e8f2ff'
+    )
   }
 
   function loadThemeLibrary() {
@@ -1368,14 +1478,14 @@
   function showThemeFeedback(text, type) {
     el.themeFeedback.textContent = text
     if (type === 'success') {
-      el.themeFeedback.style.color = '#95f2b7'
+      el.themeFeedback.style.color = '#216e43'
       return
     }
     if (type === 'error') {
-      el.themeFeedback.style.color = '#ff91a4'
+      el.themeFeedback.style.color = '#b53a4e'
       return
     }
-    el.themeFeedback.style.color = '#a6c0e2'
+    el.themeFeedback.style.color = '#5f7ea3'
   }
 
   function readControlValue(input, type) {
@@ -1604,3 +1714,4 @@
     disconnectSocket()
   }
 })()
+
