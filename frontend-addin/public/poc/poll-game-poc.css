@@ -386,10 +386,7 @@ h1 {
   left: 0;
   right: 0;
   margin: 0;
-  transition:
-    top var(--race-speed-ms) cubic-bezier(0.2, 0.9, 0.25, 1),
-    opacity 220ms ease-out;
-  will-change: top;
+  will-change: transform;
 }
 
 .race-top {
@@ -437,7 +434,6 @@ h1 {
   width: 0%;
   border-radius: var(--bar-radius);
   background: linear-gradient(90deg, var(--fill-a), var(--fill-b));
-  transition: width var(--race-speed-ms) cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .race-car {
@@ -452,7 +448,6 @@ h1 {
   transform: translate(-40%, -50%);
   font-size: calc(var(--race-car-size) - 4px);
   line-height: 1;
-  transition: left var(--race-speed-ms) cubic-bezier(0.2, 0.9, 0.25, 1);
   filter: drop-shadow(0 5px 10px rgba(25, 42, 72, 0.8));
   z-index: 2;
   background-repeat: no-repeat;

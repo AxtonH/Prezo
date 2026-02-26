@@ -40,7 +40,9 @@
     isUnloading: false,
     lastRenderKey: '',
     raceRows: new Map(),
-    racePollId: null
+    racePollId: null,
+    raceAnimFrameId: null,
+    raceAnimLastTs: 0
   }
 
   const el = {
@@ -218,7 +220,11 @@
       input.addEventListener(eventName, () => {
         const value = readControlValue(input, spec.type)
         updateTheme({ [spec.key]: value })
-        if (spec.key === 'visualMode' && state.snapshot) {
+        if (
+          state.snapshot &&
+          (spec.key === 'visualMode' ||
+            (currentTheme.visualMode === 'race' && spec.key.startsWith('race')))
+        ) {
           renderFromSnapshot(true)
         }
       })
@@ -669,27 +675,25 @@
     })
     const rowHeight = Math.max(74, currentTheme.raceCarSize + 46)
 
-    const orderedIds = []
     const liveIds = new Set()
     for (let index = 0; index < sorted.length; index += 1) {
       const option = sorted[index]
       const optionId = asText(option.id) || `option-${index}`
       liveIds.add(optionId)
-      orderedIds.push(optionId)
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
       let row = state.raceRows.get(optionId)
       if (!row) {
-        row = createRaceRow()
+        row = createRaceRow(index * rowHeight, pct)
         state.raceRows.set(optionId, row)
+        el.options.appendChild(row.root)
       }
       row.label.textContent = asText(option.label) || 'Option'
       row.stats.textContent = `${votes} (${pct}%)`
-      row.fill.style.width = `${pct}%`
-      row.car.style.left = `${pct}%`
+      row.targetY = index * rowHeight
+      row.targetProgress = pct
       row.root.classList.toggle('leading', index === 0)
-      row.root.style.top = `${index * rowHeight}px`
       row.root.style.zIndex = `${sorted.length - index}`
       applyRaceCarContent(row.car)
     }
@@ -702,20 +706,14 @@
       state.raceRows.delete(optionId)
     }
 
-    for (const optionId of orderedIds) {
-      const row = state.raceRows.get(optionId)
-      if (!row) {
-        continue
-      }
-      el.options.appendChild(row.root)
-    }
     el.options.style.height = `${rowHeight * sorted.length}px`
+    startRaceAnimationLoop()
   }
 
-  function createRaceRow() {
+  function createRaceRow(initialY = 0, initialProgress = 0) {
     const root = document.createElement('article')
     root.className = 'race-option'
-    root.style.top = '0px'
+    root.style.transform = `translateY(${initialY}px)`
     root.style.opacity = '1'
 
     const top = document.createElement('div')
@@ -735,15 +733,90 @@
 
     const car = document.createElement('div')
     car.className = 'race-car'
+    car.style.left = `${initialProgress}%`
+
+    fill.style.width = `${initialProgress}%`
 
     top.append(label, stats)
     track.append(fill, car)
     root.append(top, track)
 
-    return { root, label, stats, fill, car }
+    return {
+      root,
+      label,
+      stats,
+      fill,
+      car,
+      currentY: initialY,
+      targetY: initialY,
+      currentProgress: initialProgress,
+      targetProgress: initialProgress
+    }
+  }
+
+  function startRaceAnimationLoop() {
+    if (state.raceAnimFrameId != null) {
+      return
+    }
+    state.raceAnimLastTs = 0
+    state.raceAnimFrameId = requestAnimationFrame(stepRaceAnimation)
+  }
+
+  function stopRaceAnimationLoop() {
+    if (state.raceAnimFrameId == null) {
+      return
+    }
+    cancelAnimationFrame(state.raceAnimFrameId)
+    state.raceAnimFrameId = null
+    state.raceAnimLastTs = 0
+  }
+
+  function stepRaceAnimation(ts) {
+    if (state.raceRows.size === 0 || currentTheme.visualMode !== 'race') {
+      stopRaceAnimationLoop()
+      return
+    }
+
+    const prevTs = state.raceAnimLastTs || ts
+    const dt = Math.min(0.05, Math.max(0.001, (ts - prevTs) / 1000))
+    state.raceAnimLastTs = ts
+
+    const speed = clamp(currentTheme.raceSpeed, 0.35, 1.8, defaultTheme.raceSpeed)
+    const yAlpha = 1 - Math.exp(-(9.5 * speed) * dt)
+    const pAlpha = 1 - Math.exp(-(10.5 * speed) * dt)
+
+    let hasMotion = false
+    for (const row of state.raceRows.values()) {
+      row.currentY += (row.targetY - row.currentY) * yAlpha
+      row.currentProgress += (row.targetProgress - row.currentProgress) * pAlpha
+
+      if (Math.abs(row.targetY - row.currentY) < 0.2) {
+        row.currentY = row.targetY
+      } else {
+        hasMotion = true
+      }
+      if (Math.abs(row.targetProgress - row.currentProgress) < 0.15) {
+        row.currentProgress = row.targetProgress
+      } else {
+        hasMotion = true
+      }
+
+      row.root.style.transform = `translateY(${row.currentY}px)`
+      row.fill.style.width = `${row.currentProgress}%`
+      row.car.style.left = `${row.currentProgress}%`
+    }
+
+    if (hasMotion) {
+      state.raceAnimFrameId = requestAnimationFrame(stepRaceAnimation)
+      return
+    }
+
+    state.raceAnimFrameId = null
+    state.raceAnimLastTs = 0
   }
 
   function clearRaceRows() {
+    stopRaceAnimationLoop()
     for (const row of state.raceRows.values()) {
       row.root.remove()
     }
