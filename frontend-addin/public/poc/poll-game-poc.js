@@ -39,7 +39,8 @@
     fetchPromise: null,
     isUnloading: false,
     lastRenderKey: '',
-    raceRows: new Map()
+    raceRows: new Map(),
+    racePollId: null
   }
 
   const el = {
@@ -598,7 +599,7 @@
   }
 
   function renderClassicOptions(poll, totalVotes) {
-    if (el.options.classList.contains('race-mode')) {
+    if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
       clearRaceRows()
     }
     const fragment = document.createDocumentFragment()
@@ -638,7 +639,26 @@
   }
 
   function renderRaceOptions(poll, totalVotes) {
+    const pollId = asText(poll?.id)
+    if (state.racePollId && pollId && state.racePollId !== pollId) {
+      clearRaceRows()
+      el.options.replaceChildren()
+    }
+    if (!el.options.classList.contains('race-mode')) {
+      el.options.replaceChildren()
+      state.raceRows.clear()
+    }
+
     el.options.classList.add('race-mode')
+    state.racePollId = pollId || state.racePollId
+
+    const foreignNodes = [...el.options.children].filter(
+      (node) => !(node instanceof HTMLElement) || !node.classList.contains('race-option')
+    )
+    for (const node of foreignNodes) {
+      node.remove()
+    }
+
     const options = Array.isArray(poll.options) ? poll.options : []
     const sorted = [...options].sort((left, right) => {
       const voteDiff = toInt(right.votes) - toInt(left.votes)
@@ -752,6 +772,11 @@
       row.root.remove()
     }
     state.raceRows.clear()
+    state.racePollId = null
+    const orphanRows = el.options.querySelectorAll('.race-option')
+    for (const row of orphanRows) {
+      row.remove()
+    }
     el.options.classList.remove('race-mode')
     el.options.style.height = ''
   }
