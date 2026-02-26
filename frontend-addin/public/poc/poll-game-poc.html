@@ -15,17 +15,25 @@
       <div class="ribbon-strip">
         <div class="ribbon-brand">
           <p class="ribbon-kicker">Prezo Editing Station</p>
-          <strong>Game Ribbon</strong>
+          <strong>Prezo Ribbon</strong>
         </div>
         <div class="ribbon-tabs" role="tablist" aria-label="Editor sections">
           <button class="ribbon-tab active" data-ribbon-tab="home" type="button">Home</button>
-          <button class="ribbon-tab" data-ribbon-tab="look" type="button">Look</button>
+          <button class="ribbon-tab" data-ribbon-tab="look" type="button">Design</button>
           <button class="ribbon-tab" data-ribbon-tab="motion" type="button">Motion</button>
           <button class="ribbon-tab" data-ribbon-tab="assets" type="button">Assets</button>
         </div>
         <div class="ribbon-actions">
-          <button id="settings-toggle" class="ribbon-btn" type="button">Minimize Ribbon</button>
-          <button id="settings-close" class="ribbon-btn ghost" type="button">Hide Ribbon</button>
+          <button
+            id="ribbon-advanced-toggle"
+            class="ribbon-btn ghost"
+            type="button"
+            aria-pressed="false"
+          >
+            Advanced
+          </button>
+          <button id="settings-toggle" class="ribbon-btn" type="button">Collapse</button>
+          <button id="settings-close" class="ribbon-btn ghost" type="button">Hide</button>
         </div>
       </div>
 
@@ -33,7 +41,7 @@
         <div class="panel-body">
           <section class="ribbon-pane active" data-ribbon-pane="home">
             <div class="ribbon-pane-grid">
-              <article class="ribbon-group">
+              <article class="ribbon-group group-medium">
                 <h3>Themes</h3>
                 <div class="row">
                   <input id="theme-name" type="text" placeholder="Theme name" />
@@ -44,7 +52,7 @@
                   <button id="load-theme" type="button">Load</button>
                   <button id="delete-theme" type="button" class="danger">Delete</button>
                 </div>
-                <div class="row">
+                <div class="row advanced-control">
                   <button id="export-theme" type="button">Export</button>
                   <label class="file-btn">
                     Import
@@ -55,7 +63,7 @@
                 <p id="theme-feedback" class="note"></p>
               </article>
 
-              <article class="ribbon-group">
+              <article class="ribbon-group group-compact">
                 <h3>Quick Mode</h3>
                 <label>
                   Visual mode
@@ -72,36 +80,36 @@
 
           <section class="ribbon-pane" data-ribbon-pane="look">
             <div class="ribbon-pane-grid">
-              <article class="ribbon-group">
+              <article class="ribbon-group group-wide">
                 <h3>Background</h3>
                 <label>Image URL<input id="theme-bg-image-url" type="text" placeholder="https://..." /></label>
                 <label>Upload image<input id="theme-bg-image-upload" type="file" accept="image/*" /></label>
                 <div class="grid">
-                  <label>Gradient A<input id="theme-bg-a" type="color" /></label>
-                  <label>Gradient B<input id="theme-bg-b" type="color" /></label>
-                  <label>Overlay color<input id="theme-overlay-color" type="color" /></label>
+                  <label class="advanced-control">Gradient A<input id="theme-bg-a" type="color" /></label>
+                  <label class="advanced-control">Gradient B<input id="theme-bg-b" type="color" /></label>
+                  <label class="advanced-control">Overlay color<input id="theme-overlay-color" type="color" /></label>
                   <label>Image opacity<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" /></label>
                   <label>Overlay opacity<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label>Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
+                  <label class="advanced-control">Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
                   <label class="check">Show grid<input id="theme-grid-visible" type="checkbox" /></label>
                 </div>
               </article>
 
-              <article class="ribbon-group">
+              <article class="ribbon-group group-wide">
                 <h3>Poll Style</h3>
                 <div class="grid">
                   <label>Panel color<input id="theme-panel-color" type="color" /></label>
-                  <label>Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label>Panel border<input id="theme-panel-border" type="color" /></label>
+                  <label class="advanced-control">Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                  <label class="advanced-control">Panel border<input id="theme-panel-border" type="color" /></label>
                   <label>Main text<input id="theme-text-main" type="color" /></label>
-                  <label>Muted text<input id="theme-text-sub" type="color" /></label>
-                  <label>Track color<input id="theme-track-color" type="color" /></label>
-                  <label>Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                  <label class="advanced-control">Muted text<input id="theme-text-sub" type="color" /></label>
+                  <label class="advanced-control">Track color<input id="theme-track-color" type="color" /></label>
+                  <label class="advanced-control">Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
                   <label>Fill A<input id="theme-fill-a" type="color" /></label>
                   <label>Fill B<input id="theme-fill-b" type="color" /></label>
                   <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
-                  <label>Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
-                  <label>Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
+                  <label class="advanced-control">Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
+                  <label class="advanced-control">Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
                   <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
                 </div>
               </article>
@@ -110,16 +118,16 @@
 
           <section class="ribbon-pane" data-ribbon-pane="motion">
             <div class="ribbon-pane-grid">
-              <article class="ribbon-group">
+              <article class="ribbon-group group-medium">
                 <h3>Race Animation</h3>
                 <label>Car icon<input id="theme-race-car" type="text" maxlength="4" placeholder="car emoji" /></label>
-                <label>Car image URL<input id="theme-race-car-image-url" type="text" placeholder="https://..." /></label>
+                <label class="advanced-control">Car image URL<input id="theme-race-car-image-url" type="text" placeholder="https://..." /></label>
                 <label>Upload car image<input id="theme-race-car-upload" type="file" accept="image/*" /></label>
                 <div class="grid">
                   <label>Car size<input id="theme-race-car-size" type="range" min="20" max="56" step="1" /></label>
                   <label>Race speed<input id="theme-race-speed" type="range" min="0.35" max="1.8" step="0.01" /></label>
-                  <label>Track color<input id="theme-race-track-color" type="color" /></label>
-                  <label>Track opacity<input id="theme-race-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                  <label class="advanced-control">Track color<input id="theme-race-track-color" type="color" /></label>
+                  <label class="advanced-control">Track opacity<input id="theme-race-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
                 </div>
               </article>
             </div>
@@ -127,22 +135,22 @@
 
           <section class="ribbon-pane" data-ribbon-pane="assets">
             <div class="ribbon-pane-grid">
-              <article class="ribbon-group">
+              <article class="ribbon-group group-wide">
                 <h3>Scene Assets</h3>
-                <label>Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
+                <label class="advanced-control">Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
                 <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
-                <label>Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
-                <label>Upload overlay asset<input id="theme-asset-upload" type="file" accept="image/*" /></label>
+                <label class="advanced-control">Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
+                <label class="advanced-control">Upload overlay asset<input id="theme-asset-upload" type="file" accept="image/*" /></label>
                 <div class="grid">
                   <label>Logo width<input id="theme-logo-width" type="range" min="40" max="280" step="1" /></label>
-                  <label>Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                  <label class="advanced-control">Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
                   <label>Logo X<input id="theme-logo-x" type="range" min="0" max="100" step="1" /></label>
                   <label>Logo Y<input id="theme-logo-y" type="range" min="0" max="100" step="1" /></label>
-                  <label>Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
-                  <label>Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label>Asset X<input id="theme-asset-x" type="range" min="0" max="100" step="1" /></label>
-                  <label>Asset Y<input id="theme-asset-y" type="range" min="0" max="100" step="1" /></label>
-                  <label>Font family<input id="theme-font-family" type="text" /></label>
+                  <label class="advanced-control">Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
+                  <label class="advanced-control">Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                  <label class="advanced-control">Asset X<input id="theme-asset-x" type="range" min="0" max="100" step="1" /></label>
+                  <label class="advanced-control">Asset Y<input id="theme-asset-y" type="range" min="0" max="100" step="1" /></label>
+                  <label class="advanced-control">Font family<input id="theme-font-family" type="text" /></label>
                 </div>
               </article>
             </div>

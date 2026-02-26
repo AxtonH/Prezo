@@ -6,6 +6,7 @@
   const RIBBON_TAB_KEY = 'prezo.poll-game-poc.ribbon-tab.v1'
   const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
   const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
+  const RIBBON_ADVANCED_KEY = 'prezo.poll-game-poc.ribbon-advanced.v1'
 
   const query = new URLSearchParams(window.location.search)
 
@@ -55,6 +56,7 @@
     wrap: must('canvas-wrap'),
     settingsRibbon: must('settings-ribbon'),
     settingsToggle: must('settings-toggle'),
+    ribbonAdvancedToggle: must('ribbon-advanced-toggle'),
     settingsMinimized: must('settings-minimized'),
     settingsBackdrop: must('settings-backdrop'),
     settingsPanel: must('settings-panel'),
@@ -178,7 +180,8 @@
   const ribbonState = {
     activeTab: 'home',
     collapsed: false,
-    hidden: false
+    hidden: false,
+    advanced: false
   }
 
   init()
@@ -198,6 +201,7 @@
   function setupSettingsPanel() {
     const storedTab = asText(safeStorageGet(RIBBON_TAB_KEY))
     setActiveRibbonTab(storedTab || 'home', { persist: false })
+    setRibbonAdvanced(safeStorageGet(RIBBON_ADVANCED_KEY) === '1', { persist: false })
     setRibbonCollapsed(safeStorageGet(RIBBON_COLLAPSED_KEY) === '1', { persist: false })
     setRibbonHidden(safeStorageGet(RIBBON_HIDDEN_KEY) === '1', { persist: false })
 
@@ -219,6 +223,9 @@
         setRibbonHidden(false)
       }
       setRibbonCollapsed(!ribbonState.collapsed)
+    })
+    el.ribbonAdvancedToggle.addEventListener('click', () => {
+      setRibbonAdvanced(!ribbonState.advanced)
     })
     el.settingsClose.addEventListener('click', () => {
       setRibbonHidden(true)
@@ -278,7 +285,7 @@
 
     el.settingsPanel.classList.toggle('open', !ribbonState.collapsed)
     document.body.classList.toggle('ribbon-collapsed', ribbonState.collapsed && !ribbonState.hidden)
-    el.settingsToggle.textContent = ribbonState.collapsed ? 'Expand Ribbon' : 'Minimize Ribbon'
+    el.settingsToggle.textContent = ribbonState.collapsed ? 'Expand' : 'Collapse'
 
     if (persist) {
       try {
@@ -299,6 +306,21 @@
     if (persist) {
       try {
         localStorage.setItem(RIBBON_HIDDEN_KEY, ribbonState.hidden ? '1' : '0')
+      } catch {}
+    }
+  }
+
+  function setRibbonAdvanced(advanced, options = {}) {
+    const persist = options.persist !== false
+    ribbonState.advanced = Boolean(advanced)
+    document.body.classList.toggle('ribbon-advanced', ribbonState.advanced)
+    el.ribbonAdvancedToggle.classList.toggle('is-active', ribbonState.advanced)
+    el.ribbonAdvancedToggle.setAttribute('aria-pressed', ribbonState.advanced ? 'true' : 'false')
+    el.ribbonAdvancedToggle.textContent = ribbonState.advanced ? 'Advanced On' : 'Advanced'
+
+    if (persist) {
+      try {
+        localStorage.setItem(RIBBON_ADVANCED_KEY, ribbonState.advanced ? '1' : '0')
       } catch {}
     }
   }
