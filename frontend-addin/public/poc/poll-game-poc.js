@@ -46,11 +46,7 @@
     raceRows: new Map(),
     racePollId: null,
     raceAnimFrameId: null,
-    raceAnimLastTs: 0,
-    ribbonLayoutRaf: null,
-    ribbonResizeObserver: null,
-    canvasLayoutRaf: null,
-    canvasResizeObserver: null
+    raceAnimLastTs: 0
   }
 
   const el = {
@@ -261,47 +257,20 @@
   }
 
   function setupRibbonOffsetTracking() {
-    if (typeof ResizeObserver === 'function') {
-      state.ribbonResizeObserver = new ResizeObserver(() => {
-        scheduleRibbonOffsetUpdate()
-      })
-      state.ribbonResizeObserver.observe(el.settingsRibbon)
-    }
-    window.addEventListener('resize', scheduleRibbonOffsetUpdate)
-    scheduleRibbonOffsetUpdate()
+    applyRibbonLayoutMode()
   }
 
   function scheduleRibbonOffsetUpdate() {
-    if (state.ribbonLayoutRaf != null) {
-      return
-    }
-    state.ribbonLayoutRaf = requestAnimationFrame(() => {
-      state.ribbonLayoutRaf = null
-      updateRibbonOffset()
-    })
+    applyRibbonLayoutMode()
   }
 
   function updateRibbonOffset() {
-    const offset =
-      ribbonState.hidden || el.settingsRibbon.classList.contains('hidden')
-        ? 0
-        : Math.max(0, Math.ceil(el.settingsRibbon.getBoundingClientRect().height))
-    document.documentElement.style.setProperty('--ribbon-offset', `${offset}px`)
-    scheduleCanvasFitUpdate()
+    applyRibbonLayoutMode()
   }
 
   function setupCanvasFitBehavior() {
     el.wrap.addEventListener('pointerdown', handleCanvasPointerDown)
-
-    if (typeof ResizeObserver === 'function') {
-      state.canvasResizeObserver = new ResizeObserver(() => {
-        scheduleCanvasFitUpdate()
-      })
-      state.canvasResizeObserver.observe(el.wrap)
-    }
-
-    window.addEventListener('resize', scheduleCanvasFitUpdate)
-    scheduleCanvasFitUpdate()
+    applyRibbonLayoutMode()
   }
 
   function handleCanvasPointerDown(event) {
@@ -315,34 +284,22 @@
   }
 
   function scheduleCanvasFitUpdate() {
-    if (state.canvasLayoutRaf != null) {
-      return
-    }
-    state.canvasLayoutRaf = requestAnimationFrame(() => {
-      state.canvasLayoutRaf = null
-      updateCanvasScale()
-    })
+    applyRibbonLayoutMode()
   }
 
   function updateCanvasScale() {
-    const shouldFit = !ribbonState.hidden
-    if (!shouldFit) {
-      document.documentElement.style.setProperty('--canvas-scale', '1')
-      return
-    }
+    applyRibbonLayoutMode()
+  }
 
-    const wrapStyle = getComputedStyle(el.wrap)
-    const marginTop = Number.parseFloat(wrapStyle.marginTop) || 0
-    const marginBottom = Number.parseFloat(wrapStyle.marginBottom) || 0
-    const availableHeight = Math.max(120, window.innerHeight - marginTop - marginBottom - 10)
-    const availableWidth = Math.max(120, window.innerWidth - 20)
+  function applyRibbonLayoutMode() {
+    const isHidden = ribbonState.hidden
+    const isEditing = !isHidden && !ribbonState.collapsed
+    const offset = isHidden ? 0 : isEditing ? 172 : 42
+    const canvasScale = isEditing ? 0.86 : 1
 
-    const contentHeight = Math.max(1, el.wrap.scrollHeight)
-    const contentWidth = Math.max(1, el.wrap.scrollWidth)
-    const heightScale = availableHeight / contentHeight
-    const widthScale = availableWidth / contentWidth
-    const scale = Math.min(1, heightScale, widthScale)
-    document.documentElement.style.setProperty('--canvas-scale', `${scale}`)
+    document.body.classList.toggle('ribbon-editing', isEditing)
+    document.documentElement.style.setProperty('--ribbon-offset', `${offset}px`)
+    document.documentElement.style.setProperty('--canvas-scale', `${canvasScale}`)
   }
 
   function setActiveRibbonTab(tabName, options = {}) {
@@ -1825,24 +1782,6 @@
     state.isUnloading = true
     stopSnapshotPolling()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
-    window.removeEventListener('resize', scheduleRibbonOffsetUpdate)
-    window.removeEventListener('resize', scheduleCanvasFitUpdate)
-    if (state.ribbonResizeObserver) {
-      state.ribbonResizeObserver.disconnect()
-      state.ribbonResizeObserver = null
-    }
-    if (state.canvasResizeObserver) {
-      state.canvasResizeObserver.disconnect()
-      state.canvasResizeObserver = null
-    }
-    if (state.ribbonLayoutRaf != null) {
-      cancelAnimationFrame(state.ribbonLayoutRaf)
-      state.ribbonLayoutRaf = null
-    }
-    if (state.canvasLayoutRaf != null) {
-      cancelAnimationFrame(state.canvasLayoutRaf)
-      state.canvasLayoutRaf = null
-    }
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null

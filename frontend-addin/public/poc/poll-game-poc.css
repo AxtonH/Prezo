@@ -20,8 +20,12 @@
   --race-track: rgba(215, 230, 246, 0.88);
   --race-car-size: 30px;
   --race-speed-ms: 780ms;
-  --ribbon-offset: 108px;
-  --canvas-scale: 1;
+  --ribbon-strip-height: 42px;
+  --ribbon-panel-height: 130px;
+  --ribbon-open-height: calc(var(--ribbon-strip-height) + var(--ribbon-panel-height));
+  --ribbon-compact-height: var(--ribbon-strip-height);
+  --ribbon-offset: var(--ribbon-open-height);
+  --canvas-scale: 0.86;
 }
 
 * {
@@ -87,7 +91,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 38px;
+  min-height: var(--ribbon-strip-height);
   padding: 4px 12px;
 }
 
@@ -185,6 +189,7 @@ body {
   display: block;
   padding: 0 8px 6px;
   border-top: 1px solid rgba(157, 191, 230, 0.45);
+  height: var(--ribbon-panel-height);
 }
 
 .settings-panel:not(.open) {
@@ -192,6 +197,7 @@ body {
 }
 
 .panel-body {
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
   padding-top: 4px;
@@ -199,17 +205,19 @@ body {
 
 .ribbon-pane {
   display: none;
+  height: 100%;
 }
 
 .ribbon-pane.active {
   display: block;
+  height: 100%;
 }
 
 .ribbon-pane-grid {
   display: flex;
   gap: 0;
-  align-items: stretch;
-  min-height: 108px;
+  align-items: flex-start;
+  height: 100%;
   flex-wrap: nowrap;
 }
 
@@ -218,6 +226,7 @@ body {
   border-right: 1px solid rgba(172, 198, 227, 0.58);
   padding: 6px 12px;
   background: transparent;
+  height: 100%;
 }
 
 .ribbon-group.group-compact {
@@ -233,7 +242,7 @@ body {
 }
 
 .ribbon-group.group-assets {
-  min-width: 380px;
+  min-width: 340px;
 }
 
 .ribbon-group:last-child {
@@ -360,12 +369,12 @@ body {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px 8px;
 }
 
 .grid.grid-assets {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .grid label {
@@ -466,7 +475,7 @@ body.ribbon-advanced .advanced-control.note {
   box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
   transform-origin: top center;
   transform: scale(var(--canvas-scale));
-  transition: transform 170ms ease, margin 170ms ease;
+  transition: transform 190ms ease, margin 190ms ease;
 }
 
 .custom-asset {
@@ -735,6 +744,11 @@ h1 {
     overflow: auto;
   }
 
+  :root {
+    --ribbon-strip-height: 40px;
+    --ribbon-panel-height: 122px;
+  }
+
   .ribbon-strip {
     align-items: center;
     flex-wrap: wrap;
@@ -768,6 +782,7 @@ h1 {
     grid-template-columns: 1fr;
     gap: 4px;
     min-height: 0;
+    height: auto;
   }
 
   .ribbon-group {
@@ -786,6 +801,7 @@ h1 {
   .ribbon-group.group-wide,
   .ribbon-group.group-assets {
     min-width: 0;
+    height: auto;
   }
 
   .ribbon-group > label {
