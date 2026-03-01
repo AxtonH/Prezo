@@ -964,15 +964,6 @@
   }
 
   function applyRichTextCommand(command) {
-    if (command === 'bold' || command === 'italic' || command === 'underline') {
-      const toggled = applyRichTextToggleCommand(command)
-      releaseTextControlInteractionSoon()
-      if (toggled) {
-        showTextEditFeedback('Formatting updated.', 'success')
-      }
-      return toggled
-    }
-
     const host =
       getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
     if (!host) {
@@ -997,6 +988,7 @@
       applied = document.execCommand(command, false, null)
     } catch {}
     state.activeInlineStyleNode = null
+    releaseTextControlInteractionSoon()
     commitRichTextHost(host)
     cacheRichTextSelection()
     refreshTextToolStates()
@@ -1004,22 +996,6 @@
     if (applied !== false) {
       showTextEditFeedback('Formatting updated.', 'success')
       return true
-    }
-    return false
-  }
-
-  function applyRichTextToggleCommand(command) {
-    const stateSnapshot = getCurrentTextCommandState()
-    if (command === 'bold') {
-      return applyRichTextInlineStyle({ fontWeight: stateSnapshot.bold ? 'normal' : 'bold' })
-    }
-    if (command === 'italic') {
-      return applyRichTextInlineStyle({ fontStyle: stateSnapshot.italic ? 'normal' : 'italic' })
-    }
-    if (command === 'underline') {
-      return applyRichTextInlineStyle({
-        textDecoration: stateSnapshot.underline ? 'none' : 'underline'
-      })
     }
     return false
   }
