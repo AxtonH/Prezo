@@ -102,7 +102,8 @@
     cachedTextSelectionHost: null,
     isSyncingTextStyleControls: false,
     textControlInteractionUntil: 0,
-    textControlInteractionLocked: false
+    textControlInteractionLocked: false,
+    activeInlineStyleNode: null
   }
 
   const el = {
@@ -669,6 +670,7 @@
     if (getSelectionRichTextHost()) {
       state.textControlInteractionUntil = 0
       state.textControlInteractionLocked = false
+      state.activeInlineStyleNode = null
     }
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
@@ -681,6 +683,7 @@
       clearCachedRichTextSelection()
       state.textControlInteractionLocked = false
       state.textControlInteractionUntil = 0
+      state.activeInlineStyleNode = null
       return
     }
     if (event.target.closest('[data-text-control="true"]')) {
@@ -692,12 +695,14 @@
     if (event.target.closest('.rich-text-editable')) {
       state.textControlInteractionLocked = false
       state.textControlInteractionUntil = 0
+      state.activeInlineStyleNode = null
       return
     }
     hideSelectionToolbar()
     clearCachedRichTextSelection()
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
+    state.activeInlineStyleNode = null
   }
 
   function scheduleSelectionToolbarUpdate() {
@@ -815,6 +820,7 @@
       return
     }
     state.activeTextHost = null
+    state.activeInlineStyleNode = null
     if (!getSelectionRichTextHost()) {
       clearCachedRichTextSelection()
     }
@@ -925,6 +931,7 @@
     try {
       applied = document.execCommand(command, false, null)
     } catch {}
+    state.activeInlineStyleNode = null
     commitRichTextHost(host)
     cacheRichTextSelection()
     refreshTextToolStates()
@@ -943,30 +950,19 @@
     }
     const { host, selection, range } = context
 
+    const reusableNode = getReusableInlineStyleNode(host)
+    if (reusableNode && applyStylesToElement(reusableNode, styleProps)) {
+      updateCachedRangeFromNode(reusableNode, host)
+      state.activeTextHost = host
+      commitRichTextHost(host, { normalizeDom: false })
+      refreshTextToolStates()
+      syncTextStyleControlsFromSelection()
+      scheduleSelectionToolbarUpdate()
+      return true
+    }
+
     const wrapper = document.createElement('span')
-    let appliedAnyStyle = false
-    if (styleProps.fontFamily) {
-      const family = normalizeFontFamilyChoice(styleProps.fontFamily)
-      if (family) {
-        wrapper.style.fontFamily = family
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.fontSize) {
-      const size = normalizeFontSizeCss(styleProps.fontSize)
-      if (size) {
-        wrapper.style.fontSize = size
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.color) {
-      const color = sanitizeHex(styleProps.color, '')
-      if (color) {
-        wrapper.style.color = color
-        appliedAnyStyle = true
-      }
-    }
-    if (!appliedAnyStyle) {
+    if (!applyStylesToElement(wrapper, styleProps)) {
       return false
     }
 
@@ -987,18 +983,68 @@
       } catch {}
     }
 
-    try {
-      state.cachedTextSelectionRange = nextRange.cloneRange()
-      state.cachedTextSelectionHost = host
-    } catch {
-      cacheRichTextSelection()
-    }
+    state.activeInlineStyleNode = wrapper
+    updateCachedRangeFromNode(wrapper, host)
     state.activeTextHost = host
     commitRichTextHost(host, { normalizeDom: false })
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
     return true
+  }
+
+  function applyStylesToElement(node, styleProps) {
+    let appliedAnyStyle = false
+    if (styleProps.fontFamily) {
+      const family = normalizeFontFamilyChoice(styleProps.fontFamily)
+      if (family) {
+        node.style.fontFamily = family
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.fontSize) {
+      const size = normalizeFontSizeCss(styleProps.fontSize)
+      if (size) {
+        node.style.fontSize = size
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.color) {
+      const color = sanitizeHex(styleProps.color, '')
+      if (color) {
+        node.style.color = color
+        appliedAnyStyle = true
+      }
+    }
+    return appliedAnyStyle
+  }
+
+  function getReusableInlineStyleNode(host) {
+    const node = state.activeInlineStyleNode
+    if (!node || !node.isConnected) {
+      state.activeInlineStyleNode = null
+      return null
+    }
+    if (!host.contains(node)) {
+      state.activeInlineStyleNode = null
+      return null
+    }
+    return node
+  }
+
+  function updateCachedRangeFromNode(node, host) {
+    if (!node || !node.isConnected || !host.contains(node)) {
+      cacheRichTextSelection()
+      return
+    }
+    try {
+      const nextRange = document.createRange()
+      nextRange.selectNodeContents(node)
+      state.cachedTextSelectionRange = nextRange.cloneRange()
+      state.cachedTextSelectionHost = host
+    } catch {
+      cacheRichTextSelection()
+    }
   }
 
   function stripConflictingInlineStyles(rootNode, styleProps) {
@@ -1325,6 +1371,7 @@
   function clearCachedRichTextSelection() {
     state.cachedTextSelectionRange = null
     state.cachedTextSelectionHost = null
+    state.activeInlineStyleNode = null
   }
 
   function getCachedRichTextSelectionHost() {
@@ -1453,6 +1500,9 @@
     }
     if (state.cachedTextSelectionHost === node) {
       clearCachedRichTextSelection()
+    }
+    if (state.activeInlineStyleNode && node.contains(state.activeInlineStyleNode)) {
+      state.activeInlineStyleNode = null
     }
     node.classList.remove('rich-text-editable')
     node.removeAttribute('contenteditable')
@@ -3137,6 +3187,7 @@
     clearCachedRichTextSelection()
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
+    state.activeInlineStyleNode = null
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
