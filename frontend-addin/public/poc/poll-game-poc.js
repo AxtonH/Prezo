@@ -588,6 +588,7 @@
         if (state.isSyncingTextStyleControls) {
           return
         }
+        markTextControlInteractionActive(getTextControlLockMs(control))
         const selectedColor = sanitizeHex(control.value, '#16375e')
         setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
         applyRichTextInlineStyle({ color: selectedColor })
@@ -596,13 +597,16 @@
         if (state.isSyncingTextStyleControls) {
           return
         }
+        markTextControlInteractionActive(getTextControlLockMs(control))
         const selectedColor = sanitizeHex(control.value, '#16375e')
         setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
         if (applyRichTextInlineStyle({ color: selectedColor })) {
           showTextEditFeedback('Text color updated.', 'success')
+          releaseTextControlInteractionSoon()
           return
         }
         showTextEditFeedback('Select text in the question or options first.', 'error')
+        releaseTextControlInteractionSoon()
       })
     }
   }
@@ -610,13 +614,35 @@
   function bindTextControlFocusLock(control) {
     control.addEventListener('focus', () => {
       cacheRichTextSelection()
-      state.textControlInteractionLocked = true
-      state.textControlInteractionUntil = Date.now() + 15000
+      markTextControlInteractionActive(getTextControlLockMs(control))
     })
     control.addEventListener('blur', () => {
+      if (isColorTextControl(control)) {
+        // Native color dialogs may blur the input while still actively selecting colors.
+        markTextControlInteractionActive(getTextControlLockMs(control))
+        return
+      }
       state.textControlInteractionLocked = false
       state.textControlInteractionUntil = Date.now() + 600
     })
+  }
+
+  function getTextControlLockMs(control) {
+    return isColorTextControl(control) ? 120000 : 15000
+  }
+
+  function isColorTextControl(control) {
+    return control instanceof HTMLInputElement && control.type === 'color'
+  }
+
+  function markTextControlInteractionActive(durationMs = 15000) {
+    state.textControlInteractionLocked = true
+    state.textControlInteractionUntil = Date.now() + durationMs
+  }
+
+  function releaseTextControlInteractionSoon(delayMs = 600) {
+    state.textControlInteractionLocked = false
+    state.textControlInteractionUntil = Date.now() + delayMs
   }
 
   function fillSelectOptions(selectNodes, options) {
@@ -668,9 +694,13 @@
   function handleRichTextSelectionChange() {
     cacheRichTextSelection()
     if (getSelectionRichTextHost()) {
-      state.textControlInteractionUntil = 0
-      state.textControlInteractionLocked = false
-      state.activeInlineStyleNode = null
+      if (!isTextControlElement(document.activeElement) && !isTextControlInteractionActive()) {
+        state.textControlInteractionUntil = 0
+        state.textControlInteractionLocked = false
+      }
+      if (!isTextControlInteractionActive()) {
+        state.activeInlineStyleNode = null
+      }
     }
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
@@ -678,7 +708,13 @@
   }
 
   function handleRichTextPointerDown(event) {
-    if (!(event.target instanceof Element)) {
+    const target = event.target
+    const interactionActive = isTextControlInteractionActive()
+
+    if (!(target instanceof Element)) {
+      if (isTextControlInteractionActive()) {
+        return
+      }
       hideSelectionToolbar()
       clearCachedRichTextSelection()
       state.textControlInteractionLocked = false
@@ -686,13 +722,16 @@
       state.activeInlineStyleNode = null
       return
     }
-    if (event.target.closest('[data-text-control="true"]')) {
+    if (target.closest('[data-text-control="true"]')) {
       cacheRichTextSelection()
-      state.textControlInteractionLocked = true
-      state.textControlInteractionUntil = Date.now() + 15000
+      markTextControlInteractionActive(120000)
       return
     }
-    if (event.target.closest('.rich-text-editable')) {
+    if (interactionActive && !target.closest('.rich-text-editable')) {
+      // Native color pickers can emit pointer events outside the page DOM.
+      return
+    }
+    if (target.closest('.rich-text-editable')) {
       state.textControlInteractionLocked = false
       state.textControlInteractionUntil = 0
       state.activeInlineStyleNode = null
@@ -1100,6 +1139,15 @@
       return { host, selection, range: cachedRange }
     }
 
+    const reusableNode = getReusableInlineStyleNode(host)
+    if (reusableNode) {
+      try {
+        const nodeRange = document.createRange()
+        nodeRange.selectNodeContents(reusableNode)
+        return { host, selection, range: nodeRange }
+      } catch {}
+    }
+
     if (!isTextControlInteractionActive()) {
       if (document.activeElement !== host) {
         host.focus({ preventScroll: true })
@@ -1134,9 +1182,18 @@
 
   function syncTextStyleControlsFromSelection() {
     const snapshot = getCurrentTextStyleSnapshot()
-    const fontFamily = snapshot?.fontFamily || normalizeFontFamilyChoice(currentTheme.fontFamily)
-    const fontSize = snapshot?.fontSize || '24'
-    const fontColor = snapshot?.color || sanitizeHex(currentTheme.textMain, '#16375e')
+    const fontFamily =
+      snapshot?.fontFamily ||
+      (isTextControlInteractionActive() ? normalizeFontFamilyChoice(el.textFontFamily.value) : '') ||
+      normalizeFontFamilyChoice(currentTheme.fontFamily)
+    const fontSize =
+      snapshot?.fontSize ||
+      (isTextControlInteractionActive() ? normalizeFontSizeChoice(el.textFontSize.value) : '') ||
+      '24'
+    const fontColor =
+      snapshot?.color ||
+      (isTextControlInteractionActive() ? sanitizeHex(el.textFontColor.value, '') : '') ||
+      sanitizeHex(currentTheme.textMain, '#16375e')
 
     state.isSyncingTextStyleControls = true
     try {
@@ -1179,6 +1236,9 @@
     }
 
     const probe = getTextStyleProbeNode(host)
+    if (!probe) {
+      return null
+    }
     const probeElement =
       probe instanceof Element
         ? probe
@@ -1208,7 +1268,7 @@
     if (cachedHost && cachedHost === host && state.cachedTextSelectionRange) {
       return state.cachedTextSelectionRange.startContainer
     }
-    return host
+    return null
   }
 
   function normalizeFontFamilyChoice(value) {
@@ -1521,6 +1581,15 @@
     }
     if (isTextControlElement(document.activeElement) && getCachedRichTextSelectionHost() === host) {
       return true
+    }
+    if (isTextControlInteractionActive()) {
+      const cachedHost = getCachedRichTextSelectionHost()
+      if (cachedHost && cachedHost === host) {
+        return true
+      }
+      if (state.activeInlineStyleNode && state.activeInlineStyleNode.isConnected && host.contains(state.activeInlineStyleNode)) {
+        return true
+      }
     }
     return false
   }
@@ -2952,15 +3021,45 @@
     if (hex) {
       return hex.toLowerCase()
     }
-    const rgbMatch =
-      /^rgb\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*\)$/.exec(value) ||
-      /^rgba\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*(0|0?\.[0-9]+|1(?:\.0+)?)\s*\)$/.exec(value)
-    if (!rgbMatch) {
+    const funcMatch = /^rgba?\(\s*([^)]+)\s*\)$/i.exec(asText(value))
+    if (!funcMatch) {
       return ''
     }
-    const r = clamp(Number(rgbMatch[1]), 0, 255, 0)
-    const g = clamp(Number(rgbMatch[2]), 0, 255, 0)
-    const b = clamp(Number(rgbMatch[3]), 0, 255, 0)
+
+    let channelText = funcMatch[1].trim()
+    if (!channelText) {
+      return ''
+    }
+    if (channelText.includes('/')) {
+      channelText = channelText.split('/')[0].trim()
+    }
+    const parts = channelText.includes(',')
+      ? channelText
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean)
+      : channelText.split(/\s+/).filter(Boolean)
+    if (parts.length < 3) {
+      return ''
+    }
+
+    const channels = []
+    for (let index = 0; index < 3; index += 1) {
+      const part = parts[index]
+      if (!part) {
+        return ''
+      }
+      let channelValue = Number.parseFloat(part)
+      if (!Number.isFinite(channelValue)) {
+        return ''
+      }
+      if (part.endsWith('%')) {
+        channelValue = (channelValue / 100) * 255
+      }
+      channels.push(clamp(Math.round(channelValue), 0, 255, 0))
+    }
+
+    const [r, g, b] = channels
     return `rgb(${r}, ${g}, ${b})`
   }
 
