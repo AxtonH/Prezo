@@ -2183,6 +2183,23 @@
       return
     }
 
+    if (tag === 'SPAN') {
+      const safeStyle = sanitizeInlineTextStyle(asText(element.getAttribute('style')))
+      if (!safeStyle) {
+        for (const child of [...element.childNodes]) {
+          appendSanitizedNode(parent, child)
+        }
+        return
+      }
+      const safeSpan = document.createElement('span')
+      safeSpan.setAttribute('style', safeStyle)
+      for (const child of [...element.childNodes]) {
+        appendSanitizedNode(safeSpan, child)
+      }
+      parent.appendChild(safeSpan)
+      return
+    }
+
     const allowedTag = tag === 'B' || tag === 'STRONG' || tag === 'I' || tag === 'EM' || tag === 'U'
     if (!allowedTag) {
       for (const child of [...element.childNodes]) {
@@ -2196,6 +2213,79 @@
       appendSanitizedNode(safe, child)
     }
     parent.appendChild(safe)
+  }
+
+  function sanitizeInlineTextStyle(styleText) {
+    if (!styleText) {
+      return ''
+    }
+
+    const cleanParts = []
+    const declarations = styleText.split(';')
+    for (const declaration of declarations) {
+      const separator = declaration.indexOf(':')
+      if (separator < 0) {
+        continue
+      }
+      const rawProp = declaration.slice(0, separator).trim().toLowerCase()
+      const rawValue = declaration.slice(separator + 1).trim().toLowerCase()
+      if (!rawProp || !rawValue) {
+        continue
+      }
+
+      if (rawProp === 'font-weight') {
+        const value = sanitizeFontWeightValue(rawValue)
+        if (value) {
+          cleanParts.push(`font-weight: ${value}`)
+        }
+        continue
+      }
+      if (rawProp === 'font-style') {
+        const value = sanitizeFontStyleValue(rawValue)
+        if (value) {
+          cleanParts.push(`font-style: ${value}`)
+        }
+        continue
+      }
+      if (rawProp === 'text-decoration' || rawProp === 'text-decoration-line') {
+        const value = sanitizeTextDecorationValue(rawValue)
+        if (value) {
+          cleanParts.push(`text-decoration: ${value}`)
+        }
+      }
+    }
+
+    if (cleanParts.length === 0) {
+      return ''
+    }
+    return cleanParts.join('; ')
+  }
+
+  function sanitizeFontWeightValue(value) {
+    if (value === 'normal' || value === 'bold') {
+      return value
+    }
+    if (/^[1-9]00$/.test(value)) {
+      return value
+    }
+    return ''
+  }
+
+  function sanitizeFontStyleValue(value) {
+    if (value === 'normal' || value === 'italic') {
+      return value
+    }
+    return ''
+  }
+
+  function sanitizeTextDecorationValue(value) {
+    if (value.includes('underline')) {
+      return 'underline'
+    }
+    if (value.includes('none')) {
+      return 'none'
+    }
+    return ''
   }
 
   function readControlValue(input, type) {
