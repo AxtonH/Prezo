@@ -693,11 +693,13 @@
 
   function handleRichTextSelectionChange() {
     cacheRichTextSelection()
-    if (getSelectionRichTextHost()) {
+    const selectionHost = getSelectionRichTextHost()
+    if (selectionHost) {
       if (!isTextControlElement(document.activeElement) && !isTextControlInteractionActive()) {
         state.textControlInteractionUntil = 0
         state.textControlInteractionLocked = false
       }
+      syncActiveInlineStyleNodeWithSelection(selectionHost)
       if (!isTextControlInteractionActive()) {
         state.activeInlineStyleNode = null
       }
@@ -722,9 +724,14 @@
       state.activeInlineStyleNode = null
       return
     }
-    if (target.closest('[data-text-control="true"]')) {
+    const textControl = target.closest('[data-text-control="true"]')
+    if (textControl) {
       cacheRichTextSelection()
-      markTextControlInteractionActive(120000)
+      if (isPersistentTextControlElement(textControl)) {
+        markTextControlInteractionActive(120000)
+      } else {
+        releaseTextControlInteractionSoon()
+      }
       return
     }
     if (interactionLocked && !target.closest('.rich-text-editable')) {
@@ -742,6 +749,16 @@
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
     state.activeInlineStyleNode = null
+  }
+
+  function isPersistentTextControlElement(node) {
+    if (!(node instanceof Element)) {
+      return false
+    }
+    if (node instanceof HTMLSelectElement) {
+      return true
+    }
+    return isColorTextControl(node)
   }
 
   function scheduleSelectionToolbarUpdate() {
@@ -949,6 +966,7 @@
   function applyRichTextCommand(command) {
     if (command === 'bold' || command === 'italic' || command === 'underline') {
       const toggled = applyRichTextToggleCommand(command)
+      releaseTextControlInteractionSoon()
       if (toggled) {
         showTextEditFeedback('Formatting updated.', 'success')
       }
@@ -1013,7 +1031,7 @@
     }
     const { host, selection, range } = context
 
-    const reusableNode = getReusableInlineStyleNode(host)
+    const reusableNode = getReusableInlineStyleNode(host, range)
     if (reusableNode && applyStylesToElement(reusableNode, styleProps)) {
       updateCachedRangeFromNode(reusableNode, host)
       state.activeTextHost = host
@@ -1103,13 +1121,17 @@
     return appliedAnyStyle
   }
 
-  function getReusableInlineStyleNode(host) {
+  function getReusableInlineStyleNode(host, range = null) {
     const node = state.activeInlineStyleNode
     if (!node || !node.isConnected) {
       state.activeInlineStyleNode = null
       return null
     }
     if (!host.contains(node)) {
+      state.activeInlineStyleNode = null
+      return null
+    }
+    if (range && !isRangeInsideNode(node, range)) {
       state.activeInlineStyleNode = null
       return null
     }
@@ -1129,6 +1151,32 @@
     } catch {
       cacheRichTextSelection()
     }
+  }
+
+  function syncActiveInlineStyleNodeWithSelection(host) {
+    const node = state.activeInlineStyleNode
+    if (!node) {
+      return
+    }
+    if (!node.isConnected || !host.contains(node)) {
+      state.activeInlineStyleNode = null
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return
+    }
+    const range = selection.getRangeAt(0)
+    if (!isRangeInsideNode(node, range)) {
+      state.activeInlineStyleNode = null
+    }
+  }
+
+  function isRangeInsideNode(node, range) {
+    if (!(node instanceof Element) || !range) {
+      return false
+    }
+    return isNodeInsideHost(node, range.startContainer) && isNodeInsideHost(node, range.endContainer)
   }
 
   function stripConflictingInlineStyles(rootNode, styleProps) {
@@ -1201,13 +1249,15 @@
       return { host, selection, range: cachedRange }
     }
 
-    const reusableNode = getReusableInlineStyleNode(host)
-    if (reusableNode) {
-      try {
-        const nodeRange = document.createRange()
-        nodeRange.selectNodeContents(reusableNode)
-        return { host, selection, range: nodeRange }
-      } catch {}
+    if (isTextControlInteractionActive()) {
+      const reusableNode = getReusableInlineStyleNode(host)
+      if (reusableNode) {
+        try {
+          const nodeRange = document.createRange()
+          nodeRange.selectNodeContents(reusableNode)
+          return { host, selection, range: nodeRange }
+        } catch {}
+      }
     }
 
     if (!isTextControlInteractionActive()) {
