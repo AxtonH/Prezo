@@ -101,7 +101,8 @@
     cachedTextSelectionRange: null,
     cachedTextSelectionHost: null,
     isSyncingTextStyleControls: false,
-    textControlInteractionUntil: 0
+    textControlInteractionUntil: 0,
+    textControlInteractionLocked: false
   }
 
   const el = {
@@ -652,6 +653,7 @@
     cacheRichTextSelection()
     if (getSelectionRichTextHost()) {
       state.textControlInteractionUntil = 0
+      state.textControlInteractionLocked = false
     }
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
@@ -662,18 +664,25 @@
     if (!(event.target instanceof Element)) {
       hideSelectionToolbar()
       clearCachedRichTextSelection()
+      state.textControlInteractionLocked = false
+      state.textControlInteractionUntil = 0
       return
     }
     if (event.target.closest('[data-text-control="true"]')) {
       cacheRichTextSelection()
-      state.textControlInteractionUntil = Date.now() + 1200
+      state.textControlInteractionLocked = true
+      state.textControlInteractionUntil = Date.now() + 15000
       return
     }
     if (event.target.closest('.rich-text-editable')) {
+      state.textControlInteractionLocked = false
+      state.textControlInteractionUntil = 0
       return
     }
     hideSelectionToolbar()
     clearCachedRichTextSelection()
+    state.textControlInteractionLocked = false
+    state.textControlInteractionUntil = 0
   }
 
   function scheduleSelectionToolbarUpdate() {
@@ -874,7 +883,7 @@
   }
 
   function isTextControlInteractionActive() {
-    return Date.now() <= state.textControlInteractionUntil
+    return state.textControlInteractionLocked || Date.now() <= state.textControlInteractionUntil
   }
 
   function applyRichTextCommand(command) {
@@ -955,11 +964,21 @@
 
     const nextRange = document.createRange()
     nextRange.selectNodeContents(wrapper)
-    selection.removeAllRanges()
-    selection.addRange(nextRange)
+    if (selection && (!isTextControlInteractionActive() || document.activeElement === host)) {
+      try {
+        selection.removeAllRanges()
+        selection.addRange(nextRange)
+      } catch {}
+    }
 
-    commitRichTextHost(host, { normalizeDom: true })
-    cacheRichTextSelection()
+    try {
+      state.cachedTextSelectionRange = nextRange.cloneRange()
+      state.cachedTextSelectionHost = host
+    } catch {
+      cacheRichTextSelection()
+    }
+    state.activeTextHost = host
+    commitRichTextHost(host, { normalizeDom: false })
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
@@ -973,23 +992,46 @@
       return null
     }
 
-    if (!hasNonCollapsedSelectionInHost(host)) {
+    const selection = window.getSelection()
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed && getSelectionRichTextHost() === host) {
+      return { host, selection, range: selection.getRangeAt(0) }
+    }
+
+    const cachedRange = getCachedRichTextSelectionRangeClone(host)
+    if (cachedRange) {
+      return { host, selection, range: cachedRange }
+    }
+
+    if (!isTextControlInteractionActive()) {
       if (document.activeElement !== host) {
         host.focus({ preventScroll: true })
       }
-      if (!restoreCachedRichTextSelection(host)) {
-        return null
+      if (restoreCachedRichTextSelection(host)) {
+        const restored = window.getSelection()
+        if (
+          restored &&
+          restored.rangeCount > 0 &&
+          !restored.isCollapsed &&
+          getSelectionRichTextHost() === host
+        ) {
+          return { host, selection: restored, range: restored.getRangeAt(0) }
+        }
       }
     }
+    return null
+  }
 
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+  function getCachedRichTextSelectionRangeClone(host) {
+    const cachedHost = getCachedRichTextSelectionHost()
+    const range = state.cachedTextSelectionRange
+    if (!cachedHost || cachedHost !== host || !range) {
       return null
     }
-    if (getSelectionRichTextHost() !== host) {
+    try {
+      return range.cloneRange()
+    } catch {
       return null
     }
-    return { host, selection, range: selection.getRangeAt(0) }
   }
 
   function syncTextStyleControlsFromSelection() {
@@ -3041,6 +3083,8 @@
     stopSnapshotPolling()
     hideSelectionToolbar()
     clearCachedRichTextSelection()
+    state.textControlInteractionLocked = false
+    state.textControlInteractionUntil = 0
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
