@@ -100,7 +100,8 @@
     selectionToolbarRafId: null,
     cachedTextSelectionRange: null,
     cachedTextSelectionHost: null,
-    isSyncingTextStyleControls: false
+    isSyncingTextStyleControls: false,
+    textControlInteractionUntil: 0
   }
 
   const el = {
@@ -584,6 +585,7 @@
         }
         const selectedColor = sanitizeHex(control.value, '#16375e')
         setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
+        applyRichTextInlineStyle({ color: selectedColor })
       })
       control.addEventListener('change', () => {
         if (state.isSyncingTextStyleControls) {
@@ -648,6 +650,9 @@
 
   function handleRichTextSelectionChange() {
     cacheRichTextSelection()
+    if (getSelectionRichTextHost()) {
+      state.textControlInteractionUntil = 0
+    }
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
@@ -660,6 +665,8 @@
       return
     }
     if (event.target.closest('[data-text-control="true"]')) {
+      cacheRichTextSelection()
+      state.textControlInteractionUntil = Date.now() + 1200
       return
     }
     if (event.target.closest('.rich-text-editable')) {
@@ -766,9 +773,18 @@
       return
     }
     const nextHost = getRichTextHost(event.relatedTarget)
-    commitRichTextHost(host, { normalizeDom: true })
+    const preservingSelectionForControl =
+      isTextControlElement(event.relatedTarget) || isTextControlInteractionActive()
+    commitRichTextHost(host, { normalizeDom: !preservingSelectionForControl })
     if (nextHost) {
       state.activeTextHost = nextHost
+      refreshTextToolStates()
+      syncTextStyleControlsFromSelection()
+      scheduleSelectionToolbarUpdate()
+      return
+    }
+    if (preservingSelectionForControl) {
+      state.activeTextHost = host
       refreshTextToolStates()
       syncTextStyleControlsFromSelection()
       scheduleSelectionToolbarUpdate()
@@ -851,6 +867,14 @@
       applyRichTextCommand('underline')
     }
     scheduleSelectionToolbarUpdate()
+  }
+
+  function isTextControlElement(node) {
+    return node instanceof Element && Boolean(node.closest('[data-text-control="true"]'))
+  }
+
+  function isTextControlInteractionActive() {
+    return Date.now() <= state.textControlInteractionUntil
   }
 
   function applyRichTextCommand(command) {
