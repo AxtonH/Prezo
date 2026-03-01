@@ -709,10 +709,10 @@
 
   function handleRichTextPointerDown(event) {
     const target = event.target
-    const interactionActive = isTextControlInteractionActive()
+    const interactionLocked = state.textControlInteractionLocked
 
     if (!(target instanceof Element)) {
-      if (isTextControlInteractionActive()) {
+      if (interactionLocked) {
         return
       }
       hideSelectionToolbar()
@@ -727,7 +727,7 @@
       markTextControlInteractionActive(120000)
       return
     }
-    if (interactionActive && !target.closest('.rich-text-editable')) {
+    if (interactionLocked && !target.closest('.rich-text-editable')) {
       // Native color pickers can emit pointer events outside the page DOM.
       return
     }
@@ -1124,7 +1124,10 @@
 
   function resolveExpandedRichTextSelection() {
     const host =
-      getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
+      getSelectionRichTextHost() ||
+      getActiveRichTextHost() ||
+      getCachedRichTextSelectionHost() ||
+      getInlineStyleNodeHost()
     if (!host) {
       return null
     }
@@ -1178,6 +1181,14 @@
     } catch {
       return null
     }
+  }
+
+  function getInlineStyleNodeHost() {
+    const node = state.activeInlineStyleNode
+    if (!node || !node.isConnected) {
+      return null
+    }
+    return getRichTextHost(node) || (node.parentElement ? node.parentElement.closest('.rich-text-editable') : null)
   }
 
   function syncTextStyleControlsFromSelection() {
@@ -1573,21 +1584,23 @@
 
   function isRichTextEditingActive() {
     const host = getActiveRichTextHost()
-    if (!host) {
+    const inlineHost = getInlineStyleNodeHost()
+    const resolvedHost = host || inlineHost
+    if (!resolvedHost) {
       return false
     }
-    if (document.activeElement === host) {
+    if (document.activeElement === resolvedHost) {
       return true
     }
-    if (isTextControlElement(document.activeElement) && getCachedRichTextSelectionHost() === host) {
+    if (isTextControlElement(document.activeElement) && getCachedRichTextSelectionHost() === resolvedHost) {
+      return true
+    }
+    if (state.activeInlineStyleNode && state.activeInlineStyleNode.isConnected && resolvedHost.contains(state.activeInlineStyleNode)) {
       return true
     }
     if (isTextControlInteractionActive()) {
       const cachedHost = getCachedRichTextSelectionHost()
-      if (cachedHost && cachedHost === host) {
-        return true
-      }
-      if (state.activeInlineStyleNode && state.activeInlineStyleNode.isConnected && host.contains(state.activeInlineStyleNode)) {
+      if (cachedHost && cachedHost === resolvedHost) {
         return true
       }
     }
@@ -1928,6 +1941,8 @@
   }
 
   function renderFromSnapshot(forceRender) {
+    flushRichTextHostsToOverrides()
+
     const polls = Array.isArray(state.snapshot?.polls) ? state.snapshot.polls : []
     const poll = selectPoll(polls)
     state.currentPoll = poll
@@ -1964,6 +1979,16 @@
     }
     updateMeta(poll, totalVotes)
     updateFooter()
+  }
+
+  function flushRichTextHostsToOverrides() {
+    const hosts = el.wrap.querySelectorAll('.rich-text-editable[data-text-key]')
+    for (const host of hosts) {
+      if (!(host instanceof HTMLElement)) {
+        continue
+      }
+      commitRichTextHost(host, { normalizeDom: false })
+    }
   }
 
   function renderClassicOptions(poll, totalVotes) {
