@@ -80,23 +80,64 @@
                 <h3>Text Edit</h3>
                 <p class="note">Click question/option text, then highlight words to format.</p>
                 <div class="row text-tools" role="toolbar" aria-label="Text formatting">
-                  <button id="text-tool-bold" class="text-tool" type="button" aria-label="Bold (Ctrl+B)">
+                  <button
+                    id="text-tool-bold"
+                    class="text-tool"
+                    type="button"
+                    data-text-control="true"
+                    aria-label="Bold (Ctrl+B)"
+                  >
                     <strong>B</strong>
                   </button>
-                  <button id="text-tool-italic" class="text-tool" type="button" aria-label="Italic (Ctrl+I)">
+                  <button
+                    id="text-tool-italic"
+                    class="text-tool"
+                    type="button"
+                    data-text-control="true"
+                    aria-label="Italic (Ctrl+I)"
+                  >
                     <em>I</em>
                   </button>
                   <button
                     id="text-tool-underline"
                     class="text-tool"
                     type="button"
+                    data-text-control="true"
                     aria-label="Underline (Ctrl+U)"
                   >
                     <u>U</u>
                   </button>
-                  <button id="text-tool-clear" class="text-tool ghost" type="button" aria-label="Clear formatting">
+                  <button
+                    id="text-tool-clear"
+                    class="text-tool ghost"
+                    type="button"
+                    data-text-control="true"
+                    aria-label="Clear formatting"
+                  >
                     Clear
                   </button>
+                </div>
+                <div class="row text-style-row">
+                  <select
+                    id="text-font-family"
+                    class="text-style-select text-font-family"
+                    data-text-control="true"
+                    aria-label="Font family"
+                  ></select>
+                  <select
+                    id="text-font-size"
+                    class="text-style-select text-font-size"
+                    data-text-control="true"
+                    aria-label="Font size"
+                  ></select>
+                  <input
+                    id="text-font-color"
+                    class="text-style-color"
+                    data-text-control="true"
+                    type="color"
+                    aria-label="Font color"
+                    value="#16375e"
+                  />
                 </div>
                 <p id="text-edit-feedback" class="note">Rich text editing is on for question and options.</p>
               </article>
@@ -193,6 +234,7 @@
         id="mini-text-tool-bold"
         class="selection-tool"
         type="button"
+        data-text-control="true"
         aria-label="Bold (Ctrl+B)"
       >
         <strong>B</strong>
@@ -201,6 +243,7 @@
         id="mini-text-tool-italic"
         class="selection-tool"
         type="button"
+        data-text-control="true"
         aria-label="Italic (Ctrl+I)"
       >
         <em>I</em>
@@ -209,6 +252,7 @@
         id="mini-text-tool-underline"
         class="selection-tool"
         type="button"
+        data-text-control="true"
         aria-label="Underline (Ctrl+U)"
       >
         <u>U</u>
@@ -217,10 +261,31 @@
         id="mini-text-tool-clear"
         class="selection-tool is-wide"
         type="button"
+        data-text-control="true"
         aria-label="Clear formatting"
       >
         Clear
       </button>
+      <select
+        id="mini-text-font-family"
+        class="selection-tool selection-select selection-font-family"
+        data-text-control="true"
+        aria-label="Font family"
+      ></select>
+      <select
+        id="mini-text-font-size"
+        class="selection-tool selection-select selection-font-size"
+        data-text-control="true"
+        aria-label="Font size"
+      ></select>
+      <input
+        id="mini-text-font-color"
+        class="selection-tool selection-color"
+        data-text-control="true"
+        type="color"
+        aria-label="Font color"
+        value="#16375e"
+      />
     </div>
 
     <main id="canvas-wrap" class="wrap">

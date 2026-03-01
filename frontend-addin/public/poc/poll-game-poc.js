@@ -8,6 +8,53 @@
   const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
   const RIBBON_ADVANCED_KEY = 'prezo.poll-game-poc.ribbon-advanced.v1'
   const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
+  const TEXT_FONT_FAMILIES = [
+    'Aptos',
+    'Arial',
+    'Bahnschrift',
+    'Calibri',
+    'Cambria',
+    'Candara',
+    'Comic Sans MS',
+    'Consolas',
+    'Constantia',
+    'Corbel',
+    'Courier New',
+    'Franklin Gothic Medium',
+    'Garamond',
+    'Georgia',
+    'Impact',
+    'Lucida Sans Unicode',
+    'Palatino Linotype',
+    'Segoe UI',
+    'Tahoma',
+    'Times New Roman',
+    'Trebuchet MS',
+    'Verdana'
+  ]
+  const TEXT_FONT_SIZES = [
+    8,
+    9,
+    10,
+    10.5,
+    11,
+    12,
+    14,
+    16,
+    18,
+    20,
+    24,
+    28,
+    32,
+    36,
+    40,
+    44,
+    48,
+    54,
+    60,
+    66,
+    72
+  ]
 
   const query = new URLSearchParams(window.location.search)
 
@@ -52,7 +99,8 @@
     activeTextHost: null,
     selectionToolbarRafId: null,
     cachedTextSelectionRange: null,
-    cachedTextSelectionHost: null
+    cachedTextSelectionHost: null,
+    isSyncingTextStyleControls: false
   }
 
   const el = {
@@ -83,10 +131,16 @@
     textToolItalic: must('text-tool-italic'),
     textToolUnderline: must('text-tool-underline'),
     textToolClear: must('text-tool-clear'),
+    textFontFamily: must('text-font-family'),
+    textFontSize: must('text-font-size'),
+    textFontColor: must('text-font-color'),
     miniTextToolBold: must('mini-text-tool-bold'),
     miniTextToolItalic: must('mini-text-tool-italic'),
     miniTextToolUnderline: must('mini-text-tool-underline'),
     miniTextToolClear: must('mini-text-tool-clear'),
+    miniTextFontFamily: must('mini-text-font-family'),
+    miniTextFontSize: must('mini-text-font-size'),
+    miniTextFontColor: must('mini-text-font-color'),
     question: must('question'),
     status: must('status'),
     votes: must('votes'),
@@ -451,6 +505,7 @@
       })
     }
 
+    setupRichTextStyleControls()
     bindRichTextCommandButtons([el.textToolBold, el.miniTextToolBold], 'bold')
     bindRichTextCommandButtons([el.textToolItalic, el.miniTextToolItalic], 'italic')
     bindRichTextCommandButtons([el.textToolUnderline, el.miniTextToolUnderline], 'underline')
@@ -466,6 +521,118 @@
     window.addEventListener('resize', scheduleSelectionToolbarUpdate)
     window.addEventListener('scroll', scheduleSelectionToolbarUpdate, true)
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
+  }
+
+  function setupRichTextStyleControls() {
+    fillSelectOptions(
+      [el.textFontFamily, el.miniTextFontFamily],
+      TEXT_FONT_FAMILIES.map((fontName) => ({
+        label: fontName,
+        value: fontName,
+        style: `font-family: "${fontName}", sans-serif`
+      }))
+    )
+    fillSelectOptions(
+      [el.textFontSize, el.miniTextFontSize],
+      TEXT_FONT_SIZES.map((fontSize) => ({
+        label: String(fontSize),
+        value: String(fontSize)
+      }))
+    )
+
+    for (const control of [el.textFontFamily, el.miniTextFontFamily]) {
+      control.addEventListener('change', () => {
+        if (state.isSyncingTextStyleControls) {
+          return
+        }
+        const selectedFont = normalizeFontFamilyChoice(control.value)
+        setLinkedControlValues([el.textFontFamily, el.miniTextFontFamily], selectedFont)
+        if (!selectedFont) {
+          return
+        }
+        if (applyRichTextInlineStyle({ fontFamily: selectedFont })) {
+          showTextEditFeedback(`Font changed to ${selectedFont}.`, 'success')
+          return
+        }
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      })
+    }
+
+    for (const control of [el.textFontSize, el.miniTextFontSize]) {
+      control.addEventListener('change', () => {
+        if (state.isSyncingTextStyleControls) {
+          return
+        }
+        const selectedSize = normalizeFontSizeChoice(control.value)
+        setLinkedControlValues([el.textFontSize, el.miniTextFontSize], selectedSize)
+        if (!selectedSize) {
+          return
+        }
+        if (applyRichTextInlineStyle({ fontSize: `${selectedSize}pt` })) {
+          showTextEditFeedback(`Font size changed to ${selectedSize}.`, 'success')
+          return
+        }
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      })
+    }
+
+    for (const control of [el.textFontColor, el.miniTextFontColor]) {
+      control.addEventListener('input', () => {
+        if (state.isSyncingTextStyleControls) {
+          return
+        }
+        const selectedColor = sanitizeHex(control.value, '#16375e')
+        setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
+      })
+      control.addEventListener('change', () => {
+        if (state.isSyncingTextStyleControls) {
+          return
+        }
+        const selectedColor = sanitizeHex(control.value, '#16375e')
+        setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
+        if (applyRichTextInlineStyle({ color: selectedColor })) {
+          showTextEditFeedback('Text color updated.', 'success')
+          return
+        }
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      })
+    }
+  }
+
+  function fillSelectOptions(selectNodes, options) {
+    const seen = new Set()
+    const normalizedOptions = []
+    for (const option of options) {
+      const value = asText(option.value)
+      if (!value || seen.has(value.toLowerCase())) {
+        continue
+      }
+      seen.add(value.toLowerCase())
+      normalizedOptions.push(option)
+    }
+
+    for (const select of selectNodes) {
+      select.innerHTML = ''
+      for (const option of normalizedOptions) {
+        const node = document.createElement('option')
+        node.value = option.value
+        node.textContent = option.label
+        if (option.style) {
+          node.style.cssText = option.style
+        }
+        select.appendChild(node)
+      }
+    }
+  }
+
+  function setLinkedControlValues(controls, value) {
+    for (const control of controls) {
+      if (control.value === value) {
+        continue
+      }
+      control.value = value
+    }
   }
 
   function bindRichTextCommandButtons(buttons, command) {
@@ -482,6 +649,7 @@
   function handleRichTextSelectionChange() {
     cacheRichTextSelection()
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
   }
 
@@ -491,7 +659,7 @@
       clearCachedRichTextSelection()
       return
     }
-    if (event.target.closest('#selection-toolbar')) {
+    if (event.target.closest('[data-text-control="true"]')) {
       return
     }
     if (event.target.closest('.rich-text-editable')) {
@@ -588,6 +756,7 @@
     }
     state.activeTextHost = host
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
   }
 
@@ -601,6 +770,7 @@
     if (nextHost) {
       state.activeTextHost = nextHost
       refreshTextToolStates()
+      syncTextStyleControlsFromSelection()
       scheduleSelectionToolbarUpdate()
       return
     }
@@ -609,6 +779,7 @@
       clearCachedRichTextSelection()
     }
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
     hideSelectionToolbar()
     if (state.snapshot) {
       window.setTimeout(() => {
@@ -627,6 +798,7 @@
     }
     commitRichTextHost(host)
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
   }
 
@@ -651,6 +823,7 @@
     }
     commitRichTextHost(host)
     refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
   }
 
@@ -715,9 +888,253 @@
     return false
   }
 
+  function applyRichTextInlineStyle(styleProps) {
+    const context = resolveExpandedRichTextSelection()
+    if (!context) {
+      return false
+    }
+    const { host, selection, range } = context
+
+    const wrapper = document.createElement('span')
+    let appliedAnyStyle = false
+    if (styleProps.fontFamily) {
+      const family = normalizeFontFamilyChoice(styleProps.fontFamily)
+      if (family) {
+        wrapper.style.fontFamily = family
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.fontSize) {
+      const size = normalizeFontSizeCss(styleProps.fontSize)
+      if (size) {
+        wrapper.style.fontSize = size
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.color) {
+      const color = sanitizeHex(styleProps.color, '')
+      if (color) {
+        wrapper.style.color = color
+        appliedAnyStyle = true
+      }
+    }
+    if (!appliedAnyStyle) {
+      return false
+    }
+
+    const fragment = range.extractContents()
+    if (!fragment || fragment.childNodes.length === 0) {
+      return false
+    }
+    wrapper.appendChild(fragment)
+    range.insertNode(wrapper)
+
+    const nextRange = document.createRange()
+    nextRange.selectNodeContents(wrapper)
+    selection.removeAllRanges()
+    selection.addRange(nextRange)
+
+    commitRichTextHost(host, { normalizeDom: true })
+    cacheRichTextSelection()
+    refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
+    scheduleSelectionToolbarUpdate()
+    return true
+  }
+
+  function resolveExpandedRichTextSelection() {
+    const host =
+      getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
+    if (!host) {
+      return null
+    }
+
+    if (!hasNonCollapsedSelectionInHost(host)) {
+      if (document.activeElement !== host) {
+        host.focus({ preventScroll: true })
+      }
+      if (!restoreCachedRichTextSelection(host)) {
+        return null
+      }
+    }
+
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return null
+    }
+    if (getSelectionRichTextHost() !== host) {
+      return null
+    }
+    return { host, selection, range: selection.getRangeAt(0) }
+  }
+
+  function syncTextStyleControlsFromSelection() {
+    const snapshot = getCurrentTextStyleSnapshot()
+    const fontFamily = snapshot?.fontFamily || normalizeFontFamilyChoice(currentTheme.fontFamily)
+    const fontSize = snapshot?.fontSize || '24'
+    const fontColor = snapshot?.color || sanitizeHex(currentTheme.textMain, '#16375e')
+
+    state.isSyncingTextStyleControls = true
+    try {
+      syncTextSelectOption([el.textFontFamily, el.miniTextFontFamily], fontFamily)
+      syncTextSelectOption([el.textFontSize, el.miniTextFontSize], fontSize)
+      setLinkedControlValues([el.textFontColor, el.miniTextFontColor], fontColor)
+    } finally {
+      state.isSyncingTextStyleControls = false
+    }
+  }
+
+  function syncTextSelectOption(selects, value) {
+    if (!value) {
+      return
+    }
+    for (const select of selects) {
+      ensureSelectOption(select, value)
+      select.value = value
+    }
+  }
+
+  function ensureSelectOption(select, value) {
+    const normalized = String(value)
+    for (const option of select.options) {
+      if (option.value === normalized) {
+        return
+      }
+    }
+    const option = document.createElement('option')
+    option.value = normalized
+    option.textContent = normalized
+    select.appendChild(option)
+  }
+
+  function getCurrentTextStyleSnapshot() {
+    const host =
+      getSelectionRichTextHost() || getCachedRichTextSelectionHost() || getActiveRichTextHost()
+    if (!host) {
+      return null
+    }
+
+    const probe = getTextStyleProbeNode(host)
+    const probeElement =
+      probe instanceof Element
+        ? probe
+        : probe instanceof Node && probe.parentElement
+          ? probe.parentElement
+          : host
+    const computed = window.getComputedStyle(probeElement)
+
+    return {
+      fontFamily: normalizeFontFamilyChoice(extractFontFamilyName(computed.fontFamily)),
+      fontSize: normalizeFontSizeChoice(String(pxToPoints(computed.fontSize))),
+      color: normalizeColorToHex(computed.color)
+    }
+  }
+
+  function getTextStyleProbeNode(host) {
+    const liveSelection = window.getSelection()
+    if (liveSelection && liveSelection.rangeCount > 0) {
+      const liveHost = getSelectionRichTextHost()
+      if (liveHost && liveHost === host) {
+        const range = liveSelection.getRangeAt(0)
+        return range.startContainer
+      }
+    }
+
+    const cachedHost = getCachedRichTextSelectionHost()
+    if (cachedHost && cachedHost === host && state.cachedTextSelectionRange) {
+      return state.cachedTextSelectionRange.startContainer
+    }
+    return host
+  }
+
+  function normalizeFontFamilyChoice(value) {
+    const name = extractFontFamilyName(value)
+    if (!name) {
+      return ''
+    }
+    const lower = name.toLowerCase()
+    for (const option of TEXT_FONT_FAMILIES) {
+      if (option.toLowerCase() === lower) {
+        return option
+      }
+    }
+    return name
+  }
+
+  function extractFontFamilyName(value) {
+    const text = asText(value)
+    if (!text) {
+      return ''
+    }
+    const primary = text.split(',')[0]?.trim().replace(/^["']|["']$/g, '') || ''
+    return primary
+  }
+
+  function normalizeFontSizeChoice(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) {
+      return ''
+    }
+    let closest = TEXT_FONT_SIZES[0]
+    let closestDelta = Math.abs(num - closest)
+    for (const option of TEXT_FONT_SIZES) {
+      const delta = Math.abs(num - option)
+      if (delta < closestDelta) {
+        closest = option
+        closestDelta = delta
+      }
+    }
+    return String(closest)
+  }
+
+  function normalizeFontSizeCss(value) {
+    const num = Number(value)
+    if (!Number.isFinite(num) || num <= 0) {
+      return ''
+    }
+    return `${num}pt`
+  }
+
+  function pxToPoints(pxText) {
+    const px = Number.parseFloat(pxText)
+    if (!Number.isFinite(px) || px <= 0) {
+      return 24
+    }
+    return (px * 72) / 96
+  }
+
+  function normalizeColorToHex(colorText) {
+    const directHex = sanitizeHex(colorText, '')
+    if (directHex) {
+      return directHex.toLowerCase()
+    }
+    const rgbMatch = /rgba?\(([^)]+)\)/i.exec(asText(colorText))
+    if (!rgbMatch) {
+      return '#16375e'
+    }
+    const channels = rgbMatch[1]
+      .split(',')
+      .map((entry) => Number.parseFloat(entry.trim()))
+      .filter((entry, index) => Number.isFinite(entry) && index < 3)
+    if (channels.length < 3) {
+      return '#16375e'
+    }
+    const r = clamp(Math.round(channels[0]), 0, 255, 0)
+    const g = clamp(Math.round(channels[1]), 0, 255, 0)
+    const b = clamp(Math.round(channels[2]), 0, 255, 0)
+    return `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`
+  }
+
+  function toHexByte(value) {
+    return Number(value).toString(16).padStart(2, '0')
+  }
+
   function refreshTextToolStates() {
     const hasEditableSelection = Boolean(
       getSelectionRichTextHost() || getCachedRichTextSelectionHost() || getActiveRichTextHost()
+    )
+    const hasExpandedSelection = Boolean(
+      getSelectionRichTextHost() || getCachedRichTextSelectionHost()
     )
     setTextToolState(el.textToolBold, 'bold', hasEditableSelection)
     setTextToolState(el.miniTextToolBold, 'bold', hasEditableSelection)
@@ -727,6 +1144,12 @@
     setTextToolState(el.miniTextToolUnderline, 'underline', hasEditableSelection)
     el.textToolClear.disabled = !hasEditableSelection
     el.miniTextToolClear.disabled = !hasEditableSelection
+    el.textFontFamily.disabled = !hasExpandedSelection
+    el.miniTextFontFamily.disabled = !hasExpandedSelection
+    el.textFontSize.disabled = !hasExpandedSelection
+    el.miniTextFontSize.disabled = !hasExpandedSelection
+    el.textFontColor.disabled = !hasExpandedSelection
+    el.miniTextFontColor.disabled = !hasExpandedSelection
   }
 
   function setTextToolState(button, command, enabled) {
@@ -2228,29 +2651,51 @@
         continue
       }
       const rawProp = declaration.slice(0, separator).trim().toLowerCase()
-      const rawValue = declaration.slice(separator + 1).trim().toLowerCase()
+      const rawValue = declaration.slice(separator + 1).trim()
       if (!rawProp || !rawValue) {
         continue
       }
+      const lowerValue = rawValue.toLowerCase()
 
       if (rawProp === 'font-weight') {
-        const value = sanitizeFontWeightValue(rawValue)
+        const value = sanitizeFontWeightValue(lowerValue)
         if (value) {
           cleanParts.push(`font-weight: ${value}`)
         }
         continue
       }
       if (rawProp === 'font-style') {
-        const value = sanitizeFontStyleValue(rawValue)
+        const value = sanitizeFontStyleValue(lowerValue)
         if (value) {
           cleanParts.push(`font-style: ${value}`)
         }
         continue
       }
       if (rawProp === 'text-decoration' || rawProp === 'text-decoration-line') {
-        const value = sanitizeTextDecorationValue(rawValue)
+        const value = sanitizeTextDecorationValue(lowerValue)
         if (value) {
           cleanParts.push(`text-decoration: ${value}`)
+        }
+        continue
+      }
+      if (rawProp === 'font-family') {
+        const value = sanitizeInlineFontFamilyValue(rawValue)
+        if (value) {
+          cleanParts.push(`font-family: ${value}`)
+        }
+        continue
+      }
+      if (rawProp === 'font-size') {
+        const value = sanitizeInlineFontSizeValue(lowerValue)
+        if (value) {
+          cleanParts.push(`font-size: ${value}`)
+        }
+        continue
+      }
+      if (rawProp === 'color') {
+        const value = sanitizeInlineColorValue(lowerValue)
+        if (value) {
+          cleanParts.push(`color: ${value}`)
         }
       }
     }
@@ -2286,6 +2731,52 @@
       return 'none'
     }
     return ''
+  }
+
+  function sanitizeInlineFontFamilyValue(value) {
+    const sanitized = sanitizeFontFamily(value, '')
+    if (!sanitized) {
+      return ''
+    }
+    const parts = sanitized
+      .split(',')
+      .map((part) => part.trim().replace(/^["']|["']$/g, ''))
+      .filter((part) => /^[a-z0-9 .\-]+$/i.test(part))
+    if (parts.length === 0) {
+      return ''
+    }
+    return parts.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(', ')
+  }
+
+  function sanitizeInlineFontSizeValue(value) {
+    const match = /^([0-9]+(?:\.[0-9]+)?)(pt|px|em|rem|%)$/.exec(value)
+    if (!match) {
+      return ''
+    }
+    const amount = Number(match[1])
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return ''
+    }
+    const clamped = Math.min(300, Math.max(4, amount))
+    const printable = Number.isInteger(clamped) ? String(clamped) : String(clamped)
+    return `${printable}${match[2]}`
+  }
+
+  function sanitizeInlineColorValue(value) {
+    const hex = sanitizeHex(value, '')
+    if (hex) {
+      return hex.toLowerCase()
+    }
+    const rgbMatch =
+      /^rgb\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*\)$/.exec(value) ||
+      /^rgba\(\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*([0-9]{1,3})\s*,\s*(0|0?\.[0-9]+|1(?:\.0+)?)\s*\)$/.exec(value)
+    if (!rgbMatch) {
+      return ''
+    }
+    const r = clamp(Number(rgbMatch[1]), 0, 255, 0)
+    const g = clamp(Number(rgbMatch[2]), 0, 255, 0)
+    const b = clamp(Number(rgbMatch[3]), 0, 255, 0)
+    return `rgb(${r}, ${g}, ${b})`
   }
 
   function readControlValue(input, type) {

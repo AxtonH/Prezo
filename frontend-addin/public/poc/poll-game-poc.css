@@ -376,6 +376,30 @@ body {
   color: #fff;
 }
 
+.text-style-row {
+  margin-top: 6px;
+}
+
+.text-style-select {
+  min-width: 0;
+}
+
+.text-font-family {
+  flex: 1 1 180px;
+}
+
+.text-font-size {
+  flex: 0 0 72px;
+}
+
+.text-style-color {
+  flex: 0 0 38px;
+  width: 38px;
+  min-width: 38px;
+  padding: 2px;
+  border-radius: 7px;
+}
+
 .row input,
 .row select {
   width: 100%;
@@ -553,7 +577,9 @@ body.ribbon-advanced .advanced-control.note {
   z-index: 42;
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
+  max-width: min(96vw, 760px);
   padding: 5px;
   border: 1px solid rgba(129, 165, 206, 0.68);
   border-radius: 10px;
@@ -609,6 +635,30 @@ body.ribbon-advanced .advanced-control.note {
 .selection-tool:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.selection-select {
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.selection-font-family {
+  flex: 1 1 150px;
+  min-width: 130px;
+}
+
+.selection-font-size {
+  flex: 0 0 72px;
+  min-width: 64px;
+}
+
+.selection-color {
+  flex: 0 0 34px;
+  width: 34px;
+  min-width: 34px;
+  padding: 2px;
 }
 
 .wrap {
