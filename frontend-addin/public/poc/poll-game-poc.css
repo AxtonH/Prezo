@@ -783,6 +783,16 @@ h1 {
   outline: 2px solid rgba(79, 143, 223, 0.9);
 }
 
+.rich-text-editable::selection {
+  background: rgba(86, 146, 224, 0.28);
+  color: inherit;
+}
+
+.rich-text-editable::-moz-selection {
+  background: rgba(86, 146, 224, 0.28);
+  color: inherit;
+}
+
 .meta {
   display: inline-flex;
   align-items: center;

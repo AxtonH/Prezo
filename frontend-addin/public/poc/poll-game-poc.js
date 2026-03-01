@@ -959,6 +959,7 @@
     if (!fragment || fragment.childNodes.length === 0) {
       return false
     }
+    stripConflictingInlineStyles(fragment, styleProps)
     wrapper.appendChild(fragment)
     range.insertNode(wrapper)
 
@@ -983,6 +984,42 @@
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
     return true
+  }
+
+  function stripConflictingInlineStyles(rootNode, styleProps) {
+    const keysToClear = []
+    if (styleProps.fontFamily) {
+      keysToClear.push('fontFamily')
+    }
+    if (styleProps.fontSize) {
+      keysToClear.push('fontSize')
+    }
+    if (styleProps.color) {
+      keysToClear.push('color')
+    }
+    if (keysToClear.length === 0) {
+      return
+    }
+
+    const stack = [rootNode]
+    while (stack.length > 0) {
+      const node = stack.pop()
+      if (!node) {
+        continue
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node
+        for (const key of keysToClear) {
+          element.style[key] = ''
+        }
+        if (!element.getAttribute('style') || !asText(element.getAttribute('style'))) {
+          element.removeAttribute('style')
+        }
+      }
+      for (const child of [...node.childNodes]) {
+        stack.push(child)
+      }
+    }
   }
 
   function resolveExpandedRichTextSelection() {
