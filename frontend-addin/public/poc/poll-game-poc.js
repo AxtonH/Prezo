@@ -50,7 +50,9 @@
     raceAnimLastTs: 0,
     textOverrides: loadTextOverrides(),
     activeTextHost: null,
-    selectionToolbarRafId: null
+    selectionToolbarRafId: null,
+    cachedTextSelectionRange: null,
+    cachedTextSelectionHost: null
   }
 
   const el = {
@@ -478,6 +480,7 @@
   }
 
   function handleRichTextSelectionChange() {
+    cacheRichTextSelection()
     refreshTextToolStates()
     scheduleSelectionToolbarUpdate()
   }
@@ -485,6 +488,7 @@
   function handleRichTextPointerDown(event) {
     if (!(event.target instanceof Element)) {
       hideSelectionToolbar()
+      clearCachedRichTextSelection()
       return
     }
     if (event.target.closest('#selection-toolbar')) {
@@ -494,6 +498,7 @@
       return
     }
     hideSelectionToolbar()
+    clearCachedRichTextSelection()
   }
 
   function scheduleSelectionToolbarUpdate() {
@@ -600,6 +605,9 @@
       return
     }
     state.activeTextHost = null
+    if (!getSelectionRichTextHost()) {
+      clearCachedRichTextSelection()
+    }
     refreshTextToolStates()
     hideSelectionToolbar()
     if (state.snapshot) {
@@ -673,11 +681,22 @@
   }
 
   function applyRichTextCommand(command) {
-    const host = getSelectionRichTextHost() || getActiveRichTextHost()
+    const host =
+      getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
     if (!host) {
       return false
     }
-    host.focus()
+
+    const hasLiveSelection = hasNonCollapsedSelectionInHost(host)
+    if (!hasLiveSelection) {
+      if (document.activeElement !== host) {
+        host.focus({ preventScroll: true })
+      }
+      if (!restoreCachedRichTextSelection(host)) {
+        return false
+      }
+    }
+
     try {
       document.execCommand('styleWithCSS', false, false)
     } catch {}
@@ -686,6 +705,7 @@
       applied = document.execCommand(command, false, null)
     } catch {}
     commitRichTextHost(host)
+    cacheRichTextSelection()
     refreshTextToolStates()
     scheduleSelectionToolbarUpdate()
     if (applied !== false) {
@@ -696,7 +716,9 @@
   }
 
   function refreshTextToolStates() {
-    const hasEditableSelection = Boolean(getSelectionRichTextHost() || getActiveRichTextHost())
+    const hasEditableSelection = Boolean(
+      getSelectionRichTextHost() || getCachedRichTextSelectionHost() || getActiveRichTextHost()
+    )
     setTextToolState(el.textToolBold, 'bold', hasEditableSelection)
     setTextToolState(el.miniTextToolBold, 'bold', hasEditableSelection)
     setTextToolState(el.textToolItalic, 'italic', hasEditableSelection)
@@ -729,6 +751,80 @@
       return null
     }
     return anchorHost
+  }
+
+  function hasNonCollapsedSelectionInHost(host) {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return false
+    }
+    return getSelectionRichTextHost() === host
+  }
+
+  function cacheRichTextSelection() {
+    const selection = window.getSelection()
+    const host = getSelectionRichTextHost()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !host) {
+      return
+    }
+    try {
+      state.cachedTextSelectionRange = selection.getRangeAt(0).cloneRange()
+      state.cachedTextSelectionHost = host
+    } catch {}
+  }
+
+  function clearCachedRichTextSelection() {
+    state.cachedTextSelectionRange = null
+    state.cachedTextSelectionHost = null
+  }
+
+  function getCachedRichTextSelectionHost() {
+    const host = state.cachedTextSelectionHost
+    const range = state.cachedTextSelectionRange
+    if (!host || !range) {
+      return null
+    }
+    if (!host.isConnected) {
+      clearCachedRichTextSelection()
+      return null
+    }
+    if (!isNodeInsideHost(host, range.startContainer) || !isNodeInsideHost(host, range.endContainer)) {
+      clearCachedRichTextSelection()
+      return null
+    }
+    return host
+  }
+
+  function restoreCachedRichTextSelection(host) {
+    const cachedHost = getCachedRichTextSelectionHost()
+    const range = state.cachedTextSelectionRange
+    if (!cachedHost || cachedHost !== host || !range) {
+      return false
+    }
+    const selection = window.getSelection()
+    if (!selection) {
+      return false
+    }
+    try {
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return !selection.isCollapsed
+    } catch {
+      return false
+    }
+  }
+
+  function isNodeInsideHost(host, node) {
+    if (!node) {
+      return false
+    }
+    if (node === host) {
+      return true
+    }
+    if (node instanceof Element) {
+      return host.contains(node)
+    }
+    return node.parentElement ? host.contains(node.parentElement) : false
   }
 
   function getRichTextHost(node) {
@@ -805,6 +901,9 @@
       state.activeTextHost = null
       refreshTextToolStates()
       hideSelectionToolbar()
+    }
+    if (state.cachedTextSelectionHost === node) {
+      clearCachedRichTextSelection()
     }
     node.classList.remove('rich-text-editable')
     node.removeAttribute('contenteditable')
@@ -2319,6 +2418,7 @@
     state.isUnloading = true
     stopSnapshotPolling()
     hideSelectionToolbar()
+    clearCachedRichTextSelection()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
