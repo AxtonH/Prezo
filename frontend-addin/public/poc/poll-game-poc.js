@@ -570,7 +570,7 @@
         if (!selectedSize) {
           return
         }
-        if (applyRichTextInlineStyle({ fontSize: `${selectedSize}pt` })) {
+        if (applyRichTextInlineStyle({ fontSize: selectedSize })) {
           showTextEditFeedback(`Font size changed to ${selectedSize}.`, 'success')
           return
         }
@@ -1112,11 +1112,19 @@
   }
 
   function normalizeFontSizeCss(value) {
-    const num = Number(value)
-    if (!Number.isFinite(num) || num <= 0) {
+    const text = asText(value).toLowerCase()
+    if (!text) {
       return ''
     }
-    return `${num}pt`
+    const withUnit = /^([0-9]+(?:\.[0-9]+)?)(pt|px|em|rem|%)$/.exec(text)
+    const rawNumber = withUnit ? Number(withUnit[1]) : Number(text)
+    const unit = withUnit ? withUnit[2] : 'pt'
+    if (!Number.isFinite(rawNumber) || rawNumber <= 0) {
+      return ''
+    }
+    const clamped = Math.min(300, Math.max(4, rawNumber))
+    const printable = Number.isInteger(clamped) ? String(clamped) : String(clamped)
+    return `${printable}${unit}`
   }
 
   function pxToPoints(pxText) {
@@ -1361,7 +1369,16 @@
 
   function isRichTextEditingActive() {
     const host = getActiveRichTextHost()
-    return Boolean(host && document.activeElement === host)
+    if (!host) {
+      return false
+    }
+    if (document.activeElement === host) {
+      return true
+    }
+    if (isTextControlElement(document.activeElement) && getCachedRichTextSelectionHost() === host) {
+      return true
+    }
+    return false
   }
 
   function setupDragInteractions() {
