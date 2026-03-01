@@ -544,6 +544,7 @@
     )
 
     for (const control of [el.textFontFamily, el.miniTextFontFamily]) {
+      bindTextControlFocusLock(control)
       control.addEventListener('change', () => {
         if (state.isSyncingTextStyleControls) {
           return
@@ -562,6 +563,7 @@
     }
 
     for (const control of [el.textFontSize, el.miniTextFontSize]) {
+      bindTextControlFocusLock(control)
       control.addEventListener('change', () => {
         if (state.isSyncingTextStyleControls) {
           return
@@ -580,6 +582,7 @@
     }
 
     for (const control of [el.textFontColor, el.miniTextFontColor]) {
+      bindTextControlFocusLock(control)
       control.addEventListener('input', () => {
         if (state.isSyncingTextStyleControls) {
           return
@@ -601,6 +604,18 @@
         showTextEditFeedback('Select text in the question or options first.', 'error')
       })
     }
+  }
+
+  function bindTextControlFocusLock(control) {
+    control.addEventListener('focus', () => {
+      cacheRichTextSelection()
+      state.textControlInteractionLocked = true
+      state.textControlInteractionUntil = Date.now() + 15000
+    })
+    control.addEventListener('blur', () => {
+      state.textControlInteractionLocked = false
+      state.textControlInteractionUntil = Date.now() + 600
+    })
   }
 
   function fillSelectOptions(selectNodes, options) {
