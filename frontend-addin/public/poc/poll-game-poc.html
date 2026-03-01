@@ -75,6 +75,31 @@
                 <label class="check">Enable drag mode<input id="drag-mode-enabled" type="checkbox" /></label>
                 <p class="note">Tip: save your theme after adjustments.</p>
               </article>
+
+              <article class="ribbon-group group-compact">
+                <h3>Text Edit</h3>
+                <p class="note">Click question/option text, then highlight words to format.</p>
+                <div class="row text-tools" role="toolbar" aria-label="Text formatting">
+                  <button id="text-tool-bold" class="text-tool" type="button" aria-label="Bold (Ctrl+B)">
+                    <strong>B</strong>
+                  </button>
+                  <button id="text-tool-italic" class="text-tool" type="button" aria-label="Italic (Ctrl+I)">
+                    <em>I</em>
+                  </button>
+                  <button
+                    id="text-tool-underline"
+                    class="text-tool"
+                    type="button"
+                    aria-label="Underline (Ctrl+U)"
+                  >
+                    <u>U</u>
+                  </button>
+                  <button id="text-tool-clear" class="text-tool ghost" type="button" aria-label="Clear formatting">
+                    Clear
+                  </button>
+                </div>
+                <p id="text-edit-feedback" class="note">Rich text editing is on for question and options.</p>
+              </article>
             </div>
           </section>
 

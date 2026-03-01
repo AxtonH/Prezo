@@ -338,6 +338,44 @@ body {
   filter: brightness(1.04);
 }
 
+.text-tools {
+  margin-top: 6px;
+}
+
+.text-tools .text-tool {
+  min-width: 34px;
+  padding: 3px 10px;
+  border: 1px solid rgba(150, 186, 226, 0.78);
+  background: rgba(232, 243, 255, 0.98);
+  color: #1f436f;
+}
+
+.text-tools .text-tool.ghost {
+  min-width: 54px;
+  background: rgba(245, 249, 255, 0.95);
+}
+
+.text-tools .text-tool:hover {
+  border-color: rgba(87, 145, 215, 0.84);
+  background: rgba(220, 236, 255, 0.98);
+}
+
+.text-tools .text-tool:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.text-tools .text-tool:disabled:hover {
+  border-color: rgba(150, 186, 226, 0.78);
+  background: rgba(232, 243, 255, 0.98);
+}
+
+.text-tools .text-tool.is-active {
+  border-color: #4f8fdf;
+  background: linear-gradient(135deg, #5ca1ff, #72c4ff);
+  color: #fff;
+}
+
 .row input,
 .row select {
   width: 100%;
@@ -607,6 +645,27 @@ h1 {
   font-size: clamp(26px, 3.2vw, var(--question-size));
   line-height: 1.08;
   max-width: 900px;
+}
+
+.rich-text-editable {
+  cursor: text;
+  border-radius: 8px;
+  transition: outline-color 130ms ease, background 130ms ease;
+}
+
+.rich-text-editable:hover {
+  outline: 1px dashed rgba(77, 141, 223, 0.6);
+  outline-offset: 3px;
+}
+
+.rich-text-editable:focus {
+  outline: 2px solid rgba(79, 143, 223, 0.9);
+  outline-offset: 3px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.rich-text-editable:focus-visible {
+  outline: 2px solid rgba(79, 143, 223, 0.9);
 }
 
 .meta {

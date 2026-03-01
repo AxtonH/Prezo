@@ -7,6 +7,7 @@
   const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
   const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
   const RIBBON_ADVANCED_KEY = 'prezo.poll-game-poc.ribbon-advanced.v1'
+  const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
 
   const query = new URLSearchParams(window.location.search)
 
@@ -46,7 +47,9 @@
     raceRows: new Map(),
     racePollId: null,
     raceAnimFrameId: null,
-    raceAnimLastTs: 0
+    raceAnimLastTs: 0,
+    textOverrides: loadTextOverrides(),
+    activeTextHost: null
   }
 
   const el = {
@@ -71,6 +74,11 @@
     importTheme: must('import-theme'),
     resetTheme: must('reset-theme'),
     themeFeedback: must('theme-feedback'),
+    textEditFeedback: must('text-edit-feedback'),
+    textToolBold: must('text-tool-bold'),
+    textToolItalic: must('text-tool-italic'),
+    textToolUnderline: must('text-tool-underline'),
+    textToolClear: must('text-tool-clear'),
     question: must('question'),
     status: must('status'),
     votes: must('votes'),
@@ -189,6 +197,7 @@
   function init() {
     setupSettingsPanel()
     setupThemeEditor()
+    setupRichTextEditor()
     setupDragInteractions()
     setupRibbonOffsetTracking()
     setupCanvasFitBehavior()
@@ -275,6 +284,9 @@
 
   function handleCanvasPointerDown(event) {
     if (ribbonState.hidden || dragState.enabled) {
+      return
+    }
+    if (event.target instanceof Element && event.target.closest('.rich-text-editable')) {
       return
     }
     if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -411,6 +423,279 @@
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
   }
 
+  function setupRichTextEditor() {
+    const textToolButtons = [
+      el.textToolBold,
+      el.textToolItalic,
+      el.textToolUnderline,
+      el.textToolClear
+    ]
+    for (const button of textToolButtons) {
+      button.addEventListener('mousedown', (event) => {
+        event.preventDefault()
+      })
+    }
+
+    el.textToolBold.addEventListener('click', () => {
+      if (!applyRichTextCommand('bold')) {
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      }
+    })
+    el.textToolItalic.addEventListener('click', () => {
+      if (!applyRichTextCommand('italic')) {
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      }
+    })
+    el.textToolUnderline.addEventListener('click', () => {
+      if (!applyRichTextCommand('underline')) {
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      }
+    })
+    el.textToolClear.addEventListener('click', () => {
+      if (!applyRichTextCommand('removeFormat')) {
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      }
+    })
+
+    el.wrap.addEventListener('focusin', handleRichTextFocusIn)
+    el.wrap.addEventListener('focusout', handleRichTextFocusOut)
+    el.wrap.addEventListener('input', handleRichTextInput)
+    el.wrap.addEventListener('paste', handleRichTextPaste)
+    el.wrap.addEventListener('keydown', handleRichTextKeydown)
+    document.addEventListener('selectionchange', refreshTextToolStates)
+    refreshTextToolStates()
+  }
+
+  function handleRichTextFocusIn(event) {
+    const host = getRichTextHost(event.target)
+    if (!host) {
+      return
+    }
+    state.activeTextHost = host
+    refreshTextToolStates()
+  }
+
+  function handleRichTextFocusOut(event) {
+    const host = getRichTextHost(event.target)
+    if (!host) {
+      return
+    }
+    const nextHost = getRichTextHost(event.relatedTarget)
+    commitRichTextHost(host, { normalizeDom: true })
+    if (nextHost) {
+      state.activeTextHost = nextHost
+      refreshTextToolStates()
+      return
+    }
+    state.activeTextHost = null
+    refreshTextToolStates()
+    if (state.snapshot) {
+      window.setTimeout(() => {
+        if (isRichTextEditingActive()) {
+          return
+        }
+        renderFromSnapshot(true)
+      }, 0)
+    }
+  }
+
+  function handleRichTextInput(event) {
+    const host = getRichTextHost(event.target)
+    if (!host) {
+      return
+    }
+    commitRichTextHost(host)
+    refreshTextToolStates()
+  }
+
+  function handleRichTextPaste(event) {
+    const host = getRichTextHost(event.target)
+    if (!host) {
+      return
+    }
+    event.preventDefault()
+    const clipboard = event.clipboardData
+    const pastedText = clipboard ? clipboard.getData('text/plain') : ''
+    if (!pastedText) {
+      return
+    }
+    host.focus()
+    const normalized = pastedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const html = escapeHtml(normalized).replace(/\n/g, '<br>')
+    try {
+      document.execCommand('insertHTML', false, html)
+    } catch {
+      document.execCommand('insertText', false, normalized)
+    }
+    commitRichTextHost(host)
+    refreshTextToolStates()
+  }
+
+  function handleRichTextKeydown(event) {
+    const host = getRichTextHost(event.target)
+    if (!host) {
+      return
+    }
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+      return
+    }
+    const key = event.key.toLowerCase()
+    if (key === 'b') {
+      event.preventDefault()
+      applyRichTextCommand('bold')
+      return
+    }
+    if (key === 'i') {
+      event.preventDefault()
+      applyRichTextCommand('italic')
+      return
+    }
+    if (key === 'u') {
+      event.preventDefault()
+      applyRichTextCommand('underline')
+    }
+  }
+
+  function applyRichTextCommand(command) {
+    const host = getSelectionRichTextHost() || getActiveRichTextHost()
+    if (!host) {
+      return false
+    }
+    host.focus()
+    try {
+      document.execCommand('styleWithCSS', false, false)
+    } catch {}
+    let applied = false
+    try {
+      applied = document.execCommand(command, false, null)
+    } catch {}
+    commitRichTextHost(host)
+    refreshTextToolStates()
+    if (applied !== false) {
+      showTextEditFeedback('Formatting updated.', 'success')
+      return true
+    }
+    return false
+  }
+
+  function refreshTextToolStates() {
+    const hasEditableSelection = Boolean(getSelectionRichTextHost() || getActiveRichTextHost())
+    setTextToolState(el.textToolBold, 'bold', hasEditableSelection)
+    setTextToolState(el.textToolItalic, 'italic', hasEditableSelection)
+    setTextToolState(el.textToolUnderline, 'underline', hasEditableSelection)
+    el.textToolClear.disabled = !hasEditableSelection
+  }
+
+  function setTextToolState(button, command, enabled) {
+    button.disabled = !enabled
+    let active = false
+    if (enabled) {
+      try {
+        active = Boolean(document.queryCommandState(command))
+      } catch {}
+    }
+    button.classList.toggle('is-active', active)
+  }
+
+  function getSelectionRichTextHost() {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) {
+      return null
+    }
+    const anchorHost = getRichTextHost(selection.anchorNode)
+    const focusHost = getRichTextHost(selection.focusNode)
+    if (!anchorHost || anchorHost !== focusHost) {
+      return null
+    }
+    return anchorHost
+  }
+
+  function getRichTextHost(node) {
+    if (!node) {
+      return null
+    }
+    if (node instanceof HTMLElement && node.classList.contains('rich-text-editable')) {
+      return node
+    }
+    const element =
+      node instanceof Element
+        ? node
+        : node.parentElement instanceof Element
+          ? node.parentElement
+          : null
+    if (!element) {
+      return null
+    }
+    const host = element.closest('.rich-text-editable')
+    return host instanceof HTMLElement ? host : null
+  }
+
+  function getActiveRichTextHost() {
+    const host = state.activeTextHost
+    if (!host) {
+      return null
+    }
+    if (!host.isConnected) {
+      state.activeTextHost = null
+      return null
+    }
+    return host
+  }
+
+  function commitRichTextHost(host, options = {}) {
+    const textKey = asText(host.dataset.textKey)
+    if (!textKey) {
+      return
+    }
+    const normalizeDom = options.normalizeDom === true
+    const sanitized = sanitizeRichTextHtml(host.innerHTML)
+    if (normalizeDom && host.innerHTML !== sanitized) {
+      host.innerHTML = sanitized
+    }
+    const hadValue = Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
+    if (!hadValue || state.textOverrides[textKey] !== sanitized) {
+      state.textOverrides[textKey] = sanitized
+      saveTextOverrides(state.textOverrides)
+    }
+    host.dataset.richTextHtml = sanitized
+  }
+
+  function renderRichText(node, textKey, fallbackText) {
+    const fallbackHtml = textToRichHtml(fallbackText)
+    const hasOverride = Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
+    const nextHtml = hasOverride ? state.textOverrides[textKey] : fallbackHtml
+
+    node.classList.add('rich-text-editable')
+    node.setAttribute('contenteditable', 'true')
+    node.setAttribute('spellcheck', 'true')
+    node.dataset.textKey = textKey
+
+    if (state.activeTextHost === node && document.activeElement === node) {
+      return
+    }
+    if (node.dataset.richTextHtml !== nextHtml) {
+      node.innerHTML = nextHtml
+      node.dataset.richTextHtml = nextHtml
+    }
+  }
+
+  function clearRichTextNode(node) {
+    if (state.activeTextHost === node) {
+      state.activeTextHost = null
+      refreshTextToolStates()
+    }
+    node.classList.remove('rich-text-editable')
+    node.removeAttribute('contenteditable')
+    node.removeAttribute('spellcheck')
+    delete node.dataset.textKey
+    delete node.dataset.richTextHtml
+  }
+
+  function isRichTextEditingActive() {
+    const host = getActiveRichTextHost()
+    return Boolean(host && document.activeElement === host)
+  }
+
   function setupDragInteractions() {
     el.dragModeEnabled.addEventListener('change', () => {
       setDragMode(Boolean(el.dragModeEnabled.checked))
@@ -520,6 +805,7 @@
   }
 
   function renderInitialState() {
+    clearRichTextNode(el.question)
     el.question.textContent = 'Waiting for poll data...'
     el.options.innerHTML = ''
     el.footer.textContent = `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
@@ -748,6 +1034,12 @@
     const poll = selectPoll(polls)
     state.currentPoll = poll
 
+    if (!forceRender && isRichTextEditingActive()) {
+      updateMeta(poll, getTotalVotes(poll))
+      updateFooter()
+      return
+    }
+
     const renderKey = getRenderKey(poll)
     if (!forceRender && renderKey === state.lastRenderKey) {
       updateFooter()
@@ -762,7 +1054,11 @@
     }
 
     const totalVotes = getTotalVotes(poll)
-    el.question.textContent = asText(poll.question) || 'Untitled poll'
+    renderRichText(
+      el.question,
+      getQuestionTextKey(poll),
+      asText(poll.question) || 'Untitled poll'
+    )
     if (currentTheme.visualMode === 'race') {
       renderRaceOptions(poll, totalVotes)
     } else {
@@ -777,7 +1073,9 @@
       clearRaceRows()
     }
     const fragment = document.createDocumentFragment()
-    for (const option of poll.options || []) {
+    const options = Array.isArray(poll.options) ? poll.options : []
+    for (let index = 0; index < options.length; index += 1) {
+      const option = options[index]
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
@@ -789,7 +1087,11 @@
 
       const label = document.createElement('span')
       label.className = 'label'
-      label.textContent = asText(option.label) || 'Option'
+      renderRichText(
+        label,
+        getOptionTextKey(poll, option, index),
+        asText(option.label) || 'Option'
+      )
 
       const stats = document.createElement('span')
       stats.className = 'stats'
@@ -857,7 +1159,11 @@
         state.raceRows.set(optionId, row)
         el.options.appendChild(row.root)
       }
-      row.label.textContent = asText(option.label) || 'Option'
+      renderRichText(
+        row.label,
+        getOptionTextKey(poll, option, index),
+        asText(option.label) || 'Option'
+      )
       row.stats.textContent = `${votes} (${pct}%)`
       row.targetY = index * rowHeight
       row.targetProgress = pct
@@ -996,12 +1302,16 @@
     }
     el.options.classList.remove('race-mode')
     el.options.style.height = ''
+    if (!getActiveRichTextHost()) {
+      refreshTextToolStates()
+    }
   }
 
   function renderMissingSession() {
     clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
+    clearRichTextNode(el.question)
     el.question.textContent = 'Missing required query param'
     el.options.innerHTML = ''
     const note = document.createElement('p')
@@ -1014,6 +1324,7 @@
 
   function renderMissingPoll() {
     clearRaceRows()
+    clearRichTextNode(el.question)
     const message =
       state.pollSelector.mode === 'id'
         ? `Poll "${state.pollSelector.explicitId}" was not found in this session.`
@@ -1032,6 +1343,7 @@
     clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
+    clearRichTextNode(el.question)
     el.question.textContent = 'Unable to load poll data'
     el.options.innerHTML = ''
     const note = document.createElement('p')
@@ -1126,6 +1438,17 @@
       return sorted[0] || null
     }
     return sorted.find((poll) => poll.status === 'open') || sorted[0] || null
+  }
+
+  function getQuestionTextKey(poll) {
+    const pollId = asText(poll?.id) || 'unknown'
+    return `poll:${pollId}:question`
+  }
+
+  function getOptionTextKey(poll, option, index) {
+    const pollId = asText(poll?.id) || 'unknown'
+    const optionId = asText(option?.id) || `index-${index}`
+    return `poll:${pollId}:option:${optionId}`
   }
 
   function getRenderKey(poll) {
@@ -1562,6 +1885,98 @@
     el.themeFeedback.style.color = '#5f7ea3'
   }
 
+  function showTextEditFeedback(text, type) {
+    el.textEditFeedback.textContent = text
+    if (type === 'success') {
+      el.textEditFeedback.style.color = '#216e43'
+      return
+    }
+    if (type === 'error') {
+      el.textEditFeedback.style.color = '#b53a4e'
+      return
+    }
+    el.textEditFeedback.style.color = '#5f7ea3'
+  }
+
+  function loadTextOverrides() {
+    const parsed = safeJsonParse(safeStorageGet(TEXT_OVERRIDES_KEY))
+    if (!parsed || typeof parsed !== 'object') {
+      return {}
+    }
+    const overrides = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value !== 'string' || !key) {
+        continue
+      }
+      overrides[key] = sanitizeRichTextHtml(value)
+    }
+    return overrides
+  }
+
+  function saveTextOverrides(overrides) {
+    try {
+      localStorage.setItem(TEXT_OVERRIDES_KEY, JSON.stringify(overrides))
+    } catch {}
+  }
+
+  function textToRichHtml(text) {
+    const normalized = asText(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    return escapeHtml(normalized).replace(/\n/g, '<br>')
+  }
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  }
+
+  function sanitizeRichTextHtml(input) {
+    const container = document.createElement('div')
+    container.innerHTML = typeof input === 'string' ? input : ''
+
+    const fragment = document.createDocumentFragment()
+    for (const child of [...container.childNodes]) {
+      appendSanitizedNode(fragment, child)
+    }
+
+    const clean = document.createElement('div')
+    clean.appendChild(fragment)
+    return clean.innerHTML
+  }
+
+  function appendSanitizedNode(parent, node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parent.appendChild(document.createTextNode(node.textContent || ''))
+      return
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return
+    }
+    const element = node
+    const tag = element.tagName.toUpperCase()
+    if (tag === 'BR') {
+      parent.appendChild(document.createElement('br'))
+      return
+    }
+
+    const allowedTag = tag === 'B' || tag === 'STRONG' || tag === 'I' || tag === 'EM' || tag === 'U'
+    if (!allowedTag) {
+      for (const child of [...element.childNodes]) {
+        appendSanitizedNode(parent, child)
+      }
+      return
+    }
+
+    const safe = document.createElement(tag.toLowerCase())
+    for (const child of [...element.childNodes]) {
+      appendSanitizedNode(safe, child)
+    }
+    parent.appendChild(safe)
+  }
+
   function readControlValue(input, type) {
     if (type === 'checkbox') {
       return Boolean(input.checked)
@@ -1782,6 +2197,12 @@
     state.isUnloading = true
     stopSnapshotPolling()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
+    el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
+    el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
+    el.wrap.removeEventListener('input', handleRichTextInput)
+    el.wrap.removeEventListener('paste', handleRichTextPaste)
+    el.wrap.removeEventListener('keydown', handleRichTextKeydown)
+    document.removeEventListener('selectionchange', refreshTextToolStates)
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null
@@ -1789,4 +2210,3 @@
     disconnectSocket()
   }
 })()
-
