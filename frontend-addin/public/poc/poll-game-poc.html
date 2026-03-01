@@ -182,6 +182,46 @@
 
     <button id="settings-minimized" class="settings-minimized hidden" type="button">Show Ribbon</button>
     <div id="settings-backdrop" class="settings-backdrop" aria-hidden="true"></div>
+    <div
+      id="selection-toolbar"
+      class="selection-toolbar"
+      role="toolbar"
+      aria-label="Text formatting mini toolbar"
+      aria-hidden="true"
+    >
+      <button
+        id="mini-text-tool-bold"
+        class="selection-tool"
+        type="button"
+        aria-label="Bold (Ctrl+B)"
+      >
+        <strong>B</strong>
+      </button>
+      <button
+        id="mini-text-tool-italic"
+        class="selection-tool"
+        type="button"
+        aria-label="Italic (Ctrl+I)"
+      >
+        <em>I</em>
+      </button>
+      <button
+        id="mini-text-tool-underline"
+        class="selection-tool"
+        type="button"
+        aria-label="Underline (Ctrl+U)"
+      >
+        <u>U</u>
+      </button>
+      <button
+        id="mini-text-tool-clear"
+        class="selection-tool is-wide"
+        type="button"
+        aria-label="Clear formatting"
+      >
+        Clear
+      </button>
+    </div>
 
     <main id="canvas-wrap" class="wrap">
       <img id="custom-logo" class="custom-logo draggable-layer hidden" alt="Custom logo" />

@@ -49,7 +49,8 @@
     raceAnimFrameId: null,
     raceAnimLastTs: 0,
     textOverrides: loadTextOverrides(),
-    activeTextHost: null
+    activeTextHost: null,
+    selectionToolbarRafId: null
   }
 
   const el = {
@@ -62,6 +63,7 @@
     ribbonAdvancedToggle: must('ribbon-advanced-toggle'),
     settingsMinimized: must('settings-minimized'),
     settingsBackdrop: must('settings-backdrop'),
+    selectionToolbar: must('selection-toolbar'),
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
     dragModeEnabled: must('drag-mode-enabled'),
@@ -79,6 +81,10 @@
     textToolItalic: must('text-tool-italic'),
     textToolUnderline: must('text-tool-underline'),
     textToolClear: must('text-tool-clear'),
+    miniTextToolBold: must('mini-text-tool-bold'),
+    miniTextToolItalic: must('mini-text-tool-italic'),
+    miniTextToolUnderline: must('mini-text-tool-underline'),
+    miniTextToolClear: must('mini-text-tool-clear'),
     question: must('question'),
     status: must('status'),
     votes: must('votes'),
@@ -286,6 +292,9 @@
     if (ribbonState.hidden || dragState.enabled) {
       return
     }
+    if (event.target instanceof Element && event.target.closest('#selection-toolbar')) {
+      return
+    }
     if (event.target instanceof Element && event.target.closest('.rich-text-editable')) {
       return
     }
@@ -428,7 +437,11 @@
       el.textToolBold,
       el.textToolItalic,
       el.textToolUnderline,
-      el.textToolClear
+      el.textToolClear,
+      el.miniTextToolBold,
+      el.miniTextToolItalic,
+      el.miniTextToolUnderline,
+      el.miniTextToolClear
     ]
     for (const button of textToolButtons) {
       button.addEventListener('mousedown', (event) => {
@@ -436,34 +449,131 @@
       })
     }
 
-    el.textToolBold.addEventListener('click', () => {
-      if (!applyRichTextCommand('bold')) {
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      }
-    })
-    el.textToolItalic.addEventListener('click', () => {
-      if (!applyRichTextCommand('italic')) {
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      }
-    })
-    el.textToolUnderline.addEventListener('click', () => {
-      if (!applyRichTextCommand('underline')) {
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      }
-    })
-    el.textToolClear.addEventListener('click', () => {
-      if (!applyRichTextCommand('removeFormat')) {
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      }
-    })
+    bindRichTextCommandButtons([el.textToolBold, el.miniTextToolBold], 'bold')
+    bindRichTextCommandButtons([el.textToolItalic, el.miniTextToolItalic], 'italic')
+    bindRichTextCommandButtons([el.textToolUnderline, el.miniTextToolUnderline], 'underline')
+    bindRichTextCommandButtons([el.textToolClear, el.miniTextToolClear], 'removeFormat')
 
     el.wrap.addEventListener('focusin', handleRichTextFocusIn)
     el.wrap.addEventListener('focusout', handleRichTextFocusOut)
     el.wrap.addEventListener('input', handleRichTextInput)
     el.wrap.addEventListener('paste', handleRichTextPaste)
     el.wrap.addEventListener('keydown', handleRichTextKeydown)
-    document.addEventListener('selectionchange', refreshTextToolStates)
+    document.addEventListener('selectionchange', handleRichTextSelectionChange)
+    document.addEventListener('pointerdown', handleRichTextPointerDown, true)
+    window.addEventListener('resize', scheduleSelectionToolbarUpdate)
+    window.addEventListener('scroll', scheduleSelectionToolbarUpdate, true)
     refreshTextToolStates()
+  }
+
+  function bindRichTextCommandButtons(buttons, command) {
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        if (applyRichTextCommand(command)) {
+          return
+        }
+        showTextEditFeedback('Select text in the question or options first.', 'error')
+      })
+    }
+  }
+
+  function handleRichTextSelectionChange() {
+    refreshTextToolStates()
+    scheduleSelectionToolbarUpdate()
+  }
+
+  function handleRichTextPointerDown(event) {
+    if (!(event.target instanceof Element)) {
+      hideSelectionToolbar()
+      return
+    }
+    if (event.target.closest('#selection-toolbar')) {
+      return
+    }
+    if (event.target.closest('.rich-text-editable')) {
+      return
+    }
+    hideSelectionToolbar()
+  }
+
+  function scheduleSelectionToolbarUpdate() {
+    if (state.selectionToolbarRafId != null) {
+      return
+    }
+    state.selectionToolbarRafId = requestAnimationFrame(() => {
+      state.selectionToolbarRafId = null
+      updateSelectionToolbar()
+    })
+  }
+
+  function updateSelectionToolbar() {
+    const selection = window.getSelection()
+    const host = getSelectionRichTextHost()
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !host) {
+      hideSelectionToolbar()
+      return
+    }
+
+    const selectionRect = getSelectionRect(selection.getRangeAt(0))
+    if (!selectionRect) {
+      hideSelectionToolbar()
+      return
+    }
+    placeSelectionToolbar(selectionRect)
+    showSelectionToolbar()
+  }
+
+  function getSelectionRect(range) {
+    const box = range.getBoundingClientRect()
+    if (box && box.width > 0 && box.height > 0) {
+      return box
+    }
+    const boxes = range.getClientRects()
+    for (const rect of boxes) {
+      if (rect.width > 0 && rect.height > 0) {
+        return rect
+      }
+    }
+    return null
+  }
+
+  function placeSelectionToolbar(selectionRect) {
+    const toolbar = el.selectionToolbar
+    const margin = 10
+    const screenPad = 8
+
+    const toolbarRect = toolbar.getBoundingClientRect()
+    const toolbarWidth = toolbarRect.width || 170
+    const toolbarHeight = toolbarRect.height || 42
+
+    let left = selectionRect.right + margin
+    let top = selectionRect.top + selectionRect.height / 2 - toolbarHeight / 2
+
+    if (left + toolbarWidth > window.innerWidth - screenPad) {
+      left = selectionRect.left - toolbarWidth - margin
+    }
+    if (left < screenPad) {
+      left = selectionRect.left + selectionRect.width / 2 - toolbarWidth / 2
+      top = selectionRect.top - toolbarHeight - margin
+    }
+
+    const maxLeft = Math.max(screenPad, window.innerWidth - toolbarWidth - screenPad)
+    const maxTop = Math.max(screenPad, window.innerHeight - toolbarHeight - screenPad)
+    left = clamp(left, screenPad, maxLeft, screenPad)
+    top = clamp(top, screenPad, maxTop, screenPad)
+
+    toolbar.style.left = `${left}px`
+    toolbar.style.top = `${top}px`
+  }
+
+  function showSelectionToolbar() {
+    el.selectionToolbar.classList.add('visible')
+    el.selectionToolbar.setAttribute('aria-hidden', 'false')
+  }
+
+  function hideSelectionToolbar() {
+    el.selectionToolbar.classList.remove('visible')
+    el.selectionToolbar.setAttribute('aria-hidden', 'true')
   }
 
   function handleRichTextFocusIn(event) {
@@ -473,6 +583,7 @@
     }
     state.activeTextHost = host
     refreshTextToolStates()
+    scheduleSelectionToolbarUpdate()
   }
 
   function handleRichTextFocusOut(event) {
@@ -485,10 +596,12 @@
     if (nextHost) {
       state.activeTextHost = nextHost
       refreshTextToolStates()
+      scheduleSelectionToolbarUpdate()
       return
     }
     state.activeTextHost = null
     refreshTextToolStates()
+    hideSelectionToolbar()
     if (state.snapshot) {
       window.setTimeout(() => {
         if (isRichTextEditingActive()) {
@@ -506,6 +619,7 @@
     }
     commitRichTextHost(host)
     refreshTextToolStates()
+    scheduleSelectionToolbarUpdate()
   }
 
   function handleRichTextPaste(event) {
@@ -529,6 +643,7 @@
     }
     commitRichTextHost(host)
     refreshTextToolStates()
+    scheduleSelectionToolbarUpdate()
   }
 
   function handleRichTextKeydown(event) {
@@ -554,6 +669,7 @@
       event.preventDefault()
       applyRichTextCommand('underline')
     }
+    scheduleSelectionToolbarUpdate()
   }
 
   function applyRichTextCommand(command) {
@@ -571,6 +687,7 @@
     } catch {}
     commitRichTextHost(host)
     refreshTextToolStates()
+    scheduleSelectionToolbarUpdate()
     if (applied !== false) {
       showTextEditFeedback('Formatting updated.', 'success')
       return true
@@ -581,9 +698,13 @@
   function refreshTextToolStates() {
     const hasEditableSelection = Boolean(getSelectionRichTextHost() || getActiveRichTextHost())
     setTextToolState(el.textToolBold, 'bold', hasEditableSelection)
+    setTextToolState(el.miniTextToolBold, 'bold', hasEditableSelection)
     setTextToolState(el.textToolItalic, 'italic', hasEditableSelection)
+    setTextToolState(el.miniTextToolItalic, 'italic', hasEditableSelection)
     setTextToolState(el.textToolUnderline, 'underline', hasEditableSelection)
+    setTextToolState(el.miniTextToolUnderline, 'underline', hasEditableSelection)
     el.textToolClear.disabled = !hasEditableSelection
+    el.miniTextToolClear.disabled = !hasEditableSelection
   }
 
   function setTextToolState(button, command, enabled) {
@@ -683,6 +804,7 @@
     if (state.activeTextHost === node) {
       state.activeTextHost = null
       refreshTextToolStates()
+      hideSelectionToolbar()
     }
     node.classList.remove('rich-text-editable')
     node.removeAttribute('contenteditable')
@@ -2196,13 +2318,21 @@
   function handleUnload() {
     state.isUnloading = true
     stopSnapshotPolling()
+    hideSelectionToolbar()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
     el.wrap.removeEventListener('input', handleRichTextInput)
     el.wrap.removeEventListener('paste', handleRichTextPaste)
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
-    document.removeEventListener('selectionchange', refreshTextToolStates)
+    document.removeEventListener('selectionchange', handleRichTextSelectionChange)
+    document.removeEventListener('pointerdown', handleRichTextPointerDown, true)
+    window.removeEventListener('resize', scheduleSelectionToolbarUpdate)
+    window.removeEventListener('scroll', scheduleSelectionToolbarUpdate, true)
+    if (state.selectionToolbarRafId != null) {
+      cancelAnimationFrame(state.selectionToolbarRafId)
+      state.selectionToolbarRafId = null
+    }
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null

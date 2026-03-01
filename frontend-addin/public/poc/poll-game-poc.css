@@ -546,6 +546,71 @@ body.ribbon-advanced .advanced-control.note {
   background: rgba(233, 244, 255, 0.98);
 }
 
+.selection-toolbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 42;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(129, 165, 206, 0.68);
+  border-radius: 10px;
+  background: rgba(250, 253, 255, 0.98);
+  box-shadow: 0 12px 24px rgba(60, 96, 139, 0.22);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.selection-toolbar.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.selection-tool {
+  border: 1px solid rgba(150, 186, 226, 0.78);
+  border-radius: 7px;
+  min-width: 33px;
+  min-height: 30px;
+  padding: 4px 8px;
+  background: rgba(232, 243, 255, 0.98);
+  color: #1f436f;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.selection-tool.is-wide {
+  min-width: 56px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.selection-tool:hover {
+  border-color: rgba(87, 145, 215, 0.84);
+  background: rgba(220, 236, 255, 0.98);
+}
+
+.selection-tool.is-active {
+  border-color: #4f8fdf;
+  background: linear-gradient(135deg, #5ca1ff, #72c4ff);
+  color: #fff;
+}
+
+.selection-tool:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .wrap {
   position: relative;
   width: min(1100px, 92vw);
