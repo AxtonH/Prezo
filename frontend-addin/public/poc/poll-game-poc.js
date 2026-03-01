@@ -947,6 +947,14 @@
   }
 
   function applyRichTextCommand(command) {
+    if (command === 'bold' || command === 'italic' || command === 'underline') {
+      const toggled = applyRichTextToggleCommand(command)
+      if (toggled) {
+        showTextEditFeedback('Formatting updated.', 'success')
+      }
+      return toggled
+    }
+
     const host =
       getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
     if (!host) {
@@ -978,6 +986,22 @@
     if (applied !== false) {
       showTextEditFeedback('Formatting updated.', 'success')
       return true
+    }
+    return false
+  }
+
+  function applyRichTextToggleCommand(command) {
+    const stateSnapshot = getCurrentTextCommandState()
+    if (command === 'bold') {
+      return applyRichTextInlineStyle({ fontWeight: stateSnapshot.bold ? 'normal' : 'bold' })
+    }
+    if (command === 'italic') {
+      return applyRichTextInlineStyle({ fontStyle: stateSnapshot.italic ? 'normal' : 'italic' })
+    }
+    if (command === 'underline') {
+      return applyRichTextInlineStyle({
+        textDecoration: stateSnapshot.underline ? 'none' : 'underline'
+      })
     }
     return false
   }
@@ -1055,6 +1079,27 @@
         appliedAnyStyle = true
       }
     }
+    if (styleProps.fontWeight) {
+      const weight = sanitizeFontWeightValue(asText(styleProps.fontWeight).toLowerCase())
+      if (weight) {
+        node.style.fontWeight = weight
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.fontStyle) {
+      const fontStyle = sanitizeFontStyleValue(asText(styleProps.fontStyle).toLowerCase())
+      if (fontStyle) {
+        node.style.fontStyle = fontStyle
+        appliedAnyStyle = true
+      }
+    }
+    if (styleProps.textDecoration) {
+      const decoration = sanitizeTextDecorationValue(asText(styleProps.textDecoration).toLowerCase())
+      if (decoration) {
+        node.style.textDecoration = decoration
+        appliedAnyStyle = true
+      }
+    }
     return appliedAnyStyle
   }
 
@@ -1097,6 +1142,15 @@
     if (styleProps.color) {
       keysToClear.push('color')
     }
+    if (styleProps.fontWeight) {
+      keysToClear.push('fontWeight')
+    }
+    if (styleProps.fontStyle) {
+      keysToClear.push('fontStyle')
+    }
+    if (styleProps.textDecoration) {
+      keysToClear.push('textDecoration')
+    }
     if (keysToClear.length === 0) {
       return
     }
@@ -1110,6 +1164,11 @@
       if (node.nodeType === Node.ELEMENT_NODE) {
         const element = node
         for (const key of keysToClear) {
+          if (key === 'textDecoration') {
+            element.style.textDecoration = ''
+            element.style.textDecorationLine = ''
+            continue
+          }
           element.style[key] = ''
         }
         if (!element.getAttribute('style') || !asText(element.getAttribute('style'))) {
@@ -1379,12 +1438,13 @@
     const hasExpandedSelection = Boolean(
       getSelectionRichTextHost() || getCachedRichTextSelectionHost()
     )
-    setTextToolState(el.textToolBold, 'bold', hasEditableSelection)
-    setTextToolState(el.miniTextToolBold, 'bold', hasEditableSelection)
-    setTextToolState(el.textToolItalic, 'italic', hasEditableSelection)
-    setTextToolState(el.miniTextToolItalic, 'italic', hasEditableSelection)
-    setTextToolState(el.textToolUnderline, 'underline', hasEditableSelection)
-    setTextToolState(el.miniTextToolUnderline, 'underline', hasEditableSelection)
+    const commandState = getCurrentTextCommandState()
+    setTextToolState(el.textToolBold, hasEditableSelection, commandState.bold)
+    setTextToolState(el.miniTextToolBold, hasEditableSelection, commandState.bold)
+    setTextToolState(el.textToolItalic, hasEditableSelection, commandState.italic)
+    setTextToolState(el.miniTextToolItalic, hasEditableSelection, commandState.italic)
+    setTextToolState(el.textToolUnderline, hasEditableSelection, commandState.underline)
+    setTextToolState(el.miniTextToolUnderline, hasEditableSelection, commandState.underline)
     el.textToolClear.disabled = !hasEditableSelection
     el.miniTextToolClear.disabled = !hasEditableSelection
     el.textFontFamily.disabled = !hasExpandedSelection
@@ -1395,15 +1455,46 @@
     el.miniTextFontColor.disabled = !hasExpandedSelection
   }
 
-  function setTextToolState(button, command, enabled) {
+  function setTextToolState(button, enabled, active) {
     button.disabled = !enabled
-    let active = false
-    if (enabled) {
-      try {
-        active = Boolean(document.queryCommandState(command))
-      } catch {}
+    button.classList.toggle('is-active', Boolean(enabled && active))
+  }
+
+  function getCurrentTextCommandState() {
+    const host =
+      getSelectionRichTextHost() ||
+      getCachedRichTextSelectionHost() ||
+      getActiveRichTextHost() ||
+      getInlineStyleNodeHost()
+    if (!host) {
+      return { bold: false, italic: false, underline: false }
     }
-    button.classList.toggle('is-active', active)
+
+    const probe = getTextStyleProbeNode(host) || getReusableInlineStyleNode(host) || host
+    const probeElement =
+      probe instanceof Element
+        ? probe
+        : probe instanceof Node && probe.parentElement
+          ? probe.parentElement
+          : host
+
+    let computed
+    try {
+      computed = window.getComputedStyle(probeElement)
+    } catch {
+      return { bold: false, italic: false, underline: false }
+    }
+
+    const weightText = asText(computed.fontWeight).toLowerCase()
+    const numericWeight = Number.parseInt(weightText, 10)
+    const bold =
+      weightText === 'bold' || (Number.isFinite(numericWeight) && numericWeight >= 600)
+    const italic = asText(computed.fontStyle).toLowerCase().includes('italic')
+    const decorationText =
+      `${asText(computed.textDecorationLine)} ${asText(computed.textDecoration)}`.toLowerCase()
+    const underline = decorationText.includes('underline')
+
+    return { bold, italic, underline }
   }
 
   function getSelectionRichTextHost() {
