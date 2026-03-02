@@ -151,7 +151,10 @@
     footer: must('footer'),
     dot: document.querySelector('.dot'),
     customLogo: must('custom-logo'),
-    customAsset: must('custom-asset')
+    customAsset: must('custom-asset'),
+    headLeft: must('head-left'),
+    headRight: must('head-right'),
+    metaBar: must('meta-bar')
   }
   const ribbonTabs = [...document.querySelectorAll('.ribbon-tab')]
   const ribbonPanes = [...document.querySelectorAll('.ribbon-pane')]
@@ -195,6 +198,20 @@
     assetOpacity: 0.38,
     assetX: 50,
     assetY: 50,
+    bgImageX: 0,
+    bgImageY: 0,
+    bgOverlayX: 0,
+    bgOverlayY: 0,
+    gridX: 0,
+    gridY: 0,
+    titleX: 0,
+    titleY: 0,
+    metaX: 0,
+    metaY: 0,
+    optionsX: 0,
+    optionsY: 0,
+    footerX: 0,
+    footerY: 0,
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
 
@@ -1733,8 +1750,70 @@
     window.addEventListener('pointerup', handleDragPointerRelease)
     window.addEventListener('pointercancel', handleDragPointerRelease)
 
-    attachDragBehavior(el.customLogo, 'logoX', 'logoY')
-    attachDragBehavior(el.customAsset, 'assetX', 'assetY')
+    registerDragTarget(el.customLogo, 'logoX', 'logoY', {
+      minX: 0,
+      maxX: 100,
+      minY: 0,
+      maxY: 100,
+      skipWhenHidden: true
+    })
+    registerDragTarget(el.customAsset, 'assetX', 'assetY', {
+      minX: 0,
+      maxX: 100,
+      minY: 0,
+      maxY: 100,
+      skipWhenHidden: true
+    })
+
+    registerDragTarget(el.bgImage, 'bgImageX', 'bgImageY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.bgOverlay, 'bgOverlayX', 'bgOverlayY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.gridBg, 'gridX', 'gridY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.headLeft, 'titleX', 'titleY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.metaBar, 'metaX', 'metaY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.options, 'optionsX', 'optionsY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
+    registerDragTarget(el.footer, 'footerX', 'footerY', {
+      minX: -60,
+      maxX: 60,
+      minY: -60,
+      maxY: 60,
+      skipWhenHidden: false
+    })
   }
 
   function setDragMode(enabled) {
@@ -1747,15 +1826,31 @@
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag logo/asset on canvas, then Save theme.'
+        ? 'Drag mode enabled. Drag title, polls, labels, footer, backgrounds, logos, and assets. Save theme to keep positions.'
         : 'Drag mode disabled.',
       'success'
     )
   }
 
-  function attachDragBehavior(node, xKey, yKey) {
+  function registerDragTarget(node, xKey, yKey, options = {}) {
+    if (!node) {
+      return
+    }
+    node.classList.add('drag-target')
+    attachDragBehavior(node, xKey, yKey, options)
+  }
+
+  function attachDragBehavior(node, xKey, yKey, options = {}) {
+    const minX = Number.isFinite(options.minX) ? Number(options.minX) : 0
+    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : 100
+    const minY = Number.isFinite(options.minY) ? Number(options.minY) : 0
+    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : 100
+    const defaultX = Number.isFinite(options.defaultX) ? Number(options.defaultX) : 0
+    const defaultY = Number.isFinite(options.defaultY) ? Number(options.defaultY) : 0
+    const skipWhenHidden = options.skipWhenHidden !== false
+
     node.addEventListener('pointerdown', (event) => {
-      if (!dragState.enabled || node.classList.contains('hidden')) {
+      if (!dragState.enabled || (skipWhenHidden && node.classList.contains('hidden'))) {
         return
       }
       if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -1774,8 +1869,12 @@
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        startX: clamp(currentTheme[xKey], 0, 100, 50),
-        startY: clamp(currentTheme[yKey], 0, 100, 50)
+        minX,
+        maxX,
+        minY,
+        maxY,
+        startX: clamp(currentTheme[xKey], minX, maxX, defaultX),
+        startY: clamp(currentTheme[yKey], minY, maxY, defaultY)
       }
       node.classList.add('dragging')
       try {
@@ -1799,8 +1898,8 @@
     }
     const deltaXPercent = ((event.clientX - active.startClientX) / wrapRect.width) * 100
     const deltaYPercent = ((event.clientY - active.startClientY) / wrapRect.height) * 100
-    const nextX = clamp(active.startX + deltaXPercent, 0, 100, active.startX)
-    const nextY = clamp(active.startY + deltaYPercent, 0, 100, active.startY)
+    const nextX = clamp(active.startX + deltaXPercent, active.minX, active.maxX, active.startX)
+    const nextY = clamp(active.startY + deltaYPercent, active.minY, active.maxY, active.startY)
 
     updateTheme(
       {
@@ -2722,6 +2821,13 @@
     el.bgOverlay.style.opacity = `${theme.overlayOpacity}`
     el.gridBg.style.display = theme.gridVisible ? 'block' : 'none'
     el.gridBg.style.opacity = `${theme.gridOpacity}`
+    applyElementOffset(el.bgImage, theme.bgImageX, theme.bgImageY)
+    applyElementOffset(el.bgOverlay, theme.bgOverlayX, theme.bgOverlayY)
+    applyElementOffset(el.gridBg, theme.gridX, theme.gridY)
+    applyElementOffset(el.headLeft, theme.titleX, theme.titleY)
+    applyElementOffset(el.metaBar, theme.metaX, theme.metaY)
+    applyElementOffset(el.options, theme.optionsX, theme.optionsY)
+    applyElementOffset(el.footer, theme.footerX, theme.footerY)
 
     applyImageAsset(el.customLogo, {
       url: theme.logoUrl,
@@ -2739,6 +2845,15 @@
       top: `${theme.assetY}%`
     })
     syncRaceThemeVisuals()
+  }
+
+  function applyElementOffset(node, offsetX, offsetY) {
+    if (!node) {
+      return
+    }
+    const safeX = clamp(offsetX, -100, 100, 0)
+    const safeY = clamp(offsetY, -100, 100, 0)
+    node.style.transform = `translate(${safeX}%, ${safeY}%)`
   }
 
   function applyImageAsset(node, options) {
@@ -3256,6 +3371,20 @@
       assetOpacity: clamp(incoming.assetOpacity, 0, 1, defaultTheme.assetOpacity),
       assetX: clamp(incoming.assetX, 0, 100, defaultTheme.assetX),
       assetY: clamp(incoming.assetY, 0, 100, defaultTheme.assetY),
+      bgImageX: clamp(incoming.bgImageX, -60, 60, defaultTheme.bgImageX),
+      bgImageY: clamp(incoming.bgImageY, -60, 60, defaultTheme.bgImageY),
+      bgOverlayX: clamp(incoming.bgOverlayX, -60, 60, defaultTheme.bgOverlayX),
+      bgOverlayY: clamp(incoming.bgOverlayY, -60, 60, defaultTheme.bgOverlayY),
+      gridX: clamp(incoming.gridX, -60, 60, defaultTheme.gridX),
+      gridY: clamp(incoming.gridY, -60, 60, defaultTheme.gridY),
+      titleX: clamp(incoming.titleX, -60, 60, defaultTheme.titleX),
+      titleY: clamp(incoming.titleY, -60, 60, defaultTheme.titleY),
+      metaX: clamp(incoming.metaX, -60, 60, defaultTheme.metaX),
+      metaY: clamp(incoming.metaY, -60, 60, defaultTheme.metaY),
+      optionsX: clamp(incoming.optionsX, -60, 60, defaultTheme.optionsX),
+      optionsY: clamp(incoming.optionsY, -60, 60, defaultTheme.optionsY),
+      footerX: clamp(incoming.footerX, -60, 60, defaultTheme.footerX),
+      footerY: clamp(incoming.footerY, -60, 60, defaultTheme.footerY),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
   }

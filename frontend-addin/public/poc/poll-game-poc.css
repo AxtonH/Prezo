@@ -734,6 +734,10 @@ body.ribbon-advanced .advanced-control.note {
   user-select: none;
 }
 
+.drag-target {
+  touch-action: none;
+}
+
 .drag-mode .draggable-layer:not(.hidden) {
   pointer-events: auto;
   cursor: grab;
@@ -742,7 +746,23 @@ body.ribbon-advanced .advanced-control.note {
   z-index: 8;
 }
 
+.drag-mode .drag-target {
+  pointer-events: auto;
+  cursor: grab;
+  outline: 1px dashed rgba(69, 138, 218, 0.8);
+  outline-offset: 3px;
+}
+
+.drag-mode .drag-target.rich-text-editable:hover {
+  outline: 1px dashed rgba(69, 138, 218, 0.8);
+}
+
 .drag-mode .draggable-layer.dragging {
+  cursor: grabbing;
+  outline-color: rgba(47, 126, 222, 1);
+}
+
+.drag-mode .drag-target.dragging {
   cursor: grabbing;
   outline-color: rgba(47, 126, 222, 1);
 }
