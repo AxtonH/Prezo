@@ -788,7 +788,41 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 180ms ease;
 }
 
-.wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag) {
+.panel-drag-handle {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.panel-drag-top {
+  left: 10px;
+  right: 10px;
+  top: -14px;
+  height: 12px;
+}
+
+.panel-drag-right {
+  top: 10px;
+  right: -14px;
+  bottom: 10px;
+  width: 12px;
+}
+
+.panel-drag-bottom {
+  left: 10px;
+  right: 10px;
+  bottom: -14px;
+  height: 12px;
+}
+
+.panel-drag-left {
+  top: 10px;
+  left: -14px;
+  bottom: 10px;
+  width: 12px;
+}
+
+.wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag):not(.panel-drag-handle) {
   position: relative;
   z-index: 2;
 }
@@ -858,6 +892,17 @@ body.ribbon-advanced .advanced-control.note {
 
 .drag-mode .drag-target.rich-text-editable:hover {
   outline: 1px dashed rgba(69, 138, 218, 0.8);
+}
+
+.drag-mode .panel-drag-handle {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.drag-mode .panel-drag-handle:hover {
+  background: rgba(79, 143, 223, 0.14);
+  outline: 1px dashed rgba(69, 138, 218, 0.84);
+  outline-offset: 1px;
 }
 
 .drag-mode .draggable-layer.dragging {

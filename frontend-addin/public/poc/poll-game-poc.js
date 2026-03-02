@@ -114,6 +114,10 @@
     gridBg: must('grid-bg'),
     wrap: must('canvas-wrap'),
     panelBgDrag: must('panel-bg-drag'),
+    panelDragTop: must('panel-drag-top'),
+    panelDragRight: must('panel-drag-right'),
+    panelDragBottom: must('panel-drag-bottom'),
+    panelDragLeft: must('panel-drag-left'),
     settingsRibbon: must('settings-ribbon'),
     settingsToggle: must('settings-toggle'),
     ribbonAdvancedToggle: must('ribbon-advanced-toggle'),
@@ -2007,7 +2011,7 @@
     window.addEventListener('pointerup', handleDragPointerRelease)
     window.addEventListener('pointercancel', handleDragPointerRelease)
 
-    registerDragTarget(el.panelBgDrag, 'panelX', 'panelY', {
+    const panelDragSpec = {
       unit: 'px',
       minX: -2400,
       maxX: 2400,
@@ -2015,7 +2019,12 @@
       maxY: 2400,
       skipWhenHidden: false,
       requireDirectTarget: true
-    })
+    }
+    registerDragTarget(el.panelBgDrag, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragTop, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragRight, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragBottom, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragLeft, 'panelX', 'panelY', panelDragSpec)
 
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
       unit: 'percent',
