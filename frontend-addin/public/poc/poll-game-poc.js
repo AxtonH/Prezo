@@ -2375,6 +2375,10 @@
     if (rect.width <= 0 || rect.height <= 0) {
       return false
     }
+    // Keep a guaranteed center area for text editing on small boxes.
+    const minSide = Math.max(1, Math.min(rect.width, rect.height))
+    const maxBySize = Math.max(6, Math.floor(minSide * 0.25))
+    const effectivePadding = Math.min(padding, maxBySize)
     const x = Number(event.clientX)
     const y = Number(event.clientY)
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
@@ -2384,7 +2388,7 @@
       return false
     }
     const edgeDistance = Math.min(x - rect.left, rect.right - x, y - rect.top, rect.bottom - y)
-    return edgeDistance <= padding
+    return edgeDistance <= effectivePadding
   }
 
   function getWrapRect() {
@@ -2711,7 +2715,7 @@
       optionNode.append(labelRow, track)
       applyOptionOffsetTransform(labelRow, optionId, 'label')
       applyOptionOffsetTransform(track, optionId, 'bar')
-      registerOptionDragTarget(labelRow, optionId, 'label', { edgeGrabPadding: 18 })
+      registerOptionDragTarget(labelRow, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionDragTarget(track, optionId, 'bar')
       fragment.appendChild(optionNode)
     }
