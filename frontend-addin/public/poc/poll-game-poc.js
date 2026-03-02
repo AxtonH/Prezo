@@ -1820,6 +1820,15 @@
       maxY: 1200,
       skipWhenHidden: false
     })
+    registerDragTarget(el.options, 'optionsX', 'optionsY', {
+      unit: 'px',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200,
+      skipWhenHidden: false,
+      requireDirectTarget: true
+    })
     registerDragTarget(el.footer, 'footerX', 'footerY', {
       unit: 'px',
       minX: -1600,
@@ -1840,7 +1849,7 @@
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag panel, title, each poll option, footer, backgrounds, logos, and assets. Save theme to keep positions.'
+        ? 'Drag mode enabled. Drag title and poll blocks separately (plus panel/background/assets). Save theme to keep positions.'
         : 'Drag mode disabled.',
       'success'
     )
@@ -2973,6 +2982,7 @@
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY)
     applyElementOffset(el.headLeft, theme.titleX, theme.titleY)
     applyElementOffset(el.metaBar, theme.metaX, theme.metaY)
+    applyElementOffset(el.options, theme.optionsX, theme.optionsY)
     applyElementOffset(el.footer, theme.footerX, theme.footerY)
 
     applyImageAsset(el.customLogo, {
