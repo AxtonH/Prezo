@@ -1820,15 +1820,6 @@
       maxY: 1200,
       skipWhenHidden: false
     })
-    registerDragTarget(el.options, 'optionsX', 'optionsY', {
-      unit: 'px',
-      minX: -1600,
-      maxX: 1600,
-      minY: -1200,
-      maxY: 1200,
-      skipWhenHidden: false,
-      requireDirectTarget: true
-    })
     registerDragTarget(el.footer, 'footerX', 'footerY', {
       unit: 'px',
       minX: -1600,
@@ -1849,7 +1840,7 @@
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag title and poll blocks separately (plus panel/background/assets). Save theme to keep positions.'
+        ? 'Drag mode enabled. Drag title, option labels, and poll bars separately (plus panel/background/assets). Save theme to keep positions.'
         : 'Drag mode disabled.',
       'success'
     )
@@ -1987,9 +1978,22 @@
     return currentTheme.optionOffsets
   }
 
-  function getOptionDragOffset(optionId) {
+  function getOptionOffsetKey(optionId, part = 'row') {
+    const safeId = asText(optionId)
+    if (!safeId) {
+      return ''
+    }
+    const safePart = asText(part).toLowerCase()
+    if (!safePart || safePart === 'row') {
+      return safeId
+    }
+    return `${safeId}::${safePart}`
+  }
+
+  function getOptionDragOffset(optionId, part = 'row') {
     const map = ensureOptionOffsets()
-    const entry = map[optionId]
+    const key = getOptionOffsetKey(optionId, part)
+    const entry = key ? map[key] : null
     if (!entry || typeof entry !== 'object') {
       return { x: 0, y: 0 }
     }
@@ -1999,27 +2003,29 @@
     }
   }
 
-  function setOptionDragOffset(optionId, x, y) {
-    if (!optionId) {
+  function setOptionDragOffset(optionId, x, y, part = 'row') {
+    const key = getOptionOffsetKey(optionId, part)
+    if (!key) {
       return
     }
     const map = ensureOptionOffsets()
-    map[optionId] = {
+    map[key] = {
       x: clamp(x, -2400, 2400, 0),
       y: clamp(y, -2400, 2400, 0)
     }
   }
 
-  function applyOptionOffsetTransform(node, optionId) {
-    const offset = getOptionDragOffset(optionId)
+  function applyOptionOffsetTransform(node, optionId, part = 'row') {
+    const offset = getOptionDragOffset(optionId, part)
     node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
   }
 
-  function registerOptionDragTarget(node, optionId) {
+  function registerOptionDragTarget(node, optionId, part = 'row') {
     if (!node || !optionId || node.dataset.dragRegistered === '1') {
       return
     }
     node.dataset.dragRegistered = '1'
+    node.dataset.optionDragPart = part
     node.classList.add('drag-target')
     attachDragBehavior(node, null, null, {
       unit: 'px',
@@ -2028,9 +2034,9 @@
       minY: -2400,
       maxY: 2400,
       skipWhenHidden: false,
-      getPosition: () => getOptionDragOffset(optionId),
+      getPosition: () => getOptionDragOffset(optionId, part),
       setPosition: (x, y) => {
-        setOptionDragOffset(optionId, x, y)
+        setOptionDragOffset(optionId, x, y, part)
         node.style.transform = `translate(${x}px, ${y}px)`
       }
     })
@@ -2056,7 +2062,7 @@
       setPosition: (x, y) => {
         row.dragOffsetX = x
         row.dragOffsetY = y
-        setOptionDragOffset(row.optionId, x, y)
+        setOptionDragOffset(row.optionId, x, y, 'row')
         applyRaceRowTransform(row)
       }
     })
@@ -2388,8 +2394,10 @@
 
       track.appendChild(fill)
       optionNode.append(labelRow, track)
-      applyOptionOffsetTransform(optionNode, optionId)
-      registerOptionDragTarget(optionNode, optionId)
+      applyOptionOffsetTransform(labelRow, optionId, 'label')
+      applyOptionOffsetTransform(track, optionId, 'bar')
+      registerOptionDragTarget(labelRow, optionId, 'label')
+      registerOptionDragTarget(track, optionId, 'bar')
       fragment.appendChild(optionNode)
     }
 
@@ -2442,7 +2450,7 @@
         el.options.appendChild(row.root)
         registerRaceOptionDragTarget(row)
       }
-      const dragOffset = getOptionDragOffset(optionId)
+      const dragOffset = getOptionDragOffset(optionId, 'row')
       row.dragOffsetX = dragOffset.x
       row.dragOffsetY = dragOffset.y
       renderRichText(
@@ -2982,7 +2990,6 @@
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY)
     applyElementOffset(el.headLeft, theme.titleX, theme.titleY)
     applyElementOffset(el.metaBar, theme.metaX, theme.metaY)
-    applyElementOffset(el.options, theme.optionsX, theme.optionsY)
     applyElementOffset(el.footer, theme.footerX, theme.footerY)
 
     applyImageAsset(el.customLogo, {
