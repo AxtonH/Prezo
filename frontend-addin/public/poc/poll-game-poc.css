@@ -840,14 +840,18 @@ body.ribbon-advanced .advanced-control.note {
 .drag-mode .draggable-layer:not(.hidden) {
   pointer-events: auto;
   cursor: grab;
-  outline: 1px dashed rgba(69, 138, 218, 0.9);
-  outline-offset: 3px;
+  outline: none;
   z-index: 8;
 }
 
 .drag-mode .drag-target {
   pointer-events: auto;
   cursor: grab;
+  outline: none;
+}
+
+.drag-mode .draggable-layer:not(.hidden):hover,
+.drag-mode .drag-target:hover {
   outline: 1px dashed rgba(69, 138, 218, 0.8);
   outline-offset: 3px;
 }

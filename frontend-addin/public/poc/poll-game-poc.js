@@ -392,7 +392,7 @@
   }
 
   function handleCanvasPointerDown(event) {
-    if (ribbonState.hidden || dragState.enabled) {
+    if (ribbonState.hidden || dragState.active) {
       return
     }
     if (event.target instanceof Element && event.target.closest('#selection-toolbar')) {
@@ -1999,9 +1999,9 @@
   }
 
   function setupDragInteractions() {
-    el.dragModeEnabled.addEventListener('change', () => {
-      setDragMode(Boolean(el.dragModeEnabled.checked))
-    })
+    el.dragModeEnabled.checked = true
+    el.dragModeEnabled.disabled = true
+    setDragMode(true, { announce: false })
 
     window.addEventListener('pointermove', handleDragPointerMove)
     window.addEventListener('pointerup', handleDragPointerRelease)
@@ -2084,7 +2084,8 @@
     })
   }
 
-  function setDragMode(enabled) {
+  function setDragMode(enabled, options = {}) {
+    const announce = options.announce !== false
     dragState.enabled = Boolean(enabled)
     el.dragModeEnabled.checked = dragState.enabled
     document.body.classList.toggle('drag-mode', dragState.enabled)
@@ -2092,12 +2093,14 @@
       dragState.active.node.classList.remove('dragging')
       dragState.active = null
     }
-    showThemeFeedback(
-      dragState.enabled
-        ? 'Drag mode enabled. Drag objects independently. Drag panel background, text blocks, and poll parts separately.'
-        : 'Drag mode disabled.',
-      'success'
-    )
+    if (announce) {
+      showThemeFeedback(
+        dragState.enabled
+          ? 'Drag is enabled. Drag panel background, text blocks, and poll parts separately.'
+          : 'Drag is disabled.',
+        'success'
+      )
+    }
   }
 
   function registerDragTarget(node, xKey, yKey, options = {}) {
@@ -2124,6 +2127,12 @@
 
     node.addEventListener('pointerdown', (event) => {
       if (!dragState.enabled || (skipWhenHidden && node.classList.contains('hidden'))) {
+        return
+      }
+      const targetElement = event.target instanceof Element ? event.target : null
+      const richTextTarget = targetElement ? targetElement.closest('.rich-text-editable') : null
+      if (richTextTarget && node.contains(richTextTarget)) {
+        // PowerPoint-style: text click enters text editing, dragging uses object shell.
         return
       }
       if (requireDirectTarget && event.target !== node) {
