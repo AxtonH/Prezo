@@ -691,7 +691,15 @@ body.ribbon-advanced .advanced-control.note {
   z-index: 1;
 }
 
-.wrap > :not(.custom-asset):not(.custom-logo) {
+.panel-bg-drag {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag) {
   position: relative;
   z-index: 2;
 }
