@@ -73,6 +73,9 @@
                   </select>
                 </label>
                 <label class="check">Enable drag mode<input id="drag-mode-enabled" type="checkbox" /></label>
+                <div class="row">
+                  <button id="reset-positions" type="button" class="ghost">Reset Positions</button>
+                </div>
                 <p class="note">Tip: save your theme after adjustments.</p>
               </article>
 
@@ -308,6 +311,17 @@
       <section id="options" class="state"></section>
       <p id="footer" class="footer"></p>
     </main>
+
+    <div id="reset-positions-modal" class="confirm-modal" aria-hidden="true">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-positions-title">
+        <h3 id="reset-positions-title">Reset all object positions?</h3>
+        <p>All moved elements will be returned to their default positions. This cannot be undone.</p>
+        <div class="confirm-actions">
+          <button id="reset-positions-cancel" type="button" class="ghost">Cancel</button>
+          <button id="reset-positions-accept" type="button" class="danger">Accept</button>
+        </div>
+      </div>
+    </div>
 
     <script src="/poc/poll-game-poc.js"></script>
   </body>

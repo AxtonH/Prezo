@@ -103,7 +103,8 @@
     isSyncingTextStyleControls: false,
     textControlInteractionUntil: 0,
     textControlInteractionLocked: false,
-    activeInlineStyleNode: null
+    activeInlineStyleNode: null,
+    resetModalInvoker: null
   }
 
   const el = {
@@ -121,6 +122,7 @@
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
     dragModeEnabled: must('drag-mode-enabled'),
+    resetPositions: must('reset-positions'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
     saveTheme: must('save-theme'),
@@ -131,6 +133,9 @@
     resetTheme: must('reset-theme'),
     themeFeedback: must('theme-feedback'),
     textEditFeedback: must('text-edit-feedback'),
+    resetPositionsModal: must('reset-positions-modal'),
+    resetPositionsAccept: must('reset-positions-accept'),
+    resetPositionsCancel: must('reset-positions-cancel'),
     textToolBold: must('text-tool-bold'),
     textToolItalic: must('text-tool-italic'),
     textToolUnderline: must('text-tool-underline'),
@@ -340,6 +345,11 @@
       if (event.key !== 'Escape') {
         return
       }
+      if (isResetPositionsModalOpen()) {
+        event.preventDefault()
+        closeResetPositionsModal()
+        return
+      }
       if (ribbonState.hidden) {
         return
       }
@@ -505,6 +515,17 @@
     el.exportTheme.addEventListener('click', exportCurrentTheme)
     el.importTheme.addEventListener('change', importThemeFromFile)
     el.resetTheme.addEventListener('click', resetThemeDraft)
+    el.resetPositions.addEventListener('click', openResetPositionsModal)
+    el.resetPositionsCancel.addEventListener('click', () => {
+      closeResetPositionsModal()
+    })
+    el.resetPositionsAccept.addEventListener('click', acceptResetPositions)
+    el.resetPositionsModal.addEventListener('click', (event) => {
+      if (event.target === el.resetPositionsModal) {
+        closeResetPositionsModal()
+      }
+    })
+    window.addEventListener('keydown', handleResetPositionsModalKeydown, true)
 
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
     bindImageUpload('theme-race-car-upload', 'raceCarImageUrl', 'Race car image applied.')
@@ -2919,6 +2940,102 @@
       renderFromSnapshot(true)
     }
     showThemeFeedback('Theme reset to defaults.', 'success')
+  }
+
+  function isResetPositionsModalOpen() {
+    return el.resetPositionsModal.classList.contains('open')
+  }
+
+  function openResetPositionsModal() {
+    if (isResetPositionsModalOpen()) {
+      return
+    }
+    state.resetModalInvoker =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    el.resetPositionsModal.classList.add('open')
+    el.resetPositionsModal.setAttribute('aria-hidden', 'false')
+    el.resetPositionsAccept.focus()
+  }
+
+  function closeResetPositionsModal() {
+    if (!isResetPositionsModalOpen()) {
+      return
+    }
+    el.resetPositionsModal.classList.remove('open')
+    el.resetPositionsModal.setAttribute('aria-hidden', 'true')
+    if (state.resetModalInvoker && state.resetModalInvoker.isConnected) {
+      state.resetModalInvoker.focus()
+    }
+    state.resetModalInvoker = null
+  }
+
+  function handleResetPositionsModalKeydown(event) {
+    if (!isResetPositionsModalOpen()) {
+      return
+    }
+    if (event.key !== 'Escape') {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    closeResetPositionsModal()
+  }
+
+  function acceptResetPositions() {
+    closeResetPositionsModal()
+    resetAllElementPositions()
+  }
+
+  function resetAllElementPositions() {
+    if (dragState.active) {
+      dragState.active.node.classList.remove('dragging')
+      dragState.active = null
+    }
+
+    updateTheme({
+      panelX: defaultTheme.panelX,
+      panelY: defaultTheme.panelY,
+      bgImageX: defaultTheme.bgImageX,
+      bgImageY: defaultTheme.bgImageY,
+      bgOverlayX: defaultTheme.bgOverlayX,
+      bgOverlayY: defaultTheme.bgOverlayY,
+      gridX: defaultTheme.gridX,
+      gridY: defaultTheme.gridY,
+      titleX: defaultTheme.titleX,
+      titleY: defaultTheme.titleY,
+      metaX: defaultTheme.metaX,
+      metaY: defaultTheme.metaY,
+      optionsX: defaultTheme.optionsX,
+      optionsY: defaultTheme.optionsY,
+      footerX: defaultTheme.footerX,
+      footerY: defaultTheme.footerY,
+      logoX: defaultTheme.logoX,
+      logoY: defaultTheme.logoY,
+      assetX: defaultTheme.assetX,
+      assetY: defaultTheme.assetY,
+      optionOffsets: clone(defaultTheme.optionOffsets)
+    })
+
+    if (state.snapshot) {
+      renderFromSnapshot(true)
+    } else {
+      for (const labelRow of el.options.querySelectorAll('.option .label-row')) {
+        if (labelRow instanceof HTMLElement) {
+          labelRow.style.transform = 'translate(0px, 0px)'
+        }
+      }
+      for (const track of el.options.querySelectorAll('.option .track')) {
+        if (track instanceof HTMLElement) {
+          track.style.transform = 'translate(0px, 0px)'
+        }
+      }
+      for (const row of state.raceRows.values()) {
+        row.dragOffsetX = 0
+        row.dragOffsetY = 0
+        applyRaceRowTransform(row)
+      }
+    }
+    showThemeFeedback('All object positions reset to defaults.', 'success')
   }
 
   function updateTheme(partialTheme, options = {}) {
