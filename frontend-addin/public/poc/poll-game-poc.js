@@ -56,6 +56,7 @@
     72
   ]
   const HISTORY_LIMIT = 100
+  const DRAG_START_THRESHOLD_PX = 5
 
   const query = new URLSearchParams(window.location.search)
 
@@ -285,7 +286,8 @@
   let currentTheme = loadInitialTheme(themeLibrary)
   const dragState = {
     enabled: false,
-    active: null
+    active: null,
+    pending: null
   }
   const historyState = {
     initialized: false,
@@ -2111,6 +2113,9 @@
       dragState.active.node.classList.remove('dragging')
       dragState.active = null
     }
+    if (!dragState.enabled && dragState.pending) {
+      dragState.pending = null
+    }
     if (announce) {
       showThemeFeedback(
         dragState.enabled
@@ -2169,10 +2174,8 @@
         return
       }
 
-      event.preventDefault()
-      event.stopPropagation()
       const startPosition = getPosition ? getPosition() : null
-      dragState.active = {
+      const dragDescriptor = {
         node,
         xKey,
         yKey,
@@ -2189,15 +2192,41 @@
         setPosition,
         onCommit
       }
-      node.classList.add('dragging')
-      try {
-        node.setPointerCapture(event.pointerId)
-      } catch {}
+
+      if (richTextTarget && node.contains(richTextTarget)) {
+        // Click edits text; click+drag from edge starts object drag.
+        dragState.pending = dragDescriptor
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      dragState.pending = null
+      activateDragTarget(dragDescriptor, event)
     })
   }
 
   function handleDragPointerMove(event) {
-    const active = dragState.active
+    let active = dragState.active
+    if (!active) {
+      const pending = dragState.pending
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return
+      }
+      const distance = Math.hypot(
+        event.clientX - pending.startClientX,
+        event.clientY - pending.startClientY
+      )
+      if (distance < DRAG_START_THRESHOLD_PX) {
+        return
+      }
+      if (event.cancelable) {
+        event.preventDefault()
+      }
+      activateDragTarget(pending, event)
+      dragState.pending = null
+      active = dragState.active
+    }
     if (!active || active.pointerId !== event.pointerId) {
       return
     }
@@ -2241,6 +2270,10 @@
   function handleDragPointerRelease(event) {
     const active = dragState.active
     if (!active || active.pointerId !== event.pointerId) {
+      const pending = dragState.pending
+      if (pending && pending.pointerId === event.pointerId) {
+        dragState.pending = null
+      }
       return
     }
 
@@ -2256,6 +2289,17 @@
     saveThemeDraft(currentTheme)
     recordHistoryCheckpoint('Move object')
     showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+  }
+
+  function activateDragTarget(descriptor, event) {
+    if (!descriptor) {
+      return
+    }
+    dragState.active = descriptor
+    descriptor.node.classList.add('dragging')
+    try {
+      descriptor.node.setPointerCapture(event.pointerId)
+    } catch {}
   }
 
   function ensureOptionOffsets() {
