@@ -1754,36 +1754,14 @@
     window.addEventListener('pointerup', handleDragPointerRelease)
     window.addEventListener('pointercancel', handleDragPointerRelease)
 
-    registerDragTarget(el.panelBgDrag, null, null, {
+    registerDragTarget(el.panelBgDrag, 'panelX', 'panelY', {
       unit: 'px',
       minX: -2400,
       maxX: 2400,
       minY: -2400,
       maxY: 2400,
       skipWhenHidden: false,
-      getPosition: () => ({
-        x: clamp(currentTheme.bgOverlayX, -2400, 2400, 0),
-        y: clamp(currentTheme.bgOverlayY, -2400, 2400, 0)
-      }),
-      setPosition: (x, y) => {
-        updateTheme(
-          {
-            bgImageX: x,
-            bgImageY: y,
-            bgOverlayX: x,
-            bgOverlayY: y,
-            gridX: x,
-            gridY: y
-          },
-          { persist: false }
-        )
-        syncSingleControlValue('bgImageX', x)
-        syncSingleControlValue('bgImageY', y)
-        syncSingleControlValue('bgOverlayX', x)
-        syncSingleControlValue('bgOverlayY', y)
-        syncSingleControlValue('gridX', x)
-        syncSingleControlValue('gridY', y)
-      }
+      requireDirectTarget: true
     })
 
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
@@ -1857,18 +1835,13 @@
     dragState.enabled = Boolean(enabled)
     el.dragModeEnabled.checked = dragState.enabled
     document.body.classList.toggle('drag-mode', dragState.enabled)
-    if (dragState.enabled && (currentTheme.panelX !== 0 || currentTheme.panelY !== 0)) {
-      updateTheme({ panelX: 0, panelY: 0 }, { persist: false })
-      syncSingleControlValue('panelX', 0)
-      syncSingleControlValue('panelY', 0)
-    }
     if (!dragState.enabled && dragState.active) {
       dragState.active.node.classList.remove('dragging')
       dragState.active = null
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag objects independently. Drag empty canvas space to move the background only.'
+        ? 'Drag mode enabled. Drag objects independently. Drag panel background, text blocks, and poll parts separately.'
         : 'Drag mode disabled.',
       'success'
     )
@@ -3004,6 +2977,8 @@
     root.setProperty('--race-speed-ms', `${Math.round(theme.raceSpeed * 1000)}ms`)
     root.setProperty('--wrap-offset-x', '0px')
     root.setProperty('--wrap-offset-y', '0px')
+    root.setProperty('--panel-offset-x', `${clamp(theme.panelX, -2400, 2400, 0)}px`)
+    root.setProperty('--panel-offset-y', `${clamp(theme.panelY, -2400, 2400, 0)}px`)
 
     el.bgImage.style.backgroundImage = theme.bgImageUrl
       ? `url("${theme.bgImageUrl.replace(/"/g, '\\"')}")`

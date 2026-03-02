@@ -28,6 +28,8 @@
   --canvas-scale: 0.85;
   --wrap-offset-x: 0px;
   --wrap-offset-y: 0px;
+  --panel-offset-x: 0px;
+  --panel-offset-y: 0px;
 }
 
 * {
@@ -668,12 +670,12 @@ body.ribbon-advanced .advanced-control.note {
   width: min(1100px, 92vw);
   margin: calc(var(--ribbon-offset) + 12px) auto 0;
   padding: 24px 28px 30px;
-  border: 1px solid var(--panel-border);
+  border: 0;
   border-radius: 22px;
-  background: var(--panel-bg);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
   transform-origin: top center;
   transform: translate(var(--wrap-offset-x), var(--wrap-offset-y)) scale(var(--canvas-scale));
   transition: transform 190ms ease, margin 190ms ease;
@@ -697,6 +699,13 @@ body.ribbon-advanced .advanced-control.note {
   z-index: 1;
   pointer-events: none;
   border-radius: inherit;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
+  transform: translate(var(--panel-offset-x), var(--panel-offset-y));
+  transition: transform 180ms ease;
 }
 
 .wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag) {
