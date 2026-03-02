@@ -30,6 +30,9 @@
   --wrap-offset-y: 0px;
   --panel-offset-x: 0px;
   --panel-offset-y: 0px;
+  --panel-grab-band: 30px;
+  --panel-grab-corner: 40px;
+  --panel-grab-inset: 6px;
 }
 
 * {
@@ -792,34 +795,61 @@ body.ribbon-advanced .advanced-control.note {
   position: absolute;
   z-index: 7;
   pointer-events: none;
+  transform: translate(var(--panel-offset-x), var(--panel-offset-y));
+  transition: transform 180ms ease;
 }
 
 .panel-drag-top {
-  left: 10px;
-  right: 10px;
-  top: -14px;
-  height: 12px;
+  left: var(--panel-grab-inset);
+  right: var(--panel-grab-inset);
+  top: calc(-1 * var(--panel-grab-band));
+  height: calc(var(--panel-grab-band) + 4px);
 }
 
 .panel-drag-right {
-  top: 10px;
-  right: -14px;
-  bottom: 10px;
-  width: 12px;
+  top: var(--panel-grab-inset);
+  right: calc(-1 * var(--panel-grab-band));
+  bottom: var(--panel-grab-inset);
+  width: calc(var(--panel-grab-band) + 4px);
 }
 
 .panel-drag-bottom {
-  left: 10px;
-  right: 10px;
-  bottom: -14px;
-  height: 12px;
+  left: var(--panel-grab-inset);
+  right: var(--panel-grab-inset);
+  bottom: calc(-1 * var(--panel-grab-band));
+  height: calc(var(--panel-grab-band) + 4px);
 }
 
 .panel-drag-left {
-  top: 10px;
-  left: -14px;
-  bottom: 10px;
-  width: 12px;
+  top: var(--panel-grab-inset);
+  left: calc(-1 * var(--panel-grab-band));
+  bottom: var(--panel-grab-inset);
+  width: calc(var(--panel-grab-band) + 4px);
+}
+
+.panel-drag-corner {
+  width: var(--panel-grab-corner);
+  height: var(--panel-grab-corner);
+}
+
+.panel-drag-tl {
+  top: calc(-1 * var(--panel-grab-band));
+  left: calc(-1 * var(--panel-grab-band));
+}
+
+.panel-drag-tr {
+  top: calc(-1 * var(--panel-grab-band));
+  right: calc(-1 * var(--panel-grab-band));
+}
+
+.panel-drag-br {
+  bottom: calc(-1 * var(--panel-grab-band));
+  right: calc(-1 * var(--panel-grab-band));
+}
+
+.panel-drag-bl {
+  bottom: calc(-1 * var(--panel-grab-band));
+  left: calc(-1 * var(--panel-grab-band));
 }
 
 .wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag):not(.panel-drag-handle) {
@@ -896,11 +926,11 @@ body.ribbon-advanced .advanced-control.note {
 
 .drag-mode .panel-drag-handle {
   pointer-events: auto;
-  cursor: grab;
+  cursor: move !important;
 }
 
 .drag-mode .panel-drag-handle:hover {
-  background: rgba(79, 143, 223, 0.14);
+  background: rgba(79, 143, 223, 0.2);
   outline: 1px dashed rgba(69, 138, 218, 0.84);
   outline-offset: 1px;
 }

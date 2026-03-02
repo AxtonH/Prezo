@@ -118,6 +118,10 @@
     panelDragRight: must('panel-drag-right'),
     panelDragBottom: must('panel-drag-bottom'),
     panelDragLeft: must('panel-drag-left'),
+    panelDragTl: must('panel-drag-tl'),
+    panelDragTr: must('panel-drag-tr'),
+    panelDragBr: must('panel-drag-br'),
+    panelDragBl: must('panel-drag-bl'),
     settingsRibbon: must('settings-ribbon'),
     settingsToggle: must('settings-toggle'),
     ribbonAdvancedToggle: must('ribbon-advanced-toggle'),
@@ -2025,6 +2029,10 @@
     registerDragTarget(el.panelDragRight, 'panelX', 'panelY', panelDragSpec)
     registerDragTarget(el.panelDragBottom, 'panelX', 'panelY', panelDragSpec)
     registerDragTarget(el.panelDragLeft, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragTl, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragTr, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragBr, 'panelX', 'panelY', panelDragSpec)
+    registerDragTarget(el.panelDragBl, 'panelX', 'panelY', panelDragSpec)
 
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
       unit: 'percent',
