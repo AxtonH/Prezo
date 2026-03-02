@@ -198,6 +198,8 @@
     assetOpacity: 0.38,
     assetX: 50,
     assetY: 50,
+    panelX: 0,
+    panelY: 0,
     bgImageX: 0,
     bgImageY: 0,
     bgOverlayX: 0,
@@ -212,6 +214,7 @@
     optionsY: 0,
     footerX: 0,
     footerY: 0,
+    optionOffsets: {},
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
 
@@ -1750,68 +1753,79 @@
     window.addEventListener('pointerup', handleDragPointerRelease)
     window.addEventListener('pointercancel', handleDragPointerRelease)
 
+    registerDragTarget(el.wrap, 'panelX', 'panelY', {
+      unit: 'px',
+      minX: -1200,
+      maxX: 1200,
+      minY: -900,
+      maxY: 900,
+      skipWhenHidden: false,
+      requireDirectTarget: true
+    })
+
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
-      minX: 0,
-      maxX: 100,
-      minY: 0,
-      maxY: 100,
+      unit: 'percent',
+      minX: -40,
+      maxX: 140,
+      minY: -40,
+      maxY: 140,
       skipWhenHidden: true
     })
     registerDragTarget(el.customAsset, 'assetX', 'assetY', {
-      minX: 0,
-      maxX: 100,
-      minY: 0,
-      maxY: 100,
+      unit: 'percent',
+      minX: -40,
+      maxX: 140,
+      minY: -40,
+      maxY: 140,
       skipWhenHidden: true
     })
 
     registerDragTarget(el.bgImage, 'bgImageX', 'bgImageY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
       skipWhenHidden: false
     })
     registerDragTarget(el.bgOverlay, 'bgOverlayX', 'bgOverlayY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
       skipWhenHidden: false
     })
     registerDragTarget(el.gridBg, 'gridX', 'gridY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
       skipWhenHidden: false
     })
     registerDragTarget(el.headLeft, 'titleX', 'titleY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200,
       skipWhenHidden: false
     })
     registerDragTarget(el.metaBar, 'metaX', 'metaY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
-      skipWhenHidden: false
-    })
-    registerDragTarget(el.options, 'optionsX', 'optionsY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200,
       skipWhenHidden: false
     })
     registerDragTarget(el.footer, 'footerX', 'footerY', {
-      minX: -60,
-      maxX: 60,
-      minY: -60,
-      maxY: 60,
+      unit: 'px',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200,
       skipWhenHidden: false
     })
   }
@@ -1826,7 +1840,7 @@
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag title, polls, labels, footer, backgrounds, logos, and assets. Save theme to keep positions.'
+        ? 'Drag mode enabled. Drag panel, title, each poll option, footer, backgrounds, logos, and assets. Save theme to keep positions.'
         : 'Drag mode disabled.',
       'success'
     )
@@ -1841,6 +1855,7 @@
   }
 
   function attachDragBehavior(node, xKey, yKey, options = {}) {
+    const unit = options.unit === 'px' ? 'px' : 'percent'
     const minX = Number.isFinite(options.minX) ? Number(options.minX) : 0
     const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : 100
     const minY = Number.isFinite(options.minY) ? Number(options.minY) : 0
@@ -1848,9 +1863,16 @@
     const defaultX = Number.isFinite(options.defaultX) ? Number(options.defaultX) : 0
     const defaultY = Number.isFinite(options.defaultY) ? Number(options.defaultY) : 0
     const skipWhenHidden = options.skipWhenHidden !== false
+    const requireDirectTarget = options.requireDirectTarget === true
+    const getPosition = typeof options.getPosition === 'function' ? options.getPosition : null
+    const setPosition = typeof options.setPosition === 'function' ? options.setPosition : null
+    const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
 
     node.addEventListener('pointerdown', (event) => {
       if (!dragState.enabled || (skipWhenHidden && node.classList.contains('hidden'))) {
+        return
+      }
+      if (requireDirectTarget && event.target !== node) {
         return
       }
       if (event.pointerType === 'mouse' && event.button !== 0) {
@@ -1862,10 +1884,13 @@
       }
 
       event.preventDefault()
+      event.stopPropagation()
+      const startPosition = getPosition ? getPosition() : null
       dragState.active = {
         node,
         xKey,
         yKey,
+        unit,
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
@@ -1873,8 +1898,10 @@
         maxX,
         minY,
         maxY,
-        startX: clamp(currentTheme[xKey], minX, maxX, defaultX),
-        startY: clamp(currentTheme[yKey], minY, maxY, defaultY)
+        startX: clamp(startPosition?.x ?? currentTheme[xKey], minX, maxX, defaultX),
+        startY: clamp(startPosition?.y ?? currentTheme[yKey], minY, maxY, defaultY),
+        setPosition,
+        onCommit
       }
       node.classList.add('dragging')
       try {
@@ -1896,20 +1923,33 @@
     if (event.cancelable) {
       event.preventDefault()
     }
-    const deltaXPercent = ((event.clientX - active.startClientX) / wrapRect.width) * 100
-    const deltaYPercent = ((event.clientY - active.startClientY) / wrapRect.height) * 100
-    const nextX = clamp(active.startX + deltaXPercent, active.minX, active.maxX, active.startX)
-    const nextY = clamp(active.startY + deltaYPercent, active.minY, active.maxY, active.startY)
+    const deltaX =
+      active.unit === 'px'
+        ? event.clientX - active.startClientX
+        : ((event.clientX - active.startClientX) / wrapRect.width) * 100
+    const deltaY =
+      active.unit === 'px'
+        ? event.clientY - active.startClientY
+        : ((event.clientY - active.startClientY) / wrapRect.height) * 100
+    const nextX = clamp(active.startX + deltaX, active.minX, active.maxX, active.startX)
+    const nextY = clamp(active.startY + deltaY, active.minY, active.maxY, active.startY)
 
-    updateTheme(
-      {
-        [active.xKey]: nextX,
-        [active.yKey]: nextY
-      },
-      { persist: false }
-    )
-    syncSingleControlValue(active.xKey, nextX)
-    syncSingleControlValue(active.yKey, nextY)
+    if (active.setPosition) {
+      active.setPosition(nextX, nextY)
+      return
+    }
+
+    if (active.xKey && active.yKey) {
+      updateTheme(
+        {
+          [active.xKey]: nextX,
+          [active.yKey]: nextY
+        },
+        { persist: false }
+      )
+      syncSingleControlValue(active.xKey, nextX)
+      syncSingleControlValue(active.yKey, nextY)
+    }
   }
 
   function handleDragPointerRelease(event) {
@@ -1923,8 +1963,98 @@
       active.node.releasePointerCapture(event.pointerId)
     } catch {}
     dragState.active = null
+    if (active.onCommit) {
+      active.onCommit()
+      return
+    }
     saveThemeDraft(currentTheme)
     showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+  }
+
+  function ensureOptionOffsets() {
+    if (!currentTheme.optionOffsets || typeof currentTheme.optionOffsets !== 'object') {
+      currentTheme.optionOffsets = {}
+    }
+    return currentTheme.optionOffsets
+  }
+
+  function getOptionDragOffset(optionId) {
+    const map = ensureOptionOffsets()
+    const entry = map[optionId]
+    if (!entry || typeof entry !== 'object') {
+      return { x: 0, y: 0 }
+    }
+    return {
+      x: clamp(entry.x, -2400, 2400, 0),
+      y: clamp(entry.y, -2400, 2400, 0)
+    }
+  }
+
+  function setOptionDragOffset(optionId, x, y) {
+    if (!optionId) {
+      return
+    }
+    const map = ensureOptionOffsets()
+    map[optionId] = {
+      x: clamp(x, -2400, 2400, 0),
+      y: clamp(y, -2400, 2400, 0)
+    }
+  }
+
+  function applyOptionOffsetTransform(node, optionId) {
+    const offset = getOptionDragOffset(optionId)
+    node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
+  }
+
+  function registerOptionDragTarget(node, optionId) {
+    if (!node || !optionId || node.dataset.dragRegistered === '1') {
+      return
+    }
+    node.dataset.dragRegistered = '1'
+    node.classList.add('drag-target')
+    attachDragBehavior(node, null, null, {
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
+      skipWhenHidden: false,
+      getPosition: () => getOptionDragOffset(optionId),
+      setPosition: (x, y) => {
+        setOptionDragOffset(optionId, x, y)
+        node.style.transform = `translate(${x}px, ${y}px)`
+      }
+    })
+  }
+
+  function registerRaceOptionDragTarget(row) {
+    if (!row || !row.optionId || row.root.dataset.dragRegistered === '1') {
+      return
+    }
+    row.root.dataset.dragRegistered = '1'
+    row.root.classList.add('drag-target')
+    attachDragBehavior(row.root, null, null, {
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
+      skipWhenHidden: false,
+      getPosition: () => ({
+        x: row.dragOffsetX,
+        y: row.dragOffsetY
+      }),
+      setPosition: (x, y) => {
+        row.dragOffsetX = x
+        row.dragOffsetY = y
+        setOptionDragOffset(row.optionId, x, y)
+        applyRaceRowTransform(row)
+      }
+    })
+  }
+
+  function applyRaceRowTransform(row) {
+    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px)`
   }
 
   function getWrapRect() {
@@ -2215,11 +2345,13 @@
     const options = Array.isArray(poll.options) ? poll.options : []
     for (let index = 0; index < options.length; index += 1) {
       const option = options[index]
+      const optionId = asText(option.id) || `option-${index}`
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
       const optionNode = document.createElement('div')
       optionNode.className = 'option'
+      optionNode.dataset.optionDragId = optionId
 
       const labelRow = document.createElement('div')
       labelRow.className = 'label-row'
@@ -2247,6 +2379,8 @@
 
       track.appendChild(fill)
       optionNode.append(labelRow, track)
+      applyOptionOffsetTransform(optionNode, optionId)
+      registerOptionDragTarget(optionNode, optionId)
       fragment.appendChild(optionNode)
     }
 
@@ -2294,10 +2428,14 @@
 
       let row = state.raceRows.get(optionId)
       if (!row) {
-        row = createRaceRow(index * rowHeight, pct)
+        row = createRaceRow(index * rowHeight, pct, optionId)
         state.raceRows.set(optionId, row)
         el.options.appendChild(row.root)
+        registerRaceOptionDragTarget(row)
       }
+      const dragOffset = getOptionDragOffset(optionId)
+      row.dragOffsetX = dragOffset.x
+      row.dragOffsetY = dragOffset.y
       renderRichText(
         row.label,
         getOptionTextKey(poll, option, index),
@@ -2308,6 +2446,7 @@
       row.targetProgress = pct
       row.root.classList.toggle('leading', index === 0)
       row.root.style.zIndex = `${sorted.length - index}`
+      applyRaceRowTransform(row)
       applyRaceCarContent(row.car)
     }
 
@@ -2323,11 +2462,14 @@
     startRaceAnimationLoop()
   }
 
-  function createRaceRow(initialY = 0, initialProgress = 0) {
+  function createRaceRow(initialY = 0, initialProgress = 0, optionId = '') {
     const root = document.createElement('article')
     root.className = 'race-option'
     root.style.transform = `translateY(${initialY}px)`
     root.style.opacity = '1'
+    if (optionId) {
+      root.dataset.optionDragId = optionId
+    }
 
     const top = document.createElement('div')
     top.className = 'race-top'
@@ -2360,6 +2502,9 @@
       stats,
       fill,
       car,
+      optionId,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
       currentY: initialY,
       targetY: initialY,
       currentProgress: initialProgress,
@@ -2414,7 +2559,7 @@
         hasMotion = true
       }
 
-      row.root.style.transform = `translateY(${row.currentY}px)`
+      applyRaceRowTransform(row)
       row.fill.style.width = `${row.currentProgress}%`
       row.car.style.left = `${row.currentProgress}%`
     }
@@ -2812,6 +2957,8 @@
     root.setProperty('--race-track', hexToRgba(theme.raceTrackColor, theme.raceTrackOpacity))
     root.setProperty('--race-car-size', `${theme.raceCarSize}px`)
     root.setProperty('--race-speed-ms', `${Math.round(theme.raceSpeed * 1000)}ms`)
+    root.setProperty('--wrap-offset-x', `${clamp(theme.panelX, -2400, 2400, 0)}px`)
+    root.setProperty('--wrap-offset-y', `${clamp(theme.panelY, -2400, 2400, 0)}px`)
 
     el.bgImage.style.backgroundImage = theme.bgImageUrl
       ? `url("${theme.bgImageUrl.replace(/"/g, '\\"')}")`
@@ -2826,7 +2973,6 @@
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY)
     applyElementOffset(el.headLeft, theme.titleX, theme.titleY)
     applyElementOffset(el.metaBar, theme.metaX, theme.metaY)
-    applyElementOffset(el.options, theme.optionsX, theme.optionsY)
     applyElementOffset(el.footer, theme.footerX, theme.footerY)
 
     applyImageAsset(el.customLogo, {
@@ -2851,9 +2997,9 @@
     if (!node) {
       return
     }
-    const safeX = clamp(offsetX, -100, 100, 0)
-    const safeY = clamp(offsetY, -100, 100, 0)
-    node.style.transform = `translate(${safeX}%, ${safeY}%)`
+    const safeX = clamp(offsetX, -2400, 2400, 0)
+    const safeY = clamp(offsetY, -2400, 2400, 0)
+    node.style.transform = `translate(${safeX}px, ${safeY}px)`
   }
 
   function applyImageAsset(node, options) {
@@ -3371,22 +3517,44 @@
       assetOpacity: clamp(incoming.assetOpacity, 0, 1, defaultTheme.assetOpacity),
       assetX: clamp(incoming.assetX, 0, 100, defaultTheme.assetX),
       assetY: clamp(incoming.assetY, 0, 100, defaultTheme.assetY),
-      bgImageX: clamp(incoming.bgImageX, -60, 60, defaultTheme.bgImageX),
-      bgImageY: clamp(incoming.bgImageY, -60, 60, defaultTheme.bgImageY),
-      bgOverlayX: clamp(incoming.bgOverlayX, -60, 60, defaultTheme.bgOverlayX),
-      bgOverlayY: clamp(incoming.bgOverlayY, -60, 60, defaultTheme.bgOverlayY),
-      gridX: clamp(incoming.gridX, -60, 60, defaultTheme.gridX),
-      gridY: clamp(incoming.gridY, -60, 60, defaultTheme.gridY),
-      titleX: clamp(incoming.titleX, -60, 60, defaultTheme.titleX),
-      titleY: clamp(incoming.titleY, -60, 60, defaultTheme.titleY),
-      metaX: clamp(incoming.metaX, -60, 60, defaultTheme.metaX),
-      metaY: clamp(incoming.metaY, -60, 60, defaultTheme.metaY),
-      optionsX: clamp(incoming.optionsX, -60, 60, defaultTheme.optionsX),
-      optionsY: clamp(incoming.optionsY, -60, 60, defaultTheme.optionsY),
-      footerX: clamp(incoming.footerX, -60, 60, defaultTheme.footerX),
-      footerY: clamp(incoming.footerY, -60, 60, defaultTheme.footerY),
+      panelX: clamp(incoming.panelX, -2400, 2400, defaultTheme.panelX),
+      panelY: clamp(incoming.panelY, -2400, 2400, defaultTheme.panelY),
+      bgImageX: clamp(incoming.bgImageX, -2400, 2400, defaultTheme.bgImageX),
+      bgImageY: clamp(incoming.bgImageY, -2400, 2400, defaultTheme.bgImageY),
+      bgOverlayX: clamp(incoming.bgOverlayX, -2400, 2400, defaultTheme.bgOverlayX),
+      bgOverlayY: clamp(incoming.bgOverlayY, -2400, 2400, defaultTheme.bgOverlayY),
+      gridX: clamp(incoming.gridX, -2400, 2400, defaultTheme.gridX),
+      gridY: clamp(incoming.gridY, -2400, 2400, defaultTheme.gridY),
+      titleX: clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX),
+      titleY: clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY),
+      metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
+      metaY: clamp(incoming.metaY, -2400, 2400, defaultTheme.metaY),
+      optionsX: clamp(incoming.optionsX, -2400, 2400, defaultTheme.optionsX),
+      optionsY: clamp(incoming.optionsY, -2400, 2400, defaultTheme.optionsY),
+      footerX: clamp(incoming.footerX, -2400, 2400, defaultTheme.footerX),
+      footerY: clamp(incoming.footerY, -2400, 2400, defaultTheme.footerY),
+      optionOffsets: sanitizeOptionOffsets(incoming.optionOffsets, defaultTheme.optionOffsets),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
+  }
+
+  function sanitizeOptionOffsets(value, fallback) {
+    const source = value && typeof value === 'object' ? value : fallback
+    if (!source || typeof source !== 'object') {
+      return {}
+    }
+    const sanitized = {}
+    for (const [rawId, rawOffset] of Object.entries(source)) {
+      const optionId = asText(rawId)
+      if (!optionId || !rawOffset || typeof rawOffset !== 'object') {
+        continue
+      }
+      sanitized[optionId] = {
+        x: clamp(rawOffset.x, -2400, 2400, 0),
+        y: clamp(rawOffset.y, -2400, 2400, 0)
+      }
+    }
+    return sanitized
   }
 
   function sanitizeFontFamily(value, fallback) {

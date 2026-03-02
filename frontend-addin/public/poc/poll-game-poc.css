@@ -26,6 +26,8 @@
   --ribbon-compact-height: var(--ribbon-strip-height);
   --ribbon-offset: var(--ribbon-open-height);
   --canvas-scale: 0.85;
+  --wrap-offset-x: 0px;
+  --wrap-offset-y: 0px;
 }
 
 * {
@@ -673,7 +675,7 @@ body.ribbon-advanced .advanced-control.note {
   backdrop-filter: blur(3px);
   box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
   transform-origin: top center;
-  transform: scale(var(--canvas-scale));
+  transform: translate(var(--wrap-offset-x), var(--wrap-offset-y)) scale(var(--canvas-scale));
   transition: transform 190ms ease, margin 190ms ease;
 }
 
