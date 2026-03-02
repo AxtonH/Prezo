@@ -1753,6 +1753,16 @@
     window.addEventListener('pointerup', handleDragPointerRelease)
     window.addEventListener('pointercancel', handleDragPointerRelease)
 
+    registerDragTarget(el.wrap, 'panelX', 'panelY', {
+      unit: 'px',
+      minX: -1200,
+      maxX: 1200,
+      minY: -900,
+      maxY: 900,
+      skipWhenHidden: false,
+      requireDirectTarget: true
+    })
+
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
       unit: 'percent',
       minX: -40,
@@ -1824,18 +1834,13 @@
     dragState.enabled = Boolean(enabled)
     el.dragModeEnabled.checked = dragState.enabled
     document.body.classList.toggle('drag-mode', dragState.enabled)
-    if (dragState.enabled && (currentTheme.panelX !== 0 || currentTheme.panelY !== 0)) {
-      updateTheme({ panelX: 0, panelY: 0 }, { persist: false })
-      syncSingleControlValue('panelX', 0)
-      syncSingleControlValue('panelY', 0)
-    }
     if (!dragState.enabled && dragState.active) {
       dragState.active.node.classList.remove('dragging')
       dragState.active = null
     }
     showThemeFeedback(
       dragState.enabled
-        ? 'Drag mode enabled. Drag objects independently (title, option labels, poll bars, background layers, logos/assets).'
+        ? 'Drag mode enabled. Drag objects independently, or drag empty canvas space to move the panel.'
         : 'Drag mode disabled.',
       'success'
     )
