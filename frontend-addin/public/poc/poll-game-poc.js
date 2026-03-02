@@ -2064,7 +2064,8 @@
       maxX: 1600,
       minY: -1200,
       maxY: 1200,
-      skipWhenHidden: false
+      skipWhenHidden: false,
+      edgeGrabPadding: 22
     })
     registerDragTarget(el.metaBar, 'metaX', 'metaY', {
       unit: 'px',
@@ -2121,6 +2122,9 @@
     const defaultY = Number.isFinite(options.defaultY) ? Number(options.defaultY) : 0
     const skipWhenHidden = options.skipWhenHidden !== false
     const requireDirectTarget = options.requireDirectTarget === true
+    const edgeGrabPadding = Number.isFinite(options.edgeGrabPadding)
+      ? Math.max(0, Number(options.edgeGrabPadding))
+      : 0
     const getPosition = typeof options.getPosition === 'function' ? options.getPosition : null
     const setPosition = typeof options.setPosition === 'function' ? options.setPosition : null
     const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
@@ -2133,7 +2137,9 @@
       const richTextTarget = targetElement ? targetElement.closest('.rich-text-editable') : null
       if (richTextTarget && node.contains(richTextTarget)) {
         // PowerPoint-style: text click enters text editing, dragging uses object shell.
-        return
+        if (!isPointerNearNodeEdge(node, event, edgeGrabPadding)) {
+          return
+        }
       }
       if (requireDirectTarget && event.target !== node) {
         return
@@ -2284,7 +2290,10 @@
     node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
   }
 
-  function registerOptionDragTarget(node, optionId, part = 'row') {
+  function registerOptionDragTarget(node, optionId, part = 'row', options = {}) {
+    const edgeGrabPadding = Number.isFinite(options.edgeGrabPadding)
+      ? Math.max(0, Number(options.edgeGrabPadding))
+      : 0
     if (!node || !optionId || node.dataset.dragRegistered === '1') {
       return
     }
@@ -2298,6 +2307,7 @@
       minY: -2400,
       maxY: 2400,
       skipWhenHidden: false,
+      edgeGrabPadding,
       getPosition: () => getOptionDragOffset(optionId, part),
       setPosition: (x, y) => {
         setOptionDragOffset(optionId, x, y, part)
@@ -2334,6 +2344,30 @@
 
   function applyRaceRowTransform(row) {
     row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px)`
+  }
+
+  function isPointerNearNodeEdge(node, event, edgePadding = 0) {
+    if (!(node instanceof Element)) {
+      return false
+    }
+    const padding = Math.max(0, Number(edgePadding) || 0)
+    if (padding <= 0) {
+      return false
+    }
+    const rect = node.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false
+    }
+    const x = Number(event.clientX)
+    const y = Number(event.clientY)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return false
+    }
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      return false
+    }
+    const edgeDistance = Math.min(x - rect.left, rect.right - x, y - rect.top, rect.bottom - y)
+    return edgeDistance <= padding
   }
 
   function getWrapRect() {
@@ -2660,7 +2694,7 @@
       optionNode.append(labelRow, track)
       applyOptionOffsetTransform(labelRow, optionId, 'label')
       applyOptionOffsetTransform(track, optionId, 'bar')
-      registerOptionDragTarget(labelRow, optionId, 'label')
+      registerOptionDragTarget(labelRow, optionId, 'label', { edgeGrabPadding: 18 })
       registerOptionDragTarget(track, optionId, 'bar')
       fragment.appendChild(optionNode)
     }
