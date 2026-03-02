@@ -55,6 +55,7 @@
     66,
     72
   ]
+  const HISTORY_LIMIT = 100
 
   const query = new URLSearchParams(window.location.search)
 
@@ -121,6 +122,8 @@
     selectionToolbar: must('selection-toolbar'),
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
+    historyUndo: must('history-undo'),
+    historyRedo: must('history-redo'),
     dragModeEnabled: must('drag-mode-enabled'),
     resetPositions: must('reset-positions'),
     themeName: must('theme-name'),
@@ -276,6 +279,14 @@
     enabled: false,
     active: null
   }
+  const historyState = {
+    initialized: false,
+    applying: false,
+    present: null,
+    undoStack: [],
+    redoStack: [],
+    typingTimerId: null
+  }
   const ribbonState = {
     activeTab: 'home',
     collapsed: false,
@@ -289,6 +300,7 @@
     setupSettingsPanel()
     setupThemeEditor()
     setupRichTextEditor()
+    setupHistoryControls()
     setupDragInteractions()
     setupRibbonOffsetTracking()
     setupCanvasFitBehavior()
@@ -296,6 +308,7 @@
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
     renderInitialState()
+    initializeHistoryState()
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
   }
@@ -498,7 +511,7 @@
         spec.type === 'checkbox' || spec.type === 'select' ? 'change' : 'input'
       input.addEventListener(eventName, () => {
         const value = readControlValue(input, spec.type)
-        updateTheme({ [spec.key]: value })
+        updateTheme({ [spec.key]: value }, { historyLabel: 'Update design' })
         if (
           state.snapshot &&
           (spec.key === 'visualMode' ||
@@ -531,6 +544,212 @@
     bindImageUpload('theme-race-car-upload', 'raceCarImageUrl', 'Race car image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
+  }
+
+  function setupHistoryControls() {
+    el.historyUndo.addEventListener('click', () => {
+      performUndo()
+    })
+    el.historyRedo.addEventListener('click', () => {
+      performRedo()
+    })
+    window.addEventListener('keydown', handleHistoryKeydown, true)
+    updateHistoryControls()
+  }
+
+  function initializeHistoryState() {
+    historyState.present = captureHistorySnapshot()
+    historyState.undoStack = []
+    historyState.redoStack = []
+    historyState.initialized = true
+    clearTypingHistoryTimer()
+    updateHistoryControls()
+  }
+
+  function handleHistoryKeydown(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+      return
+    }
+    if (isResetPositionsModalOpen()) {
+      return
+    }
+    const key = asText(event.key).toLowerCase()
+    const target = event.target
+    const host = getRichTextHost(target)
+    const inNativeTextField =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    if (inNativeTextField && !host) {
+      return
+    }
+
+    if (key === 'z' && !event.shiftKey) {
+      event.preventDefault()
+      performUndo()
+      return
+    }
+    if (key === 'y' || (key === 'z' && event.shiftKey)) {
+      event.preventDefault()
+      performRedo()
+    }
+  }
+
+  function canUndo() {
+    return historyState.undoStack.length > 0
+  }
+
+  function canRedo() {
+    return historyState.redoStack.length > 0
+  }
+
+  function updateHistoryControls() {
+    const hasPendingTypingEntry = historyState.typingTimerId != null
+    el.historyUndo.disabled = !(canUndo() || hasPendingTypingEntry)
+    el.historyRedo.disabled = !canRedo()
+  }
+
+  function captureHistorySnapshot() {
+    return {
+      theme: clone(currentTheme),
+      textOverrides: clone(state.textOverrides)
+    }
+  }
+
+  function historySnapshotsEqual(left, right) {
+    if (!left || !right) {
+      return false
+    }
+    try {
+      return JSON.stringify(left) === JSON.stringify(right)
+    } catch {
+      return false
+    }
+  }
+
+  function clearTypingHistoryTimer() {
+    if (historyState.typingTimerId != null) {
+      window.clearTimeout(historyState.typingTimerId)
+      historyState.typingTimerId = null
+      updateHistoryControls()
+    }
+  }
+
+  function scheduleTypingHistoryCheckpoint() {
+    if (!historyState.initialized || historyState.applying) {
+      return
+    }
+    clearTypingHistoryTimer()
+    historyState.typingTimerId = window.setTimeout(() => {
+      historyState.typingTimerId = null
+      recordHistoryCheckpoint('Edit text', { skipFlush: true })
+    }, 850)
+    updateHistoryControls()
+  }
+
+  function flushTypingHistoryCheckpoint() {
+    if (historyState.typingTimerId == null) {
+      return
+    }
+    clearTypingHistoryTimer()
+    recordHistoryCheckpoint('Edit text', { skipFlush: true })
+  }
+
+  function recordHistoryCheckpoint(actionLabel = 'Edit', options = {}) {
+    if (!historyState.initialized || historyState.applying) {
+      return false
+    }
+    if (!options.skipFlush) {
+      flushTypingHistoryCheckpoint()
+    }
+    const nextSnapshot = captureHistorySnapshot()
+    if (historySnapshotsEqual(historyState.present, nextSnapshot)) {
+      return false
+    }
+    if (historyState.present) {
+      historyState.undoStack.push({
+        snapshot: historyState.present,
+        label: asText(actionLabel) || 'Edit'
+      })
+      if (historyState.undoStack.length > HISTORY_LIMIT) {
+        historyState.undoStack.splice(0, historyState.undoStack.length - HISTORY_LIMIT)
+      }
+    }
+    historyState.present = nextSnapshot
+    historyState.redoStack = []
+    updateHistoryControls()
+    return true
+  }
+
+  function applyHistorySnapshot(snapshot) {
+    if (!snapshot || historyState.applying) {
+      return
+    }
+    historyState.applying = true
+    clearTypingHistoryTimer()
+    try {
+      currentTheme = sanitizeTheme(snapshot.theme)
+      state.textOverrides = sanitizeTextOverridesMap(snapshot.textOverrides)
+      saveThemeDraft(currentTheme)
+      saveTextOverrides(state.textOverrides)
+      applyTheme(currentTheme)
+      syncThemeControls()
+      clearCachedRichTextSelection()
+      hideSelectionToolbar()
+      state.activeTextHost = null
+      state.activeInlineStyleNode = null
+      if (state.snapshot) {
+        renderFromSnapshot(true)
+      } else {
+        renderInitialState()
+      }
+      refreshTextToolStates()
+      syncTextStyleControlsFromSelection()
+    } finally {
+      historyState.applying = false
+    }
+  }
+
+  function performUndo() {
+    flushTypingHistoryCheckpoint()
+    if (!canUndo()) {
+      return false
+    }
+    const entry = historyState.undoStack.pop()
+    if (!entry) {
+      updateHistoryControls()
+      return false
+    }
+    historyState.redoStack.push({
+      snapshot: historyState.present,
+      label: entry.label
+    })
+    historyState.present = entry.snapshot
+    applyHistorySnapshot(historyState.present)
+    updateHistoryControls()
+    showThemeFeedback('Undo applied.', 'success')
+    return true
+  }
+
+  function performRedo() {
+    flushTypingHistoryCheckpoint()
+    if (!canRedo()) {
+      return false
+    }
+    const entry = historyState.redoStack.pop()
+    if (!entry) {
+      updateHistoryControls()
+      return false
+    }
+    historyState.undoStack.push({
+      snapshot: historyState.present,
+      label: entry.label
+    })
+    historyState.present = entry.snapshot
+    applyHistorySnapshot(historyState.present)
+    updateHistoryControls()
+    showThemeFeedback('Redo applied.', 'success')
+    return true
   }
 
   function setupRichTextEditor() {
@@ -902,7 +1121,10 @@
     const nextHost = getRichTextHost(event.relatedTarget)
     const preservingSelectionForControl =
       isTextControlElement(event.relatedTarget) || isTextControlInteractionActive()
-    commitRichTextHost(host, { normalizeDom: !preservingSelectionForControl })
+    commitRichTextHost(host, {
+      normalizeDom: !preservingSelectionForControl,
+      recordHistory: false
+    })
     if (nextHost) {
       state.activeTextHost = nextHost
       refreshTextToolStates()
@@ -940,7 +1162,7 @@
     if (!host) {
       return
     }
-    commitRichTextHost(host)
+    commitRichTextHost(host, { historyMode: 'typing' })
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
@@ -965,7 +1187,7 @@
     } catch {
       document.execCommand('insertText', false, normalized)
     }
-    commitRichTextHost(host)
+    commitRichTextHost(host, { historyLabel: 'Paste text' })
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
@@ -1031,7 +1253,7 @@
     } catch {}
     state.activeInlineStyleNode = null
     releaseTextControlInteractionSoon()
-    commitRichTextHost(host)
+    commitRichTextHost(host, { historyLabel: 'Format text' })
     cacheRichTextSelection()
     refreshTextToolStates()
     scheduleSelectionToolbarUpdate()
@@ -1053,7 +1275,7 @@
     if (reusableNode && applyStylesToElement(reusableNode, styleProps)) {
       updateCachedRangeFromNode(reusableNode, host)
       state.activeTextHost = host
-      commitRichTextHost(host, { normalizeDom: false })
+      commitRichTextHost(host, { normalizeDom: false, historyLabel: 'Format text' })
       refreshTextToolStates()
       syncTextStyleControlsFromSelection()
       scheduleSelectionToolbarUpdate()
@@ -1085,7 +1307,7 @@
     state.activeInlineStyleNode = wrapper
     updateCachedRangeFromNode(wrapper, host)
     state.activeTextHost = host
-    commitRichTextHost(host, { normalizeDom: false })
+    commitRichTextHost(host, { normalizeDom: false, historyLabel: 'Format text' })
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
     scheduleSelectionToolbarUpdate()
@@ -1691,6 +1913,9 @@
       return
     }
     const normalizeDom = options.normalizeDom === true
+    const recordHistory = options.recordHistory !== false && !historyState.applying
+    const historyMode = asText(options.historyMode).toLowerCase()
+    const historyLabel = asText(options.historyLabel) || 'Edit text'
     const sanitized = sanitizeRichTextHtml(host.innerHTML)
     if (normalizeDom && host.innerHTML !== sanitized) {
       host.innerHTML = sanitized
@@ -1699,6 +1924,13 @@
     if (!hadValue || state.textOverrides[textKey] !== sanitized) {
       state.textOverrides[textKey] = sanitized
       saveTextOverrides(state.textOverrides)
+      if (recordHistory) {
+        if (historyMode === 'typing') {
+          scheduleTypingHistoryCheckpoint()
+        } else {
+          recordHistoryCheckpoint(historyLabel)
+        }
+      }
     }
     host.dataset.richTextHtml = sanitized
   }
@@ -1990,6 +2222,7 @@
       return
     }
     saveThemeDraft(currentTheme)
+    recordHistoryCheckpoint('Move object')
     showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
   }
 
@@ -2370,7 +2603,7 @@
       if (!(host instanceof HTMLElement)) {
         continue
       }
-      commitRichTextHost(host, { normalizeDom: false })
+      commitRichTextHost(host, { normalizeDom: false, recordHistory: false })
     }
   }
 
@@ -2820,7 +3053,7 @@
       }
       try {
         const dataUrl = await readFileAsDataUrl(file)
-        updateTheme({ [themeKey]: dataUrl })
+        updateTheme({ [themeKey]: dataUrl }, { historyLabel: 'Update image asset' })
         showThemeFeedback(successText, 'success')
       } catch {
         showThemeFeedback('File upload failed.', 'error')
@@ -2861,6 +3094,7 @@
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
+    recordHistoryCheckpoint('Load theme')
     showThemeFeedback(`Theme "${name}" loaded.`, 'success')
   }
 
@@ -2923,6 +3157,7 @@
       if (state.snapshot) {
         renderFromSnapshot(true)
       }
+      recordHistoryCheckpoint('Import theme')
       showThemeFeedback(`Theme "${importedName}" imported.`, 'success')
     } catch {
       showThemeFeedback('Invalid theme file.', 'error')
@@ -2939,6 +3174,7 @@
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
+    recordHistoryCheckpoint('Reset theme')
     showThemeFeedback('Theme reset to defaults.', 'success')
   }
 
@@ -3014,7 +3250,7 @@
       assetX: defaultTheme.assetX,
       assetY: defaultTheme.assetY,
       optionOffsets: clone(defaultTheme.optionOffsets)
-    })
+    }, { historyLabel: 'Reset positions' })
 
     if (state.snapshot) {
       renderFromSnapshot(true)
@@ -3040,6 +3276,8 @@
 
   function updateTheme(partialTheme, options = {}) {
     const persist = options.persist !== false
+    const recordHistory = options.recordHistory !== false && persist && !historyState.applying
+    const historyLabel = asText(options.historyLabel) || 'Update design'
     const nextTheme = {
       ...currentTheme,
       ...partialTheme
@@ -3066,6 +3304,9 @@
     }
     if (persist) {
       saveThemeDraft(currentTheme)
+    }
+    if (recordHistory) {
+      recordHistoryCheckpoint(historyLabel)
     }
   }
 
@@ -3338,15 +3579,19 @@
 
   function loadTextOverrides() {
     const parsed = safeJsonParse(safeStorageGet(TEXT_OVERRIDES_KEY))
-    if (!parsed || typeof parsed !== 'object') {
+    return sanitizeTextOverridesMap(parsed)
+  }
+
+  function sanitizeTextOverridesMap(value) {
+    if (!value || typeof value !== 'object') {
       return {}
     }
     const overrides = {}
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value !== 'string' || !key) {
+    for (const [key, entry] of Object.entries(value)) {
+      if (typeof entry !== 'string' || !key) {
         continue
       }
-      overrides[key] = sanitizeRichTextHtml(value)
+      overrides[key] = sanitizeRichTextHtml(entry)
     }
     return overrides
   }
@@ -3873,6 +4118,9 @@
     document.removeEventListener('pointerdown', handleRichTextPointerDown, true)
     window.removeEventListener('resize', scheduleSelectionToolbarUpdate)
     window.removeEventListener('scroll', scheduleSelectionToolbarUpdate, true)
+    window.removeEventListener('keydown', handleHistoryKeydown, true)
+    window.removeEventListener('keydown', handleResetPositionsModalKeydown, true)
+    clearTypingHistoryTimer()
     if (state.selectionToolbarRafId != null) {
       cancelAnimationFrame(state.selectionToolbarRafId)
       state.selectionToolbarRafId = null

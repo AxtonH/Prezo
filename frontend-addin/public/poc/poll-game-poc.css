@@ -192,6 +192,17 @@ body {
   background: rgba(217, 234, 255, 0.98);
 }
 
+.ribbon-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.ribbon-btn:disabled:hover {
+  border-color: rgba(151, 184, 222, 0.75);
+  background: rgba(230, 241, 255, 0.98);
+}
+
 .ribbon-btn.is-active {
   border-color: #4f8fdf;
   background: linear-gradient(135deg, #5ca1ff, #72c4ff);
