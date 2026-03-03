@@ -2230,7 +2230,8 @@
       maxX: 1600,
       minY: -1200,
       maxY: 1200,
-      skipWhenHidden: false
+      skipWhenHidden: false,
+      edgeGrabPadding: 22
     })
 
     registerResizeTarget(
