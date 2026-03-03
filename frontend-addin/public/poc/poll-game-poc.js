@@ -2766,6 +2766,9 @@
   }
 
   function flushRichTextHostsToOverrides() {
+    if (historyState.applying) {
+      return
+    }
     const hosts = el.wrap.querySelectorAll('.rich-text-editable[data-text-key]')
     for (const host of hosts) {
       if (!(host instanceof HTMLElement)) {
