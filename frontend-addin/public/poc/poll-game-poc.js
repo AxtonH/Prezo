@@ -2001,8 +2001,18 @@
   function renderRichText(node, textKey, fallbackText) {
     const fallbackHtml = textToRichHtml(fallbackText)
     const allowOverrides = !isLiveBoundTextKey(textKey)
-    const hasOverride =
+    const hadOverride =
       allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
+    let hasOverride = hadOverride
+    if (
+      hasOverride &&
+      isPollQuestionTextKey(textKey) &&
+      isStaleQuestionOverride(state.textOverrides[textKey])
+    ) {
+      delete state.textOverrides[textKey]
+      saveTextOverrides(state.textOverrides)
+      hasOverride = false
+    }
     const nextHtml = hasOverride ? state.textOverrides[textKey] : fallbackHtml
     if (!allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)) {
       delete state.textOverrides[textKey]
@@ -2012,9 +2022,14 @@
     node.classList.add('rich-text-editable')
     node.setAttribute('contenteditable', 'true')
     node.setAttribute('spellcheck', 'true')
+    const previousTextKey = asText(node.dataset.textKey)
     node.dataset.textKey = textKey
 
-    if (state.activeTextHost === node && document.activeElement === node) {
+    if (
+      state.activeTextHost === node &&
+      document.activeElement === node &&
+      previousTextKey === textKey
+    ) {
       return
     }
     if (node.dataset.richTextHtml !== nextHtml) {
@@ -2032,6 +2047,29 @@
       return true
     }
     return /^poll:[^:]+:option:[^:]+:stats$/i.test(key)
+  }
+
+  function isPollQuestionTextKey(textKey) {
+    return /^poll:[^:]+:question$/i.test(asText(textKey))
+  }
+
+  function isStaleQuestionOverride(html) {
+    const plain = normalizeWhitespace(extractPlainTextFromHtml(html)).toLowerCase()
+    return (
+      plain === 'waiting for poll data...' ||
+      plain === 'missing required query param' ||
+      plain === 'unable to load poll data'
+    )
+  }
+
+  function extractPlainTextFromHtml(html) {
+    const container = document.createElement('div')
+    container.innerHTML = typeof html === 'string' ? html : ''
+    return container.textContent || ''
+  }
+
+  function normalizeWhitespace(text) {
+    return asText(text).replace(/\s+/g, ' ')
   }
 
   function clearRichTextNode(node) {
