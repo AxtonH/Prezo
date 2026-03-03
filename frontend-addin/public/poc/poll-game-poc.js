@@ -2410,7 +2410,7 @@
       minScaleY,
       maxScaleY,
       keepAspectByDefault: options.keepAspectByDefault === true,
-      adjustPositionOnResize: options.adjustPositionOnResize === true,
+      adjustPositionOnResize: options.adjustPositionOnResize !== false,
       getPosition: () => ({
         x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
         y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
@@ -2520,7 +2520,7 @@
       minScaleY,
       maxScaleY,
       keepAspectByDefault: options.keepAspectByDefault === true,
-      adjustPositionOnResize: options.adjustPositionOnResize === true,
+      adjustPositionOnResize: options.adjustPositionOnResize !== false,
       getPosition,
       setPosition,
       getScale,
