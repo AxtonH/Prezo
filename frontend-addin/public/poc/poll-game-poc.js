@@ -236,6 +236,14 @@
     bgOverlayScaleY: 1,
     gridScaleX: 1,
     gridScaleY: 1,
+    eyebrowX: 0,
+    eyebrowY: 0,
+    eyebrowBoxWidth: null,
+    eyebrowBoxHeight: null,
+    questionX: 0,
+    questionY: 0,
+    questionBoxWidth: null,
+    questionBoxHeight: null,
     titleX: 0,
     titleY: 0,
     titleBoxWidth: null,
@@ -2207,7 +2215,16 @@
       maxY: 2400,
       skipWhenHidden: false
     })
-    registerDragTarget(el.headLeft, 'titleX', 'titleY', {
+    registerDragTarget(el.eyebrow, 'eyebrowX', 'eyebrowY', {
+      unit: 'px',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200,
+      skipWhenHidden: false,
+      edgeGrabPadding: 18
+    })
+    registerDragTarget(el.question, 'questionX', 'questionY', {
       unit: 'px',
       minX: -1600,
       maxX: 1600,
@@ -2261,19 +2278,36 @@
       })
     )
     registerResizeTarget(
-      el.headLeft,
+      el.eyebrow,
       createThemeBoxResizeProfile({
-        xKey: 'titleX',
-        yKey: 'titleY',
-        widthKey: 'titleBoxWidth',
-        heightKey: 'titleBoxHeight',
+        xKey: 'eyebrowX',
+        yKey: 'eyebrowY',
+        widthKey: 'eyebrowBoxWidth',
+        heightKey: 'eyebrowBoxHeight',
+        minWidth: 60,
+        maxWidth: 1800,
+        minHeight: 14,
+        maxHeight: 420,
+        apply: () => {
+          applyElementOffset(el.eyebrow, currentTheme.eyebrowX, currentTheme.eyebrowY, 1, 1)
+          applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
+        }
+      })
+    )
+    registerResizeTarget(
+      el.question,
+      createThemeBoxResizeProfile({
+        xKey: 'questionX',
+        yKey: 'questionY',
+        widthKey: 'questionBoxWidth',
+        heightKey: 'questionBoxHeight',
         minWidth: 120,
         maxWidth: 2200,
         minHeight: 40,
         maxHeight: 1400,
         apply: () => {
-          applyElementOffset(el.headLeft, currentTheme.titleX, currentTheme.titleY, 1, 1)
-          applyElementBoxSize(el.headLeft, currentTheme.titleBoxWidth, currentTheme.titleBoxHeight)
+          applyElementOffset(el.question, currentTheme.questionX, currentTheme.questionY, 1, 1)
+          applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
         }
       })
     )
@@ -3239,9 +3273,14 @@
       )
       return
     }
-    if (xKey === 'titleX' && yKey === 'titleY') {
-      applyElementOffset(el.headLeft, xValue, yValue, 1, 1)
-      applyElementBoxSize(el.headLeft, currentTheme.titleBoxWidth, currentTheme.titleBoxHeight)
+    if (xKey === 'eyebrowX' && yKey === 'eyebrowY') {
+      applyElementOffset(el.eyebrow, xValue, yValue, 1, 1)
+      applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
+      return
+    }
+    if (xKey === 'questionX' && yKey === 'questionY') {
+      applyElementOffset(el.question, xValue, yValue, 1, 1)
+      applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
       return
     }
     if (xKey === 'metaX' && yKey === 'metaY') {
@@ -4722,6 +4761,14 @@
       gridY: defaultTheme.gridY,
       gridScaleX: defaultTheme.gridScaleX,
       gridScaleY: defaultTheme.gridScaleY,
+      eyebrowX: defaultTheme.eyebrowX,
+      eyebrowY: defaultTheme.eyebrowY,
+      eyebrowBoxWidth: defaultTheme.eyebrowBoxWidth,
+      eyebrowBoxHeight: defaultTheme.eyebrowBoxHeight,
+      questionX: defaultTheme.questionX,
+      questionY: defaultTheme.questionY,
+      questionBoxWidth: defaultTheme.questionBoxWidth,
+      questionBoxHeight: defaultTheme.questionBoxHeight,
       titleX: defaultTheme.titleX,
       titleY: defaultTheme.titleY,
       titleBoxWidth: defaultTheme.titleBoxWidth,
@@ -4887,10 +4934,14 @@
       theme.bgOverlayScaleY
     )
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY, theme.gridScaleX, theme.gridScaleY)
-    applyElementOffset(el.headLeft, theme.titleX, theme.titleY, 1, 1)
+    applyElementOffset(el.headLeft, 0, 0, 1, 1)
+    applyElementOffset(el.eyebrow, theme.eyebrowX, theme.eyebrowY, 1, 1)
+    applyElementOffset(el.question, theme.questionX, theme.questionY, 1, 1)
     applyElementOffset(el.metaBar, theme.metaX, theme.metaY, 1, 1)
     applyElementOffset(el.footer, theme.footerX, theme.footerY, 1, 1)
-    applyElementBoxSize(el.headLeft, theme.titleBoxWidth, theme.titleBoxHeight)
+    applyElementBoxSize(el.headLeft, null, null)
+    applyElementBoxSize(el.eyebrow, theme.eyebrowBoxWidth, theme.eyebrowBoxHeight)
+    applyElementBoxSize(el.question, theme.questionBoxWidth, theme.questionBoxHeight)
     applyElementBoxSize(el.metaBar, theme.metaBoxWidth, theme.metaBoxHeight)
     applyElementBoxSize(el.footer, theme.footerBoxWidth, theme.footerBoxHeight)
 
@@ -5429,6 +5480,20 @@
 
   function sanitizeTheme(theme) {
     const incoming = theme && typeof theme === 'object' ? theme : {}
+    const legacyTitleX = clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX)
+    const legacyTitleY = clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY)
+    const legacyTitleBoxWidth = sanitizeOptionalDimension(
+      incoming.titleBoxWidth,
+      120,
+      2200,
+      defaultTheme.titleBoxWidth
+    )
+    const legacyTitleBoxHeight = sanitizeOptionalDimension(
+      incoming.titleBoxHeight,
+      40,
+      1400,
+      defaultTheme.titleBoxHeight
+    )
     return {
       bgImageUrl: sanitizeUrl(incoming.bgImageUrl, defaultTheme.bgImageUrl),
       bgImageOpacity: clamp(incoming.bgImageOpacity, 0, 1, defaultTheme.bgImageOpacity),
@@ -5494,20 +5559,38 @@
       gridY: clamp(incoming.gridY, -2400, 2400, defaultTheme.gridY),
       gridScaleX: clamp(incoming.gridScaleX, 0.35, 3.5, defaultTheme.gridScaleX),
       gridScaleY: clamp(incoming.gridScaleY, 0.35, 3.5, defaultTheme.gridScaleY),
-      titleX: clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX),
-      titleY: clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY),
-      titleBoxWidth: sanitizeOptionalDimension(
-        incoming.titleBoxWidth,
+      eyebrowX: clamp(incoming.eyebrowX, -2400, 2400, legacyTitleX),
+      eyebrowY: clamp(incoming.eyebrowY, -2400, 2400, legacyTitleY),
+      eyebrowBoxWidth: sanitizeOptionalDimension(
+        incoming.eyebrowBoxWidth,
+        60,
+        1800,
+        legacyTitleBoxWidth
+      ),
+      eyebrowBoxHeight: sanitizeOptionalDimension(
+        incoming.eyebrowBoxHeight,
+        14,
+        420,
+        legacyTitleBoxHeight
+      ),
+      questionX: clamp(incoming.questionX, -2400, 2400, legacyTitleX),
+      questionY: clamp(incoming.questionY, -2400, 2400, legacyTitleY),
+      questionBoxWidth: sanitizeOptionalDimension(
+        incoming.questionBoxWidth,
         120,
         2200,
-        defaultTheme.titleBoxWidth
+        legacyTitleBoxWidth
       ),
-      titleBoxHeight: sanitizeOptionalDimension(
-        incoming.titleBoxHeight,
+      questionBoxHeight: sanitizeOptionalDimension(
+        incoming.questionBoxHeight,
         40,
         1400,
-        defaultTheme.titleBoxHeight
+        legacyTitleBoxHeight
       ),
+      titleX: legacyTitleX,
+      titleY: legacyTitleY,
+      titleBoxWidth: legacyTitleBoxWidth,
+      titleBoxHeight: legacyTitleBoxHeight,
       titleScaleX: clamp(incoming.titleScaleX, 0.45, 3, defaultTheme.titleScaleX),
       titleScaleY: clamp(incoming.titleScaleY, 0.45, 3, defaultTheme.titleScaleY),
       metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
