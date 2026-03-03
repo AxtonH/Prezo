@@ -2817,9 +2817,11 @@
 
       track.appendChild(fill)
       optionNode.append(labelRow, track)
-      applyOptionOffsetTransform(labelRow, optionId, 'label')
+      applyOptionOffsetTransform(label, optionId, 'label')
+      applyOptionOffsetTransform(stats, optionId, 'stats')
       applyOptionOffsetTransform(track, optionId, 'bar')
-      registerOptionDragTarget(labelRow, optionId, 'label', { edgeGrabPadding: 12 })
+      registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
+      registerOptionDragTarget(stats, optionId, 'stats')
       registerOptionDragTarget(track, optionId, 'bar')
       fragment.appendChild(optionNode)
     }
