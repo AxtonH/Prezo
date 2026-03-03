@@ -1202,6 +1202,7 @@ h1 {
 }
 
 .label-row {
+  position: relative;
   display: flex;
   justify-content: space-between;
   gap: 12px;

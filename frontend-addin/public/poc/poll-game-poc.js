@@ -3393,11 +3393,92 @@
     }
   }
 
+  function isOptionTextPart(part = 'row') {
+    const normalized = asText(part).toLowerCase()
+    return normalized === 'label' || normalized === 'stats'
+  }
+
+  function updateOptionLabelRowLockState(row) {
+    if (!(row instanceof HTMLElement)) {
+      return
+    }
+    const hasDetachedText = Boolean(row.querySelector('[data-option-detached-flow="1"]'))
+    if (hasDetachedText) {
+      return
+    }
+    row.style.removeProperty('min-height')
+    row.dataset.optionRowFlowLocked = '0'
+  }
+
+  function detachOptionTextFromFlow(node, optionId, part = 'row') {
+    if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
+      return
+    }
+    const row = node.closest('.label-row')
+    if (!(row instanceof HTMLElement)) {
+      return
+    }
+
+    if (node.dataset.optionDetachedFlow !== '1') {
+      const scale = getCanvasScaleFactor()
+      const rowRect = row.getBoundingClientRect()
+      const nodeRect = node.getBoundingClientRect()
+      const offset = getOptionDragOffset(optionId, part)
+      const baseLeft =
+        rowRect.width > 0 && nodeRect.width > 0
+          ? (nodeRect.left - rowRect.left) / Math.max(0.01, scale) - offset.x
+          : 0
+      const baseTop =
+        rowRect.height > 0 && nodeRect.height > 0
+          ? (nodeRect.top - rowRect.top) / Math.max(0.01, scale) - offset.y
+          : 0
+      node.style.left = `${baseLeft}px`
+      node.style.top = `${baseTop}px`
+      node.dataset.optionDetachedFlow = '1'
+    }
+
+    if (row.dataset.optionRowFlowLocked !== '1') {
+      const scale = getCanvasScaleFactor()
+      const rowRect = row.getBoundingClientRect()
+      const lockedHeight = Math.max(24, rowRect.height / Math.max(0.01, scale))
+      row.style.minHeight = `${lockedHeight}px`
+      row.dataset.optionRowFlowLocked = '1'
+    }
+
+    node.style.position = 'absolute'
+    node.style.margin = '0'
+    node.style.display = 'inline-block'
+    node.style.maxWidth = 'none'
+  }
+
+  function restoreOptionTextFlow(node, part = 'row') {
+    if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
+      return
+    }
+    const row = node.closest('.label-row')
+    node.style.removeProperty('position')
+    node.style.removeProperty('left')
+    node.style.removeProperty('top')
+    node.style.removeProperty('margin')
+    node.style.removeProperty('display')
+    node.style.removeProperty('max-width')
+    delete node.dataset.optionDetachedFlow
+    updateOptionLabelRowLockState(row)
+  }
+
   function applyOptionBoxSize(node, optionId, part = 'row') {
     if (!node) {
       return
     }
     const size = getOptionBoxSize(optionId, part)
+    const hasCustomSize = Number.isFinite(size.width) || Number.isFinite(size.height)
+    if (isOptionTextPart(part)) {
+      if (hasCustomSize) {
+        detachOptionTextFromFlow(node, optionId, part)
+      } else {
+        restoreOptionTextFlow(node, part)
+      }
+    }
     if (Number.isFinite(size.width)) {
       node.style.width = `${size.width}px`
       if (node instanceof HTMLSpanElement) {
@@ -3920,11 +4001,11 @@
 
       track.appendChild(fill)
       optionNode.append(labelRow, track)
+      applyOptionBoxSize(label, optionId, 'label')
+      applyOptionBoxSize(stats, optionId, 'stats')
       applyOptionOffsetTransform(label, optionId, 'label')
       applyOptionOffsetTransform(stats, optionId, 'stats')
       applyOptionOffsetTransform(track, optionId, 'bar')
-      applyOptionBoxSize(label, optionId, 'label')
-      applyOptionBoxSize(stats, optionId, 'stats')
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(label, optionId, 'label', {
         resizeMode: 'box',
@@ -4640,6 +4721,19 @@
         if (textNode instanceof HTMLElement) {
           textNode.style.removeProperty('width')
           textNode.style.removeProperty('height')
+          textNode.style.removeProperty('position')
+          textNode.style.removeProperty('left')
+          textNode.style.removeProperty('top')
+          textNode.style.removeProperty('margin')
+          textNode.style.removeProperty('display')
+          textNode.style.removeProperty('max-width')
+          delete textNode.dataset.optionDetachedFlow
+        }
+      }
+      for (const labelRow of el.options.querySelectorAll('.option .label-row')) {
+        if (labelRow instanceof HTMLElement) {
+          labelRow.style.removeProperty('min-height')
+          labelRow.dataset.optionRowFlowLocked = '0'
         }
       }
       for (const row of state.raceRows.values()) {
