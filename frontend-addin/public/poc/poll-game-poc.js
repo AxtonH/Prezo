@@ -163,6 +163,7 @@
     miniTextFontSize: must('mini-text-font-size'),
     miniTextFontColor: must('mini-text-font-color'),
     question: must('question'),
+    eyebrow: must('eyebrow'),
     status: must('status'),
     votes: must('votes'),
     options: must('options'),
@@ -2500,10 +2501,18 @@
   }
 
   function renderInitialState() {
-    clearRichTextNode(el.question)
-    el.question.textContent = 'Waiting for poll data...'
-    el.options.innerHTML = ''
-    el.footer.textContent = `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
+    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Game Mode PoC')
+    renderRichText(
+      el.question,
+      getQuestionStateTextKey('loading'),
+      'Waiting for poll data...'
+    )
+    el.options.replaceChildren()
+    renderRichText(
+      el.footer,
+      getFooterTextKey(),
+      `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
+    )
     updateMeta(null, 0)
   }
 
@@ -2726,6 +2735,7 @@
 
   function renderFromSnapshot(forceRender) {
     flushRichTextHostsToOverrides()
+    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Game Mode PoC')
 
     const polls = Array.isArray(state.snapshot?.polls) ? state.snapshot.polls : []
     const poll = selectPoll(polls)
@@ -2807,7 +2817,11 @@
 
       const stats = document.createElement('span')
       stats.className = 'stats'
-      stats.textContent = `${votes} (${pct}%)`
+      renderRichText(
+        stats,
+        getOptionStatsTextKey(poll, option, index),
+        `${votes} (${pct}%)`
+      )
 
       labelRow.append(label, stats)
 
@@ -2886,7 +2900,11 @@
         getOptionTextKey(poll, option, index),
         asText(option.label) || 'Option'
       )
-      row.stats.textContent = `${votes} (${pct}%)`
+      renderRichText(
+        row.stats,
+        getOptionStatsTextKey(poll, option, index),
+        `${votes} (${pct}%)`
+      )
       row.targetY = index * rowHeight
       row.targetProgress = pct
       row.root.classList.toggle('leading', index === 0)
@@ -3040,30 +3058,30 @@
     clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
-    clearRichTextNode(el.question)
-    el.question.textContent = 'Missing required query param'
-    el.options.innerHTML = ''
-    const note = document.createElement('p')
-    note.className = 'empty'
-    note.innerHTML = 'Open with <code>?sessionId=&lt;id&gt;</code> or <code>?code=&lt;join_code&gt;</code>'
-    el.options.appendChild(note)
+    renderRichText(
+      el.question,
+      getQuestionStateTextKey('missing-session'),
+      'Missing required query param'
+    )
+    renderEmptyStateNote(
+      'missing-session',
+      'Open with ?sessionId=<id> or ?code=<join_code>.'
+    )
     updateMeta(null, 0, 'missing session', 'error')
     updateFooter()
   }
 
   function renderMissingPoll() {
     clearRaceRows()
-    clearRichTextNode(el.question)
     const message =
       state.pollSelector.mode === 'id'
         ? `Poll "${state.pollSelector.explicitId}" was not found in this session.`
         : 'No poll is available in this session yet.'
-    el.question.textContent = message
-    el.options.innerHTML = ''
-    const note = document.createElement('p')
-    note.className = 'empty'
-    note.textContent = 'Create and open a poll in Host Console to render it here.'
-    el.options.appendChild(note)
+    renderRichText(el.question, getQuestionStateTextKey('missing-poll'), message)
+    renderEmptyStateNote(
+      'missing-poll',
+      'Create and open a poll in Host Console to render it here.'
+    )
     updateMeta(null, 0)
     updateFooter()
   }
@@ -3072,20 +3090,29 @@
     clearRaceRows()
     state.currentPoll = null
     state.lastRenderKey = ''
-    clearRichTextNode(el.question)
-    el.question.textContent = 'Unable to load poll data'
-    el.options.innerHTML = ''
-    const note = document.createElement('p')
-    note.className = 'empty'
-    note.textContent = message
-    el.options.appendChild(note)
+    renderRichText(
+      el.question,
+      getQuestionStateTextKey('error'),
+      'Unable to load poll data'
+    )
+    renderEmptyStateNote('error-detail', message)
     updateMeta(null, 0, 'error', 'error')
     updateFooter()
   }
 
+  function renderEmptyStateNote(stateKey, fallbackText) {
+    const note = document.createElement('p')
+    note.className = 'empty'
+    renderRichText(note, getOptionsStateTextKey(stateKey), fallbackText)
+    el.options.replaceChildren(note)
+  }
+
   function updateFooter() {
-    el.footer.textContent =
+    renderRichText(
+      el.footer,
+      getFooterTextKey(),
       `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
+    )
   }
 
   function updateMeta(poll, totalVotes, forcedStatusText, forcedTone) {
@@ -3119,8 +3146,8 @@
             ? 'error'
             : 'connecting')
 
-    el.status.textContent = statusText
-    el.votes.textContent = `${totalVotes} votes`
+    renderRichText(el.status, getStatusTextKey(), statusText)
+    renderRichText(el.votes, getVotesTextKey(), `${totalVotes} votes`)
     applyDotTone(tone)
   }
 
@@ -3174,10 +3201,42 @@
     return `poll:${pollId}:question`
   }
 
+  function getQuestionStateTextKey(stateKey) {
+    const normalizedStateKey = asText(stateKey) || 'default'
+    return `chrome:question-state:${normalizedStateKey}`
+  }
+
+  function getEyebrowTextKey() {
+    return 'chrome:eyebrow'
+  }
+
+  function getStatusTextKey() {
+    return 'chrome:status'
+  }
+
+  function getVotesTextKey() {
+    return 'chrome:votes'
+  }
+
+  function getFooterTextKey() {
+    return 'chrome:footer'
+  }
+
   function getOptionTextKey(poll, option, index) {
     const pollId = asText(poll?.id) || 'unknown'
     const optionId = asText(option?.id) || `index-${index}`
     return `poll:${pollId}:option:${optionId}`
+  }
+
+  function getOptionStatsTextKey(poll, option, index) {
+    const pollId = asText(poll?.id) || 'unknown'
+    const optionId = asText(option?.id) || `index-${index}`
+    return `poll:${pollId}:option:${optionId}:stats`
+  }
+
+  function getOptionsStateTextKey(stateKey) {
+    const normalizedStateKey = asText(stateKey) || 'default'
+    return `chrome:options-state:${normalizedStateKey}`
   }
 
   function getRenderKey(poll) {
