@@ -870,6 +870,12 @@ body.ribbon-advanced .advanced-control.note {
   gap: 16px;
 }
 
+#head-left {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .head-right {
   display: flex;
   flex-direction: column;

@@ -2289,8 +2289,7 @@
         minHeight: 14,
         maxHeight: 420,
         apply: () => {
-          applyElementOffset(el.eyebrow, currentTheme.eyebrowX, currentTheme.eyebrowY, 1, 1)
-          applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
+          applyHeaderTextObjects()
         }
       })
     )
@@ -2306,8 +2305,7 @@
         minHeight: 40,
         maxHeight: 1400,
         apply: () => {
-          applyElementOffset(el.question, currentTheme.questionX, currentTheme.questionY, 1, 1)
-          applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
+          applyHeaderTextObjects()
         }
       })
     )
@@ -3274,13 +3272,11 @@
       return
     }
     if (xKey === 'eyebrowX' && yKey === 'eyebrowY') {
-      applyElementOffset(el.eyebrow, xValue, yValue, 1, 1)
-      applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
+      applyHeaderTextObjects()
       return
     }
     if (xKey === 'questionX' && yKey === 'questionY') {
-      applyElementOffset(el.question, xValue, yValue, 1, 1)
-      applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
+      applyHeaderTextObjects()
       return
     }
     if (xKey === 'metaX' && yKey === 'metaY') {
@@ -4935,13 +4931,10 @@
     )
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY, theme.gridScaleX, theme.gridScaleY)
     applyElementOffset(el.headLeft, 0, 0, 1, 1)
-    applyElementOffset(el.eyebrow, theme.eyebrowX, theme.eyebrowY, 1, 1)
-    applyElementOffset(el.question, theme.questionX, theme.questionY, 1, 1)
+    applyHeaderTextObjects()
     applyElementOffset(el.metaBar, theme.metaX, theme.metaY, 1, 1)
     applyElementOffset(el.footer, theme.footerX, theme.footerY, 1, 1)
     applyElementBoxSize(el.headLeft, null, null)
-    applyElementBoxSize(el.eyebrow, theme.eyebrowBoxWidth, theme.eyebrowBoxHeight)
-    applyElementBoxSize(el.question, theme.questionBoxWidth, theme.questionBoxHeight)
     applyElementBoxSize(el.metaBar, theme.metaBoxWidth, theme.metaBoxHeight)
     applyElementBoxSize(el.footer, theme.footerBoxWidth, theme.footerBoxHeight)
 
@@ -4995,6 +4988,136 @@
     } else {
       node.style.removeProperty('height')
     }
+  }
+
+  function hasCustomHeaderTextSize(widthKey, heightKey) {
+    const width = sanitizeOptionalDimension(currentTheme[widthKey], 24, 4000, null)
+    const height = sanitizeOptionalDimension(currentTheme[heightKey], 18, 2400, null)
+    return Number.isFinite(width) || Number.isFinite(height)
+  }
+
+  function lockHeaderTextContainerFlow(containerRectOverride = null) {
+    if (!(el.headLeft instanceof HTMLElement) || el.headLeft.dataset.headerFlowLocked === '1') {
+      return
+    }
+    const scale = getCanvasScaleFactor()
+    const containerRect =
+      containerRectOverride && isRectLike(containerRectOverride)
+        ? containerRectOverride
+        : el.headLeft.getBoundingClientRect()
+    const lockedHeight = Math.max(24, containerRect.height / Math.max(0.01, scale))
+    el.headLeft.style.minHeight = `${lockedHeight}px`
+    el.headLeft.dataset.headerFlowLocked = '1'
+  }
+
+  function updateHeaderTextContainerLockState() {
+    if (!(el.headLeft instanceof HTMLElement)) {
+      return
+    }
+    const hasDetachedText = Boolean(
+      el.headLeft.querySelector('[data-header-detached-flow="1"]')
+    )
+    if (hasDetachedText) {
+      return
+    }
+    el.headLeft.style.removeProperty('min-height')
+    el.headLeft.dataset.headerFlowLocked = '0'
+  }
+
+  function detachHeaderTextFromFlow(node, offsetX, offsetY, geometry = null) {
+    if (!(node instanceof HTMLElement) || !(el.headLeft instanceof HTMLElement)) {
+      return
+    }
+
+    if (node.dataset.headerDetachedFlow !== '1') {
+      const scale = getCanvasScaleFactor()
+      const containerRect = isRectLike(geometry?.containerRect)
+        ? geometry.containerRect
+        : el.headLeft.getBoundingClientRect()
+      const nodeRect = isRectLike(geometry?.nodeRect)
+        ? geometry.nodeRect
+        : node.getBoundingClientRect()
+      const baseLeft =
+        containerRect.width > 0 && nodeRect.width > 0
+          ? (nodeRect.left - containerRect.left) / Math.max(0.01, scale) - offsetX
+          : 0
+      const baseTop =
+        containerRect.height > 0 && nodeRect.height > 0
+          ? (nodeRect.top - containerRect.top) / Math.max(0.01, scale) - offsetY
+          : 0
+      node.style.left = `${baseLeft}px`
+      node.style.top = `${baseTop}px`
+      node.dataset.headerDetachedFlow = '1'
+    }
+
+    node.style.position = 'absolute'
+    node.style.margin = '0'
+    node.style.maxWidth = 'none'
+  }
+
+  function restoreHeaderTextFlow(node) {
+    if (!(node instanceof HTMLElement)) {
+      return
+    }
+    node.style.removeProperty('position')
+    node.style.removeProperty('left')
+    node.style.removeProperty('top')
+    node.style.removeProperty('margin')
+    node.style.removeProperty('max-width')
+    delete node.dataset.headerDetachedFlow
+    updateHeaderTextContainerLockState()
+  }
+
+  function syncHeaderTextFlow() {
+    if (!(el.eyebrow instanceof HTMLElement) || !(el.question instanceof HTMLElement)) {
+      return
+    }
+    const shouldDetach =
+      hasCustomHeaderTextSize('eyebrowBoxWidth', 'eyebrowBoxHeight') ||
+      hasCustomHeaderTextSize('questionBoxWidth', 'questionBoxHeight')
+
+    if (!shouldDetach) {
+      restoreHeaderTextFlow(el.eyebrow)
+      restoreHeaderTextFlow(el.question)
+      return
+    }
+
+    const containerRect = el.headLeft.getBoundingClientRect()
+    const eyebrowRect = el.eyebrow.getBoundingClientRect()
+    const questionRect = el.question.getBoundingClientRect()
+    lockHeaderTextContainerFlow(containerRect)
+    detachHeaderTextFromFlow(
+      el.eyebrow,
+      clamp(currentTheme.eyebrowX, -2400, 2400, 0),
+      clamp(currentTheme.eyebrowY, -2400, 2400, 0),
+      { containerRect, nodeRect: eyebrowRect }
+    )
+    detachHeaderTextFromFlow(
+      el.question,
+      clamp(currentTheme.questionX, -2400, 2400, 0),
+      clamp(currentTheme.questionY, -2400, 2400, 0),
+      { containerRect, nodeRect: questionRect }
+    )
+  }
+
+  function applyHeaderTextObjects() {
+    applyElementOffset(
+      el.eyebrow,
+      clamp(currentTheme.eyebrowX, -2400, 2400, 0),
+      clamp(currentTheme.eyebrowY, -2400, 2400, 0),
+      1,
+      1
+    )
+    applyElementOffset(
+      el.question,
+      clamp(currentTheme.questionX, -2400, 2400, 0),
+      clamp(currentTheme.questionY, -2400, 2400, 0),
+      1,
+      1
+    )
+    syncHeaderTextFlow()
+    applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
+    applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
   }
 
   function applyImageAsset(node, options) {
