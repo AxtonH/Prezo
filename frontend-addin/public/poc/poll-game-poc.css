@@ -920,6 +920,10 @@ body.ribbon-advanced .advanced-control.note {
   outline: none;
 }
 
+.drag-mode .drag-target.rich-text-editable {
+  cursor: text;
+}
+
 .drag-mode .draggable-layer:not(.hidden):hover,
 .drag-mode .drag-target:hover {
   outline: 1px dashed rgba(69, 138, 218, 0.8);
@@ -954,6 +958,10 @@ body.ribbon-advanced .advanced-control.note {
 .drag-mode .drag-target.dragging {
   cursor: grabbing;
   outline-color: rgba(47, 126, 222, 1);
+}
+
+.drag-mode .drag-target.rich-text-editable.dragging {
+  cursor: grabbing;
 }
 
 .resize-selection {
