@@ -2410,6 +2410,7 @@
       minScaleY,
       maxScaleY,
       keepAspectByDefault: options.keepAspectByDefault === true,
+      adjustPositionOnResize: options.adjustPositionOnResize === true,
       getPosition: () => ({
         x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
         y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
@@ -2519,6 +2520,7 @@
       minScaleY,
       maxScaleY,
       keepAspectByDefault: options.keepAspectByDefault === true,
+      adjustPositionOnResize: options.adjustPositionOnResize === true,
       getPosition,
       setPosition,
       getScale,
@@ -2671,7 +2673,7 @@
     let centerShiftX = 0
     let centerShiftY = 0
     const keepCenter = event.ctrlKey || event.metaKey
-    if (!keepCenter) {
+    if (profile.adjustPositionOnResize && !keepCenter) {
       if (moveEast && !moveWest) {
         centerShiftX = deltaWidth / 2
       } else if (moveWest && !moveEast) {
@@ -2684,7 +2686,11 @@
       }
     }
 
-    if (active.startPosition && typeof profile.setPosition === 'function') {
+    if (
+      profile.adjustPositionOnResize &&
+      active.startPosition &&
+      typeof profile.setPosition === 'function'
+    ) {
       const wrapRect = getWrapRect()
       const wrapLocalWidth = wrapRect ? wrapRect.width / canvasScale : 0
       const wrapLocalHeight = wrapRect ? wrapRect.height / canvasScale : 0
@@ -2788,7 +2794,8 @@
         ? dragState.active.node
         : null
     const activeResizeNode = resizeState.active?.node
-    const node = activeResizeNode || activeDragNode || getActiveResizeTarget()
+    const selectedNode = getActiveResizeTarget()
+    const node = activeResizeNode || selectedNode || activeDragNode
     if (!node) {
       hideResizeSelectionBox()
       return
@@ -4366,25 +4373,44 @@
     updateTheme({
       panelX: defaultTheme.panelX,
       panelY: defaultTheme.panelY,
+      panelScaleX: defaultTheme.panelScaleX,
+      panelScaleY: defaultTheme.panelScaleY,
       bgImageX: defaultTheme.bgImageX,
       bgImageY: defaultTheme.bgImageY,
+      bgImageScaleX: defaultTheme.bgImageScaleX,
+      bgImageScaleY: defaultTheme.bgImageScaleY,
       bgOverlayX: defaultTheme.bgOverlayX,
       bgOverlayY: defaultTheme.bgOverlayY,
+      bgOverlayScaleX: defaultTheme.bgOverlayScaleX,
+      bgOverlayScaleY: defaultTheme.bgOverlayScaleY,
       gridX: defaultTheme.gridX,
       gridY: defaultTheme.gridY,
+      gridScaleX: defaultTheme.gridScaleX,
+      gridScaleY: defaultTheme.gridScaleY,
       titleX: defaultTheme.titleX,
       titleY: defaultTheme.titleY,
+      titleScaleX: defaultTheme.titleScaleX,
+      titleScaleY: defaultTheme.titleScaleY,
       metaX: defaultTheme.metaX,
       metaY: defaultTheme.metaY,
+      metaScaleX: defaultTheme.metaScaleX,
+      metaScaleY: defaultTheme.metaScaleY,
       optionsX: defaultTheme.optionsX,
       optionsY: defaultTheme.optionsY,
       footerX: defaultTheme.footerX,
       footerY: defaultTheme.footerY,
+      footerScaleX: defaultTheme.footerScaleX,
+      footerScaleY: defaultTheme.footerScaleY,
       logoX: defaultTheme.logoX,
       logoY: defaultTheme.logoY,
+      logoScaleX: defaultTheme.logoScaleX,
+      logoScaleY: defaultTheme.logoScaleY,
       assetX: defaultTheme.assetX,
       assetY: defaultTheme.assetY,
-      optionOffsets: clone(defaultTheme.optionOffsets)
+      assetScaleX: defaultTheme.assetScaleX,
+      assetScaleY: defaultTheme.assetScaleY,
+      optionOffsets: clone(defaultTheme.optionOffsets),
+      optionScales: clone(defaultTheme.optionScales)
     }, { historyLabel: 'Reset positions' })
 
     if (state.snapshot) {
