@@ -57,7 +57,6 @@
   ]
   const HISTORY_LIMIT = 100
   const DRAG_START_THRESHOLD_PX = 5
-  const RICH_TEXT_DRAG_START_THRESHOLD_PX = 10
   const MIN_RESIZE_HANDLE_SIZE_PX = 28
 
   const query = new URLSearchParams(window.location.search)
@@ -3038,9 +3037,7 @@
       }
       const targetElement = event.target instanceof Element ? event.target : null
       const richTextTarget = targetElement ? targetElement.closest('.rich-text-editable') : null
-      const richTextHost =
-        richTextTarget instanceof HTMLElement && node.contains(richTextTarget) ? richTextTarget : null
-      if (richTextHost) {
+      if (richTextTarget && node.contains(richTextTarget)) {
         // PowerPoint-style: text click enters text editing, dragging uses object shell.
         if (!isPointerNearNodeEdge(node, event, edgeGrabPadding)) {
           return
@@ -3077,11 +3074,7 @@
         startY: clamp(startPosition?.y ?? currentTheme[yKey], minY, maxY, defaultY),
         setPosition,
         onCommit,
-        richTextHost,
-        dragStartThresholdPx: richTextHost
-          ? RICH_TEXT_DRAG_START_THRESHOLD_PX
-          : DRAG_START_THRESHOLD_PX,
-        suppressNativePointerBehavior: !richTextHost
+        suppressNativePointerBehavior: !(richTextTarget && node.contains(richTextTarget))
       }
 
       if (dragState.pending && dragState.pending.pointerId !== event.pointerId) {
@@ -3105,22 +3098,11 @@
       if (!pending || pending.pointerId !== event.pointerId) {
         return
       }
-      if (pending.richTextHost && hasNonCollapsedSelectionInHost(pending.richTextHost)) {
-        dragState.pending = null
-        return
-      }
       const distance = Math.hypot(
         event.clientX - pending.startClientX,
         event.clientY - pending.startClientY
       )
-      const threshold = Number.isFinite(pending.dragStartThresholdPx)
-        ? Number(pending.dragStartThresholdPx)
-        : DRAG_START_THRESHOLD_PX
-      if (distance < threshold) {
-        return
-      }
-      if (pending.richTextHost && hasNonCollapsedSelectionInHost(pending.richTextHost)) {
-        dragState.pending = null
+      if (distance < DRAG_START_THRESHOLD_PX) {
         return
       }
       if (event.cancelable) {
@@ -3714,10 +3696,8 @@
     }
     // Keep a guaranteed center area for text editing on small boxes.
     const minSide = Math.max(1, Math.min(rect.width, rect.height))
-    const maxBySize = Math.max(3, Math.floor(minSide * 0.2))
-    const maxByCenterX = Math.max(2, Math.floor(rect.width / 2 - 10))
-    const maxByCenterY = Math.max(2, Math.floor(rect.height / 2 - 10))
-    const effectivePadding = Math.min(padding, maxBySize, maxByCenterX, maxByCenterY)
+    const maxBySize = Math.max(6, Math.floor(minSide * 0.25))
+    const effectivePadding = Math.min(padding, maxBySize)
     const x = Number(event.clientX)
     const y = Number(event.clientY)
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
