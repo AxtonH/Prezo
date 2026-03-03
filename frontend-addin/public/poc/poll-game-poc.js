@@ -238,16 +238,22 @@
     gridScaleY: 1,
     titleX: 0,
     titleY: 0,
+    titleBoxWidth: null,
+    titleBoxHeight: null,
     titleScaleX: 1,
     titleScaleY: 1,
     metaX: 0,
     metaY: 0,
+    metaBoxWidth: null,
+    metaBoxHeight: null,
     metaScaleX: 1,
     metaScaleY: 1,
     optionsX: 0,
     optionsY: 0,
     footerX: 0,
     footerY: 0,
+    footerBoxWidth: null,
+    footerBoxHeight: null,
     footerScaleX: 1,
     footerScaleY: 1,
     logoScaleX: 1,
@@ -255,6 +261,7 @@
     assetScaleX: 1,
     assetScaleY: 1,
     optionOffsets: {},
+    optionSizes: {},
     optionScales: {},
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
@@ -2254,67 +2261,52 @@
     )
     registerResizeTarget(
       el.headLeft,
-      createThemeResizeProfile({
+      createThemeBoxResizeProfile({
         xKey: 'titleX',
         yKey: 'titleY',
-        scaleXKey: 'titleScaleX',
-        scaleYKey: 'titleScaleY',
-        minScaleX: 0.45,
-        maxScaleX: 3,
-        minScaleY: 0.45,
-        maxScaleY: 3,
+        widthKey: 'titleBoxWidth',
+        heightKey: 'titleBoxHeight',
+        minWidth: 120,
+        maxWidth: 2200,
+        minHeight: 40,
+        maxHeight: 1400,
         apply: () => {
-          applyElementOffset(
-            el.headLeft,
-            currentTheme.titleX,
-            currentTheme.titleY,
-            currentTheme.titleScaleX,
-            currentTheme.titleScaleY
-          )
+          applyElementOffset(el.headLeft, currentTheme.titleX, currentTheme.titleY, 1, 1)
+          applyElementBoxSize(el.headLeft, currentTheme.titleBoxWidth, currentTheme.titleBoxHeight)
         }
       })
     )
     registerResizeTarget(
       el.metaBar,
-      createThemeResizeProfile({
+      createThemeBoxResizeProfile({
         xKey: 'metaX',
         yKey: 'metaY',
-        scaleXKey: 'metaScaleX',
-        scaleYKey: 'metaScaleY',
-        minScaleX: 0.45,
-        maxScaleX: 3.2,
-        minScaleY: 0.45,
-        maxScaleY: 3.2,
+        widthKey: 'metaBoxWidth',
+        heightKey: 'metaBoxHeight',
+        minWidth: 90,
+        maxWidth: 1000,
+        minHeight: 28,
+        maxHeight: 220,
         apply: () => {
-          applyElementOffset(
-            el.metaBar,
-            currentTheme.metaX,
-            currentTheme.metaY,
-            currentTheme.metaScaleX,
-            currentTheme.metaScaleY
-          )
+          applyElementOffset(el.metaBar, currentTheme.metaX, currentTheme.metaY, 1, 1)
+          applyElementBoxSize(el.metaBar, currentTheme.metaBoxWidth, currentTheme.metaBoxHeight)
         }
       })
     )
     registerResizeTarget(
       el.footer,
-      createThemeResizeProfile({
+      createThemeBoxResizeProfile({
         xKey: 'footerX',
         yKey: 'footerY',
-        scaleXKey: 'footerScaleX',
-        scaleYKey: 'footerScaleY',
-        minScaleX: 0.45,
-        maxScaleX: 3,
-        minScaleY: 0.45,
-        maxScaleY: 3,
+        widthKey: 'footerBoxWidth',
+        heightKey: 'footerBoxHeight',
+        minWidth: 120,
+        maxWidth: 2200,
+        minHeight: 18,
+        maxHeight: 420,
         apply: () => {
-          applyElementOffset(
-            el.footer,
-            currentTheme.footerX,
-            currentTheme.footerY,
-            currentTheme.footerScaleX,
-            currentTheme.footerScaleY
-          )
+          applyElementOffset(el.footer, currentTheme.footerX, currentTheme.footerY, 1, 1)
+          applyElementBoxSize(el.footer, currentTheme.footerBoxWidth, currentTheme.footerBoxHeight)
         }
       })
     )
@@ -2440,6 +2432,68 @@
     }
   }
 
+  function createThemeBoxResizeProfile(options = {}) {
+    const xKey = asText(options.xKey)
+    const yKey = asText(options.yKey)
+    const widthKey = asText(options.widthKey)
+    const heightKey = asText(options.heightKey)
+    const unit = options.unit === 'percent' ? 'percent' : 'px'
+    const minX = Number.isFinite(options.minX) ? Number(options.minX) : unit === 'percent' ? 0 : -2400
+    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : unit === 'percent' ? 100 : 2400
+    const minY = Number.isFinite(options.minY) ? Number(options.minY) : unit === 'percent' ? 0 : -2400
+    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : unit === 'percent' ? 100 : 2400
+    const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : 60
+    const maxWidth = Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 2600
+    const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : 24
+    const maxHeight = Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 1800
+    const apply = typeof options.apply === 'function' ? options.apply : () => {}
+
+    return {
+      unit,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      resizeMode: 'box',
+      minWidth,
+      maxWidth,
+      minHeight,
+      maxHeight,
+      keepAspectByDefault: options.keepAspectByDefault === true,
+      adjustPositionOnResize: options.adjustPositionOnResize !== false,
+      getPosition: () => ({
+        x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
+        y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
+      }),
+      setPosition: (x, y) => {
+        if (xKey) {
+          currentTheme[xKey] = clamp(x, minX, maxX, currentTheme[xKey])
+        }
+        if (yKey) {
+          currentTheme[yKey] = clamp(y, minY, maxY, currentTheme[yKey])
+        }
+        apply()
+      },
+      getSize: () => ({
+        width: widthKey
+          ? sanitizeOptionalDimension(currentTheme[widthKey], minWidth, maxWidth, null)
+          : null,
+        height: heightKey
+          ? sanitizeOptionalDimension(currentTheme[heightKey], minHeight, maxHeight, null)
+          : null
+      }),
+      setSize: (width, height) => {
+        if (widthKey) {
+          currentTheme[widthKey] = sanitizeOptionalDimension(width, minWidth, maxWidth, null)
+        }
+        if (heightKey) {
+          currentTheme[heightKey] = sanitizeOptionalDimension(height, minHeight, maxHeight, null)
+        }
+        apply()
+      }
+    }
+  }
+
   function registerResizeTarget(node, options = {}) {
     if (!node) {
       return
@@ -2484,6 +2538,11 @@
     const maxScaleX = Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5
     const minScaleY = Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.25
     const maxScaleY = Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5
+    const resizeMode = options.resizeMode === 'box' ? 'box' : 'scale'
+    const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : MIN_RESIZE_HANDLE_SIZE_PX
+    const maxWidth = Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 4000
+    const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : MIN_RESIZE_HANDLE_SIZE_PX
+    const maxHeight = Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 4000
     const getPosition =
       typeof options.getPosition === 'function'
         ? options.getPosition
@@ -2506,6 +2565,9 @@
     const getScale =
       typeof options.getScale === 'function' ? options.getScale : () => ({ x: 1, y: 1 })
     const setScale = typeof options.setScale === 'function' ? options.setScale : () => {}
+    const getSize =
+      typeof options.getSize === 'function' ? options.getSize : () => ({ width: null, height: null })
+    const setSize = typeof options.setSize === 'function' ? options.setSize : () => {}
     const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
 
     node.classList.add('resizable-target')
@@ -2519,12 +2581,19 @@
       maxScaleX,
       minScaleY,
       maxScaleY,
+      resizeMode,
+      minWidth,
+      maxWidth,
+      minHeight,
+      maxHeight,
       keepAspectByDefault: options.keepAspectByDefault === true,
       adjustPositionOnResize: options.adjustPositionOnResize !== false,
       getPosition,
       setPosition,
       getScale,
       setScale,
+      getSize,
+      setSize,
       onCommit
     })
   }
@@ -2569,6 +2638,7 @@
     if (!startRect || startRect.width <= 0 || startRect.height <= 0) {
       return
     }
+    const startSize = profile.getSize()
     const startScale = profile.getScale()
     const startPosition =
       typeof profile.getPosition === 'function' ? profile.getPosition() : null
@@ -2592,6 +2662,7 @@
       startClientX: event.clientX,
       startClientY: event.clientY,
       startRect,
+      startSize,
       startScale,
       startPosition,
       changed: false
@@ -2658,31 +2729,82 @@
     nextWidth = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextWidth)
     nextHeight = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextHeight)
 
-    const baseWidth = active.startRect.width / Math.max(0.01, active.startScale.x)
-    const baseHeight = active.startRect.height / Math.max(0.01, active.startScale.y)
-    let nextScaleX = (nextWidth / Math.max(1, baseWidth))
-    let nextScaleY = (nextHeight / Math.max(1, baseHeight))
-    nextScaleX = clamp(nextScaleX, profile.minScaleX, profile.maxScaleX, active.startScale.x)
-    nextScaleY = clamp(nextScaleY, profile.minScaleY, profile.maxScaleY, active.startScale.y)
+    let appliedWidth = nextWidth
+    let appliedHeight = nextHeight
+    if (profile.resizeMode === 'box') {
+      const startBoxWidth = sanitizeOptionalDimension(
+        active.startSize?.width,
+        profile.minWidth,
+        profile.maxWidth,
+        active.startRect.width
+      )
+      const startBoxHeight = sanitizeOptionalDimension(
+        active.startSize?.height,
+        profile.minHeight,
+        profile.maxHeight,
+        active.startRect.height
+      )
+      const widthScale = nextWidth / Math.max(1, active.startRect.width)
+      const heightScale = nextHeight / Math.max(1, active.startRect.height)
+      appliedWidth = clamp(
+        startBoxWidth * widthScale,
+        profile.minWidth,
+        profile.maxWidth,
+        startBoxWidth
+      )
+      appliedHeight = clamp(
+        startBoxHeight * heightScale,
+        profile.minHeight,
+        profile.maxHeight,
+        startBoxHeight
+      )
+      profile.setSize(appliedWidth, appliedHeight)
+    } else {
+      const baseWidth = active.startRect.width / Math.max(0.01, active.startScale.x)
+      const baseHeight = active.startRect.height / Math.max(0.01, active.startScale.y)
+      let nextScaleX = nextWidth / Math.max(1, baseWidth)
+      let nextScaleY = nextHeight / Math.max(1, baseHeight)
+      nextScaleX = clamp(nextScaleX, profile.minScaleX, profile.maxScaleX, active.startScale.x)
+      nextScaleY = clamp(nextScaleY, profile.minScaleY, profile.maxScaleY, active.startScale.y)
+      appliedWidth = baseWidth * nextScaleX
+      appliedHeight = baseHeight * nextScaleY
+      profile.setScale(nextScaleX, nextScaleY)
+    }
 
-    const appliedWidth = baseWidth * nextScaleX
-    const appliedHeight = baseHeight * nextScaleY
     const deltaWidth = appliedWidth - active.startRect.width
     const deltaHeight = appliedHeight - active.startRect.height
 
     let centerShiftX = 0
     let centerShiftY = 0
     const keepCenter = event.ctrlKey || event.metaKey
-    if (profile.adjustPositionOnResize && !keepCenter) {
-      if (moveEast && !moveWest) {
-        centerShiftX = deltaWidth / 2
-      } else if (moveWest && !moveEast) {
-        centerShiftX = -deltaWidth / 2
-      }
-      if (moveSouth && !moveNorth) {
-        centerShiftY = deltaHeight / 2
-      } else if (moveNorth && !moveSouth) {
-        centerShiftY = -deltaHeight / 2
+    if (profile.adjustPositionOnResize) {
+      if (profile.resizeMode === 'box') {
+        if (keepCenter) {
+          if (hasHorizontal) {
+            centerShiftX = -deltaWidth / 2
+          }
+          if (hasVertical) {
+            centerShiftY = -deltaHeight / 2
+          }
+        } else {
+          if (moveWest && !moveEast) {
+            centerShiftX = -deltaWidth
+          }
+          if (moveNorth && !moveSouth) {
+            centerShiftY = -deltaHeight
+          }
+        }
+      } else if (!keepCenter) {
+        if (moveEast && !moveWest) {
+          centerShiftX = deltaWidth / 2
+        } else if (moveWest && !moveEast) {
+          centerShiftX = -deltaWidth / 2
+        }
+        if (moveSouth && !moveNorth) {
+          centerShiftY = deltaHeight / 2
+        } else if (moveNorth && !moveSouth) {
+          centerShiftY = -deltaHeight / 2
+        }
       }
     }
 
@@ -2720,8 +2842,6 @@
       )
       profile.setPosition(nextPosX, nextPosY)
     }
-
-    profile.setScale(nextScaleX, nextScaleY)
     active.changed = true
     scheduleResizeSelectionUpdate()
   }
@@ -3119,33 +3239,18 @@
       return
     }
     if (xKey === 'titleX' && yKey === 'titleY') {
-      applyElementOffset(
-        el.headLeft,
-        xValue,
-        yValue,
-        currentTheme.titleScaleX,
-        currentTheme.titleScaleY
-      )
+      applyElementOffset(el.headLeft, xValue, yValue, 1, 1)
+      applyElementBoxSize(el.headLeft, currentTheme.titleBoxWidth, currentTheme.titleBoxHeight)
       return
     }
     if (xKey === 'metaX' && yKey === 'metaY') {
-      applyElementOffset(
-        el.metaBar,
-        xValue,
-        yValue,
-        currentTheme.metaScaleX,
-        currentTheme.metaScaleY
-      )
+      applyElementOffset(el.metaBar, xValue, yValue, 1, 1)
+      applyElementBoxSize(el.metaBar, currentTheme.metaBoxWidth, currentTheme.metaBoxHeight)
       return
     }
     if (xKey === 'footerX' && yKey === 'footerY') {
-      applyElementOffset(
-        el.footer,
-        xValue,
-        yValue,
-        currentTheme.footerScaleX,
-        currentTheme.footerScaleY
-      )
+      applyElementOffset(el.footer, xValue, yValue, 1, 1)
+      applyElementBoxSize(el.footer, currentTheme.footerBoxWidth, currentTheme.footerBoxHeight)
       return
     }
     if (xKey === 'logoX' && yKey === 'logoY') {
@@ -3192,6 +3297,13 @@
       currentTheme.optionScales = {}
     }
     return currentTheme.optionScales
+  }
+
+  function ensureOptionSizes() {
+    if (!currentTheme.optionSizes || typeof currentTheme.optionSizes !== 'object') {
+      currentTheme.optionSizes = {}
+    }
+    return currentTheme.optionSizes
   }
 
   function getOptionOffsetKey(optionId, part = 'row') {
@@ -3256,10 +3368,67 @@
     }
   }
 
+  function getOptionBoxSize(optionId, part = 'row') {
+    const map = ensureOptionSizes()
+    const key = getOptionOffsetKey(optionId, part)
+    const entry = key ? map[key] : null
+    if (!entry || typeof entry !== 'object') {
+      return { width: null, height: null }
+    }
+    return {
+      width: sanitizeOptionalDimension(entry.width, 24, 2600, null),
+      height: sanitizeOptionalDimension(entry.height, 18, 1400, null)
+    }
+  }
+
+  function setOptionBoxSize(optionId, width, height, part = 'row') {
+    const key = getOptionOffsetKey(optionId, part)
+    if (!key) {
+      return
+    }
+    const map = ensureOptionSizes()
+    map[key] = {
+      width: sanitizeOptionalDimension(width, 24, 2600, null),
+      height: sanitizeOptionalDimension(height, 18, 1400, null)
+    }
+  }
+
+  function applyOptionBoxSize(node, optionId, part = 'row') {
+    if (!node) {
+      return
+    }
+    const size = getOptionBoxSize(optionId, part)
+    if (Number.isFinite(size.width)) {
+      node.style.width = `${size.width}px`
+      if (node instanceof HTMLSpanElement) {
+        node.style.display = 'inline-block'
+      }
+    } else {
+      node.style.removeProperty('width')
+    }
+    if (Number.isFinite(size.height)) {
+      node.style.height = `${size.height}px`
+      if (node instanceof HTMLSpanElement) {
+        node.style.display = 'inline-block'
+      }
+    } else {
+      node.style.removeProperty('height')
+    }
+  }
+
+  function shouldScaleOptionPart(part = 'row') {
+    const normalized = asText(part).toLowerCase()
+    return normalized === 'row' || normalized === 'bar'
+  }
+
   function applyOptionOffsetTransform(node, optionId, part = 'row') {
     const offset = getOptionDragOffset(optionId, part)
-    const scale = getOptionDragScale(optionId, part)
-    node.style.transform = `translate(${offset.x}px, ${offset.y}px) scale(${scale.x}, ${scale.y})`
+    if (shouldScaleOptionPart(part)) {
+      const scale = getOptionDragScale(optionId, part)
+      node.style.transform = `translate(${offset.x}px, ${offset.y}px) scale(${scale.x}, ${scale.y})`
+      return
+    }
+    node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
   }
 
   function registerOptionDragTarget(node, optionId, part = 'row', options = {}) {
@@ -3290,6 +3459,34 @@
 
   function registerOptionResizeTarget(node, optionId, part = 'row', options = {}) {
     if (!node || !optionId) {
+      return
+    }
+    const resizeMode = asText(options.resizeMode).toLowerCase() === 'box' ? 'box' : 'scale'
+    if (resizeMode === 'box') {
+      registerResizeTarget(node, {
+        unit: 'px',
+        minX: -2400,
+        maxX: 2400,
+        minY: -2400,
+        maxY: 2400,
+        resizeMode: 'box',
+        minWidth: Number.isFinite(options.minWidth) ? Number(options.minWidth) : 40,
+        maxWidth: Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 2200,
+        minHeight: Number.isFinite(options.minHeight) ? Number(options.minHeight) : 20,
+        maxHeight: Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 900,
+        keepAspectByDefault: options.keepAspectByDefault === true,
+        adjustPositionOnResize: options.adjustPositionOnResize !== false,
+        getPosition: () => getOptionDragOffset(optionId, part),
+        setPosition: (x, y) => {
+          setOptionDragOffset(optionId, x, y, part)
+          applyOptionOffsetTransform(node, optionId, part)
+        },
+        getSize: () => getOptionBoxSize(optionId, part),
+        setSize: (width, height) => {
+          setOptionBoxSize(optionId, width, height, part)
+          applyOptionBoxSize(node, optionId, part)
+        }
+      })
       return
     }
     registerResizeTarget(node, {
@@ -3341,16 +3538,17 @@
       }
     })
     registerOptionResizeTarget(row.root, row.optionId, 'row', {
-      minScaleX: 0.45,
-      maxScaleX: 4.5,
-      minScaleY: 0.45,
-      maxScaleY: 4.5
+      resizeMode: 'box',
+      minWidth: 180,
+      maxWidth: 2600,
+      minHeight: 42,
+      maxHeight: 900,
+      adjustPositionOnResize: false
     })
   }
 
   function applyRaceRowTransform(row) {
-    const scale = getOptionDragScale(row.optionId, 'row')
-    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px) scale(${scale.x}, ${scale.y})`
+    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px)`
   }
 
   function isPointerNearNodeEdge(node, event, edgePadding = 0) {
@@ -3725,19 +3923,23 @@
       applyOptionOffsetTransform(label, optionId, 'label')
       applyOptionOffsetTransform(stats, optionId, 'stats')
       applyOptionOffsetTransform(track, optionId, 'bar')
+      applyOptionBoxSize(label, optionId, 'label')
+      applyOptionBoxSize(stats, optionId, 'stats')
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(label, optionId, 'label', {
-        minScaleX: 0.45,
-        maxScaleX: 4,
-        minScaleY: 0.45,
-        maxScaleY: 4
+        resizeMode: 'box',
+        minWidth: 40,
+        maxWidth: 1600,
+        minHeight: 20,
+        maxHeight: 800
       })
       registerOptionDragTarget(stats, optionId, 'stats')
       registerOptionResizeTarget(stats, optionId, 'stats', {
-        minScaleX: 0.45,
-        maxScaleX: 4,
-        minScaleY: 0.45,
-        maxScaleY: 4
+        resizeMode: 'box',
+        minWidth: 40,
+        maxWidth: 1100,
+        minHeight: 20,
+        maxHeight: 800
       })
       registerOptionDragTarget(track, optionId, 'bar')
       registerOptionResizeTarget(track, optionId, 'bar', {
@@ -3816,6 +4018,7 @@
       row.root.classList.toggle('leading', index === 0)
       row.root.style.zIndex = `${sorted.length - index}`
       applyRaceRowTransform(row)
+      applyOptionBoxSize(row.root, optionId, 'row')
       applyRaceCarContent(row.car)
     }
 
@@ -4389,16 +4592,22 @@
       gridScaleY: defaultTheme.gridScaleY,
       titleX: defaultTheme.titleX,
       titleY: defaultTheme.titleY,
+      titleBoxWidth: defaultTheme.titleBoxWidth,
+      titleBoxHeight: defaultTheme.titleBoxHeight,
       titleScaleX: defaultTheme.titleScaleX,
       titleScaleY: defaultTheme.titleScaleY,
       metaX: defaultTheme.metaX,
       metaY: defaultTheme.metaY,
+      metaBoxWidth: defaultTheme.metaBoxWidth,
+      metaBoxHeight: defaultTheme.metaBoxHeight,
       metaScaleX: defaultTheme.metaScaleX,
       metaScaleY: defaultTheme.metaScaleY,
       optionsX: defaultTheme.optionsX,
       optionsY: defaultTheme.optionsY,
       footerX: defaultTheme.footerX,
       footerY: defaultTheme.footerY,
+      footerBoxWidth: defaultTheme.footerBoxWidth,
+      footerBoxHeight: defaultTheme.footerBoxHeight,
       footerScaleX: defaultTheme.footerScaleX,
       footerScaleY: defaultTheme.footerScaleY,
       logoX: defaultTheme.logoX,
@@ -4410,6 +4619,7 @@
       assetScaleX: defaultTheme.assetScaleX,
       assetScaleY: defaultTheme.assetScaleY,
       optionOffsets: clone(defaultTheme.optionOffsets),
+      optionSizes: clone(defaultTheme.optionSizes),
       optionScales: clone(defaultTheme.optionScales)
     }, { historyLabel: 'Reset positions' })
 
@@ -4426,9 +4636,17 @@
           track.style.transform = 'translate(0px, 0px)'
         }
       }
+      for (const textNode of el.options.querySelectorAll('.option .label, .option .stats')) {
+        if (textNode instanceof HTMLElement) {
+          textNode.style.removeProperty('width')
+          textNode.style.removeProperty('height')
+        }
+      }
       for (const row of state.raceRows.values()) {
         row.dragOffsetX = 0
         row.dragOffsetY = 0
+        row.root.style.removeProperty('width')
+        row.root.style.removeProperty('height')
         applyRaceRowTransform(row)
       }
     }
@@ -4524,9 +4742,12 @@
       theme.bgOverlayScaleY
     )
     applyElementOffset(el.gridBg, theme.gridX, theme.gridY, theme.gridScaleX, theme.gridScaleY)
-    applyElementOffset(el.headLeft, theme.titleX, theme.titleY, theme.titleScaleX, theme.titleScaleY)
-    applyElementOffset(el.metaBar, theme.metaX, theme.metaY, theme.metaScaleX, theme.metaScaleY)
-    applyElementOffset(el.footer, theme.footerX, theme.footerY, theme.footerScaleX, theme.footerScaleY)
+    applyElementOffset(el.headLeft, theme.titleX, theme.titleY, 1, 1)
+    applyElementOffset(el.metaBar, theme.metaX, theme.metaY, 1, 1)
+    applyElementOffset(el.footer, theme.footerX, theme.footerY, 1, 1)
+    applyElementBoxSize(el.headLeft, theme.titleBoxWidth, theme.titleBoxHeight)
+    applyElementBoxSize(el.metaBar, theme.metaBoxWidth, theme.metaBoxHeight)
+    applyElementBoxSize(el.footer, theme.footerBoxWidth, theme.footerBoxHeight)
 
     applyImageAsset(el.customLogo, {
       url: theme.logoUrl,
@@ -4560,6 +4781,24 @@
     const safeScaleX = clamp(scaleX, 0.2, 8, 1)
     const safeScaleY = clamp(scaleY, 0.2, 8, 1)
     node.style.transform = `translate(${safeX}px, ${safeY}px) scale(${safeScaleX}, ${safeScaleY})`
+  }
+
+  function applyElementBoxSize(node, width, height) {
+    if (!node) {
+      return
+    }
+    const safeWidth = sanitizeOptionalDimension(width, 24, 4000, null)
+    const safeHeight = sanitizeOptionalDimension(height, 18, 2400, null)
+    if (Number.isFinite(safeWidth)) {
+      node.style.width = `${safeWidth}px`
+    } else {
+      node.style.removeProperty('width')
+    }
+    if (Number.isFinite(safeHeight)) {
+      node.style.height = `${safeHeight}px`
+    } else {
+      node.style.removeProperty('height')
+    }
   }
 
   function applyImageAsset(node, options) {
@@ -5112,16 +5351,52 @@
       gridScaleY: clamp(incoming.gridScaleY, 0.35, 3.5, defaultTheme.gridScaleY),
       titleX: clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX),
       titleY: clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY),
+      titleBoxWidth: sanitizeOptionalDimension(
+        incoming.titleBoxWidth,
+        120,
+        2200,
+        defaultTheme.titleBoxWidth
+      ),
+      titleBoxHeight: sanitizeOptionalDimension(
+        incoming.titleBoxHeight,
+        40,
+        1400,
+        defaultTheme.titleBoxHeight
+      ),
       titleScaleX: clamp(incoming.titleScaleX, 0.45, 3, defaultTheme.titleScaleX),
       titleScaleY: clamp(incoming.titleScaleY, 0.45, 3, defaultTheme.titleScaleY),
       metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
       metaY: clamp(incoming.metaY, -2400, 2400, defaultTheme.metaY),
+      metaBoxWidth: sanitizeOptionalDimension(
+        incoming.metaBoxWidth,
+        90,
+        1000,
+        defaultTheme.metaBoxWidth
+      ),
+      metaBoxHeight: sanitizeOptionalDimension(
+        incoming.metaBoxHeight,
+        28,
+        220,
+        defaultTheme.metaBoxHeight
+      ),
       metaScaleX: clamp(incoming.metaScaleX, 0.45, 3.2, defaultTheme.metaScaleX),
       metaScaleY: clamp(incoming.metaScaleY, 0.45, 3.2, defaultTheme.metaScaleY),
       optionsX: clamp(incoming.optionsX, -2400, 2400, defaultTheme.optionsX),
       optionsY: clamp(incoming.optionsY, -2400, 2400, defaultTheme.optionsY),
       footerX: clamp(incoming.footerX, -2400, 2400, defaultTheme.footerX),
       footerY: clamp(incoming.footerY, -2400, 2400, defaultTheme.footerY),
+      footerBoxWidth: sanitizeOptionalDimension(
+        incoming.footerBoxWidth,
+        120,
+        2200,
+        defaultTheme.footerBoxWidth
+      ),
+      footerBoxHeight: sanitizeOptionalDimension(
+        incoming.footerBoxHeight,
+        18,
+        420,
+        defaultTheme.footerBoxHeight
+      ),
       footerScaleX: clamp(incoming.footerScaleX, 0.45, 3, defaultTheme.footerScaleX),
       footerScaleY: clamp(incoming.footerScaleY, 0.45, 3, defaultTheme.footerScaleY),
       logoScaleX: clamp(incoming.logoScaleX, 0.25, 5, defaultTheme.logoScaleX),
@@ -5129,6 +5404,7 @@
       assetScaleX: clamp(incoming.assetScaleX, 0.25, 5, defaultTheme.assetScaleX),
       assetScaleY: clamp(incoming.assetScaleY, 0.25, 5, defaultTheme.assetScaleY),
       optionOffsets: sanitizeOptionOffsets(incoming.optionOffsets, defaultTheme.optionOffsets),
+      optionSizes: sanitizeOptionSizes(incoming.optionSizes, defaultTheme.optionSizes),
       optionScales: sanitizeOptionScales(incoming.optionScales, defaultTheme.optionScales),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
@@ -5167,6 +5443,25 @@
       sanitized[optionId] = {
         x: clamp(rawScale.x, 0.25, 5, 1),
         y: clamp(rawScale.y, 0.25, 5, 1)
+      }
+    }
+    return sanitized
+  }
+
+  function sanitizeOptionSizes(value, fallback) {
+    const source = value && typeof value === 'object' ? value : fallback
+    if (!source || typeof source !== 'object') {
+      return {}
+    }
+    const sanitized = {}
+    for (const [rawId, rawSize] of Object.entries(source)) {
+      const optionId = asText(rawId)
+      if (!optionId || !rawSize || typeof rawSize !== 'object') {
+        continue
+      }
+      sanitized[optionId] = {
+        width: sanitizeOptionalDimension(rawSize.width, 24, 2600, null),
+        height: sanitizeOptionalDimension(rawSize.height, 18, 1400, null)
       }
     }
     return sanitized
@@ -5211,6 +5506,20 @@
     }
     const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text)
     return match ? text : fallback
+  }
+
+  function sanitizeOptionalDimension(value, min, max, fallback = null) {
+    if (value == null) {
+      return fallback
+    }
+    if (typeof value === 'string' && !value.trim()) {
+      return fallback
+    }
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) {
+      return fallback
+    }
+    return Math.min(max, Math.max(min, numeric))
   }
 
   function hexToRgba(hex, alpha) {
