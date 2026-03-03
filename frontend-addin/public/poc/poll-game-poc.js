@@ -3398,6 +3398,25 @@
     return normalized === 'label' || normalized === 'stats'
   }
 
+  function hasCustomOptionTextSize(optionId, part = 'row') {
+    if (!isOptionTextPart(part)) {
+      return false
+    }
+    const size = getOptionBoxSize(optionId, part)
+    return Number.isFinite(size.width) || Number.isFinite(size.height)
+  }
+
+  function lockOptionLabelRowHeight(row, rowRectOverride = null) {
+    if (!(row instanceof HTMLElement) || row.dataset.optionRowFlowLocked === '1') {
+      return
+    }
+    const scale = getCanvasScaleFactor()
+    const rowRect = rowRectOverride || row.getBoundingClientRect()
+    const lockedHeight = Math.max(24, rowRect.height / Math.max(0.01, scale))
+    row.style.minHeight = `${lockedHeight}px`
+    row.dataset.optionRowFlowLocked = '1'
+  }
+
   function updateOptionLabelRowLockState(row) {
     if (!(row instanceof HTMLElement)) {
       return
@@ -3410,7 +3429,17 @@
     row.dataset.optionRowFlowLocked = '0'
   }
 
-  function detachOptionTextFromFlow(node, optionId, part = 'row') {
+  function isRectLike(value) {
+    return Boolean(
+      value &&
+        Number.isFinite(value.left) &&
+        Number.isFinite(value.top) &&
+        Number.isFinite(value.width) &&
+        Number.isFinite(value.height)
+    )
+  }
+
+  function detachOptionTextFromFlow(node, optionId, part = 'row', geometry = null) {
     if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
       return
     }
@@ -3421,8 +3450,8 @@
 
     if (node.dataset.optionDetachedFlow !== '1') {
       const scale = getCanvasScaleFactor()
-      const rowRect = row.getBoundingClientRect()
-      const nodeRect = node.getBoundingClientRect()
+      const rowRect = isRectLike(geometry?.rowRect) ? geometry.rowRect : row.getBoundingClientRect()
+      const nodeRect = isRectLike(geometry?.nodeRect) ? geometry.nodeRect : node.getBoundingClientRect()
       const offset = getOptionDragOffset(optionId, part)
       const baseLeft =
         rowRect.width > 0 && nodeRect.width > 0
@@ -3435,14 +3464,6 @@
       node.style.left = `${baseLeft}px`
       node.style.top = `${baseTop}px`
       node.dataset.optionDetachedFlow = '1'
-    }
-
-    if (row.dataset.optionRowFlowLocked !== '1') {
-      const scale = getCanvasScaleFactor()
-      const rowRect = row.getBoundingClientRect()
-      const lockedHeight = Math.max(24, rowRect.height / Math.max(0.01, scale))
-      row.style.minHeight = `${lockedHeight}px`
-      row.dataset.optionRowFlowLocked = '1'
     }
 
     node.style.position = 'absolute'
@@ -3466,18 +3487,47 @@
     updateOptionLabelRowLockState(row)
   }
 
+  function syncOptionTextPairFlow(node, optionId) {
+    if (!(node instanceof HTMLElement)) {
+      return
+    }
+    const row = node.closest('.label-row')
+    if (!(row instanceof HTMLElement)) {
+      return
+    }
+    const label = row.querySelector('.label')
+    const stats = row.querySelector('.stats')
+    if (!(label instanceof HTMLElement) || !(stats instanceof HTMLElement)) {
+      return
+    }
+
+    const shouldDetach =
+      hasCustomOptionTextSize(optionId, 'label') || hasCustomOptionTextSize(optionId, 'stats')
+    if (!shouldDetach) {
+      restoreOptionTextFlow(label, 'label')
+      restoreOptionTextFlow(stats, 'stats')
+      return
+    }
+
+    if (label.dataset.optionDetachedFlow === '1' && stats.dataset.optionDetachedFlow === '1') {
+      return
+    }
+
+    const rowRect = row.getBoundingClientRect()
+    const labelRect = label.getBoundingClientRect()
+    const statsRect = stats.getBoundingClientRect()
+    lockOptionLabelRowHeight(row, rowRect)
+    detachOptionTextFromFlow(label, optionId, 'label', { rowRect, nodeRect: labelRect })
+    detachOptionTextFromFlow(stats, optionId, 'stats', { rowRect, nodeRect: statsRect })
+  }
+
   function applyOptionBoxSize(node, optionId, part = 'row') {
     if (!node) {
       return
     }
     const size = getOptionBoxSize(optionId, part)
-    const hasCustomSize = Number.isFinite(size.width) || Number.isFinite(size.height)
     if (isOptionTextPart(part)) {
-      if (hasCustomSize) {
-        detachOptionTextFromFlow(node, optionId, part)
-      } else {
-        restoreOptionTextFlow(node, part)
-      }
+      syncOptionTextPairFlow(node, optionId)
     }
     if (Number.isFinite(size.width)) {
       node.style.width = `${size.width}px`
@@ -4014,7 +4064,7 @@
         minHeight: 20,
         maxHeight: 800
       })
-      registerOptionDragTarget(stats, optionId, 'stats')
+      registerOptionDragTarget(stats, optionId, 'stats', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(stats, optionId, 'stats', {
         resizeMode: 'box',
         minWidth: 40,
