@@ -30,6 +30,8 @@
   --wrap-offset-y: 0px;
   --panel-offset-x: 0px;
   --panel-offset-y: 0px;
+  --panel-scale-x: 1;
+  --panel-scale-y: 1;
   --panel-grab-band: 30px;
   --panel-grab-corner: 40px;
   --panel-grab-inset: 6px;
@@ -787,7 +789,9 @@ body.ribbon-advanced .advanced-control.note {
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   box-shadow: 0 16px 46px rgba(79, 113, 150, 0.2);
-  transform: translate(var(--panel-offset-x), var(--panel-offset-y));
+  transform:
+    translate(var(--panel-offset-x), var(--panel-offset-y))
+    scale(var(--panel-scale-x), var(--panel-scale-y));
   transition: transform 180ms ease;
 }
 
@@ -795,7 +799,9 @@ body.ribbon-advanced .advanced-control.note {
   position: absolute;
   z-index: 7;
   pointer-events: none;
-  transform: translate(var(--panel-offset-x), var(--panel-offset-y));
+  transform:
+    translate(var(--panel-offset-x), var(--panel-offset-y))
+    scale(var(--panel-scale-x), var(--panel-scale-y));
   transition: transform 180ms ease;
 }
 
@@ -948,6 +954,85 @@ body.ribbon-advanced .advanced-control.note {
 .drag-mode .drag-target.dragging {
   cursor: grabbing;
   outline-color: rgba(47, 126, 222, 1);
+}
+
+.resize-selection {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border: 1px solid rgba(78, 139, 218, 0.9);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55) inset;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.resize-selection .resize-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #4f8fdf;
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(32, 70, 114, 0.28);
+  pointer-events: auto;
+}
+
+.resize-selection .resize-handle:focus-visible {
+  outline: 2px solid rgba(79, 143, 223, 0.8);
+  outline-offset: 1px;
+}
+
+.resize-selection .handle-nw {
+  left: -7px;
+  top: -7px;
+  cursor: nwse-resize;
+}
+
+.resize-selection .handle-n {
+  left: calc(50% - 7px);
+  top: -7px;
+  cursor: ns-resize;
+}
+
+.resize-selection .handle-ne {
+  right: -7px;
+  top: -7px;
+  cursor: nesw-resize;
+}
+
+.resize-selection .handle-e {
+  right: -7px;
+  top: calc(50% - 7px);
+  cursor: ew-resize;
+}
+
+.resize-selection .handle-se {
+  right: -7px;
+  bottom: -7px;
+  cursor: nwse-resize;
+}
+
+.resize-selection .handle-s {
+  left: calc(50% - 7px);
+  bottom: -7px;
+  cursor: ns-resize;
+}
+
+.resize-selection .handle-sw {
+  left: -7px;
+  bottom: -7px;
+  cursor: nesw-resize;
+}
+
+.resize-selection .handle-w {
+  left: -7px;
+  top: calc(50% - 7px);
+  cursor: ew-resize;
 }
 
 .eyebrow {

@@ -57,6 +57,7 @@
   ]
   const HISTORY_LIMIT = 100
   const DRAG_START_THRESHOLD_PX = 5
+  const MIN_RESIZE_HANDLE_SIZE_PX = 28
 
   const query = new URLSearchParams(window.location.search)
 
@@ -129,6 +130,7 @@
     settingsMinimized: must('settings-minimized'),
     settingsBackdrop: must('settings-backdrop'),
     selectionToolbar: must('selection-toolbar'),
+    resizeSelection: must('resize-selection'),
     settingsPanel: must('settings-panel'),
     settingsClose: must('settings-close'),
     historyUndo: must('history-undo'),
@@ -162,6 +164,7 @@
     miniTextFontFamily: must('mini-text-font-family'),
     miniTextFontSize: must('mini-text-font-size'),
     miniTextFontColor: must('mini-text-font-color'),
+    resizeHandles: [...document.querySelectorAll('#resize-selection [data-resize-handle]')],
     question: must('question'),
     eyebrow: must('eyebrow'),
     status: must('status'),
@@ -219,21 +222,40 @@
     assetY: 50,
     panelX: 0,
     panelY: 0,
+    panelScaleX: 1,
+    panelScaleY: 1,
     bgImageX: 0,
     bgImageY: 0,
     bgOverlayX: 0,
     bgOverlayY: 0,
     gridX: 0,
     gridY: 0,
+    bgImageScaleX: 1,
+    bgImageScaleY: 1,
+    bgOverlayScaleX: 1,
+    bgOverlayScaleY: 1,
+    gridScaleX: 1,
+    gridScaleY: 1,
     titleX: 0,
     titleY: 0,
+    titleScaleX: 1,
+    titleScaleY: 1,
     metaX: 0,
     metaY: 0,
+    metaScaleX: 1,
+    metaScaleY: 1,
     optionsX: 0,
     optionsY: 0,
     footerX: 0,
     footerY: 0,
+    footerScaleX: 1,
+    footerScaleY: 1,
+    logoScaleX: 1,
+    logoScaleY: 1,
+    assetScaleX: 1,
+    assetScaleY: 1,
     optionOffsets: {},
+    optionScales: {},
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
 
@@ -290,6 +312,13 @@
     active: null,
     pending: null
   }
+  const dragProfiles = new WeakMap()
+  const resizeProfiles = new WeakMap()
+  const resizeState = {
+    selectedNode: null,
+    active: null,
+    rafId: null
+  }
   const historyState = {
     initialized: false,
     applying: false,
@@ -313,6 +342,7 @@
     setupRichTextEditor()
     setupHistoryControls()
     setupDragInteractions()
+    setupResizeInteractions()
     setupRibbonOffsetTracking()
     setupCanvasFitBehavior()
     applyTheme(currentTheme)
@@ -408,6 +438,17 @@
     }
     if (event.target instanceof Element && event.target.closest('#selection-toolbar')) {
       return
+    }
+    if (event.target instanceof Element && event.target.closest('#resize-selection')) {
+      return
+    }
+    if (event.target instanceof Element) {
+      const resizeNode = event.target.closest('.resizable-target')
+      if (resizeNode && resizeProfiles.has(resizeNode)) {
+        setActiveResizeTarget(resizeNode)
+      } else if (!event.target.closest('.rich-text-editable')) {
+        clearActiveResizeTarget()
+      }
     }
     if (event.target instanceof Element && event.target.closest('.rich-text-editable')) {
       return
@@ -1004,6 +1045,9 @@
       } else {
         releaseTextControlInteractionSoon()
       }
+      return
+    }
+    if (target.closest('#resize-selection')) {
       return
     }
     if (interactionLocked && !target.closest('.rich-text-editable')) {
@@ -2036,6 +2080,21 @@
     registerDragTarget(el.panelDragTr, 'panelX', 'panelY', panelDragSpec)
     registerDragTarget(el.panelDragBr, 'panelX', 'panelY', panelDragSpec)
     registerDragTarget(el.panelDragBl, 'panelX', 'panelY', panelDragSpec)
+    for (const panelNode of [
+      el.panelBgDrag,
+      el.panelDragTop,
+      el.panelDragRight,
+      el.panelDragBottom,
+      el.panelDragLeft,
+      el.panelDragTl,
+      el.panelDragTr,
+      el.panelDragBr,
+      el.panelDragBl
+    ]) {
+      panelNode.addEventListener('pointerdown', () => {
+        setActiveResizeTarget(el.panelBgDrag)
+      })
+    }
 
     registerDragTarget(el.customLogo, 'logoX', 'logoY', {
       unit: 'percent',
@@ -2103,6 +2162,617 @@
       maxY: 1200,
       skipWhenHidden: false
     })
+
+    registerResizeTarget(
+      el.panelBgDrag,
+      createThemeResizeProfile({
+        xKey: 'panelX',
+        yKey: 'panelY',
+        scaleXKey: 'panelScaleX',
+        scaleYKey: 'panelScaleY',
+        minScaleX: 0.35,
+        maxScaleX: 2.8,
+        minScaleY: 0.35,
+        maxScaleY: 2.8,
+        apply: () => {
+          const root = document.documentElement.style
+          root.setProperty('--panel-offset-x', `${clamp(currentTheme.panelX, -2400, 2400, 0)}px`)
+          root.setProperty('--panel-offset-y', `${clamp(currentTheme.panelY, -2400, 2400, 0)}px`)
+          root.setProperty(
+            '--panel-scale-x',
+            `${clamp(currentTheme.panelScaleX, 0.35, 2.8, 1)}`
+          )
+          root.setProperty(
+            '--panel-scale-y',
+            `${clamp(currentTheme.panelScaleY, 0.35, 2.8, 1)}`
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.headLeft,
+      createThemeResizeProfile({
+        xKey: 'titleX',
+        yKey: 'titleY',
+        scaleXKey: 'titleScaleX',
+        scaleYKey: 'titleScaleY',
+        minScaleX: 0.45,
+        maxScaleX: 3,
+        minScaleY: 0.45,
+        maxScaleY: 3,
+        apply: () => {
+          applyElementOffset(
+            el.headLeft,
+            currentTheme.titleX,
+            currentTheme.titleY,
+            currentTheme.titleScaleX,
+            currentTheme.titleScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.metaBar,
+      createThemeResizeProfile({
+        xKey: 'metaX',
+        yKey: 'metaY',
+        scaleXKey: 'metaScaleX',
+        scaleYKey: 'metaScaleY',
+        minScaleX: 0.45,
+        maxScaleX: 3.2,
+        minScaleY: 0.45,
+        maxScaleY: 3.2,
+        apply: () => {
+          applyElementOffset(
+            el.metaBar,
+            currentTheme.metaX,
+            currentTheme.metaY,
+            currentTheme.metaScaleX,
+            currentTheme.metaScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.footer,
+      createThemeResizeProfile({
+        xKey: 'footerX',
+        yKey: 'footerY',
+        scaleXKey: 'footerScaleX',
+        scaleYKey: 'footerScaleY',
+        minScaleX: 0.45,
+        maxScaleX: 3,
+        minScaleY: 0.45,
+        maxScaleY: 3,
+        apply: () => {
+          applyElementOffset(
+            el.footer,
+            currentTheme.footerX,
+            currentTheme.footerY,
+            currentTheme.footerScaleX,
+            currentTheme.footerScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.customLogo,
+      createThemeResizeProfile({
+        xKey: 'logoX',
+        yKey: 'logoY',
+        scaleXKey: 'logoScaleX',
+        scaleYKey: 'logoScaleY',
+        unit: 'percent',
+        minScaleX: 0.25,
+        maxScaleX: 5,
+        minScaleY: 0.25,
+        maxScaleY: 5,
+        keepAspectByDefault: true,
+        apply: () => {
+          el.customLogo.style.left = `${currentTheme.logoX}%`
+          el.customLogo.style.top = `${currentTheme.logoY}%`
+          el.customLogo.style.transform = `translate(-50%, -50%) scale(${clamp(
+            currentTheme.logoScaleX,
+            0.25,
+            5,
+            1
+          )}, ${clamp(currentTheme.logoScaleY, 0.25, 5, 1)})`
+        }
+      })
+    )
+    registerResizeTarget(
+      el.customAsset,
+      createThemeResizeProfile({
+        xKey: 'assetX',
+        yKey: 'assetY',
+        scaleXKey: 'assetScaleX',
+        scaleYKey: 'assetScaleY',
+        unit: 'percent',
+        minScaleX: 0.25,
+        maxScaleX: 5,
+        minScaleY: 0.25,
+        maxScaleY: 5,
+        keepAspectByDefault: true,
+        apply: () => {
+          el.customAsset.style.left = `${currentTheme.assetX}%`
+          el.customAsset.style.top = `${currentTheme.assetY}%`
+          el.customAsset.style.transform = `translate(-50%, -50%) scale(${clamp(
+            currentTheme.assetScaleX,
+            0.25,
+            5,
+            1
+          )}, ${clamp(currentTheme.assetScaleY, 0.25, 5, 1)})`
+        }
+      })
+    )
+  }
+
+  function setupResizeInteractions() {
+    for (const handle of el.resizeHandles) {
+      handle.addEventListener('pointerdown', handleResizeHandlePointerDown)
+    }
+    window.addEventListener('pointermove', handleResizePointerMove)
+    window.addEventListener('pointerup', handleResizePointerRelease)
+    window.addEventListener('pointercancel', handleResizePointerRelease)
+    document.addEventListener('pointerdown', handleResizeSelectionPointerDown, true)
+    window.addEventListener('resize', scheduleResizeSelectionUpdate)
+    window.addEventListener('scroll', scheduleResizeSelectionUpdate, true)
+    scheduleResizeSelectionUpdate()
+  }
+
+  function createThemeResizeProfile(options = {}) {
+    const xKey = asText(options.xKey)
+    const yKey = asText(options.yKey)
+    const scaleXKey = asText(options.scaleXKey)
+    const scaleYKey = asText(options.scaleYKey)
+    const unit = options.unit === 'percent' ? 'percent' : 'px'
+    const minX = Number.isFinite(options.minX) ? Number(options.minX) : unit === 'percent' ? 0 : -2400
+    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : unit === 'percent' ? 100 : 2400
+    const minY = Number.isFinite(options.minY) ? Number(options.minY) : unit === 'percent' ? 0 : -2400
+    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : unit === 'percent' ? 100 : 2400
+    const minScaleX = Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.25
+    const maxScaleX = Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5
+    const minScaleY = Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.25
+    const maxScaleY = Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5
+    const apply = typeof options.apply === 'function' ? options.apply : () => {}
+
+    return {
+      unit,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      minScaleX,
+      maxScaleX,
+      minScaleY,
+      maxScaleY,
+      keepAspectByDefault: options.keepAspectByDefault === true,
+      getPosition: () => ({
+        x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
+        y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
+      }),
+      setPosition: (x, y) => {
+        if (xKey) {
+          currentTheme[xKey] = clamp(x, minX, maxX, currentTheme[xKey])
+        }
+        if (yKey) {
+          currentTheme[yKey] = clamp(y, minY, maxY, currentTheme[yKey])
+        }
+        apply()
+      },
+      getScale: () => ({
+        x: scaleXKey ? clamp(currentTheme[scaleXKey], minScaleX, maxScaleX, 1) : 1,
+        y: scaleYKey ? clamp(currentTheme[scaleYKey], minScaleY, maxScaleY, 1) : 1
+      }),
+      setScale: (scaleX, scaleY) => {
+        if (scaleXKey) {
+          currentTheme[scaleXKey] = clamp(scaleX, minScaleX, maxScaleX, currentTheme[scaleXKey])
+        }
+        if (scaleYKey) {
+          currentTheme[scaleYKey] = clamp(scaleY, minScaleY, maxScaleY, currentTheme[scaleYKey])
+        }
+        apply()
+      }
+    }
+  }
+
+  function registerResizeTarget(node, options = {}) {
+    if (!node) {
+      return
+    }
+
+    const dragProfile = dragProfiles.get(node)
+    const unit =
+      options.unit === 'percent' || options.unit === 'px'
+        ? options.unit
+        : dragProfile?.unit === 'percent'
+          ? 'percent'
+          : 'px'
+    const minX = Number.isFinite(options.minX)
+      ? Number(options.minX)
+      : Number.isFinite(dragProfile?.minX)
+        ? Number(dragProfile.minX)
+        : unit === 'percent'
+          ? 0
+          : -2400
+    const maxX = Number.isFinite(options.maxX)
+      ? Number(options.maxX)
+      : Number.isFinite(dragProfile?.maxX)
+        ? Number(dragProfile.maxX)
+        : unit === 'percent'
+          ? 100
+          : 2400
+    const minY = Number.isFinite(options.minY)
+      ? Number(options.minY)
+      : Number.isFinite(dragProfile?.minY)
+        ? Number(dragProfile.minY)
+        : unit === 'percent'
+          ? 0
+          : -2400
+    const maxY = Number.isFinite(options.maxY)
+      ? Number(options.maxY)
+      : Number.isFinite(dragProfile?.maxY)
+        ? Number(dragProfile.maxY)
+        : unit === 'percent'
+          ? 100
+          : 2400
+    const minScaleX = Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.25
+    const maxScaleX = Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5
+    const minScaleY = Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.25
+    const maxScaleY = Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5
+    const getPosition =
+      typeof options.getPosition === 'function'
+        ? options.getPosition
+        : typeof dragProfile?.getPosition === 'function'
+          ? dragProfile.getPosition
+          : dragProfile?.xKey && dragProfile?.yKey
+            ? () => ({
+                x: clamp(currentTheme[dragProfile.xKey], minX, maxX, 0),
+                y: clamp(currentTheme[dragProfile.yKey], minY, maxY, 0)
+              })
+            : null
+    const setPosition =
+      typeof options.setPosition === 'function'
+        ? options.setPosition
+        : typeof dragProfile?.setPosition === 'function'
+          ? dragProfile.setPosition
+          : dragProfile?.xKey && dragProfile?.yKey
+            ? (x, y) => applyLiveDragThemePosition(dragProfile.xKey, dragProfile.yKey, x, y)
+            : null
+    const getScale =
+      typeof options.getScale === 'function' ? options.getScale : () => ({ x: 1, y: 1 })
+    const setScale = typeof options.setScale === 'function' ? options.setScale : () => {}
+    const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
+
+    node.classList.add('resizable-target')
+    resizeProfiles.set(node, {
+      unit,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      minScaleX,
+      maxScaleX,
+      minScaleY,
+      maxScaleY,
+      keepAspectByDefault: options.keepAspectByDefault === true,
+      getPosition,
+      setPosition,
+      getScale,
+      setScale,
+      onCommit
+    })
+  }
+
+  function handleResizeSelectionPointerDown(event) {
+    const target = event.target
+    if (!(target instanceof Element)) {
+      return
+    }
+    if (target.closest('#resize-selection') || target.closest('#selection-toolbar')) {
+      return
+    }
+    const nextNode = target.closest('.resizable-target')
+    if (nextNode && resizeProfiles.has(nextNode)) {
+      setActiveResizeTarget(nextNode)
+      return
+    }
+    if (target.closest('[data-text-control="true"]')) {
+      return
+    }
+    clearActiveResizeTarget()
+  }
+
+  function handleResizeHandlePointerDown(event) {
+    const handle = event.currentTarget
+    if (!(handle instanceof HTMLElement)) {
+      return
+    }
+    const direction = asText(handle.dataset.resizeHandle).toLowerCase()
+    if (!direction) {
+      return
+    }
+    const node = getActiveResizeTarget()
+    if (!node) {
+      return
+    }
+    const profile = resizeProfiles.get(node)
+    if (!profile) {
+      return
+    }
+    const startRect = getNodeLocalRect(node)
+    if (!startRect || startRect.width <= 0 || startRect.height <= 0) {
+      return
+    }
+    const startScale = profile.getScale()
+    const startPosition =
+      typeof profile.getPosition === 'function' ? profile.getPosition() : null
+
+    event.preventDefault()
+    event.stopPropagation()
+    if (dragState.pending) {
+      dragState.pending = null
+    }
+    if (dragState.active) {
+      dragState.active.node.classList.remove('dragging')
+      dragState.active = null
+    }
+
+    resizeState.active = {
+      pointerId: event.pointerId,
+      handle,
+      direction,
+      node,
+      profile,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startRect,
+      startScale,
+      startPosition,
+      changed: false
+    }
+    node.classList.add('dragging')
+    try {
+      handle.setPointerCapture(event.pointerId)
+    } catch {}
+    scheduleResizeSelectionUpdate()
+  }
+
+  function handleResizePointerMove(event) {
+    const active = resizeState.active
+    if (!active || active.pointerId !== event.pointerId) {
+      return
+    }
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+    event.stopPropagation()
+
+    const canvasScale = getCanvasScaleFactor()
+    const dx = (event.clientX - active.startClientX) / canvasScale
+    const dy = (event.clientY - active.startClientY) / canvasScale
+    const direction = active.direction
+    const moveEast = direction.includes('e')
+    const moveWest = direction.includes('w')
+    const moveSouth = direction.includes('s')
+    const moveNorth = direction.includes('n')
+    const hasHorizontal = moveEast || moveWest
+    const hasVertical = moveNorth || moveSouth
+
+    let nextWidth = active.startRect.width
+    let nextHeight = active.startRect.height
+    if (moveEast) {
+      nextWidth = active.startRect.width + dx
+    } else if (moveWest) {
+      nextWidth = active.startRect.width - dx
+    }
+    if (moveSouth) {
+      nextHeight = active.startRect.height + dy
+    } else if (moveNorth) {
+      nextHeight = active.startRect.height - dy
+    }
+
+    const profile = active.profile
+    const keepAspect =
+      hasHorizontal && hasVertical && (profile.keepAspectByDefault || event.shiftKey)
+    if (keepAspect) {
+      const ratio = active.startRect.width / Math.max(1, active.startRect.height)
+      const widthFromHeight = nextHeight * ratio
+      const heightFromWidth = nextWidth / Math.max(0.01, ratio)
+      const widthDeltaRatio =
+        Math.abs(nextWidth - active.startRect.width) / Math.max(1, active.startRect.width)
+      const heightDeltaRatio =
+        Math.abs(nextHeight - active.startRect.height) / Math.max(1, active.startRect.height)
+      if (widthDeltaRatio >= heightDeltaRatio) {
+        nextHeight = heightFromWidth
+      } else {
+        nextWidth = widthFromHeight
+      }
+    }
+
+    nextWidth = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextWidth)
+    nextHeight = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextHeight)
+
+    const baseWidth = active.startRect.width / Math.max(0.01, active.startScale.x)
+    const baseHeight = active.startRect.height / Math.max(0.01, active.startScale.y)
+    let nextScaleX = (nextWidth / Math.max(1, baseWidth))
+    let nextScaleY = (nextHeight / Math.max(1, baseHeight))
+    nextScaleX = clamp(nextScaleX, profile.minScaleX, profile.maxScaleX, active.startScale.x)
+    nextScaleY = clamp(nextScaleY, profile.minScaleY, profile.maxScaleY, active.startScale.y)
+
+    const appliedWidth = baseWidth * nextScaleX
+    const appliedHeight = baseHeight * nextScaleY
+    const deltaWidth = appliedWidth - active.startRect.width
+    const deltaHeight = appliedHeight - active.startRect.height
+
+    let centerShiftX = 0
+    let centerShiftY = 0
+    const keepCenter = event.ctrlKey || event.metaKey
+    if (!keepCenter) {
+      if (moveEast && !moveWest) {
+        centerShiftX = deltaWidth / 2
+      } else if (moveWest && !moveEast) {
+        centerShiftX = -deltaWidth / 2
+      }
+      if (moveSouth && !moveNorth) {
+        centerShiftY = deltaHeight / 2
+      } else if (moveNorth && !moveSouth) {
+        centerShiftY = -deltaHeight / 2
+      }
+    }
+
+    if (active.startPosition && typeof profile.setPosition === 'function') {
+      const wrapRect = getWrapRect()
+      const wrapLocalWidth = wrapRect ? wrapRect.width / canvasScale : 0
+      const wrapLocalHeight = wrapRect ? wrapRect.height / canvasScale : 0
+      const deltaPosX =
+        profile.unit === 'percent'
+          ? wrapLocalWidth > 0
+            ? (centerShiftX / wrapLocalWidth) * 100
+            : 0
+          : centerShiftX
+      const deltaPosY =
+        profile.unit === 'percent'
+          ? wrapLocalHeight > 0
+            ? (centerShiftY / wrapLocalHeight) * 100
+            : 0
+          : centerShiftY
+      const nextPosX = clamp(
+        active.startPosition.x + deltaPosX,
+        profile.minX,
+        profile.maxX,
+        active.startPosition.x
+      )
+      const nextPosY = clamp(
+        active.startPosition.y + deltaPosY,
+        profile.minY,
+        profile.maxY,
+        active.startPosition.y
+      )
+      profile.setPosition(nextPosX, nextPosY)
+    }
+
+    profile.setScale(nextScaleX, nextScaleY)
+    active.changed = true
+    scheduleResizeSelectionUpdate()
+  }
+
+  function handleResizePointerRelease(event) {
+    const active = resizeState.active
+    if (!active || active.pointerId !== event.pointerId) {
+      return
+    }
+
+    resizeState.active = null
+    active.node.classList.remove('dragging')
+    try {
+      active.handle.releasePointerCapture(event.pointerId)
+    } catch {}
+
+    if (active.changed) {
+      if (active.profile.onCommit) {
+        active.profile.onCommit()
+      } else {
+        saveThemeDraft(currentTheme)
+        recordHistoryCheckpoint('Resize object')
+      }
+      showThemeFeedback('Object resized.', 'success')
+    }
+    scheduleResizeSelectionUpdate()
+  }
+
+  function getActiveResizeTarget() {
+    const node = resizeState.selectedNode
+    if (!node || !node.isConnected || !resizeProfiles.has(node) || node.classList.contains('hidden')) {
+      return null
+    }
+    return node
+  }
+
+  function setActiveResizeTarget(node) {
+    if (!node || !resizeProfiles.has(node)) {
+      return
+    }
+    if (resizeState.selectedNode === node) {
+      scheduleResizeSelectionUpdate()
+      return
+    }
+    resizeState.selectedNode = node
+    scheduleResizeSelectionUpdate()
+  }
+
+  function clearActiveResizeTarget() {
+    if (!resizeState.selectedNode) {
+      return
+    }
+    resizeState.selectedNode = null
+    hideResizeSelectionBox()
+  }
+
+  function scheduleResizeSelectionUpdate() {
+    if (resizeState.rafId != null) {
+      return
+    }
+    resizeState.rafId = requestAnimationFrame(() => {
+      resizeState.rafId = null
+      updateResizeSelectionUi()
+    })
+  }
+
+  function updateResizeSelectionUi() {
+    const activeDragNode =
+      dragState.active?.node && resizeProfiles.has(dragState.active.node)
+        ? dragState.active.node
+        : null
+    const activeResizeNode = resizeState.active?.node
+    const node = activeResizeNode || activeDragNode || getActiveResizeTarget()
+    if (!node) {
+      hideResizeSelectionBox()
+      return
+    }
+    if (!node.isConnected || node.classList.contains('hidden')) {
+      clearActiveResizeTarget()
+      hideResizeSelectionBox()
+      return
+    }
+    const rect = getNodeLocalRect(node)
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      hideResizeSelectionBox()
+      return
+    }
+
+    el.resizeSelection.classList.remove('hidden')
+    el.resizeSelection.setAttribute('aria-hidden', 'false')
+    el.resizeSelection.style.left = `${rect.left}px`
+    el.resizeSelection.style.top = `${rect.top}px`
+    el.resizeSelection.style.width = `${rect.width}px`
+    el.resizeSelection.style.height = `${rect.height}px`
+  }
+
+  function hideResizeSelectionBox() {
+    el.resizeSelection.classList.add('hidden')
+    el.resizeSelection.setAttribute('aria-hidden', 'true')
+  }
+
+  function getNodeLocalRect(node) {
+    if (!(node instanceof HTMLElement)) {
+      return null
+    }
+    const wrapRect = getWrapRect()
+    if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
+      return null
+    }
+    const nodeRect = node.getBoundingClientRect()
+    if (!nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0) {
+      return null
+    }
+    const scale = getCanvasScaleFactor()
+    return {
+      left: (nodeRect.left - wrapRect.left) / scale,
+      top: (nodeRect.top - wrapRect.top) / scale,
+      width: nodeRect.width / scale,
+      height: nodeRect.height / scale
+    }
   }
 
   function setDragMode(enabled, options = {}) {
@@ -2117,10 +2787,15 @@
     if (!dragState.enabled && dragState.pending) {
       dragState.pending = null
     }
+    if (!dragState.enabled) {
+      clearActiveResizeTarget()
+    } else {
+      scheduleResizeSelectionUpdate()
+    }
     if (announce) {
       showThemeFeedback(
         dragState.enabled
-          ? 'Drag is enabled. Drag panel background, text blocks, and poll parts separately.'
+          ? 'Drag and resize are enabled. Use object handles to resize like PowerPoint.'
           : 'Drag is disabled.',
         'success'
       )
@@ -2151,6 +2826,20 @@
     const getPosition = typeof options.getPosition === 'function' ? options.getPosition : null
     const setPosition = typeof options.setPosition === 'function' ? options.setPosition : null
     const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
+    dragProfiles.set(node, {
+      unit,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      defaultX,
+      defaultY,
+      xKey,
+      yKey,
+      getPosition,
+      setPosition,
+      onCommit
+    })
 
     node.addEventListener('pointerdown', (event) => {
       if (!dragState.enabled || (skipWhenHidden && node.classList.contains('hidden'))) {
@@ -2169,6 +2858,9 @@
       }
       if (event.pointerType === 'mouse' && event.button !== 0) {
         return
+      }
+      if (resizeProfiles.has(node)) {
+        setActiveResizeTarget(node)
       }
       const wrapRect = getWrapRect()
       if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
@@ -2207,6 +2899,9 @@
   }
 
   function handleDragPointerMove(event) {
+    if (resizeState.active) {
+      return
+    }
     let active = dragState.active
     if (!active) {
       const pending = dragState.pending
@@ -2255,6 +2950,7 @@
 
     if (active.setPosition) {
       active.setPosition(nextX, nextY)
+      scheduleResizeSelectionUpdate()
       return
     }
 
@@ -2262,6 +2958,7 @@
       applyLiveDragThemePosition(active.xKey, active.yKey, nextX, nextY)
       syncSingleControlValue(active.xKey, nextX)
       syncSingleControlValue(active.yKey, nextY)
+      scheduleResizeSelectionUpdate()
     }
   }
 
@@ -2282,11 +2979,13 @@
     dragState.active = null
     if (active.onCommit) {
       active.onCommit()
+      scheduleResizeSelectionUpdate()
       return
     }
     saveThemeDraft(currentTheme)
     recordHistoryCheckpoint('Move object')
     showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
+    scheduleResizeSelectionUpdate()
   }
 
   function activateDragTarget(descriptor, event) {
@@ -2320,37 +3019,85 @@
       return
     }
     if (xKey === 'bgImageX' && yKey === 'bgImageY') {
-      applyElementOffset(el.bgImage, xValue, yValue)
+      applyElementOffset(
+        el.bgImage,
+        xValue,
+        yValue,
+        currentTheme.bgImageScaleX,
+        currentTheme.bgImageScaleY
+      )
       return
     }
     if (xKey === 'bgOverlayX' && yKey === 'bgOverlayY') {
-      applyElementOffset(el.bgOverlay, xValue, yValue)
+      applyElementOffset(
+        el.bgOverlay,
+        xValue,
+        yValue,
+        currentTheme.bgOverlayScaleX,
+        currentTheme.bgOverlayScaleY
+      )
       return
     }
     if (xKey === 'gridX' && yKey === 'gridY') {
-      applyElementOffset(el.gridBg, xValue, yValue)
+      applyElementOffset(
+        el.gridBg,
+        xValue,
+        yValue,
+        currentTheme.gridScaleX,
+        currentTheme.gridScaleY
+      )
       return
     }
     if (xKey === 'titleX' && yKey === 'titleY') {
-      applyElementOffset(el.headLeft, xValue, yValue)
+      applyElementOffset(
+        el.headLeft,
+        xValue,
+        yValue,
+        currentTheme.titleScaleX,
+        currentTheme.titleScaleY
+      )
       return
     }
     if (xKey === 'metaX' && yKey === 'metaY') {
-      applyElementOffset(el.metaBar, xValue, yValue)
+      applyElementOffset(
+        el.metaBar,
+        xValue,
+        yValue,
+        currentTheme.metaScaleX,
+        currentTheme.metaScaleY
+      )
       return
     }
     if (xKey === 'footerX' && yKey === 'footerY') {
-      applyElementOffset(el.footer, xValue, yValue)
+      applyElementOffset(
+        el.footer,
+        xValue,
+        yValue,
+        currentTheme.footerScaleX,
+        currentTheme.footerScaleY
+      )
       return
     }
     if (xKey === 'logoX' && yKey === 'logoY') {
       el.customLogo.style.left = `${xValue}%`
       el.customLogo.style.top = `${yValue}%`
+      el.customLogo.style.transform = `translate(-50%, -50%) scale(${clamp(
+        currentTheme.logoScaleX,
+        0.25,
+        5,
+        1
+      )}, ${clamp(currentTheme.logoScaleY, 0.25, 5, 1)})`
       return
     }
     if (xKey === 'assetX' && yKey === 'assetY') {
       el.customAsset.style.left = `${xValue}%`
       el.customAsset.style.top = `${yValue}%`
+      el.customAsset.style.transform = `translate(-50%, -50%) scale(${clamp(
+        currentTheme.assetScaleX,
+        0.25,
+        5,
+        1
+      )}, ${clamp(currentTheme.assetScaleY, 0.25, 5, 1)})`
       return
     }
 
@@ -2368,6 +3115,13 @@
       currentTheme.optionOffsets = {}
     }
     return currentTheme.optionOffsets
+  }
+
+  function ensureOptionScales() {
+    if (!currentTheme.optionScales || typeof currentTheme.optionScales !== 'object') {
+      currentTheme.optionScales = {}
+    }
+    return currentTheme.optionScales
   }
 
   function getOptionOffsetKey(optionId, part = 'row') {
@@ -2407,9 +3161,35 @@
     }
   }
 
+  function getOptionDragScale(optionId, part = 'row') {
+    const map = ensureOptionScales()
+    const key = getOptionOffsetKey(optionId, part)
+    const entry = key ? map[key] : null
+    if (!entry || typeof entry !== 'object') {
+      return { x: 1, y: 1 }
+    }
+    return {
+      x: clamp(entry.x, 0.25, 5, 1),
+      y: clamp(entry.y, 0.25, 5, 1)
+    }
+  }
+
+  function setOptionDragScale(optionId, x, y, part = 'row') {
+    const key = getOptionOffsetKey(optionId, part)
+    if (!key) {
+      return
+    }
+    const map = ensureOptionScales()
+    map[key] = {
+      x: clamp(x, 0.25, 5, 1),
+      y: clamp(y, 0.25, 5, 1)
+    }
+  }
+
   function applyOptionOffsetTransform(node, optionId, part = 'row') {
     const offset = getOptionDragOffset(optionId, part)
-    node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
+    const scale = getOptionDragScale(optionId, part)
+    node.style.transform = `translate(${offset.x}px, ${offset.y}px) scale(${scale.x}, ${scale.y})`
   }
 
   function registerOptionDragTarget(node, optionId, part = 'row', options = {}) {
@@ -2433,7 +3213,35 @@
       getPosition: () => getOptionDragOffset(optionId, part),
       setPosition: (x, y) => {
         setOptionDragOffset(optionId, x, y, part)
-        node.style.transform = `translate(${x}px, ${y}px)`
+        applyOptionOffsetTransform(node, optionId, part)
+      }
+    })
+  }
+
+  function registerOptionResizeTarget(node, optionId, part = 'row', options = {}) {
+    if (!node || !optionId) {
+      return
+    }
+    registerResizeTarget(node, {
+      unit: 'px',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400,
+      minScaleX: Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.35,
+      maxScaleX: Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5,
+      minScaleY: Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.35,
+      maxScaleY: Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5,
+      keepAspectByDefault: options.keepAspectByDefault === true,
+      getPosition: () => getOptionDragOffset(optionId, part),
+      setPosition: (x, y) => {
+        setOptionDragOffset(optionId, x, y, part)
+        applyOptionOffsetTransform(node, optionId, part)
+      },
+      getScale: () => getOptionDragScale(optionId, part),
+      setScale: (x, y) => {
+        setOptionDragScale(optionId, x, y, part)
+        applyOptionOffsetTransform(node, optionId, part)
       }
     })
   }
@@ -2462,10 +3270,17 @@
         applyRaceRowTransform(row)
       }
     })
+    registerOptionResizeTarget(row.root, row.optionId, 'row', {
+      minScaleX: 0.45,
+      maxScaleX: 4.5,
+      minScaleY: 0.45,
+      maxScaleY: 4.5
+    })
   }
 
   function applyRaceRowTransform(row) {
-    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px)`
+    const scale = getOptionDragScale(row.optionId, 'row')
+    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px) scale(${scale.x}, ${scale.y})`
   }
 
   function isPointerNearNodeEdge(node, event, edgePadding = 0) {
@@ -2514,6 +3329,7 @@
       `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
     )
     updateMeta(null, 0)
+    scheduleResizeSelectionUpdate()
   }
 
   async function startSessionFeed() {
@@ -2744,6 +3560,7 @@
     if (!forceRender && isRichTextEditingActive()) {
       updateMeta(poll, getTotalVotes(poll))
       updateFooter()
+      scheduleResizeSelectionUpdate()
       return
     }
 
@@ -2751,6 +3568,7 @@
     if (!forceRender && renderKey === state.lastRenderKey) {
       updateFooter()
       updateMeta(poll, getTotalVotes(poll))
+      scheduleResizeSelectionUpdate()
       return
     }
     state.lastRenderKey = renderKey
@@ -2773,6 +3591,7 @@
     }
     updateMeta(poll, totalVotes)
     updateFooter()
+    scheduleResizeSelectionUpdate()
   }
 
   function flushRichTextHostsToOverrides() {
@@ -2838,8 +3657,26 @@
       applyOptionOffsetTransform(stats, optionId, 'stats')
       applyOptionOffsetTransform(track, optionId, 'bar')
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
+      registerOptionResizeTarget(label, optionId, 'label', {
+        minScaleX: 0.45,
+        maxScaleX: 4,
+        minScaleY: 0.45,
+        maxScaleY: 4
+      })
       registerOptionDragTarget(stats, optionId, 'stats')
+      registerOptionResizeTarget(stats, optionId, 'stats', {
+        minScaleX: 0.45,
+        maxScaleX: 4,
+        minScaleY: 0.45,
+        maxScaleY: 4
+      })
       registerOptionDragTarget(track, optionId, 'bar')
+      registerOptionResizeTarget(track, optionId, 'bar', {
+        minScaleX: 0.35,
+        maxScaleX: 4.5,
+        minScaleY: 0.4,
+        maxScaleY: 4.5
+      })
       fragment.appendChild(optionNode)
     }
 
@@ -3052,6 +3889,7 @@
     if (!getActiveRichTextHost()) {
       refreshTextToolStates()
     }
+    scheduleResizeSelectionUpdate()
   }
 
   function renderMissingSession() {
@@ -3069,6 +3907,7 @@
     )
     updateMeta(null, 0, 'missing session', 'error')
     updateFooter()
+    scheduleResizeSelectionUpdate()
   }
 
   function renderMissingPoll() {
@@ -3084,6 +3923,7 @@
     )
     updateMeta(null, 0)
     updateFooter()
+    scheduleResizeSelectionUpdate()
   }
 
   function renderError(message) {
@@ -3098,6 +3938,7 @@
     renderEmptyStateNote('error-detail', message)
     updateMeta(null, 0, 'error', 'error')
     updateFooter()
+    scheduleResizeSelectionUpdate()
   }
 
   function renderEmptyStateNote(stateKey, fallbackText) {
@@ -3569,6 +4410,8 @@
     root.setProperty('--wrap-offset-y', '0px')
     root.setProperty('--panel-offset-x', `${clamp(theme.panelX, -2400, 2400, 0)}px`)
     root.setProperty('--panel-offset-y', `${clamp(theme.panelY, -2400, 2400, 0)}px`)
+    root.setProperty('--panel-scale-x', `${clamp(theme.panelScaleX, 0.35, 2.8, 1)}`)
+    root.setProperty('--panel-scale-y', `${clamp(theme.panelScaleY, 0.35, 2.8, 1)}`)
 
     el.bgImage.style.backgroundImage = theme.bgImageUrl
       ? `url("${theme.bgImageUrl.replace(/"/g, '\\"')}")`
@@ -3578,19 +4421,33 @@
     el.bgOverlay.style.opacity = `${theme.overlayOpacity}`
     el.gridBg.style.display = theme.gridVisible ? 'block' : 'none'
     el.gridBg.style.opacity = `${theme.gridOpacity}`
-    applyElementOffset(el.bgImage, theme.bgImageX, theme.bgImageY)
-    applyElementOffset(el.bgOverlay, theme.bgOverlayX, theme.bgOverlayY)
-    applyElementOffset(el.gridBg, theme.gridX, theme.gridY)
-    applyElementOffset(el.headLeft, theme.titleX, theme.titleY)
-    applyElementOffset(el.metaBar, theme.metaX, theme.metaY)
-    applyElementOffset(el.footer, theme.footerX, theme.footerY)
+    applyElementOffset(
+      el.bgImage,
+      theme.bgImageX,
+      theme.bgImageY,
+      theme.bgImageScaleX,
+      theme.bgImageScaleY
+    )
+    applyElementOffset(
+      el.bgOverlay,
+      theme.bgOverlayX,
+      theme.bgOverlayY,
+      theme.bgOverlayScaleX,
+      theme.bgOverlayScaleY
+    )
+    applyElementOffset(el.gridBg, theme.gridX, theme.gridY, theme.gridScaleX, theme.gridScaleY)
+    applyElementOffset(el.headLeft, theme.titleX, theme.titleY, theme.titleScaleX, theme.titleScaleY)
+    applyElementOffset(el.metaBar, theme.metaX, theme.metaY, theme.metaScaleX, theme.metaScaleY)
+    applyElementOffset(el.footer, theme.footerX, theme.footerY, theme.footerScaleX, theme.footerScaleY)
 
     applyImageAsset(el.customLogo, {
       url: theme.logoUrl,
       width: `${theme.logoWidth}px`,
       opacity: `${theme.logoOpacity}`,
       left: `${theme.logoX}%`,
-      top: `${theme.logoY}%`
+      top: `${theme.logoY}%`,
+      scaleX: theme.logoScaleX,
+      scaleY: theme.logoScaleY
     })
 
     applyImageAsset(el.customAsset, {
@@ -3598,18 +4455,23 @@
       width: `${theme.assetWidth}px`,
       opacity: `${theme.assetOpacity}`,
       left: `${theme.assetX}%`,
-      top: `${theme.assetY}%`
+      top: `${theme.assetY}%`,
+      scaleX: theme.assetScaleX,
+      scaleY: theme.assetScaleY
     })
     syncRaceThemeVisuals()
+    scheduleResizeSelectionUpdate()
   }
 
-  function applyElementOffset(node, offsetX, offsetY) {
+  function applyElementOffset(node, offsetX, offsetY, scaleX = 1, scaleY = 1) {
     if (!node) {
       return
     }
     const safeX = clamp(offsetX, -2400, 2400, 0)
     const safeY = clamp(offsetY, -2400, 2400, 0)
-    node.style.transform = `translate(${safeX}px, ${safeY}px)`
+    const safeScaleX = clamp(scaleX, 0.2, 8, 1)
+    const safeScaleY = clamp(scaleY, 0.2, 8, 1)
+    node.style.transform = `translate(${safeX}px, ${safeY}px) scale(${safeScaleX}, ${safeScaleY})`
   }
 
   function applyImageAsset(node, options) {
@@ -3634,6 +4496,9 @@
     if (options.top) {
       node.style.top = options.top
     }
+    const scaleX = clamp(options.scaleX, 0.25, 5, 1)
+    const scaleY = clamp(options.scaleY, 0.25, 5, 1)
+    node.style.transform = `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`
   }
 
   function syncRaceThemeVisuals() {
@@ -4133,21 +4998,50 @@
       assetY: clamp(incoming.assetY, 0, 100, defaultTheme.assetY),
       panelX: clamp(incoming.panelX, -2400, 2400, defaultTheme.panelX),
       panelY: clamp(incoming.panelY, -2400, 2400, defaultTheme.panelY),
+      panelScaleX: clamp(incoming.panelScaleX, 0.35, 2.8, defaultTheme.panelScaleX),
+      panelScaleY: clamp(incoming.panelScaleY, 0.35, 2.8, defaultTheme.panelScaleY),
       bgImageX: clamp(incoming.bgImageX, -2400, 2400, defaultTheme.bgImageX),
       bgImageY: clamp(incoming.bgImageY, -2400, 2400, defaultTheme.bgImageY),
+      bgImageScaleX: clamp(incoming.bgImageScaleX, 0.35, 3.5, defaultTheme.bgImageScaleX),
+      bgImageScaleY: clamp(incoming.bgImageScaleY, 0.35, 3.5, defaultTheme.bgImageScaleY),
       bgOverlayX: clamp(incoming.bgOverlayX, -2400, 2400, defaultTheme.bgOverlayX),
       bgOverlayY: clamp(incoming.bgOverlayY, -2400, 2400, defaultTheme.bgOverlayY),
+      bgOverlayScaleX: clamp(
+        incoming.bgOverlayScaleX,
+        0.35,
+        3.5,
+        defaultTheme.bgOverlayScaleX
+      ),
+      bgOverlayScaleY: clamp(
+        incoming.bgOverlayScaleY,
+        0.35,
+        3.5,
+        defaultTheme.bgOverlayScaleY
+      ),
       gridX: clamp(incoming.gridX, -2400, 2400, defaultTheme.gridX),
       gridY: clamp(incoming.gridY, -2400, 2400, defaultTheme.gridY),
+      gridScaleX: clamp(incoming.gridScaleX, 0.35, 3.5, defaultTheme.gridScaleX),
+      gridScaleY: clamp(incoming.gridScaleY, 0.35, 3.5, defaultTheme.gridScaleY),
       titleX: clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX),
       titleY: clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY),
+      titleScaleX: clamp(incoming.titleScaleX, 0.45, 3, defaultTheme.titleScaleX),
+      titleScaleY: clamp(incoming.titleScaleY, 0.45, 3, defaultTheme.titleScaleY),
       metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
       metaY: clamp(incoming.metaY, -2400, 2400, defaultTheme.metaY),
+      metaScaleX: clamp(incoming.metaScaleX, 0.45, 3.2, defaultTheme.metaScaleX),
+      metaScaleY: clamp(incoming.metaScaleY, 0.45, 3.2, defaultTheme.metaScaleY),
       optionsX: clamp(incoming.optionsX, -2400, 2400, defaultTheme.optionsX),
       optionsY: clamp(incoming.optionsY, -2400, 2400, defaultTheme.optionsY),
       footerX: clamp(incoming.footerX, -2400, 2400, defaultTheme.footerX),
       footerY: clamp(incoming.footerY, -2400, 2400, defaultTheme.footerY),
+      footerScaleX: clamp(incoming.footerScaleX, 0.45, 3, defaultTheme.footerScaleX),
+      footerScaleY: clamp(incoming.footerScaleY, 0.45, 3, defaultTheme.footerScaleY),
+      logoScaleX: clamp(incoming.logoScaleX, 0.25, 5, defaultTheme.logoScaleX),
+      logoScaleY: clamp(incoming.logoScaleY, 0.25, 5, defaultTheme.logoScaleY),
+      assetScaleX: clamp(incoming.assetScaleX, 0.25, 5, defaultTheme.assetScaleX),
+      assetScaleY: clamp(incoming.assetScaleY, 0.25, 5, defaultTheme.assetScaleY),
       optionOffsets: sanitizeOptionOffsets(incoming.optionOffsets, defaultTheme.optionOffsets),
+      optionScales: sanitizeOptionScales(incoming.optionScales, defaultTheme.optionScales),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
   }
@@ -4166,6 +5060,25 @@
       sanitized[optionId] = {
         x: clamp(rawOffset.x, -2400, 2400, 0),
         y: clamp(rawOffset.y, -2400, 2400, 0)
+      }
+    }
+    return sanitized
+  }
+
+  function sanitizeOptionScales(value, fallback) {
+    const source = value && typeof value === 'object' ? value : fallback
+    if (!source || typeof source !== 'object') {
+      return {}
+    }
+    const sanitized = {}
+    for (const [rawId, rawScale] of Object.entries(source)) {
+      const optionId = asText(rawId)
+      if (!optionId || !rawScale || typeof rawScale !== 'object') {
+        continue
+      }
+      sanitized[optionId] = {
+        x: clamp(rawScale.x, 0.25, 5, 1),
+        y: clamp(rawScale.y, 0.25, 5, 1)
       }
     }
     return sanitized
@@ -4340,6 +5253,7 @@
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
     state.activeInlineStyleNode = null
+    clearActiveResizeTarget()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
@@ -4348,14 +5262,30 @@
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
     document.removeEventListener('selectionchange', handleRichTextSelectionChange)
     document.removeEventListener('pointerdown', handleRichTextPointerDown, true)
+    document.removeEventListener('pointerdown', handleResizeSelectionPointerDown, true)
+    for (const handle of el.resizeHandles) {
+      handle.removeEventListener('pointerdown', handleResizeHandlePointerDown)
+    }
+    window.removeEventListener('pointermove', handleDragPointerMove)
+    window.removeEventListener('pointerup', handleDragPointerRelease)
+    window.removeEventListener('pointercancel', handleDragPointerRelease)
+    window.removeEventListener('pointermove', handleResizePointerMove)
+    window.removeEventListener('pointerup', handleResizePointerRelease)
+    window.removeEventListener('pointercancel', handleResizePointerRelease)
     window.removeEventListener('resize', scheduleSelectionToolbarUpdate)
     window.removeEventListener('scroll', scheduleSelectionToolbarUpdate, true)
+    window.removeEventListener('resize', scheduleResizeSelectionUpdate)
+    window.removeEventListener('scroll', scheduleResizeSelectionUpdate, true)
     window.removeEventListener('keydown', handleHistoryKeydown, true)
     window.removeEventListener('keydown', handleResetPositionsModalKeydown, true)
     clearTypingHistoryTimer()
     if (state.selectionToolbarRafId != null) {
       cancelAnimationFrame(state.selectionToolbarRafId)
       state.selectionToolbarRafId = null
+    }
+    if (resizeState.rafId != null) {
+      cancelAnimationFrame(resizeState.rafId)
+      resizeState.rafId = null
     }
     if (state.reconnectTimer) {
       window.clearTimeout(state.reconnectTimer)
