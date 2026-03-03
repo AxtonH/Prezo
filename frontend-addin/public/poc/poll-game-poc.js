@@ -1855,6 +1855,10 @@
     return anchorHost
   }
 
+  function getEditingRichTextHost() {
+    return getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
+  }
+
   function hasNonCollapsedSelectionInHost(host) {
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
@@ -1967,6 +1971,10 @@
     if (!textKey) {
       return
     }
+    if (isLiveBoundTextKey(textKey)) {
+      host.dataset.richTextHtml = sanitizeRichTextHtml(host.innerHTML)
+      return
+    }
     const normalizeDom = options.normalizeDom === true
     const recordHistory = options.recordHistory !== false && !historyState.applying
     const historyMode = asText(options.historyMode).toLowerCase()
@@ -1992,8 +2000,14 @@
 
   function renderRichText(node, textKey, fallbackText) {
     const fallbackHtml = textToRichHtml(fallbackText)
-    const hasOverride = Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
+    const allowOverrides = !isLiveBoundTextKey(textKey)
+    const hasOverride =
+      allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
     const nextHtml = hasOverride ? state.textOverrides[textKey] : fallbackHtml
+    if (!allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)) {
+      delete state.textOverrides[textKey]
+      saveTextOverrides(state.textOverrides)
+    }
 
     node.classList.add('rich-text-editable')
     node.setAttribute('contenteditable', 'true')
@@ -2007,6 +2021,17 @@
       node.innerHTML = nextHtml
       node.dataset.richTextHtml = nextHtml
     }
+  }
+
+  function isLiveBoundTextKey(textKey) {
+    const key = asText(textKey)
+    if (!key) {
+      return false
+    }
+    if (key === 'chrome:status' || key === 'chrome:votes' || key === 'chrome:footer') {
+      return true
+    }
+    return /^poll:[^:]+:option:[^:]+:stats$/i.test(key)
   }
 
   function clearRichTextNode(node) {
@@ -3557,12 +3582,9 @@
     const poll = selectPoll(polls)
     state.currentPoll = poll
 
-    if (!forceRender && isRichTextEditingActive()) {
-      updateMeta(poll, getTotalVotes(poll))
-      updateFooter()
-      scheduleResizeSelectionUpdate()
-      return
-    }
+    const editingHost = !forceRender && isRichTextEditingActive() ? getEditingRichTextHost() : null
+    const editingWithinOptions =
+      editingHost instanceof HTMLElement ? el.options.contains(editingHost) : false
 
     const renderKey = getRenderKey(poll)
     if (!forceRender && renderKey === state.lastRenderKey) {
@@ -3584,10 +3606,12 @@
       getQuestionTextKey(poll),
       asText(poll.question) || 'Untitled poll'
     )
-    if (currentTheme.visualMode === 'race') {
-      renderRaceOptions(poll, totalVotes)
-    } else {
-      renderClassicOptions(poll, totalVotes)
+    if (!editingWithinOptions) {
+      if (currentTheme.visualMode === 'race') {
+        renderRaceOptions(poll, totalVotes)
+      } else {
+        renderClassicOptions(poll, totalVotes)
+      }
     }
     updateMeta(poll, totalVotes)
     updateFooter()
