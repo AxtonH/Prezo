@@ -2190,19 +2190,18 @@
         startX: clamp(startPosition?.x ?? currentTheme[xKey], minX, maxX, defaultX),
         startY: clamp(startPosition?.y ?? currentTheme[yKey], minY, maxY, defaultY),
         setPosition,
-        onCommit
+        onCommit,
+        suppressNativePointerBehavior: !(richTextTarget && node.contains(richTextTarget))
       }
 
-      if (richTextTarget && node.contains(richTextTarget)) {
-        // Click edits text; click+drag from edge starts object drag.
-        dragState.pending = dragDescriptor
-        return
+      if (dragState.pending && dragState.pending.pointerId !== event.pointerId) {
+        dragState.pending = null
       }
-
-      event.preventDefault()
-      event.stopPropagation()
-      dragState.pending = null
-      activateDragTarget(dragDescriptor, event)
+      if (dragDescriptor.suppressNativePointerBehavior) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      dragState.pending = dragDescriptor
     })
   }
 
@@ -2223,6 +2222,9 @@
       if (event.cancelable) {
         event.preventDefault()
       }
+      if (pending.suppressNativePointerBehavior) {
+        event.stopPropagation()
+      }
       activateDragTarget(pending, event)
       dragState.pending = null
       active = dragState.active
@@ -2238,13 +2240,14 @@
     if (event.cancelable) {
       event.preventDefault()
     }
+    const canvasScale = getCanvasScaleFactor()
     const deltaX =
       active.unit === 'px'
-        ? event.clientX - active.startClientX
+        ? (event.clientX - active.startClientX) / canvasScale
         : ((event.clientX - active.startClientX) / wrapRect.width) * 100
     const deltaY =
       active.unit === 'px'
-        ? event.clientY - active.startClientY
+        ? (event.clientY - active.startClientY) / canvasScale
         : ((event.clientY - active.startClientY) / wrapRect.height) * 100
     const nextX = clamp(active.startX + deltaX, active.minX, active.maxX, active.startX)
     const nextY = clamp(active.startY + deltaY, active.minY, active.maxY, active.startY)
@@ -2255,13 +2258,7 @@
     }
 
     if (active.xKey && active.yKey) {
-      updateTheme(
-        {
-          [active.xKey]: nextX,
-          [active.yKey]: nextY
-        },
-        { persist: false }
-      )
+      applyLiveDragThemePosition(active.xKey, active.yKey, nextX, nextY)
       syncSingleControlValue(active.xKey, nextX)
       syncSingleControlValue(active.yKey, nextY)
     }
@@ -2300,6 +2297,69 @@
     try {
       descriptor.node.setPointerCapture(event.pointerId)
     } catch {}
+  }
+
+  function getCanvasScaleFactor() {
+    const rootStyle = window.getComputedStyle(document.documentElement)
+    const raw = Number.parseFloat(rootStyle.getPropertyValue('--canvas-scale'))
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return 1
+    }
+    return raw
+  }
+
+  function applyLiveDragThemePosition(xKey, yKey, xValue, yValue) {
+    currentTheme[xKey] = xValue
+    currentTheme[yKey] = yValue
+
+    if (xKey === 'panelX' && yKey === 'panelY') {
+      const root = document.documentElement.style
+      root.setProperty('--panel-offset-x', `${xValue}px`)
+      root.setProperty('--panel-offset-y', `${yValue}px`)
+      return
+    }
+    if (xKey === 'bgImageX' && yKey === 'bgImageY') {
+      applyElementOffset(el.bgImage, xValue, yValue)
+      return
+    }
+    if (xKey === 'bgOverlayX' && yKey === 'bgOverlayY') {
+      applyElementOffset(el.bgOverlay, xValue, yValue)
+      return
+    }
+    if (xKey === 'gridX' && yKey === 'gridY') {
+      applyElementOffset(el.gridBg, xValue, yValue)
+      return
+    }
+    if (xKey === 'titleX' && yKey === 'titleY') {
+      applyElementOffset(el.headLeft, xValue, yValue)
+      return
+    }
+    if (xKey === 'metaX' && yKey === 'metaY') {
+      applyElementOffset(el.metaBar, xValue, yValue)
+      return
+    }
+    if (xKey === 'footerX' && yKey === 'footerY') {
+      applyElementOffset(el.footer, xValue, yValue)
+      return
+    }
+    if (xKey === 'logoX' && yKey === 'logoY') {
+      el.customLogo.style.left = `${xValue}%`
+      el.customLogo.style.top = `${yValue}%`
+      return
+    }
+    if (xKey === 'assetX' && yKey === 'assetY') {
+      el.customAsset.style.left = `${xValue}%`
+      el.customAsset.style.top = `${yValue}%`
+      return
+    }
+
+    updateTheme(
+      {
+        [xKey]: xValue,
+        [yKey]: yValue
+      },
+      { persist: false, recordHistory: false }
+    )
   }
 
   function ensureOptionOffsets() {

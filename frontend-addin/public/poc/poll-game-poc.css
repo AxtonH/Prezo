@@ -935,6 +935,11 @@ body.ribbon-advanced .advanced-control.note {
   outline-offset: 1px;
 }
 
+.drag-mode .panel-bg-drag,
+.drag-mode .panel-drag-handle {
+  transition: none;
+}
+
 .drag-mode .draggable-layer.dragging {
   cursor: grabbing;
   outline-color: rgba(47, 126, 222, 1);
