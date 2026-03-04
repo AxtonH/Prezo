@@ -332,6 +332,10 @@ body {
   margin-top: 6px;
 }
 
+.quick-mode-reset-row {
+  margin-top: 10px;
+}
+
 .row button,
 .file-btn {
   border: 0;
