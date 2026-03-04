@@ -112,7 +112,7 @@ import {
     historyUndo: must('history-undo'),
     historyRedo: must('history-redo'),
     deleteSelectedObject: must('delete-selected-object'),
-    resetPositions: must('reset-positions'),
+    resetPositions: document.getElementById('reset-positions'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
     saveTheme: must('save-theme'),
@@ -555,7 +555,9 @@ import {
     el.exportTheme.addEventListener('click', exportCurrentTheme)
     el.importTheme.addEventListener('change', importThemeFromFile)
     el.resetTheme.addEventListener('click', resetThemeDraft)
-    el.resetPositions.addEventListener('click', openResetPositionsModal)
+    if (el.resetPositions) {
+      el.resetPositions.addEventListener('click', openResetPositionsModal)
+    }
     el.resetPositionsCancel.addEventListener('click', () => {
       closeResetPositionsModal()
     })

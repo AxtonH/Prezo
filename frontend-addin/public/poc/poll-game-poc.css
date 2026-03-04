@@ -373,6 +373,18 @@ body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   margin-top: 10px;
 }
 
+.game-mode-visual {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.game-mode-visual > label {
+  color: #55779e;
+  font-size: 10px;
+}
+
 .row button,
 .file-btn {
   border: 0;
