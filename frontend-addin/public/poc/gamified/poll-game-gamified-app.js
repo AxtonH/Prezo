@@ -432,10 +432,6 @@ import {
     applyRibbonLayoutMode()
   }
 
-  function updateRibbonOffset() {
-    applyRibbonLayoutMode()
-  }
-
   function setupCanvasFitBehavior() {
     el.wrap.addEventListener('pointerdown', handleCanvasPointerDown)
     applyRibbonLayoutMode()
@@ -466,14 +462,6 @@ import {
       return
     }
     setRibbonHidden(true)
-  }
-
-  function scheduleCanvasFitUpdate() {
-    applyRibbonLayoutMode()
-  }
-
-  function updateCanvasScale() {
-    applyRibbonLayoutMode()
   }
 
   function applyRibbonLayoutMode() {
@@ -3003,25 +2991,6 @@ import {
 
   function normalizeWhitespace(text) {
     return asText(text).replace(/\s+/g, ' ')
-  }
-
-  function clearRichTextNode(node) {
-    if (state.activeTextHost === node) {
-      state.activeTextHost = null
-      refreshTextToolStates()
-      hideSelectionToolbar()
-    }
-    if (state.cachedTextSelectionHost === node) {
-      clearCachedRichTextSelection()
-    }
-    if (state.activeInlineStyleNode && node.contains(state.activeInlineStyleNode)) {
-      state.activeInlineStyleNode = null
-    }
-    node.classList.remove('rich-text-editable')
-    node.removeAttribute('contenteditable')
-    node.removeAttribute('spellcheck')
-    delete node.dataset.textKey
-    delete node.dataset.richTextHtml
   }
 
   function isRichTextEditingActive() {
