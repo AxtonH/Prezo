@@ -234,12 +234,6 @@ import {
     questionY: 0,
     questionBoxWidth: null,
     questionBoxHeight: null,
-    titleX: 0,
-    titleY: 0,
-    titleBoxWidth: null,
-    titleBoxHeight: null,
-    titleScaleX: 1,
-    titleScaleY: 1,
     metaX: 0,
     metaY: 0,
     metaBoxWidth: null,
@@ -5860,12 +5854,6 @@ import {
       questionY: defaultTheme.questionY,
       questionBoxWidth: defaultTheme.questionBoxWidth,
       questionBoxHeight: defaultTheme.questionBoxHeight,
-      titleX: defaultTheme.titleX,
-      titleY: defaultTheme.titleY,
-      titleBoxWidth: defaultTheme.titleBoxWidth,
-      titleBoxHeight: defaultTheme.titleBoxHeight,
-      titleScaleX: defaultTheme.titleScaleX,
-      titleScaleY: defaultTheme.titleScaleY,
       metaX: defaultTheme.metaX,
       metaY: defaultTheme.metaY,
       metaBoxWidth: defaultTheme.metaBoxWidth,
@@ -6358,6 +6346,20 @@ import {
     )
   }
 
+  function hasLegacyTitleThemeFields(theme) {
+    if (!theme || typeof theme !== 'object') {
+      return false
+    }
+    return (
+      Object.prototype.hasOwnProperty.call(theme, 'titleX') ||
+      Object.prototype.hasOwnProperty.call(theme, 'titleY') ||
+      Object.prototype.hasOwnProperty.call(theme, 'titleBoxWidth') ||
+      Object.prototype.hasOwnProperty.call(theme, 'titleBoxHeight') ||
+      Object.prototype.hasOwnProperty.call(theme, 'titleScaleX') ||
+      Object.prototype.hasOwnProperty.call(theme, 'titleScaleY')
+    )
+  }
+
   function loadThemeLibrary() {
     const parsed = safeJsonParse(safeStorageGet(THEME_LIBRARY_KEY))
     if (!parsed || typeof parsed !== 'object') {
@@ -6366,10 +6368,14 @@ import {
     const incomingThemes =
       parsed.themes && typeof parsed.themes === 'object' ? parsed.themes : {}
     const themes = {}
+    let migratedLegacyTheme = false
     for (const [name, theme] of Object.entries(incomingThemes)) {
       const normalizedName = normalizeThemeName(name)
       if (!normalizedName) {
         continue
+      }
+      if (hasLegacyTitleThemeFields(theme)) {
+        migratedLegacyTheme = true
       }
       themes[normalizedName] = sanitizeTheme(theme)
     }
@@ -6377,7 +6383,11 @@ import {
       typeof parsed.activeName === 'string' && themes[parsed.activeName]
         ? parsed.activeName
         : null
-    return { themes, activeName }
+    const library = { themes, activeName }
+    if (migratedLegacyTheme) {
+      saveThemeLibrary(library)
+    }
+    return library
   }
 
   function saveThemeLibrary(library) {
@@ -6391,7 +6401,11 @@ import {
     if (!parsed || typeof parsed !== 'object') {
       return null
     }
-    return sanitizeTheme(parsed)
+    const sanitized = sanitizeTheme(parsed)
+    if (hasLegacyTitleThemeFields(parsed)) {
+      saveThemeDraft(sanitized)
+    }
+    return sanitized
   }
 
   function saveThemeDraft(theme) {
@@ -6707,22 +6721,64 @@ import {
     return input.value
   }
 
-  function sanitizeTheme(theme) {
+  function hasThemeValue(value) {
+    return value !== undefined && value !== null && value !== ''
+  }
+
+  function migrateLegacyTitleThemeFields(theme) {
     const incoming = theme && typeof theme === 'object' ? theme : {}
-    const legacyTitleX = clamp(incoming.titleX, -2400, 2400, defaultTheme.titleX)
-    const legacyTitleY = clamp(incoming.titleY, -2400, 2400, defaultTheme.titleY)
-    const legacyTitleBoxWidth = sanitizeOptionalDimension(
-      incoming.titleBoxWidth,
-      120,
-      2200,
-      defaultTheme.titleBoxWidth
-    )
-    const legacyTitleBoxHeight = sanitizeOptionalDimension(
-      incoming.titleBoxHeight,
-      40,
-      1400,
-      defaultTheme.titleBoxHeight
-    )
+    const migrated = { ...incoming }
+
+    const legacyX = Number(incoming.titleX)
+    if (Number.isFinite(legacyX)) {
+      if (!Number.isFinite(Number(incoming.eyebrowX))) {
+        migrated.eyebrowX = legacyX
+      }
+      if (!Number.isFinite(Number(incoming.questionX))) {
+        migrated.questionX = legacyX
+      }
+    }
+
+    const legacyY = Number(incoming.titleY)
+    if (Number.isFinite(legacyY)) {
+      if (!Number.isFinite(Number(incoming.eyebrowY))) {
+        migrated.eyebrowY = legacyY
+      }
+      if (!Number.isFinite(Number(incoming.questionY))) {
+        migrated.questionY = legacyY
+      }
+    }
+
+    if (hasThemeValue(incoming.titleBoxWidth)) {
+      if (!hasThemeValue(incoming.eyebrowBoxWidth)) {
+        migrated.eyebrowBoxWidth = incoming.titleBoxWidth
+      }
+      if (!hasThemeValue(incoming.questionBoxWidth)) {
+        migrated.questionBoxWidth = incoming.titleBoxWidth
+      }
+    }
+
+    if (hasThemeValue(incoming.titleBoxHeight)) {
+      if (!hasThemeValue(incoming.eyebrowBoxHeight)) {
+        migrated.eyebrowBoxHeight = incoming.titleBoxHeight
+      }
+      if (!hasThemeValue(incoming.questionBoxHeight)) {
+        migrated.questionBoxHeight = incoming.titleBoxHeight
+      }
+    }
+
+    delete migrated.titleX
+    delete migrated.titleY
+    delete migrated.titleBoxWidth
+    delete migrated.titleBoxHeight
+    delete migrated.titleScaleX
+    delete migrated.titleScaleY
+
+    return migrated
+  }
+
+  function sanitizeTheme(theme) {
+    const incoming = migrateLegacyTitleThemeFields(theme)
     return {
       bgImageUrl: sanitizeUrl(incoming.bgImageUrl, defaultTheme.bgImageUrl),
       bgImageOpacity: clamp(incoming.bgImageOpacity, 0, 1, defaultTheme.bgImageOpacity),
@@ -6788,40 +6844,34 @@ import {
       gridY: clamp(incoming.gridY, -2400, 2400, defaultTheme.gridY),
       gridScaleX: clamp(incoming.gridScaleX, 0.35, 3.5, defaultTheme.gridScaleX),
       gridScaleY: clamp(incoming.gridScaleY, 0.35, 3.5, defaultTheme.gridScaleY),
-      eyebrowX: clamp(incoming.eyebrowX, -2400, 2400, legacyTitleX),
-      eyebrowY: clamp(incoming.eyebrowY, -2400, 2400, legacyTitleY),
+      eyebrowX: clamp(incoming.eyebrowX, -2400, 2400, defaultTheme.eyebrowX),
+      eyebrowY: clamp(incoming.eyebrowY, -2400, 2400, defaultTheme.eyebrowY),
       eyebrowBoxWidth: sanitizeOptionalDimension(
         incoming.eyebrowBoxWidth,
         60,
         1800,
-        legacyTitleBoxWidth
+        defaultTheme.eyebrowBoxWidth
       ),
       eyebrowBoxHeight: sanitizeOptionalDimension(
         incoming.eyebrowBoxHeight,
         14,
         420,
-        legacyTitleBoxHeight
+        defaultTheme.eyebrowBoxHeight
       ),
-      questionX: clamp(incoming.questionX, -2400, 2400, legacyTitleX),
-      questionY: clamp(incoming.questionY, -2400, 2400, legacyTitleY),
+      questionX: clamp(incoming.questionX, -2400, 2400, defaultTheme.questionX),
+      questionY: clamp(incoming.questionY, -2400, 2400, defaultTheme.questionY),
       questionBoxWidth: sanitizeOptionalDimension(
         incoming.questionBoxWidth,
         120,
         2200,
-        legacyTitleBoxWidth
+        defaultTheme.questionBoxWidth
       ),
       questionBoxHeight: sanitizeOptionalDimension(
         incoming.questionBoxHeight,
         40,
         1400,
-        legacyTitleBoxHeight
+        defaultTheme.questionBoxHeight
       ),
-      titleX: legacyTitleX,
-      titleY: legacyTitleY,
-      titleBoxWidth: legacyTitleBoxWidth,
-      titleBoxHeight: legacyTitleBoxHeight,
-      titleScaleX: clamp(incoming.titleScaleX, 0.45, 3, defaultTheme.titleScaleX),
-      titleScaleY: clamp(incoming.titleScaleY, 0.45, 3, defaultTheme.titleScaleY),
       metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
       metaY: clamp(incoming.metaY, -2400, 2400, defaultTheme.metaY),
       metaBoxWidth: sanitizeOptionalDimension(
