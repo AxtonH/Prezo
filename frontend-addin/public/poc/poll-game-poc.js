@@ -4046,6 +4046,7 @@
       clearRaceRows()
     }
     const fragment = document.createDocumentFragment()
+    const renderedNodes = []
     const options = Array.isArray(poll.options) ? poll.options : []
     for (let index = 0; index < options.length; index += 1) {
       const option = options[index]
@@ -4087,11 +4088,6 @@
 
       track.appendChild(fill)
       optionNode.append(labelRow, track)
-      applyOptionBoxSize(label, optionId, 'label')
-      applyOptionBoxSize(stats, optionId, 'stats')
-      applyOptionOffsetTransform(label, optionId, 'label')
-      applyOptionOffsetTransform(stats, optionId, 'stats')
-      applyOptionOffsetTransform(track, optionId, 'bar')
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(label, optionId, 'label', {
         resizeMode: 'box',
@@ -4115,10 +4111,18 @@
         minScaleY: 0.4,
         maxScaleY: 4.5
       })
+      renderedNodes.push({ optionId, label, stats, track })
       fragment.appendChild(optionNode)
     }
 
     el.options.replaceChildren(fragment)
+    for (const item of renderedNodes) {
+      applyOptionBoxSize(item.label, item.optionId, 'label')
+      applyOptionBoxSize(item.stats, item.optionId, 'stats')
+      applyOptionOffsetTransform(item.label, item.optionId, 'label')
+      applyOptionOffsetTransform(item.stats, item.optionId, 'stats')
+      applyOptionOffsetTransform(item.track, item.optionId, 'bar')
+    }
   }
 
   function renderRaceOptions(poll, totalVotes) {
