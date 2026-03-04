@@ -28,12 +28,15 @@ import {
 import {
   ARTIFACT_DEFAULT_PLACEHOLDER,
   ARTIFACT_LAYOUT_HORIZONTAL,
-  ARTIFACT_LAYOUT_VERTICAL,
   ARTIFACT_WAITING_STATUS,
   ARTIFACT_VISUAL_MODE,
   buildArtifactAiPrompt,
   sanitizeArtifactLayout
 } from './poll-game-gamified-artifact-mode.js'
+import {
+  buildArtifactSrcDoc,
+  normalizeArtifactMarkup
+} from './poll-game-gamified-artifact-runtime.js'
 
 ;(() => {
 
@@ -88,7 +91,10 @@ import {
     resetModalInvoker: null,
     artifact: {
       busy: false,
-      lastPrompt: ''
+      lastPrompt: '',
+      html: '',
+      frameReady: false,
+      lastPayloadKey: ''
     },
     ai: {
       open: false,
@@ -151,6 +157,9 @@ import {
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
+    artifactStage: must('artifact-stage'),
+    artifactFrame: must('artifact-frame'),
+    artifactStagePlaceholder: must('artifact-stage-placeholder'),
     resetPositionsModal: must('reset-positions-modal'),
     resetPositionsAccept: must('reset-positions-accept'),
     resetPositionsCancel: must('reset-positions-cancel'),
@@ -178,6 +187,7 @@ import {
     dot: document.querySelector('.dot'),
     customLogo: must('custom-logo'),
     customAsset: must('custom-asset'),
+    pollHead: must('poll-head'),
     headLeft: must('head-left'),
     headRight: must('head-right'),
     metaBar: must('meta-bar'),
@@ -624,15 +634,45 @@ import {
     syncArtifactComposerBusyState()
     el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
     setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
+    setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
+    el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
 
   function syncArtifactComposerVisibility() {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     el.artifactComposer.classList.toggle('hidden', !isArtifactMode)
+    syncArtifactStageVisibility(isArtifactMode)
     if (isArtifactMode && !asText(el.artifactPromptInput.placeholder)) {
       el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
     }
+  }
+
+  function syncArtifactStageVisibility(isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+    el.artifactStage.classList.toggle('hidden', !isArtifactMode)
+    el.options.classList.toggle('hidden-by-artifact', isArtifactMode)
+    el.pollHead.classList.toggle('hidden-by-artifact', isArtifactMode)
+    el.footer.classList.toggle('hidden-by-artifact', isArtifactMode)
+    el.customLogo.classList.toggle('hidden-by-artifact', isArtifactMode)
+    el.customAsset.classList.toggle('hidden-by-artifact', isArtifactMode)
+    if (!isArtifactMode) {
+      return
+    }
+    const activeRichTextHost = getActiveRichTextHost()
+    const shouldBlurHost =
+      activeRichTextHost &&
+      (el.options.contains(activeRichTextHost) ||
+        el.pollHead.contains(activeRichTextHost) ||
+        el.footer.contains(activeRichTextHost))
+    if (shouldBlurHost) {
+      if (typeof activeRichTextHost.blur === 'function') {
+        activeRichTextHost.blur()
+      }
+      state.activeTextHost = null
+      clearCachedRichTextSelection()
+      hideSelectionToolbar()
+    }
+    clearActiveResizeTarget()
   }
 
   function syncArtifactComposerBusyState() {
@@ -657,6 +697,35 @@ import {
     }
   }
 
+  function setArtifactStagePlaceholder(text, type = 'pending') {
+    el.artifactStagePlaceholder.textContent =
+      asText(text) || 'Artifact mode is waiting for your prompt.'
+    el.artifactStagePlaceholder.classList.remove('hidden')
+    el.artifactStagePlaceholder.classList.remove(
+      'status-success',
+      'status-error',
+      'status-pending'
+    )
+    if (type === 'success') {
+      el.artifactStagePlaceholder.classList.add('status-success')
+      return
+    }
+    if (type === 'error') {
+      el.artifactStagePlaceholder.classList.add('status-error')
+      return
+    }
+    el.artifactStagePlaceholder.classList.add('status-pending')
+  }
+
+  function hideArtifactStagePlaceholder() {
+    el.artifactStagePlaceholder.classList.add('hidden')
+    el.artifactStagePlaceholder.classList.remove(
+      'status-success',
+      'status-error',
+      'status-pending'
+    )
+  }
+
   function handleArtifactPromptFormSubmit(event) {
     event.preventDefault()
     const prompt = asText(el.artifactPromptInput.value)
@@ -665,6 +734,15 @@ import {
       return
     }
     void submitArtifactPrompt(prompt)
+  }
+
+  function handleArtifactFrameLoad() {
+    state.artifact.frameReady = true
+    state.artifact.lastPayloadKey = ''
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.currentPoll) {
+      return
+    }
+    pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
   }
 
   async function submitArtifactPrompt(prompt) {
@@ -677,36 +755,35 @@ import {
     syncArtifactComposerBusyState()
     state.artifact.lastPrompt = prompt
     el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
-    const hintedLayout = inferArtifactLayoutFromPrompt(prompt, currentTheme.artifactLayout)
-    if (hintedLayout !== currentTheme.artifactLayout) {
-      updateTheme({ artifactLayout: hintedLayout }, { historyLabel: 'Artifact layout hint' })
-    }
-
+    setArtifactComposerStatus('Building artifact canvas from live poll data...', 'pending')
+    setArtifactStagePlaceholder('Building artifact canvas...', 'pending')
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
-
-    setArtifactComposerStatus('Building artifact layout from live poll data...', 'pending')
 
     try {
       const context = buildAiEditorContext()
       context.artifact = buildArtifactContext(prompt, context.poll)
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
-      const plan = await requestAiEditPlan(aiPrompt, context)
-      const outcome = applyAiPlanActions(plan)
-      if (outcome.changed) {
+      const buildResult = await requestAiArtifactBuild(aiPrompt, context)
+      const applied = applyArtifactMarkup(buildResult.html)
+      if (!applied) {
         setArtifactComposerStatus(
-          'Artifact build applied. Keep prompting to iterate.',
-          'success'
-        )
-      } else {
-        setArtifactComposerStatus(
-          'Artifact build returned no visible change. Try a more specific prompt.',
+          'Artifact build returned empty markup. Try a more specific prompt.',
           'error'
         )
+        setArtifactStagePlaceholder('Artifact build returned empty markup.', 'error')
+      } else {
+        renderFromSnapshot(true)
+        hideArtifactStagePlaceholder()
+        const statusMessage =
+          asText(buildResult.assistantMessage) ||
+          'Artifact build applied. Keep prompting to iterate.'
+        setArtifactComposerStatus(statusMessage, 'success')
       }
     } catch (error) {
       setArtifactComposerStatus(`Artifact request failed: ${errorToMessage(error)}`, 'error')
+      setArtifactStagePlaceholder(`Artifact request failed: ${errorToMessage(error)}`, 'error')
     } finally {
       state.artifact.busy = false
       syncArtifactComposerBusyState()
@@ -736,21 +813,6 @@ import {
         liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
       }
     }
-  }
-
-  function inferArtifactLayoutFromPrompt(prompt, fallbackLayout) {
-    const fallback = sanitizeArtifactLayout(fallbackLayout, ARTIFACT_LAYOUT_HORIZONTAL)
-    const text = asText(prompt).toLowerCase()
-    if (!text) {
-      return fallback
-    }
-    if (text.includes('vertical')) {
-      return ARTIFACT_LAYOUT_VERTICAL
-    }
-    if (text.includes('horizontal')) {
-      return ARTIFACT_LAYOUT_HORIZONTAL
-    }
-    return fallback
   }
 
   function resolveAiGeminiModel() {
@@ -1002,6 +1064,118 @@ import {
       throw new Error('AI service returned an empty response.')
     }
     return parseAiJsonResponse(text)
+  }
+
+  async function requestAiArtifactBuild(prompt, context) {
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
+    const body = {
+      prompt,
+      context,
+      model
+    }
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message =
+        asText(payload?.detail) ||
+        asText(payload?.error?.message) ||
+        `Request failed (${response.status})`
+      throw new Error(message)
+    }
+
+    const html = normalizeArtifactMarkup(asText(payload?.html) || asText(payload?.text))
+    if (!html) {
+      throw new Error('AI service returned empty artifact markup.')
+    }
+    return {
+      html,
+      assistantMessage: asText(payload?.assistantMessage)
+    }
+  }
+
+  function applyArtifactMarkup(markup) {
+    const normalized = normalizeArtifactMarkup(markup)
+    if (!normalized) {
+      return false
+    }
+    state.artifact.html = normalized
+    state.artifact.frameReady = false
+    state.artifact.lastPayloadKey = ''
+    const srcDoc = buildArtifactSrcDoc(normalized)
+    if (!srcDoc) {
+      return false
+    }
+    el.artifactFrame.srcdoc = srcDoc
+    return true
+  }
+
+  function clearArtifactMarkup() {
+    state.artifact.html = ''
+    state.artifact.frameReady = false
+    state.artifact.lastPayloadKey = ''
+    el.artifactFrame.removeAttribute('srcdoc')
+  }
+
+  function pushArtifactPollState(poll, totalVotes, options = {}) {
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
+      return
+    }
+    const force = Boolean(options.force)
+    const payload = buildArtifactPollPayload(poll, totalVotes)
+    const payloadKey = JSON.stringify(payload)
+    if (!force && payloadKey === state.artifact.lastPayloadKey) {
+      return
+    }
+    state.artifact.lastPayloadKey = payloadKey
+    el.artifactFrame.contentWindow.postMessage(
+      {
+        type: 'prezo-poll-state',
+        payload
+      },
+      '*'
+    )
+  }
+
+  function buildArtifactPollPayload(poll, totalVotes) {
+    const options = Array.isArray(poll?.options)
+      ? poll.options.map((option, index) => {
+          const votes = toInt(option?.votes)
+          const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
+          return {
+            id: asText(option?.id) || `option-${index}`,
+            label: asText(option?.label) || `Option ${index + 1}`,
+            votes,
+            percentage
+          }
+        })
+      : []
+
+    return {
+      poll: {
+        id: asText(poll?.id),
+        question: asText(poll?.question),
+        status: asText(poll?.status),
+        options
+      },
+      totalVotes,
+      meta: {
+        sessionId: asText(state.sessionId),
+        code: asText(state.code),
+        selector: asText(state.pollSelector?.descriptor),
+        socketStatus: asText(state.socketStatus),
+        timestamp: new Date().toISOString()
+      }
+    }
   }
 
   function buildAiEditorContext() {
@@ -5019,7 +5193,11 @@ import {
       getQuestionStateTextKey('loading'),
       'Waiting for poll data...'
     )
-    el.options.replaceChildren()
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      setArtifactStagePlaceholder('Waiting for poll data...', 'pending')
+    } else {
+      el.options.replaceChildren()
+    }
     renderRichText(
       el.footer,
       getFooterTextKey(),
@@ -5261,6 +5439,9 @@ import {
 
     const renderKey = getRenderKey(poll)
     if (!forceRender && renderKey === state.lastRenderKey) {
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+        renderArtifactExperience(poll, getTotalVotes(poll))
+      }
       updateFooter()
       updateMeta(poll, getTotalVotes(poll))
       scheduleResizeSelectionUpdate()
@@ -5279,13 +5460,11 @@ import {
       getQuestionTextKey(poll),
       asText(poll.question) || 'Untitled poll'
     )
-    if (!editingWithinOptions) {
-      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && !hasArtifactPrompt()) {
-        renderArtifactAwaitingPrompt()
-      } else if (currentTheme.visualMode === 'race') {
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      renderArtifactExperience(poll, totalVotes)
+    } else if (!editingWithinOptions) {
+      if (currentTheme.visualMode === 'race') {
         renderRaceOptions(poll, totalVotes)
-      } else if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-        renderArtifactOptions(poll, totalVotes)
       } else {
         renderClassicOptions(poll, totalVotes)
       }
@@ -5312,15 +5491,29 @@ import {
     return Boolean(asText(state.artifact.lastPrompt))
   }
 
-  function renderArtifactAwaitingPrompt() {
+  function renderArtifactExperience(poll, totalVotes) {
     if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
       clearRaceRows()
     }
     clearArtifactModeClasses()
-    renderEmptyStateNote(
-      'artifact-awaiting-prompt',
-      ARTIFACT_WAITING_STATUS
-    )
+    syncArtifactStageVisibility(true)
+
+    if (!hasArtifactPrompt()) {
+      renderArtifactAwaitingPrompt()
+      return
+    }
+
+    if (!asText(state.artifact.html)) {
+      setArtifactStagePlaceholder('Enter a prompt and click Build to generate an artifact.', 'pending')
+      return
+    }
+
+    hideArtifactStagePlaceholder()
+    pushArtifactPollState(poll, totalVotes)
+  }
+
+  function renderArtifactAwaitingPrompt() {
+    setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
   }
 
   function renderClassicOptions(poll, totalVotes) {
@@ -5398,108 +5591,6 @@ import {
         minScaleY: 0.4,
         maxScaleY: 4.5
       })
-      renderedNodes.push({ optionId, label, stats, track })
-      fragment.appendChild(optionNode)
-    }
-
-    el.options.replaceChildren(fragment)
-    for (const item of renderedNodes) {
-      applyOptionBoxSize(item.label, item.optionId, 'label')
-      applyOptionBoxSize(item.stats, item.optionId, 'stats')
-      applyOptionOffsetTransform(item.label, item.optionId, 'label')
-      applyOptionOffsetTransform(item.stats, item.optionId, 'stats')
-      applyOptionOffsetTransform(item.track, item.optionId, 'bar')
-    }
-  }
-
-  function renderArtifactOptions(poll, totalVotes) {
-    const layout = sanitizeArtifactLayout(currentTheme.artifactLayout, ARTIFACT_LAYOUT_HORIZONTAL)
-    if (layout === ARTIFACT_LAYOUT_VERTICAL) {
-      renderArtifactVerticalOptions(poll, totalVotes)
-      return
-    }
-    renderClassicOptions(poll, totalVotes)
-    clearArtifactModeClasses()
-    el.options.classList.add('artifact-mode')
-  }
-
-  function renderArtifactVerticalOptions(poll, totalVotes) {
-    if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
-      clearRaceRows()
-    }
-    clearArtifactModeClasses()
-    el.options.classList.add('artifact-mode', 'artifact-layout-vertical')
-
-    const fragment = document.createDocumentFragment()
-    const renderedNodes = []
-    const options = Array.isArray(poll.options) ? poll.options : []
-
-    for (let index = 0; index < options.length; index += 1) {
-      const option = options[index]
-      const optionId = asText(option.id) || `option-${index}`
-      const votes = toInt(option.votes)
-      const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
-
-      const optionNode = document.createElement('article')
-      optionNode.className = 'option artifact-vertical-option'
-      optionNode.dataset.optionDragId = optionId
-
-      const label = document.createElement('span')
-      label.className = 'label artifact-vertical-label'
-      renderRichText(
-        label,
-        getOptionTextKey(poll, option, index),
-        asText(option.label) || 'Option'
-      )
-
-      const track = document.createElement('div')
-      track.className = 'track artifact-vertical-track'
-
-      const fill = document.createElement('div')
-      fill.className = 'fill artifact-vertical-fill'
-      fill.style.height = `${pct}%`
-
-      track.appendChild(fill)
-
-      const stats = document.createElement('span')
-      stats.className = 'stats artifact-vertical-stats'
-      renderRichText(
-        stats,
-        getOptionStatsTextKey(poll, option, index),
-        `${votes} (${pct}%)`
-      )
-
-      applyDeletedOptionTarget(optionNode, poll, optionId, 'row')
-      applyDeletedOptionTarget(label, poll, optionId, 'label')
-      applyDeletedOptionTarget(stats, poll, optionId, 'stats')
-      applyDeletedOptionTarget(track, poll, optionId, 'bar')
-
-      optionNode.append(label, track, stats)
-
-      registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
-      registerOptionResizeTarget(label, optionId, 'label', {
-        resizeMode: 'box',
-        minWidth: 40,
-        maxWidth: 1600,
-        minHeight: 20,
-        maxHeight: 800
-      })
-      registerOptionDragTarget(stats, optionId, 'stats', { edgeGrabPadding: 12 })
-      registerOptionResizeTarget(stats, optionId, 'stats', {
-        resizeMode: 'box',
-        minWidth: 40,
-        maxWidth: 1100,
-        minHeight: 20,
-        maxHeight: 800
-      })
-      registerOptionDragTarget(track, optionId, 'bar')
-      registerOptionResizeTarget(track, optionId, 'bar', {
-        minScaleX: 0.35,
-        maxScaleX: 4.5,
-        minScaleY: 0.4,
-        maxScaleY: 4.5
-      })
-
       renderedNodes.push({ optionId, label, stats, track })
       fragment.appendChild(optionNode)
     }
@@ -5741,6 +5832,7 @@ import {
   function renderMissingSession() {
     clearRaceRows()
     clearArtifactModeClasses()
+    syncArtifactComposerVisibility()
     state.currentPoll = null
     state.lastRenderKey = ''
     renderRichText(
@@ -5748,10 +5840,14 @@ import {
       getQuestionStateTextKey('missing-session'),
       'Missing required query param'
     )
-    renderEmptyStateNote(
-      'missing-session',
-      'Open with ?sessionId=<id> or ?code=<join_code>.'
-    )
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      setArtifactStagePlaceholder('Open with ?sessionId=<id> or ?code=<join_code>.', 'error')
+    } else {
+      renderEmptyStateNote(
+        'missing-session',
+        'Open with ?sessionId=<id> or ?code=<join_code>.'
+      )
+    }
     updateMeta(null, 0, 'missing session', 'error')
     updateFooter()
     scheduleResizeSelectionUpdate()
@@ -5760,15 +5856,23 @@ import {
   function renderMissingPoll() {
     clearRaceRows()
     clearArtifactModeClasses()
+    syncArtifactComposerVisibility()
     const message =
       state.pollSelector.mode === 'id'
         ? `Poll "${state.pollSelector.explicitId}" was not found in this session.`
         : 'No poll is available in this session yet.'
     renderRichText(el.question, getQuestionStateTextKey('missing-poll'), message)
-    renderEmptyStateNote(
-      'missing-poll',
-      'Create and open a poll in Host Console to render it here.'
-    )
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      setArtifactStagePlaceholder(
+        'Create and open a poll in Host Console to render it here.',
+        'pending'
+      )
+    } else {
+      renderEmptyStateNote(
+        'missing-poll',
+        'Create and open a poll in Host Console to render it here.'
+      )
+    }
     updateMeta(null, 0)
     updateFooter()
     scheduleResizeSelectionUpdate()
@@ -5777,6 +5881,7 @@ import {
   function renderError(message) {
     clearRaceRows()
     clearArtifactModeClasses()
+    syncArtifactComposerVisibility()
     state.currentPoll = null
     state.lastRenderKey = ''
     renderRichText(
@@ -5784,7 +5889,11 @@ import {
       getQuestionStateTextKey('error'),
       'Unable to load poll data'
     )
-    renderEmptyStateNote('error-detail', message)
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      setArtifactStagePlaceholder(message, 'error')
+    } else {
+      renderEmptyStateNote('error-detail', message)
+    }
     updateMeta(null, 0, 'error', 'error')
     updateFooter()
     scheduleResizeSelectionUpdate()
@@ -6277,9 +6386,11 @@ import {
       currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     ) {
       state.artifact.lastPrompt = ''
+      clearArtifactMarkup()
       el.artifactPromptInput.value = ''
       el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
       setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
+      setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
     }
     applyTheme(currentTheme)
     if (
@@ -7538,6 +7649,7 @@ import {
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }
@@ -7575,6 +7687,8 @@ import {
       state.reconnectTimer = null
     }
     state.artifact.busy = false
+    state.artifact.frameReady = false
+    state.artifact.lastPayloadKey = ''
     state.ai.queue = []
     state.ai.activePrompt = ''
     state.ai.busy = false

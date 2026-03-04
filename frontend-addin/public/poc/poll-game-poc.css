@@ -1267,6 +1267,64 @@ h1 {
   color: #4e5f84;
 }
 
+.artifact-stage {
+  position: relative;
+  margin-top: 10px;
+  min-height: 300px;
+  border: 1px solid rgba(146, 181, 219, 0.64);
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(247, 252, 255, 0.74), rgba(239, 248, 255, 0.78));
+  box-shadow: 0 10px 22px rgba(66, 102, 143, 0.14);
+}
+
+.artifact-frame {
+  display: block;
+  width: 100%;
+  min-height: 300px;
+  height: 48vh;
+  max-height: 760px;
+  border: 0;
+  background: transparent;
+}
+
+.artifact-stage-placeholder {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #2b5b8f;
+  background: linear-gradient(135deg, rgba(243, 250, 255, 0.95), rgba(225, 240, 255, 0.94));
+  pointer-events: none;
+}
+
+.artifact-stage-placeholder.hidden {
+  display: none;
+}
+
+.artifact-stage-placeholder.status-success {
+  color: #1e6e43;
+}
+
+.artifact-stage-placeholder.status-error {
+  color: #bf3f53;
+}
+
+.artifact-stage-placeholder.status-pending {
+  color: #2b5b8f;
+}
+
+.hidden-by-artifact {
+  display: none;
+}
+
 .state.race-mode {
   position: relative;
   margin-top: 20px;
@@ -1872,6 +1930,11 @@ h1 {
 
   .artifact-prompt-submit {
     width: 100%;
+  }
+
+  .artifact-frame {
+    min-height: 220px;
+    height: 40vh;
   }
 
   .state.artifact-mode.artifact-layout-vertical {

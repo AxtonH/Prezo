@@ -35,9 +35,12 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
 
   return [
     'Artifact mode is active.',
-    'Do not apply a predefined theme style unless the user explicitly asks for one.',
-    'Prioritize layout intent first. If user asks for vertical alignment, use artifactLayout:"vertical".',
-    'Use only supported JSON actions for this editor.',
+    'Generate a full creative artifact experience with complete control over layout, visuals, and motion.',
+    'Do not constrain output to existing poll game shape/label templates.',
+    'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
+    'Output should be raw HTML that can render from live poll state updates.',
+    'Define window.prezoRenderPoll(state) and use state.poll.question, state.poll.options, state.totalVotes, state.meta.',
+    'Avoid markdown fences and explanations; return artifact HTML only.',
     pollTitle ? `Live poll title: ${pollTitle}` : '',
     selector ? `Poll selector: ${selector}` : '',
     endpointLines.length > 0

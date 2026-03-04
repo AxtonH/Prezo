@@ -47,6 +47,25 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
     ]
 )
 
+POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
+    [
+        "You build complete interactive HTML artifacts for a live poll game canvas.",
+        "Output must be raw HTML only. Do not output markdown, code fences, JSON wrappers, or explanations.",
+        "The artifact runs inside a sandboxed iframe and receives live data from host messages.",
+        "Runtime contract:",
+        '- Host posts message: { "type":"prezo-poll-state", "payload": state }',
+        "- State shape: state.poll.question, state.poll.options[], state.totalVotes, state.meta.",
+        "- Define window.prezoRenderPoll(state) to render and update the artifact when live data changes.",
+        "Design guidance:",
+        "- Prioritize user prompt intent over default templates.",
+        "- Assume base poll chrome can be replaced by your artifact scene composition.",
+        "- You have full creative freedom with HTML, CSS, and JavaScript animation.",
+        "- Keep all scripts self-contained inside the generated HTML.",
+        "- Do not require external libraries or network assets unless the user explicitly requests them.",
+        "- Build resilient rendering when options/votes change over time.",
+    ]
+)
+
 
 class PollGameEditPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
@@ -57,6 +76,18 @@ class PollGameEditPlanRequest(BaseModel):
 class PollGameEditPlanResponse(BaseModel):
     text: str
     model: str
+
+
+class PollGameArtifactBuildRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    model: str | None = Field(default=None, max_length=120)
+
+
+class PollGameArtifactBuildResponse(BaseModel):
+    html: str
+    model: str
+    assistantMessage: str
 
 
 @router.post("/poll-game-edit-plan", response_model=PollGameEditPlanResponse)
@@ -141,6 +172,103 @@ async def create_poll_game_edit_plan(
     return PollGameEditPlanResponse(
         text=json.dumps(normalized_plan, ensure_ascii=False),
         model=model,
+    )
+
+
+@router.post("/poll-game-artifact-build", response_model=PollGameArtifactBuildResponse)
+async def create_poll_game_artifact_build(
+    payload: PollGameArtifactBuildRequest,
+) -> PollGameArtifactBuildResponse:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+        )
+
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    endpoint = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent"
+    )
+    body = {
+        "systemInstruction": {
+            "parts": [{"text": POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION}]
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": json.dumps(
+                            {"prompt": payload.prompt, "context": payload.context},
+                            indent=2,
+                        )
+                    }
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.8,
+            "topP": 0.95,
+            "maxOutputTokens": 5200,
+            "responseMimeType": "text/plain",
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0)
+        ) as client:
+            response = await client.post(
+                endpoint,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key,
+                },
+                json=body,
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to reach Gemini API.",
+        ) from exc
+
+    raw_payload: Any = {}
+    if response.content:
+        try:
+            raw_payload = response.json()
+        except ValueError:
+            raw_payload = {}
+    if response.status_code >= 400:
+        detail = (
+            extract_gemini_error(raw_payload)
+            or f"Gemini request failed ({response.status_code})"
+        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+
+    text = extract_gemini_text(raw_payload)
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gemini response did not include text content.",
+        )
+
+    html = normalize_poll_game_artifact_html(text)
+    if not html:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gemini response did not include artifact HTML.",
+        )
+
+    return PollGameArtifactBuildResponse(
+        html=html,
+        model=model,
+        assistantMessage="Artifact build generated. Keep prompting to iterate.",
     )
 
 
@@ -277,3 +405,21 @@ def extract_first_json_object(raw_text: str) -> str:
             if depth == 0:
                 return text[start : index + 1]
     return ""
+
+
+def normalize_poll_game_artifact_html(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return ""
+
+    direct = try_parse_json(text)
+    if isinstance(direct, dict):
+        html_field = direct.get("html")
+        if isinstance(html_field, str) and html_field.strip():
+            text = html_field.strip()
+
+    fenced = re.search(r"```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+    if fenced and fenced.group(1):
+        text = fenced.group(1).strip()
+
+    return text.strip()

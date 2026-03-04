@@ -330,7 +330,7 @@
       </div>
       <img id="custom-logo" class="custom-logo draggable-layer hidden" alt="Custom logo" />
       <img id="custom-asset" class="custom-asset draggable-layer hidden" alt="Custom asset" />
-      <section class="head">
+      <section id="poll-head" class="head">
         <div id="head-left">
           <p id="eyebrow" class="eyebrow">Prezo Game Mode PoC</p>
           <h1 id="question">Waiting for poll data...</h1>
@@ -358,6 +358,17 @@
         </form>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
           Describe the look and motion. AI will iteratively build your poll game.
+        </p>
+      </section>
+      <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact game preview">
+        <iframe
+          id="artifact-frame"
+          class="artifact-frame"
+          title="Artifact game preview"
+          sandbox="allow-scripts"
+        ></iframe>
+        <p id="artifact-stage-placeholder" class="artifact-stage-placeholder">
+          Artifact mode is waiting for your prompt. Describe the game style, then click Build.
         </p>
       </section>
       <section id="options" class="state"></section>
