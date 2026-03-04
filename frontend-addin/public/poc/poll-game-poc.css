@@ -52,6 +52,16 @@ body {
   background: linear-gradient(140deg, var(--bg-a), var(--bg-b));
 }
 
+body.ribbon-hidden {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+body.ribbon-hidden .wrap {
+  margin: 0;
+}
+
 .bg-image,
 .bg-overlay,
 .grid-bg {
