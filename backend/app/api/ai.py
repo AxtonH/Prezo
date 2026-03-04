@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 from ..config import settings
 
 router = APIRouter(prefix="/ai", tags=["ai"])
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+LEGACY_GEMINI_MODELS = {
+    "gemini-2.0-flash",
+}
 
 POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
     [
@@ -60,8 +64,11 @@ async def create_poll_game_edit_plan(
             detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = (payload.model or "").strip()
-    model = requested_model or settings.gemini_model.strip() or "gemini-2.0-flash"
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent"
@@ -161,3 +168,12 @@ def extract_gemini_error(payload: Any) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def normalize_gemini_model_name(value: str | None) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("models/"):
+        return text.removeprefix("models/").strip()
+    return text
