@@ -33,6 +33,7 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
         "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, raceCarSize, "
         "raceTrackOpacity, raceSpeed, logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
         "gridVisible, visualMode, raceCar, raceCarImageUrl, logoUrl, assetUrl, fontFamily.",
+        "visualMode values: classic, race, artifact.",
         "Allowed move targets: panel, eyebrow, question, meta, footer, options, logo, asset, bgImage, overlay, grid.",
         "Allowed resize targets: panel, eyebrow, question, meta, footer, logo, asset, bgImage, overlay, grid.",
         "Use hex colors only (#RRGGBB).",

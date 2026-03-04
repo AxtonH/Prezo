@@ -91,6 +91,7 @@
                   <select id="theme-visual-mode">
                     <option value="classic">Classic bars</option>
                     <option value="race">Race mode</option>
+                    <option value="artifact">Artifact mode</option>
                   </select>
                 </div>
               </article>
@@ -341,6 +342,23 @@
             <span id="votes">0 votes</span>
           </div>
         </div>
+      </section>
+      <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact game builder">
+        <p class="artifact-kicker">Artifact Builder</p>
+        <form id="artifact-prompt-form" class="artifact-prompt-form">
+          <input
+            id="artifact-prompt-input"
+            class="artifact-prompt-input"
+            type="text"
+            placeholder="Describe your game concept (example: lego pieces stacking into each poll bar)."
+            maxlength="220"
+            aria-label="Describe artifact game mode"
+          />
+          <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Build</button>
+        </form>
+        <p id="artifact-prompt-status" class="artifact-prompt-status">
+          Describe the look and motion. AI will iteratively build your poll game.
+        </p>
       </section>
       <section id="options" class="state"></section>
       <p id="footer" class="footer"></p>
