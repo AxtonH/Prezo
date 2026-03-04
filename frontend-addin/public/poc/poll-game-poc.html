@@ -53,14 +53,6 @@
           >
             Delete
           </button>
-          <button
-            id="ribbon-advanced-toggle"
-            class="ribbon-btn ghost"
-            type="button"
-            aria-pressed="false"
-          >
-            Advanced
-          </button>
           <button id="settings-toggle" class="ribbon-btn" type="button">Collapse</button>
           <button id="settings-close" class="ribbon-btn ghost" type="button">Hide</button>
         </div>
@@ -82,8 +74,8 @@
                   <button id="delete-theme" type="button" class="danger">Delete</button>
                 </div>
                 <div class="row advanced-control">
-                  <button id="export-theme" type="button">Export</button>
-                  <label class="file-btn">
+                  <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
+                  <label class="file-btn ghost theme-transfer-btn">
                     Import
                     <input id="import-theme" type="file" accept=".json,application/json" />
                   </label>

@@ -15,7 +15,6 @@ import {
   DRAG_START_THRESHOLD_PX,
   HISTORY_LIMIT,
   MIN_RESIZE_HANDLE_SIZE_PX,
-  RIBBON_ADVANCED_KEY,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
   RIBBON_TAB_KEY,
@@ -104,7 +103,6 @@ import {
     panelDragBl: must('panel-drag-bl'),
     settingsRibbon: must('settings-ribbon'),
     settingsToggle: must('settings-toggle'),
-    ribbonAdvancedToggle: must('ribbon-advanced-toggle'),
     settingsMinimized: must('settings-minimized'),
     settingsBackdrop: must('settings-backdrop'),
     selectionToolbar: must('selection-toolbar'),
@@ -359,7 +357,7 @@ import {
   function setupSettingsPanel() {
     const storedTab = asText(safeStorageGet(RIBBON_TAB_KEY))
     setActiveRibbonTab(storedTab || 'home', { persist: false })
-    setRibbonAdvanced(safeStorageGet(RIBBON_ADVANCED_KEY) === '1', { persist: false })
+    setRibbonAdvanced(true)
     setRibbonCollapsed(safeStorageGet(RIBBON_COLLAPSED_KEY) === '1', { persist: false })
     setRibbonHidden(safeStorageGet(RIBBON_HIDDEN_KEY) === '1', { persist: false })
 
@@ -381,9 +379,6 @@ import {
         setRibbonHidden(false)
       }
       setRibbonCollapsed(!ribbonState.collapsed)
-    })
-    el.ribbonAdvancedToggle.addEventListener('click', () => {
-      setRibbonAdvanced(!ribbonState.advanced)
     })
     el.settingsClose.addEventListener('click', () => {
       setRibbonHidden(true)
@@ -527,19 +522,9 @@ import {
     scheduleRibbonOffsetUpdate()
   }
 
-  function setRibbonAdvanced(advanced, options = {}) {
-    const persist = options.persist !== false
+  function setRibbonAdvanced(advanced) {
     ribbonState.advanced = Boolean(advanced)
     document.body.classList.toggle('ribbon-advanced', ribbonState.advanced)
-    el.ribbonAdvancedToggle.classList.toggle('is-active', ribbonState.advanced)
-    el.ribbonAdvancedToggle.setAttribute('aria-pressed', ribbonState.advanced ? 'true' : 'false')
-    el.ribbonAdvancedToggle.textContent = ribbonState.advanced ? 'Advanced On' : 'Advanced'
-
-    if (persist) {
-      try {
-        localStorage.setItem(RIBBON_ADVANCED_KEY, ribbonState.advanced ? '1' : '0')
-      } catch {}
-    }
     scheduleRibbonOffsetUpdate()
   }
 
