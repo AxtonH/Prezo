@@ -1271,7 +1271,7 @@ h1 {
 .ai-chat-shell {
   position: fixed;
   right: 18px;
-  bottom: 18px;
+  bottom: 44px;
   z-index: 54;
   display: flex;
   flex-direction: column;
@@ -1673,7 +1673,7 @@ h1 {
   .ai-chat-shell {
     right: 6px;
     left: 6px;
-    bottom: 6px;
+    bottom: 18px;
     width: auto;
     max-width: none;
     align-items: stretch;
