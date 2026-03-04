@@ -94,7 +94,8 @@ import {
       lastPrompt: '',
       html: '',
       frameReady: false,
-      lastPayloadKey: ''
+      lastPayloadKey: '',
+      frameHeight: 520
     },
     ai: {
       open: false,
@@ -635,7 +636,9 @@ import {
     el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
     setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
     setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
+    setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
+    window.addEventListener('message', handleArtifactFrameMessage)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
 
@@ -743,6 +746,37 @@ import {
       return
     }
     pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+  }
+
+  function handleArtifactFrameMessage(event) {
+    if (event.source !== el.artifactFrame.contentWindow) {
+      return
+    }
+    const payload = event.data
+    if (!payload || typeof payload !== 'object') {
+      return
+    }
+    if (payload.type === 'prezo-artifact-ready') {
+      state.artifact.frameReady = true
+      state.artifact.lastPayloadKey = ''
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
+        pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+      }
+      return
+    }
+    if (payload.type === 'prezo-artifact-size') {
+      setArtifactFrameHeight(payload.height)
+    }
+  }
+
+  function setArtifactFrameHeight(value, options = {}) {
+    const force = Boolean(options.force)
+    const normalized = clamp(value, 240, 6000, state.artifact.frameHeight || 520)
+    if (!force && Math.abs(normalized - state.artifact.frameHeight) < 1) {
+      return
+    }
+    state.artifact.frameHeight = normalized
+    el.artifactFrame.style.height = `${Math.round(normalized)}px`
   }
 
   async function submitArtifactPrompt(prompt) {
@@ -1112,6 +1146,7 @@ import {
     if (!srcDoc) {
       return false
     }
+    setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.srcdoc = srcDoc
     return true
   }
@@ -1120,6 +1155,7 @@ import {
     state.artifact.html = ''
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
+    setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
   }
 
@@ -7650,6 +7686,7 @@ import {
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
+    window.removeEventListener('message', handleArtifactFrameMessage)
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }

@@ -1,5 +1,7 @@
 const ARTIFACT_POLL_MESSAGE_TYPE = 'prezo-poll-state'
 const ARTIFACT_POLL_EVENT_NAME = 'prezo:poll-update'
+const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
+const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -65,10 +67,11 @@ function wrapArtifactSnippet(snippet) {
       body {
         margin: 0;
         width: 100%;
-        height: 100%;
+        min-height: 100%;
       }
       body {
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
       .prezo-artifact-empty {
         display: grid;
@@ -116,12 +119,16 @@ function buildBridgeScript() {
     '(function () {',
     `  var MESSAGE_TYPE = '${ARTIFACT_POLL_MESSAGE_TYPE}'`,
     `  var EVENT_NAME = '${ARTIFACT_POLL_EVENT_NAME}'`,
+    `  var READY_MESSAGE_TYPE = '${ARTIFACT_READY_MESSAGE_TYPE}'`,
+    `  var SIZE_MESSAGE_TYPE = '${ARTIFACT_SIZE_MESSAGE_TYPE}'`,
     '  var defaultState = {',
     '    poll: { id: "", question: "", status: "", options: [] },',
     '    totalVotes: 0,',
     '    meta: {}',
     '  }',
     '  var currentState = defaultState',
+    '  var lastReportedHeight = 0',
+    '  var sizeRafId = 0',
     '  function isObject(value) {',
     '    return value && typeof value === "object"',
     '  }',
@@ -167,6 +174,35 @@ function buildBridgeScript() {
     '      return value',
     '    }',
     '  }',
+    '  function computeDocumentHeight() {',
+    '    var doc = document.documentElement',
+    '    var body = document.body',
+    '    var docHeight = doc ? Math.max(doc.scrollHeight, doc.offsetHeight, doc.clientHeight) : 0',
+    '    var bodyHeight = body ? Math.max(body.scrollHeight, body.offsetHeight, body.clientHeight) : 0',
+    '    var nextHeight = Math.max(docHeight, bodyHeight, 240)',
+    '    return Math.min(nextHeight, 6000)',
+    '  }',
+    '  function postArtifactSize(force) {',
+    '    var nextHeight = computeDocumentHeight()',
+    '    if (!force && Math.abs(nextHeight - lastReportedHeight) < 2) {',
+    '      return',
+    '    }',
+    '    lastReportedHeight = nextHeight',
+    '    if (window.parent && window.parent !== window) {',
+    '      try {',
+    '        window.parent.postMessage({ type: SIZE_MESSAGE_TYPE, height: nextHeight }, "*")',
+    '      } catch (error) {}',
+    '    }',
+    '  }',
+    '  function scheduleArtifactSizeReport() {',
+    '    if (sizeRafId) {',
+    '      return',
+    '    }',
+    '    sizeRafId = requestAnimationFrame(function () {',
+    '      sizeRafId = 0',
+    '      postArtifactSize(false)',
+    '    })',
+    '  }',
     '  function dispatchState() {',
     '    var payload = clone(currentState)',
     '    window.__PREZO_POLL_STATE = payload',
@@ -180,6 +216,7 @@ function buildBridgeScript() {
     '    try {',
     '      document.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: payload }))',
     '    } catch (error) {}',
+    '    scheduleArtifactSizeReport()',
     '  }',
     '  window.prezoGetPollState = function () {',
     '    return clone(currentState)',
@@ -194,14 +231,36 @@ function buildBridgeScript() {
     '  })',
     '  if (window.parent && window.parent !== window) {',
     '    try {',
-    '      window.parent.postMessage({ type: "prezo-artifact-ready" }, "*")',
+    '      window.parent.postMessage({ type: READY_MESSAGE_TYPE }, "*")',
     '    } catch (error) {}',
+    '  }',
+    '  window.addEventListener("resize", scheduleArtifactSizeReport)',
+    '  if (typeof MutationObserver === "function") {',
+    '    var observer = new MutationObserver(function () {',
+    '      scheduleArtifactSizeReport()',
+    '    })',
+    '    var observedTarget = document.body || document.documentElement',
+    '    if (observedTarget) {',
+    '      observer.observe(observedTarget, { childList: true, subtree: true, attributes: true, characterData: true })',
+    '    }',
+    '  }',
+    '  if (typeof ResizeObserver === "function") {',
+    '    var resizeObserver = new ResizeObserver(function () {',
+    '      scheduleArtifactSizeReport()',
+    '    })',
+    '    if (document.documentElement) {',
+    '      resizeObserver.observe(document.documentElement)',
+    '    }',
+    '    if (document.body) {',
+    '      resizeObserver.observe(document.body)',
+    '    }',
     '  }',
     '  if (document.readyState === "loading") {',
     '    document.addEventListener("DOMContentLoaded", dispatchState, { once: true })',
     '  } else {',
     '    setTimeout(dispatchState, 0)',
     '  }',
+    '  postArtifactSize(true)',
     '})()'
   ].join('\n')
 }

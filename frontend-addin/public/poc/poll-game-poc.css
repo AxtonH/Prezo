@@ -1283,10 +1283,10 @@ h1 {
   display: block;
   width: 100%;
   min-height: 300px;
-  height: 48vh;
-  max-height: 760px;
+  height: 520px;
   border: 0;
   background: transparent;
+  transition: height 180ms ease;
 }
 
 .artifact-stage-placeholder {
@@ -1934,7 +1934,7 @@ h1 {
 
   .artifact-frame {
     min-height: 220px;
-    height: 40vh;
+    height: 420px;
   }
 
   .state.artifact-mode.artifact-layout-vertical {
