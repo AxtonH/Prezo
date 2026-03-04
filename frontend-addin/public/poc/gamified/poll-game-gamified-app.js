@@ -114,7 +114,6 @@ import {
     historyUndo: must('history-undo'),
     historyRedo: must('history-redo'),
     deleteSelectedObject: must('delete-selected-object'),
-    dragModeEnabled: must('drag-mode-enabled'),
     resetPositions: must('reset-positions'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
@@ -3013,8 +3012,6 @@ import {
   }
 
   function setupDragInteractions() {
-    el.dragModeEnabled.checked = true
-    el.dragModeEnabled.disabled = true
     setDragMode(true, { announce: false })
 
     window.addEventListener('pointermove', handleDragPointerMove)
@@ -3957,7 +3954,6 @@ import {
   function setDragMode(enabled, options = {}) {
     const announce = options.announce !== false
     dragState.enabled = Boolean(enabled)
-    el.dragModeEnabled.checked = dragState.enabled
     document.body.classList.toggle('drag-mode', dragState.enabled)
     if (!dragState.enabled && dragState.active) {
       dragState.active.node.classList.remove('dragging')
