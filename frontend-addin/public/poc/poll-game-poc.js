@@ -891,6 +891,8 @@
     state.ai.open = Boolean(open)
     el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
     el.aiChatFab.classList.toggle('hidden', state.ai.open)
+    el.aiChatShell.classList.toggle('is-open', state.ai.open)
+    el.aiChatShell.classList.toggle('is-collapsed', !state.ai.open)
     el.aiChatFab.setAttribute('aria-expanded', state.ai.open ? 'true' : 'false')
     if (persist) {
       try {
