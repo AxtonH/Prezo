@@ -3809,6 +3809,15 @@
     if (!(target instanceof Element)) {
       return
     }
+    // Keep object selection while interacting with editor UI controls (PowerPoint-style).
+    if (
+      target.closest('#settings-ribbon') ||
+      target.closest('#settings-minimized') ||
+      target.closest('#ai-chat-shell') ||
+      target.closest('#reset-positions-modal')
+    ) {
+      return
+    }
     if (target.closest('#resize-selection') || target.closest('#selection-toolbar')) {
       return
     }
