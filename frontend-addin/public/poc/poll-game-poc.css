@@ -62,6 +62,17 @@ body.ribbon-hidden .wrap {
   margin: 0;
 }
 
+body.ribbon-collapsed:not(.ribbon-hidden) {
+  display: grid;
+  place-items: center;
+  padding-top: var(--ribbon-compact-height);
+  overflow: auto;
+}
+
+body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
+  margin: 0;
+}
+
 .bg-image,
 .bg-overlay,
 .grid-bg {
