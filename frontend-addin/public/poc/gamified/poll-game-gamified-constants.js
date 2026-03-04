@@ -50,6 +50,7 @@ export const AI_THEME_ALLOWED_KEYS = new Set([
   'bgImageUrl',
   'gridVisible',
   'visualMode',
+  'artifactLayout',
   'raceCar',
   'raceCarImageUrl',
   'logoUrl',

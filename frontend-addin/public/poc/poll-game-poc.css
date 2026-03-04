@@ -1367,69 +1367,45 @@ h1 {
   margin-top: 12px;
 }
 
-.artifact-option.option {
-  margin-top: 12px;
+.state.artifact-mode.artifact-layout-vertical {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  align-items: end;
 }
 
-.artifact-track.track {
-  height: max(var(--bar-height), 28px);
-  border: 1px solid rgba(129, 166, 209, 0.36);
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.15)),
-    var(--track);
+.artifact-vertical-option.option {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.artifact-fill.fill {
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.2) inset,
-    0 0 18px rgba(74, 137, 255, 0.32);
-}
-
-.artifact-ornament {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 38px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(95, 139, 189, 0.46);
-  background: rgba(255, 255, 255, 0.76);
-  color: #20466f;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+.artifact-vertical-label,
+.artifact-vertical-stats {
   text-align: center;
-  pointer-events: none;
-  animation: artifact-ornament-float 1200ms ease-in-out infinite;
 }
 
-.artifact-mode-lego .artifact-fill.fill {
+.artifact-vertical-track.track {
+  width: 100%;
+  height: 240px;
+  border: 1px solid rgba(129, 166, 209, 0.36);
+  border-radius: 14px;
   background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.22) 0 12px,
-      rgba(255, 255, 255, 0.08) 12px 24px
-    ),
-    linear-gradient(90deg, #f4c542, #f28d35);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.15)),
+    var(--track);
+  overflow: hidden;
 }
 
-.artifact-mode-lego .artifact-ornament {
-  border-color: rgba(188, 130, 54, 0.48);
-  color: #6a4510;
-  background: rgba(255, 234, 183, 0.86);
-  animation-name: artifact-ornament-drop;
-}
-
-.artifact-mode-cats .artifact-ornament {
-  border-color: rgba(201, 133, 113, 0.45);
-  color: #693f32;
-  background: rgba(255, 225, 216, 0.85);
-}
-
-.artifact-mode-arcade .artifact-ornament {
-  border-color: rgba(96, 128, 223, 0.52);
-  color: #1c3f6a;
-  background: rgba(214, 236, 255, 0.84);
+.artifact-vertical-fill.fill {
+  top: auto;
+  width: 100%;
+  height: 0%;
+  border-radius: 0;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  transition: height 420ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .label-row {
@@ -1898,6 +1874,15 @@ h1 {
     width: 100%;
   }
 
+  .state.artifact-mode.artifact-layout-vertical {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+  }
+
+  .artifact-vertical-track.track {
+    height: 180px;
+  }
+
   .ai-chat-shell {
     right: 6px;
     left: 6px;
@@ -1956,32 +1941,5 @@ h1 {
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes artifact-ornament-float {
-  0% {
-    transform: translate(-50%, -52%);
-  }
-  50% {
-    transform: translate(-50%, -46%);
-  }
-  100% {
-    transform: translate(-50%, -52%);
-  }
-}
-
-@keyframes artifact-ornament-drop {
-  0% {
-    transform: translate(-50%, -105%);
-    opacity: 0.35;
-  }
-  35% {
-    transform: translate(-50%, -50%);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(-50%, -50%);
-    opacity: 1;
   }
 }

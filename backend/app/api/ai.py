@@ -33,11 +33,15 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
         "trackColor, fillA, fillB, raceTrackColor, bgImageOpacity, overlayOpacity, gridOpacity, "
         "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, raceCarSize, "
         "raceTrackOpacity, raceSpeed, logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
-        "gridVisible, visualMode, raceCar, raceCarImageUrl, logoUrl, assetUrl, fontFamily.",
+        "gridVisible, visualMode, artifactLayout, raceCar, raceCarImageUrl, logoUrl, assetUrl, fontFamily.",
         "visualMode values: classic, race, artifact.",
+        "artifactLayout values: horizontal, vertical.",
         "Allowed move targets: panel, eyebrow, question, meta, footer, options, logo, asset, bgImage, overlay, grid.",
         "Allowed resize targets: panel, eyebrow, question, meta, footer, logo, asset, bgImage, overlay, grid.",
         "Use hex colors only (#RRGGBB).",
+        "If artifact mode is active, avoid applying predefined neon/pixel themes unless user explicitly asks.",
+        "For prompts about vertical poll alignment in artifact mode, prefer artifactLayout='vertical'.",
+        "Use context.artifact.pollTitle and context.artifact.dataEndpoints to design around live poll data.",
         "Use minimal actions required for the request.",
         "Do not invent keys, fields, or unsupported action types.",
     ]

@@ -1,132 +1,50 @@
 export const ARTIFACT_VISUAL_MODE = 'artifact'
+export const ARTIFACT_LAYOUT_HORIZONTAL = 'horizontal'
+export const ARTIFACT_LAYOUT_VERTICAL = 'vertical'
 
-const ARTIFACT_PROFILES = Object.freeze({
-  lego: Object.freeze({
-    id: 'lego',
-    displayName: 'Lego Build',
-    keywords: Object.freeze(['lego', 'brick', 'blocks', 'blocky', 'stack']),
-    placeholder:
-      'Describe your build (example: falling lego bricks, vertical score towers, yellow/blue palette).',
-    aiGuidance:
-      'Prioritize playful block-based visuals, strong contrast, and stacking motion cues.',
-    themePatch: Object.freeze({
-      fillA: '#f4c542',
-      fillB: '#f28d35',
-      trackColor: '#fff4cf',
-      trackOpacity: 0.92,
-      panelColor: '#fffdf2',
-      panelOpacity: 0.88,
-      textMain: '#2a2f4f',
-      textSub: '#5a6286',
-      barHeight: 28,
-      labelSize: 24
-    })
-  }),
-  cats: Object.freeze({
-    id: 'cats',
-    displayName: 'Cat Parade',
-    keywords: Object.freeze(['cat', 'cats', 'kitty', 'feline', 'paw']),
-    placeholder:
-      'Describe your cat theme (example: cats walking across each bar with soft pastel tones).',
-    aiGuidance:
-      'Use cozy playful styling with gentle color contrast and cat-walk motion cues.',
-    themePatch: Object.freeze({
-      fillA: '#ffb380',
-      fillB: '#ff7f66',
-      trackColor: '#ffe4da',
-      trackOpacity: 0.9,
-      panelColor: '#fff8f5',
-      panelOpacity: 0.88,
-      textMain: '#4a2f2b',
-      textSub: '#8f665f',
-      barHeight: 26,
-      labelSize: 24
-    })
-  }),
-  arcade: Object.freeze({
-    id: 'arcade',
-    displayName: 'Arcade Neon',
-    keywords: Object.freeze(['arcade', 'neon', 'retro', 'pixel', 'cyber', 'synth']),
-    placeholder:
-      'Describe your arcade style (example: neon bars, pixel particles, high-energy score board).',
-    aiGuidance:
-      'Use high-energy arcade visual direction with punchy colors and animated HUD feeling.',
-    themePatch: Object.freeze({
-      fillA: '#49f3ff',
-      fillB: '#527bff',
-      trackColor: '#d8e9ff',
-      trackOpacity: 0.86,
-      panelColor: '#eef6ff',
-      panelOpacity: 0.82,
-      textMain: '#16375e',
-      textSub: '#3f6d9f',
-      barHeight: 24,
-      labelSize: 24
-    })
-  })
-})
+export const ARTIFACT_DEFAULT_PLACEHOLDER =
+  'Describe your game concept (example: vertically aligned bars with floating labels and smooth transitions).'
 
-const DEFAULT_PROFILE_ID = 'arcade'
+export const ARTIFACT_WAITING_STATUS =
+  'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
 
-export const ARTIFACT_PROFILE_IDS = Object.freeze(Object.keys(ARTIFACT_PROFILES))
-
-export function getDefaultArtifactProfile() {
-  return getArtifactProfileById(DEFAULT_PROFILE_ID)
-}
-
-export function getArtifactProfileById(profileId) {
-  const id = typeof profileId === 'string' ? profileId.trim().toLowerCase() : ''
-  const profile = ARTIFACT_PROFILES[id] || ARTIFACT_PROFILES[DEFAULT_PROFILE_ID]
-  return cloneProfile(profile)
-}
-
-export function resolveArtifactProfile(prompt) {
-  const text = typeof prompt === 'string' ? prompt.trim().toLowerCase() : ''
-  if (!text) {
-    return getDefaultArtifactProfile()
+export function sanitizeArtifactLayout(value, fallback = ARTIFACT_LAYOUT_HORIZONTAL) {
+  const layout = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (layout === ARTIFACT_LAYOUT_VERTICAL || layout === ARTIFACT_LAYOUT_HORIZONTAL) {
+    return layout
   }
-  for (const profileId of ARTIFACT_PROFILE_IDS) {
-    const profile = ARTIFACT_PROFILES[profileId]
-    if (profile.keywords.some((keyword) => text.includes(keyword))) {
-      return cloneProfile(profile)
-    }
-  }
-  return getDefaultArtifactProfile()
+  return fallback
 }
 
-export function buildArtifactThemePatch(profile) {
-  const resolved =
-    profile && typeof profile === 'object'
-      ? getArtifactProfileById(profile.id)
-      : getDefaultArtifactProfile()
-  return {
-    visualMode: ARTIFACT_VISUAL_MODE,
-    ...resolved.themePatch
-  }
-}
-
-export function buildArtifactAiPrompt(userPrompt, profile) {
+export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
   const promptText = typeof userPrompt === 'string' ? userPrompt.trim() : ''
-  const resolved =
-    profile && typeof profile === 'object'
-      ? getArtifactProfileById(profile.id)
-      : getDefaultArtifactProfile()
+  const pollTitle =
+    typeof artifactContext.pollTitle === 'string' ? artifactContext.pollTitle.trim() : ''
+  const selector =
+    typeof artifactContext.pollSelector === 'string'
+      ? artifactContext.pollSelector.trim()
+      : ''
+  const endpoints =
+    artifactContext.dataEndpoints && typeof artifactContext.dataEndpoints === 'object'
+      ? artifactContext.dataEndpoints
+      : {}
+
+  const endpointLines = Object.entries(endpoints)
+    .filter(([, value]) => typeof value === 'string' && value.trim())
+    .map(([key, value]) => `- ${key}: ${value}`)
+
   return [
     'Artifact mode is active.',
-    `Selected artifact profile: ${resolved.id} (${resolved.displayName}).`,
-    resolved.aiGuidance,
-    'Return only supported poll-game JSON actions.',
-    `User request: ${promptText || 'Use a creative artifact game layout.'}`
-  ].join('\n')
-}
-
-function cloneProfile(profile) {
-  return {
-    id: profile.id,
-    displayName: profile.displayName,
-    placeholder: profile.placeholder,
-    aiGuidance: profile.aiGuidance,
-    keywords: [...profile.keywords],
-    themePatch: { ...profile.themePatch }
-  }
+    'Do not apply a predefined theme style unless the user explicitly asks for one.',
+    'Prioritize layout intent first. If user asks for vertical alignment, use artifactLayout:"vertical".',
+    'Use only supported JSON actions for this editor.',
+    pollTitle ? `Live poll title: ${pollTitle}` : '',
+    selector ? `Poll selector: ${selector}` : '',
+    endpointLines.length > 0
+      ? `Live poll data endpoints:\n${endpointLines.join('\n')}`
+      : '',
+    `User request: ${promptText || 'Build a custom artifact-style poll experience around the live data.'}`
+  ]
+    .filter(Boolean)
+    .join('\n')
 }

@@ -26,12 +26,13 @@ import {
   AI_CHAT_OPEN_KEY
 } from './poll-game-gamified-constants.js'
 import {
-  ARTIFACT_PROFILE_IDS,
+  ARTIFACT_DEFAULT_PLACEHOLDER,
+  ARTIFACT_LAYOUT_HORIZONTAL,
+  ARTIFACT_LAYOUT_VERTICAL,
+  ARTIFACT_WAITING_STATUS,
   ARTIFACT_VISUAL_MODE,
   buildArtifactAiPrompt,
-  buildArtifactThemePatch,
-  getDefaultArtifactProfile,
-  resolveArtifactProfile
+  sanitizeArtifactLayout
 } from './poll-game-gamified-artifact-mode.js'
 
 ;(() => {
@@ -87,8 +88,7 @@ import {
     resetModalInvoker: null,
     artifact: {
       busy: false,
-      lastPrompt: '',
-      profile: getDefaultArtifactProfile()
+      lastPrompt: ''
     },
     ai: {
       open: false,
@@ -209,6 +209,7 @@ import {
     questionSize: 62,
     labelSize: 24,
     visualMode: 'classic',
+    artifactLayout: ARTIFACT_LAYOUT_HORIZONTAL,
     raceCar: 'car',
     raceCarImageUrl: '',
     raceCarSize: 30,
@@ -621,24 +622,16 @@ import {
   function setupArtifactMode() {
     syncArtifactComposerVisibility()
     syncArtifactComposerBusyState()
-    const profile = state.artifact.profile || getDefaultArtifactProfile()
-    el.artifactPromptInput.placeholder = profile.placeholder
-    setArtifactComposerStatus(
-      `Artifact mode ready. Active profile: ${profile.displayName}.`,
-      'success'
-    )
+    el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
+    setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
 
   function syncArtifactComposerVisibility() {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     el.artifactComposer.classList.toggle('hidden', !isArtifactMode)
-    if (!isArtifactMode) {
-      return
-    }
-    const profile = state.artifact.profile || getDefaultArtifactProfile()
-    if (!asText(el.artifactPromptInput.placeholder)) {
-      el.artifactPromptInput.placeholder = profile.placeholder
+    if (isArtifactMode && !asText(el.artifactPromptInput.placeholder)) {
+      el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
     }
   }
 
@@ -682,37 +675,28 @@ import {
 
     state.artifact.busy = true
     syncArtifactComposerBusyState()
-
-    const profile = resolveArtifactProfile(prompt)
-    state.artifact.profile = profile
-    el.artifactPromptInput.placeholder = profile.placeholder
-
-    updateTheme(buildArtifactThemePatch(profile), {
-      historyLabel: 'Artifact profile'
-    })
-
     state.artifact.lastPrompt = prompt
+    el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
+    const hintedLayout = inferArtifactLayoutFromPrompt(prompt, currentTheme.artifactLayout)
+    if (hintedLayout !== currentTheme.artifactLayout) {
+      updateTheme({ artifactLayout: hintedLayout }, { historyLabel: 'Artifact layout hint' })
+    }
 
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
 
-    setArtifactComposerStatus(`Building with ${profile.displayName} profile...`, 'pending')
+    setArtifactComposerStatus('Building artifact layout from live poll data...', 'pending')
 
     try {
       const context = buildAiEditorContext()
-      context.artifact = {
-        enabled: true,
-        profileId: profile.id,
-        profileName: profile.displayName,
-        lastPrompt: prompt
-      }
-      const aiPrompt = buildArtifactAiPrompt(prompt, profile)
+      context.artifact = buildArtifactContext(prompt, context.poll)
+      const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const plan = await requestAiEditPlan(aiPrompt, context)
       const outcome = applyAiPlanActions(plan)
       if (outcome.changed) {
         setArtifactComposerStatus(
-          `Artifact build applied (${profile.displayName}). Keep prompting to iterate.`,
+          'Artifact build applied. Keep prompting to iterate.',
           'success'
         )
       } else {
@@ -727,6 +711,46 @@ import {
       state.artifact.busy = false
       syncArtifactComposerBusyState()
     }
+  }
+
+  function buildArtifactContext(prompt, pollContext = null) {
+    const sessionId = asText(state.sessionId)
+    const code = asText(state.code)
+    const apiBase = asText(state.apiBase)
+    const encodedSession = sessionId ? encodeURIComponent(sessionId) : '{session_id}'
+    const encodedCode = code ? encodeURIComponent(code) : '{code}'
+    const wsBase = toWsBase(apiBase)
+
+    return {
+      enabled: true,
+      lastPrompt: asText(prompt),
+      pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
+      pollSelector: asText(state.pollSelector?.descriptor),
+      dataEndpoints: {
+        sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
+        sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
+        pollsList: `${apiBase}/sessions/${encodedSession}/polls`,
+        pollOpen: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/open`,
+        pollClose: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/close`,
+        pollVote: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/vote`,
+        liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
+      }
+    }
+  }
+
+  function inferArtifactLayoutFromPrompt(prompt, fallbackLayout) {
+    const fallback = sanitizeArtifactLayout(fallbackLayout, ARTIFACT_LAYOUT_HORIZONTAL)
+    const text = asText(prompt).toLowerCase()
+    if (!text) {
+      return fallback
+    }
+    if (text.includes('vertical')) {
+      return ARTIFACT_LAYOUT_VERTICAL
+    }
+    if (text.includes('horizontal')) {
+      return ARTIFACT_LAYOUT_HORIZONTAL
+    }
+    return fallback
   }
 
   function resolveAiGeminiModel() {
@@ -994,12 +1018,7 @@ import {
       visualMode: currentTheme.visualMode,
       artifact:
         currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-          ? {
-              enabled: true,
-              profileId: state.artifact.profile?.id || '',
-              profileName: state.artifact.profile?.displayName || '',
-              lastPrompt: state.artifact.lastPrompt || ''
-            }
+          ? buildArtifactContext(state.artifact.lastPrompt || '', poll)
           : { enabled: false },
       currentText: {
         eyebrow: extractPlainTextFromHtml(el.eyebrow.innerHTML),
@@ -1255,6 +1274,9 @@ import {
     }
     if (key === 'visualMode') {
       return sanitizeVisualMode(value, currentTheme.visualMode)
+    }
+    if (key === 'artifactLayout') {
+      return sanitizeArtifactLayout(value, currentTheme.artifactLayout)
     }
     if (key === 'raceCar') {
       return normalizeRaceCar(value)
@@ -5297,7 +5319,7 @@ import {
     clearArtifactModeClasses()
     renderEmptyStateNote(
       'artifact-awaiting-prompt',
-      'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
+      ARTIFACT_WAITING_STATUS
     )
   }
 
@@ -5391,67 +5413,69 @@ import {
   }
 
   function renderArtifactOptions(poll, totalVotes) {
+    const layout = sanitizeArtifactLayout(currentTheme.artifactLayout, ARTIFACT_LAYOUT_HORIZONTAL)
+    if (layout === ARTIFACT_LAYOUT_VERTICAL) {
+      renderArtifactVerticalOptions(poll, totalVotes)
+      return
+    }
+    renderClassicOptions(poll, totalVotes)
+    clearArtifactModeClasses()
+    el.options.classList.add('artifact-mode')
+  }
+
+  function renderArtifactVerticalOptions(poll, totalVotes) {
     if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
       clearRaceRows()
     }
     clearArtifactModeClasses()
-    const profile = state.artifact.profile || getDefaultArtifactProfile()
-    const profileId = ARTIFACT_PROFILE_IDS.includes(profile.id) ? profile.id : getDefaultArtifactProfile().id
-    el.options.classList.add('artifact-mode', `artifact-mode-${profileId}`)
+    el.options.classList.add('artifact-mode', 'artifact-layout-vertical')
 
     const fragment = document.createDocumentFragment()
     const renderedNodes = []
     const options = Array.isArray(poll.options) ? poll.options : []
+
     for (let index = 0; index < options.length; index += 1) {
       const option = options[index]
       const optionId = asText(option.id) || `option-${index}`
       const votes = toInt(option.votes)
       const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
 
-      const optionNode = document.createElement('div')
-      optionNode.className = 'option artifact-option'
+      const optionNode = document.createElement('article')
+      optionNode.className = 'option artifact-vertical-option'
       optionNode.dataset.optionDragId = optionId
 
-      const labelRow = document.createElement('div')
-      labelRow.className = 'label-row artifact-label-row'
-
       const label = document.createElement('span')
-      label.className = 'label artifact-label'
+      label.className = 'label artifact-vertical-label'
       renderRichText(
         label,
         getOptionTextKey(poll, option, index),
         asText(option.label) || 'Option'
       )
 
+      const track = document.createElement('div')
+      track.className = 'track artifact-vertical-track'
+
+      const fill = document.createElement('div')
+      fill.className = 'fill artifact-vertical-fill'
+      fill.style.height = `${pct}%`
+
+      track.appendChild(fill)
+
       const stats = document.createElement('span')
-      stats.className = 'stats artifact-stats'
+      stats.className = 'stats artifact-vertical-stats'
       renderRichText(
         stats,
         getOptionStatsTextKey(poll, option, index),
         `${votes} (${pct}%)`
       )
 
-      labelRow.append(label, stats)
-
-      const track = document.createElement('div')
-      track.className = 'track artifact-track'
-
-      const fill = document.createElement('div')
-      fill.className = 'fill artifact-fill'
-      fill.style.width = `${pct}%`
-
-      const ornament = document.createElement('div')
-      ornament.className = 'artifact-ornament'
-      ornament.textContent = profileId === 'lego' ? 'BRICK' : profileId === 'cats' ? 'CAT' : 'PIXEL'
-      ornament.style.left = `${pct}%`
-
-      track.append(fill, ornament)
-
       applyDeletedOptionTarget(optionNode, poll, optionId, 'row')
       applyDeletedOptionTarget(label, poll, optionId, 'label')
       applyDeletedOptionTarget(stats, poll, optionId, 'stats')
       applyDeletedOptionTarget(track, poll, optionId, 'bar')
-      optionNode.append(labelRow, track)
+
+      optionNode.append(label, track, stats)
+
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(label, optionId, 'label', {
         resizeMode: 'box',
@@ -5475,6 +5499,7 @@ import {
         minScaleY: 0.4,
         maxScaleY: 4.5
       })
+
       renderedNodes.push({ optionId, label, stats, track })
       fragment.appendChild(optionNode)
     }
@@ -5706,9 +5731,10 @@ import {
   }
 
   function clearArtifactModeClasses() {
-    el.options.classList.remove('artifact-mode')
-    for (const profileId of ARTIFACT_PROFILE_IDS) {
-      el.options.classList.remove(`artifact-mode-${profileId}`)
+    for (const className of [...el.options.classList]) {
+      if (className === 'artifact-mode' || className.startsWith('artifact-')) {
+        el.options.classList.remove(className)
+      }
     }
   }
 
@@ -6251,12 +6277,9 @@ import {
       currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     ) {
       state.artifact.lastPrompt = ''
-      state.artifact.profile = getDefaultArtifactProfile()
       el.artifactPromptInput.value = ''
-      el.artifactPromptInput.placeholder = state.artifact.profile.placeholder
-      setArtifactComposerStatus(
-        'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
-      )
+      el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
+      setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
     }
     applyTheme(currentTheme)
     if (
@@ -6293,6 +6316,7 @@ import {
     root.setProperty('--bar-radius', `${theme.barRadius}px`)
     root.setProperty('--question-size', `${theme.questionSize}px`)
     root.setProperty('--label-size', `${theme.labelSize}px`)
+    root.setProperty('--artifact-layout', theme.artifactLayout)
     root.setProperty('--grid-opacity', `${theme.gridOpacity}`)
     root.setProperty('--race-track', hexToRgba(theme.raceTrackColor, theme.raceTrackOpacity))
     root.setProperty('--race-car-size', `${theme.raceCarSize}px`)
@@ -7107,6 +7131,7 @@ import {
       questionSize: clamp(incoming.questionSize, 42, 90, defaultTheme.questionSize),
       labelSize: clamp(incoming.labelSize, 14, 36, defaultTheme.labelSize),
       visualMode: sanitizeVisualMode(incoming.visualMode, defaultTheme.visualMode),
+      artifactLayout: sanitizeArtifactLayout(incoming.artifactLayout, defaultTheme.artifactLayout),
       raceCar: normalizeRaceCar(incoming.raceCar),
       raceCarImageUrl: sanitizeUrl(incoming.raceCarImageUrl, defaultTheme.raceCarImageUrl),
       raceCarSize: clamp(incoming.raceCarSize, 20, 56, defaultTheme.raceCarSize),
