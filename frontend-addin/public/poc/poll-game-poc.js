@@ -271,6 +271,7 @@
     optionOffsets: {},
     optionSizes: {},
     optionScales: {},
+    optionAnchors: {},
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
 
@@ -3342,6 +3343,13 @@
     return currentTheme.optionSizes
   }
 
+  function ensureOptionAnchors() {
+    if (!currentTheme.optionAnchors || typeof currentTheme.optionAnchors !== 'object') {
+      currentTheme.optionAnchors = {}
+    }
+    return currentTheme.optionAnchors
+  }
+
   function getOptionOffsetKey(optionId, part = 'row') {
     const safeId = asText(optionId)
     if (!safeId) {
@@ -3429,6 +3437,40 @@
     }
   }
 
+  function getOptionTextAnchor(optionId, part = 'row') {
+    const map = ensureOptionAnchors()
+    const key = getOptionOffsetKey(optionId, part)
+    const entry = key ? map[key] : null
+    if (!entry || typeof entry !== 'object') {
+      return { x: null, y: null }
+    }
+    return {
+      x: Number.isFinite(entry.x) ? clamp(entry.x, -2400, 2400, 0) : null,
+      y: Number.isFinite(entry.y) ? clamp(entry.y, -2400, 2400, 0) : null
+    }
+  }
+
+  function setOptionTextAnchor(optionId, x, y, part = 'row') {
+    const key = getOptionOffsetKey(optionId, part)
+    if (!key) {
+      return
+    }
+    const map = ensureOptionAnchors()
+    map[key] = {
+      x: Number.isFinite(x) ? clamp(x, -2400, 2400, 0) : null,
+      y: Number.isFinite(y) ? clamp(y, -2400, 2400, 0) : null
+    }
+  }
+
+  function clearOptionTextAnchor(optionId, part = 'row') {
+    const key = getOptionOffsetKey(optionId, part)
+    if (!key) {
+      return
+    }
+    const map = ensureOptionAnchors()
+    delete map[key]
+  }
+
   function isOptionTextPart(part = 'row') {
     const normalized = asText(part).toLowerCase()
     return normalized === 'label' || normalized === 'stats'
@@ -3485,18 +3527,24 @@
     }
 
     if (node.dataset.optionDetachedFlow !== '1') {
-      const scale = getCanvasScaleFactor()
-      const rowRect = isRectLike(geometry?.rowRect) ? geometry.rowRect : row.getBoundingClientRect()
-      const nodeRect = isRectLike(geometry?.nodeRect) ? geometry.nodeRect : node.getBoundingClientRect()
-      const offset = getOptionDragOffset(optionId, part)
-      const baseLeft =
-        rowRect.width > 0 && nodeRect.width > 0
-          ? (nodeRect.left - rowRect.left) / Math.max(0.01, scale) - offset.x
-          : 0
-      const baseTop =
-        rowRect.height > 0 && nodeRect.height > 0
-          ? (nodeRect.top - rowRect.top) / Math.max(0.01, scale) - offset.y
-          : 0
+      const storedAnchor = getOptionTextAnchor(optionId, part)
+      let baseLeft = storedAnchor.x
+      let baseTop = storedAnchor.y
+      if (!Number.isFinite(baseLeft) || !Number.isFinite(baseTop)) {
+        const scale = getCanvasScaleFactor()
+        const rowRect = isRectLike(geometry?.rowRect) ? geometry.rowRect : row.getBoundingClientRect()
+        const nodeRect = isRectLike(geometry?.nodeRect) ? geometry.nodeRect : node.getBoundingClientRect()
+        const offset = getOptionDragOffset(optionId, part)
+        baseLeft =
+          rowRect.width > 0 && nodeRect.width > 0
+            ? (nodeRect.left - rowRect.left) / Math.max(0.01, scale) - offset.x
+            : 0
+        baseTop =
+          rowRect.height > 0 && nodeRect.height > 0
+            ? (nodeRect.top - rowRect.top) / Math.max(0.01, scale) - offset.y
+            : 0
+        setOptionTextAnchor(optionId, baseLeft, baseTop, part)
+      }
       node.style.left = `${baseLeft}px`
       node.style.top = `${baseTop}px`
       node.dataset.optionDetachedFlow = '1'
@@ -3508,7 +3556,7 @@
     node.style.maxWidth = 'none'
   }
 
-  function restoreOptionTextFlow(node, part = 'row') {
+  function restoreOptionTextFlow(node, part = 'row', optionId = '') {
     if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
       return
     }
@@ -3520,6 +3568,9 @@
     node.style.removeProperty('display')
     node.style.removeProperty('max-width')
     delete node.dataset.optionDetachedFlow
+    if (optionId) {
+      clearOptionTextAnchor(optionId, part)
+    }
     updateOptionLabelRowLockState(row)
   }
 
@@ -3540,8 +3591,8 @@
     const shouldDetach =
       hasCustomOptionTextSize(optionId, 'label') || hasCustomOptionTextSize(optionId, 'stats')
     if (!shouldDetach) {
-      restoreOptionTextFlow(label, 'label')
-      restoreOptionTextFlow(stats, 'stats')
+      restoreOptionTextFlow(label, 'label', optionId)
+      restoreOptionTextFlow(stats, 'stats', optionId)
       return
     }
 
@@ -4799,7 +4850,8 @@
       assetScaleY: defaultTheme.assetScaleY,
       optionOffsets: clone(defaultTheme.optionOffsets),
       optionSizes: clone(defaultTheme.optionSizes),
-      optionScales: clone(defaultTheme.optionScales)
+      optionScales: clone(defaultTheme.optionScales),
+      optionAnchors: clone(defaultTheme.optionAnchors)
     }, { historyLabel: 'Reset positions' })
 
     if (state.snapshot) {
@@ -5761,6 +5813,7 @@
       optionOffsets: sanitizeOptionOffsets(incoming.optionOffsets, defaultTheme.optionOffsets),
       optionSizes: sanitizeOptionSizes(incoming.optionSizes, defaultTheme.optionSizes),
       optionScales: sanitizeOptionScales(incoming.optionScales, defaultTheme.optionScales),
+      optionAnchors: sanitizeOptionAnchors(incoming.optionAnchors, defaultTheme.optionAnchors),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
   }
@@ -5818,6 +5871,27 @@
         width: sanitizeOptionalDimension(rawSize.width, 24, 2600, null),
         height: sanitizeOptionalDimension(rawSize.height, 18, 1400, null)
       }
+    }
+    return sanitized
+  }
+
+  function sanitizeOptionAnchors(value, fallback) {
+    const source = value && typeof value === 'object' ? value : fallback
+    if (!source || typeof source !== 'object') {
+      return {}
+    }
+    const sanitized = {}
+    for (const [rawId, rawAnchor] of Object.entries(source)) {
+      const optionId = asText(rawId)
+      if (!optionId || !rawAnchor || typeof rawAnchor !== 'object') {
+        continue
+      }
+      const x = Number.isFinite(rawAnchor.x) ? clamp(rawAnchor.x, -2400, 2400, 0) : null
+      const y = Number.isFinite(rawAnchor.y) ? clamp(rawAnchor.y, -2400, 2400, 0) : null
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        continue
+      }
+      sanitized[optionId] = { x, y }
     }
     return sanitized
   }
