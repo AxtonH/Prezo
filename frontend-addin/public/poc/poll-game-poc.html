@@ -352,6 +352,58 @@
       <p id="footer" class="footer"></p>
     </main>
 
+    <section id="ai-chat-shell" class="ai-chat-shell" aria-label="Prezo AI editor">
+      <button
+        id="ai-chat-fab"
+        class="ai-chat-fab"
+        type="button"
+        aria-controls="ai-chat-panel"
+        aria-expanded="false"
+      >
+        AI Edit
+      </button>
+      <div id="ai-chat-panel" class="ai-chat-panel hidden">
+        <header class="ai-chat-header">
+          <div>
+            <p class="ai-chat-kicker">Prezo Assistant</p>
+            <strong>Edit With Prompt</strong>
+          </div>
+          <button
+            id="ai-chat-collapse"
+            class="ai-chat-collapse"
+            type="button"
+            aria-label="Collapse AI editor"
+          >
+            Collapse
+          </button>
+        </header>
+        <p id="ai-chat-status" class="ai-chat-status">Ready. Ask for edits like "make bars teal and increase label size."</p>
+        <div id="ai-chat-queue" class="ai-chat-queue hidden"></div>
+        <div id="ai-chat-messages" class="ai-chat-messages"></div>
+        <div class="ai-chat-quick-actions">
+          <button type="button" class="ai-quick-action" data-ai-prompt="Use race mode with a bright modern style.">
+            Race Look
+          </button>
+          <button type="button" class="ai-quick-action" data-ai-prompt="Make the design cleaner and improve text readability.">
+            Improve Readability
+          </button>
+          <button type="button" class="ai-quick-action" data-ai-prompt="Make the visuals bold and high energy.">
+            Bold Theme
+          </button>
+        </div>
+        <form id="ai-chat-form" class="ai-chat-form">
+          <textarea
+            id="ai-chat-input"
+            class="ai-chat-input"
+            rows="2"
+            placeholder="Tell me what to change..."
+            aria-label="Prompt to edit poll game"
+          ></textarea>
+          <button id="ai-chat-send" class="ai-chat-send" type="submit">Send</button>
+        </form>
+      </div>
+    </section>
+
     <div id="reset-positions-modal" class="confirm-modal" aria-hidden="true">
       <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-positions-title">
         <h3 id="reset-positions-title">Reset all object positions?</h3>

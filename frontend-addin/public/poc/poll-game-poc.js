@@ -8,6 +8,168 @@
   const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
   const RIBBON_ADVANCED_KEY = 'prezo.poll-game-poc.ribbon-advanced.v1'
   const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
+  const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
+  const AI_GEMINI_API_KEY_STORAGE_KEY = 'prezo.poll-game-poc.gemini-api-key.v1'
+  const AI_GEMINI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.gemini-model.v1'
+  const AI_GEMINI_DEFAULT_MODEL = 'gemini-2.0-flash'
+  const AI_GEMINI_DEFAULT_API_KEY = 'AIzaSyDc9EzErSL1vA4bMVdaZYtn1n25WWbVnKA'
+  const AI_THEME_NUMBER_RANGES = Object.freeze({
+    bgImageOpacity: [0, 1],
+    overlayOpacity: [0, 1],
+    gridOpacity: [0, 0.5],
+    panelOpacity: [0, 1],
+    trackOpacity: [0, 1],
+    barHeight: [8, 44],
+    barRadius: [0, 999],
+    questionSize: [42, 90],
+    labelSize: [14, 36],
+    raceCarSize: [20, 56],
+    raceTrackOpacity: [0, 1],
+    raceSpeed: [0.35, 1.8],
+    logoWidth: [40, 280],
+    logoOpacity: [0, 1],
+    assetWidth: [60, 720],
+    assetOpacity: [0, 1]
+  })
+  const AI_THEME_COLOR_KEYS = new Set([
+    'bgA',
+    'bgB',
+    'overlayColor',
+    'panelColor',
+    'panelBorder',
+    'textMain',
+    'textSub',
+    'trackColor',
+    'fillA',
+    'fillB',
+    'raceTrackColor'
+  ])
+  const AI_THEME_ALLOWED_KEYS = new Set([
+    ...Object.keys(AI_THEME_NUMBER_RANGES),
+    ...AI_THEME_COLOR_KEYS,
+    'bgImageUrl',
+    'gridVisible',
+    'visualMode',
+    'raceCar',
+    'raceCarImageUrl',
+    'logoUrl',
+    'assetUrl',
+    'fontFamily'
+  ])
+  const AI_MOVE_TARGETS = Object.freeze({
+    panel: { xKey: 'panelX', yKey: 'panelY', minX: -2400, maxX: 2400, minY: -2400, maxY: 2400 },
+    eyebrow: {
+      xKey: 'eyebrowX',
+      yKey: 'eyebrowY',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200
+    },
+    question: {
+      xKey: 'questionX',
+      yKey: 'questionY',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200
+    },
+    meta: { xKey: 'metaX', yKey: 'metaY', minX: -1600, maxX: 1600, minY: -1200, maxY: 1200 },
+    footer: {
+      xKey: 'footerX',
+      yKey: 'footerY',
+      minX: -1600,
+      maxX: 1600,
+      minY: -1200,
+      maxY: 1200
+    },
+    options: {
+      xKey: 'optionsX',
+      yKey: 'optionsY',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400
+    },
+    logo: { xKey: 'logoX', yKey: 'logoY', minX: 0, maxX: 100, minY: 0, maxY: 100 },
+    asset: { xKey: 'assetX', yKey: 'assetY', minX: 0, maxX: 100, minY: 0, maxY: 100 },
+    bgImage: {
+      xKey: 'bgImageX',
+      yKey: 'bgImageY',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400
+    },
+    overlay: {
+      xKey: 'bgOverlayX',
+      yKey: 'bgOverlayY',
+      minX: -2400,
+      maxX: 2400,
+      minY: -2400,
+      maxY: 2400
+    },
+    grid: { xKey: 'gridX', yKey: 'gridY', minX: -2400, maxX: 2400, minY: -2400, maxY: 2400 }
+  })
+  const AI_BOX_RESIZE_TARGETS = Object.freeze({
+    eyebrow: { widthKey: 'eyebrowBoxWidth', heightKey: 'eyebrowBoxHeight', minW: 60, maxW: 1800, minH: 14, maxH: 420 },
+    question: {
+      widthKey: 'questionBoxWidth',
+      heightKey: 'questionBoxHeight',
+      minW: 120,
+      maxW: 2200,
+      minH: 40,
+      maxH: 1400
+    },
+    meta: { widthKey: 'metaBoxWidth', heightKey: 'metaBoxHeight', minW: 90, maxW: 1000, minH: 28, maxH: 220 },
+    footer: { widthKey: 'footerBoxWidth', heightKey: 'footerBoxHeight', minW: 120, maxW: 2200, minH: 18, maxH: 420 }
+  })
+  const AI_SCALE_RESIZE_TARGETS = Object.freeze({
+    panel: { xKey: 'panelScaleX', yKey: 'panelScaleY', minX: 0.35, maxX: 2.8, minY: 0.35, maxY: 2.8 },
+    logo: { xKey: 'logoScaleX', yKey: 'logoScaleY', minX: 0.25, maxX: 5, minY: 0.25, maxY: 5 },
+    asset: { xKey: 'assetScaleX', yKey: 'assetScaleY', minX: 0.25, maxX: 5, minY: 0.25, maxY: 5 },
+    bgImage: {
+      xKey: 'bgImageScaleX',
+      yKey: 'bgImageScaleY',
+      minX: 0.35,
+      maxX: 3.5,
+      minY: 0.35,
+      maxY: 3.5
+    },
+    overlay: {
+      xKey: 'bgOverlayScaleX',
+      yKey: 'bgOverlayScaleY',
+      minX: 0.35,
+      maxX: 3.5,
+      minY: 0.35,
+      maxY: 3.5
+    },
+    grid: { xKey: 'gridScaleX', yKey: 'gridScaleY', minX: 0.35, maxX: 3.5, minY: 0.35, maxY: 3.5 }
+  })
+  const AI_TARGET_ALIASES = Object.freeze({
+    title: 'question',
+    subtitle: 'eyebrow',
+    eyebrow: 'eyebrow',
+    question: 'question',
+    heading: 'question',
+    panel: 'panel',
+    canvas: 'panel',
+    container: 'panel',
+    meta: 'meta',
+    status: 'meta',
+    votes: 'meta',
+    footer: 'footer',
+    options: 'options',
+    polls: 'options',
+    logo: 'logo',
+    asset: 'asset',
+    background: 'bgImage',
+    bg: 'bgImage',
+    bgimage: 'bgImage',
+    overlay: 'overlay',
+    grid: 'grid'
+  })
+  const AI_CHAT_MAX_MESSAGES = 80
   const TEXT_FONT_FAMILIES = [
     'Aptos',
     'Arial',
@@ -107,7 +269,16 @@
     textControlInteractionUntil: 0,
     textControlInteractionLocked: false,
     activeInlineStyleNode: null,
-    resetModalInvoker: null
+    resetModalInvoker: null,
+    ai: {
+      open: false,
+      busy: false,
+      queue: [],
+      activePrompt: '',
+      messageSeq: 0,
+      apiKey: '',
+      model: ''
+    }
   }
 
   const el = {
@@ -147,6 +318,16 @@
     resetTheme: must('reset-theme'),
     themeFeedback: must('theme-feedback'),
     textEditFeedback: must('text-edit-feedback'),
+    aiChatShell: must('ai-chat-shell'),
+    aiChatFab: must('ai-chat-fab'),
+    aiChatPanel: must('ai-chat-panel'),
+    aiChatCollapse: must('ai-chat-collapse'),
+    aiChatStatus: must('ai-chat-status'),
+    aiChatQueue: must('ai-chat-queue'),
+    aiChatMessages: must('ai-chat-messages'),
+    aiChatForm: must('ai-chat-form'),
+    aiChatInput: must('ai-chat-input'),
+    aiChatSend: must('ai-chat-send'),
     resetPositionsModal: must('reset-positions-modal'),
     resetPositionsAccept: must('reset-positions-accept'),
     resetPositionsCancel: must('reset-positions-cancel'),
@@ -176,7 +357,8 @@
     customAsset: must('custom-asset'),
     headLeft: must('head-left'),
     headRight: must('head-right'),
-    metaBar: must('meta-bar')
+    metaBar: must('meta-bar'),
+    aiQuickActions: [...document.querySelectorAll('.ai-quick-action')]
   }
   const ribbonTabs = [...document.querySelectorAll('.ribbon-tab')]
   const ribbonPanes = [...document.querySelectorAll('.ribbon-pane')]
@@ -356,6 +538,7 @@
     setupSettingsPanel()
     setupThemeEditor()
     setupRichTextEditor()
+    setupAiChat()
     setupHistoryControls()
     setupDragInteractions()
     setupResizeInteractions()
@@ -612,6 +795,821 @@
     bindImageUpload('theme-race-car-upload', 'raceCarImageUrl', 'Race car image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
+  }
+
+  function setupAiChat() {
+    state.ai.apiKey = resolveAiGeminiApiKey()
+    state.ai.model = resolveAiGeminiModel()
+    const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
+    setAiChatOpen(storedOpen === '1', { persist: false })
+    updateAiComposerState()
+
+    el.aiChatFab.addEventListener('click', handleAiChatFabClick)
+    el.aiChatCollapse.addEventListener('click', handleAiChatCollapseClick)
+    el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
+    el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
+    for (const quickAction of el.aiQuickActions) {
+      quickAction.addEventListener('click', handleAiQuickActionClick)
+    }
+
+    appendAiChatMessage(
+      'assistant',
+      'AI editor is ready. Ask for design or text changes and I will apply them directly.'
+    )
+    if (!state.ai.apiKey) {
+      updateAiChatStatus('Gemini API key is missing. Add ?geminiKey=<key> in URL.', 'error')
+      return
+    }
+    updateAiChatStatus('Ready for edits.', 'success')
+  }
+
+  function resolveAiGeminiApiKey() {
+    const queryKey = asText(query.get('geminiKey') || query.get('geminiApiKey'))
+    if (queryKey) {
+      try {
+        localStorage.setItem(AI_GEMINI_API_KEY_STORAGE_KEY, queryKey)
+      } catch {}
+      return queryKey
+    }
+    const storedKey = asText(safeStorageGet(AI_GEMINI_API_KEY_STORAGE_KEY))
+    if (storedKey) {
+      return storedKey
+    }
+    return AI_GEMINI_DEFAULT_API_KEY
+  }
+
+  function resolveAiGeminiModel() {
+    const queryModel = asText(query.get('geminiModel'))
+    if (queryModel) {
+      try {
+        localStorage.setItem(AI_GEMINI_MODEL_STORAGE_KEY, queryModel)
+      } catch {}
+      return queryModel
+    }
+    const storedModel = asText(safeStorageGet(AI_GEMINI_MODEL_STORAGE_KEY))
+    if (storedModel) {
+      return storedModel
+    }
+    return AI_GEMINI_DEFAULT_MODEL
+  }
+
+  function handleAiChatFabClick() {
+    setAiChatOpen(true)
+  }
+
+  function handleAiChatCollapseClick() {
+    setAiChatOpen(false)
+  }
+
+  function handleAiChatFormSubmit(event) {
+    event.preventDefault()
+    const prompt = asText(el.aiChatInput.value)
+    if (!prompt) {
+      return
+    }
+    el.aiChatInput.value = ''
+    enqueueAiPrompt(prompt)
+  }
+
+  function handleAiChatInputKeydown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) {
+      return
+    }
+    event.preventDefault()
+    const prompt = asText(el.aiChatInput.value)
+    if (!prompt) {
+      return
+    }
+    el.aiChatInput.value = ''
+    enqueueAiPrompt(prompt)
+  }
+
+  function handleAiQuickActionClick(event) {
+    const button = event.currentTarget
+    if (!(button instanceof HTMLButtonElement)) {
+      return
+    }
+    const prompt = asText(button.dataset.aiPrompt)
+    if (!prompt) {
+      return
+    }
+    enqueueAiPrompt(prompt)
+  }
+
+  function setAiChatOpen(open, options = {}) {
+    const persist = options.persist !== false
+    state.ai.open = Boolean(open)
+    el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
+    el.aiChatFab.classList.toggle('hidden', state.ai.open)
+    el.aiChatFab.setAttribute('aria-expanded', state.ai.open ? 'true' : 'false')
+    if (persist) {
+      try {
+        localStorage.setItem(AI_CHAT_OPEN_KEY, state.ai.open ? '1' : '0')
+      } catch {}
+    }
+    if (state.ai.open) {
+      window.setTimeout(() => {
+        el.aiChatInput.focus()
+      }, 0)
+    }
+  }
+
+  function enqueueAiPrompt(prompt) {
+    const normalized = asText(prompt)
+    if (!normalized) {
+      return
+    }
+    if (state.ai.queue.length >= 12) {
+      appendAiChatMessage('system', 'AI queue is full. Wait for pending prompts to complete.')
+      updateAiChatStatus('Queue is full. Wait for current edits to finish.', 'error')
+      return
+    }
+    state.ai.queue.push({
+      id: ++state.ai.messageSeq,
+      prompt: normalized
+    })
+    appendAiChatMessage('user', normalized)
+    renderAiChatQueue()
+    if (!state.ai.open) {
+      setAiChatOpen(true)
+    }
+    void processAiPromptQueue()
+  }
+
+  async function processAiPromptQueue() {
+    if (state.ai.busy || state.ai.queue.length === 0 || state.isUnloading) {
+      return
+    }
+    const next = state.ai.queue.shift()
+    if (!next) {
+      renderAiChatQueue()
+      updateAiComposerState()
+      return
+    }
+    state.ai.busy = true
+    state.ai.activePrompt = next.prompt
+    updateAiComposerState()
+    renderAiChatQueue()
+    updateAiChatStatus('Applying your edit request...', 'pending')
+
+    try {
+      const context = buildAiEditorContext()
+      const plan = await requestAiEditPlan(next.prompt, context)
+      const outcome = applyAiPlanActions(plan)
+      appendAiChatMessage('assistant', summarizeAiOutcome(plan, outcome))
+      if (outcome.changed) {
+        updateAiChatStatus('Edit applied.', 'success')
+      } else {
+        updateAiChatStatus('No visible change was applied for that prompt.', 'error')
+      }
+    } catch (error) {
+      const message = errorToMessage(error)
+      appendAiChatMessage('system', `Unable to apply edit: ${message}`)
+      updateAiChatStatus(`AI request failed: ${message}`, 'error')
+    } finally {
+      state.ai.busy = false
+      state.ai.activePrompt = ''
+      updateAiComposerState()
+      renderAiChatQueue()
+      if (state.ai.queue.length > 0) {
+        window.setTimeout(() => {
+          void processAiPromptQueue()
+        }, 0)
+      }
+    }
+  }
+
+  function updateAiComposerState() {
+    el.aiChatSend.textContent = state.ai.busy ? 'Queue' : 'Send'
+  }
+
+  function renderAiChatQueue() {
+    const items = []
+    if (state.ai.activePrompt) {
+      items.push({ label: 'Running', text: state.ai.activePrompt })
+    }
+    for (const item of state.ai.queue.slice(0, 4)) {
+      items.push({ label: 'Queued', text: item.prompt })
+    }
+    if (items.length === 0) {
+      el.aiChatQueue.classList.add('hidden')
+      el.aiChatQueue.replaceChildren()
+      return
+    }
+    el.aiChatQueue.classList.remove('hidden')
+    el.aiChatQueue.replaceChildren()
+    const label = document.createElement('span')
+    label.className = 'ai-chat-queue-label'
+    label.textContent = 'Prompt Queue'
+    el.aiChatQueue.appendChild(label)
+    for (const item of items) {
+      const chip = document.createElement('span')
+      chip.className = 'ai-chat-queue-item'
+      chip.textContent = `${item.label}: ${trimForQueueLabel(item.text)}`
+      el.aiChatQueue.appendChild(chip)
+    }
+  }
+
+  function trimForQueueLabel(text, maxLength = 40) {
+    const value = asText(text)
+    if (value.length <= maxLength) {
+      return value
+    }
+    return `${value.slice(0, maxLength - 1)}...`
+  }
+
+  function appendAiChatMessage(role, text) {
+    const message = asText(text)
+    if (!message) {
+      return
+    }
+    const normalizedRole =
+      role === 'user' || role === 'assistant' || role === 'system' ? role : 'assistant'
+    const node = document.createElement('article')
+    node.className = `ai-chat-message message-${normalizedRole}`
+    node.textContent = message
+    el.aiChatMessages.appendChild(node)
+    while (el.aiChatMessages.children.length > AI_CHAT_MAX_MESSAGES) {
+      el.aiChatMessages.removeChild(el.aiChatMessages.firstElementChild)
+    }
+    el.aiChatMessages.scrollTop = el.aiChatMessages.scrollHeight
+  }
+
+  function updateAiChatStatus(text, type = 'idle') {
+    el.aiChatStatus.textContent = asText(text) || 'Ready'
+    el.aiChatStatus.classList.remove('status-success', 'status-error', 'status-pending')
+    if (type === 'success') {
+      el.aiChatStatus.classList.add('status-success')
+      return
+    }
+    if (type === 'error') {
+      el.aiChatStatus.classList.add('status-error')
+      return
+    }
+    if (type === 'pending') {
+      el.aiChatStatus.classList.add('status-pending')
+    }
+  }
+
+  async function requestAiEditPlan(prompt, context) {
+    const apiKey = asText(state.ai.apiKey)
+    if (!apiKey) {
+      throw new Error('Gemini API key is not configured.')
+    }
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const endpoint =
+      `https://generativelanguage.googleapis.com/v1beta/models/` +
+      `${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
+    const body = {
+      systemInstruction: {
+        parts: [
+          {
+            text: buildAiSystemInstruction()
+          }
+        ]
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: JSON.stringify(
+                {
+                  prompt,
+                  context
+                },
+                null,
+                2
+              )
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.9,
+        maxOutputTokens: 1400,
+        responseMimeType: 'application/json'
+      }
+    }
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message =
+        asText(payload?.error?.message) ||
+        asText(payload?.error?.status) ||
+        `Request failed (${response.status})`
+      throw new Error(message)
+    }
+    const text = extractGeminiText(payload)
+    if (!text) {
+      throw new Error('Gemini returned an empty response.')
+    }
+    return parseAiJsonResponse(text)
+  }
+
+  function buildAiSystemInstruction() {
+    const allowedThemeKeys = [...AI_THEME_ALLOWED_KEYS].sort().join(', ')
+    const moveTargets = Object.keys(AI_MOVE_TARGETS).join(', ')
+    const resizeTargets = [
+      ...Object.keys(AI_BOX_RESIZE_TARGETS),
+      ...Object.keys(AI_SCALE_RESIZE_TARGETS)
+    ]
+      .filter((value, index, list) => list.indexOf(value) === index)
+      .join(', ')
+    return [
+      'You translate user intent into JSON edit actions for a poll game canvas.',
+      'Output JSON only, no markdown.',
+      'Response shape:',
+      '{ "assistantMessage": string, "actions": Action[] }',
+      'Supported actions:',
+      '- { "type":"update_theme", "theme": { ... } }',
+      '- { "type":"set_text", "target":"question|eyebrow", "value": string, "asHtml": boolean? }',
+      '- { "type":"set_option_label", "optionIndex": number, "optionId": string?, "value": string, "asHtml": boolean? }',
+      '- { "type":"move_element", "target": string, "x": number?, "y": number?, "deltaX": number?, "deltaY": number? }',
+      '- { "type":"resize_element", "target": string, "width": number?, "height": number?, "scaleX": number?, "scaleY": number?, "scale": number? }',
+      '- { "type":"reset_positions" }',
+      '- { "type":"reset_theme" }',
+      `Allowed theme keys: ${allowedThemeKeys}.`,
+      `Allowed move targets: ${moveTargets}.`,
+      `Allowed resize targets: ${resizeTargets}.`,
+      'Use hex colors only (#RRGGBB).',
+      'Use minimal actions required for the request.',
+      'Do not invent keys, fields, or unsupported action types.'
+    ].join('\n')
+  }
+
+  function buildAiEditorContext() {
+    const poll = state.currentPoll
+    const options = Array.isArray(poll?.options)
+      ? poll.options.map((option, index) => ({
+          index,
+          id: asText(option?.id) || `index-${index}`,
+          label: asText(option?.label) || '',
+          votes: toInt(option?.votes)
+        }))
+      : []
+    return {
+      visualMode: currentTheme.visualMode,
+      currentText: {
+        eyebrow: extractPlainTextFromHtml(el.eyebrow.innerHTML),
+        question: extractPlainTextFromHtml(el.question.innerHTML)
+      },
+      poll: poll
+        ? {
+            id: asText(poll.id),
+            question: asText(poll.question),
+            options
+          }
+        : null,
+      theme: {
+        bgA: currentTheme.bgA,
+        bgB: currentTheme.bgB,
+        panelColor: currentTheme.panelColor,
+        textMain: currentTheme.textMain,
+        textSub: currentTheme.textSub,
+        fillA: currentTheme.fillA,
+        fillB: currentTheme.fillB,
+        barHeight: currentTheme.barHeight,
+        questionSize: currentTheme.questionSize,
+        labelSize: currentTheme.labelSize,
+        fontFamily: currentTheme.fontFamily
+      }
+    }
+  }
+
+  function extractGeminiText(payload) {
+    const parts = payload?.candidates?.[0]?.content?.parts
+    if (!Array.isArray(parts) || parts.length === 0) {
+      return ''
+    }
+    return parts.map((part) => asText(part?.text)).filter(Boolean).join('\n')
+  }
+
+  function parseAiJsonResponse(rawText) {
+    const direct = safeJsonParse(rawText)
+    if (direct && typeof direct === 'object') {
+      return direct
+    }
+
+    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(rawText)
+    if (fenced && fenced[1]) {
+      const parsed = safeJsonParse(fenced[1])
+      if (parsed && typeof parsed === 'object') {
+        return parsed
+      }
+    }
+
+    const start = rawText.indexOf('{')
+    const end = rawText.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      const sliced = rawText.slice(start, end + 1)
+      const parsed = safeJsonParse(sliced)
+      if (parsed && typeof parsed === 'object') {
+        return parsed
+      }
+    }
+    throw new Error('AI response could not be parsed as JSON.')
+  }
+
+  function applyAiPlanActions(plan) {
+    const actions = Array.isArray(plan?.actions) ? plan.actions : []
+    const beforeSnapshot = captureHistorySnapshot()
+    const themePatch = {}
+    let themeActionCount = 0
+    let textActionCount = 0
+    const warnings = []
+
+    for (const rawAction of actions) {
+      if (!rawAction || typeof rawAction !== 'object') {
+        continue
+      }
+      const type = asText(rawAction.type).toLowerCase()
+      if (type === 'update_theme' || type === 'updatetheme') {
+        const patch = sanitizeAiThemePatch(rawAction.theme)
+        if (Object.keys(patch).length === 0) {
+          warnings.push('Ignored empty theme update.')
+          continue
+        }
+        Object.assign(themePatch, patch)
+        themeActionCount += 1
+        continue
+      }
+      if (type === 'set_text' || type === 'settext') {
+        if (applyAiTextAction(rawAction)) {
+          textActionCount += 1
+        } else {
+          warnings.push('Ignored invalid text action.')
+        }
+        continue
+      }
+      if (type === 'set_option_label' || type === 'setoptionlabel') {
+        if (applyAiOptionLabelAction(rawAction)) {
+          textActionCount += 1
+        } else {
+          warnings.push('Ignored invalid option label action.')
+        }
+        continue
+      }
+      if (type === 'move_element' || type === 'move') {
+        if (applyAiMoveAction(rawAction, themePatch)) {
+          themeActionCount += 1
+        } else {
+          warnings.push('Ignored invalid move action.')
+        }
+        continue
+      }
+      if (type === 'resize_element' || type === 'resize') {
+        if (applyAiResizeAction(rawAction, themePatch)) {
+          themeActionCount += 1
+        } else {
+          warnings.push('Ignored invalid resize action.')
+        }
+        continue
+      }
+      if (type === 'reset_positions' || type === 'resetpositions') {
+        Object.assign(themePatch, buildDefaultPositionThemePatch())
+        themeActionCount += 1
+        continue
+      }
+      if (type === 'reset_theme' || type === 'resettheme') {
+        Object.assign(themePatch, clone(defaultTheme))
+        themeActionCount += 1
+        continue
+      }
+      warnings.push(`Unsupported action type "${type}".`)
+    }
+
+    const hasThemePatch = Object.keys(themePatch).length > 0
+    if (hasThemePatch) {
+      updateTheme(themePatch, { recordHistory: false, historyLabel: 'AI edit' })
+      syncThemeControls()
+    }
+    if (textActionCount > 0) {
+      saveTextOverrides(state.textOverrides)
+      clearCachedRichTextSelection()
+      state.activeTextHost = null
+      state.activeInlineStyleNode = null
+      hideSelectionToolbar()
+      if (state.snapshot) {
+        renderFromSnapshot(true)
+      } else {
+        renderInitialState()
+      }
+      refreshTextToolStates()
+      syncTextStyleControlsFromSelection()
+      scheduleResizeSelectionUpdate()
+    }
+
+    const afterSnapshot = captureHistorySnapshot()
+    const changed = !historySnapshotsEqual(beforeSnapshot, afterSnapshot)
+    if (changed) {
+      recordHistoryCheckpoint('AI edit')
+    }
+
+    return {
+      changed,
+      themeActionCount,
+      textActionCount,
+      warningCount: warnings.length,
+      warnings
+    }
+  }
+
+  function summarizeAiOutcome(plan, outcome) {
+    const assistantMessage = asText(plan?.assistantMessage)
+    if (!outcome.changed) {
+      return assistantMessage || 'No editable change was applied from that prompt.'
+    }
+    const summaryParts = []
+    if (outcome.themeActionCount > 0) {
+      summaryParts.push(`${outcome.themeActionCount} style/layout change${outcome.themeActionCount === 1 ? '' : 's'}`)
+    }
+    if (outcome.textActionCount > 0) {
+      summaryParts.push(`${outcome.textActionCount} text change${outcome.textActionCount === 1 ? '' : 's'}`)
+    }
+    if (outcome.warningCount > 0) {
+      summaryParts.push(`${outcome.warningCount} ignored action${outcome.warningCount === 1 ? '' : 's'}`)
+    }
+    const builtSummary = summaryParts.length > 0 ? `Applied ${summaryParts.join(', ')}.` : 'Applied edits.'
+    if (!assistantMessage) {
+      return builtSummary
+    }
+    return `${assistantMessage}\n\n${builtSummary}`
+  }
+
+  function sanitizeAiThemePatch(rawTheme) {
+    if (!rawTheme || typeof rawTheme !== 'object') {
+      return {}
+    }
+    const patch = {}
+    for (const [rawKey, rawValue] of Object.entries(rawTheme)) {
+      const key = asText(rawKey)
+      if (!AI_THEME_ALLOWED_KEYS.has(key)) {
+        continue
+      }
+      const normalized = sanitizeAiThemeValue(key, rawValue)
+      if (normalized == null && normalized !== 0 && normalized !== false) {
+        continue
+      }
+      patch[key] = normalized
+    }
+    return patch
+  }
+
+  function sanitizeAiThemeValue(key, value) {
+    if (AI_THEME_COLOR_KEYS.has(key)) {
+      return sanitizeHex(asText(value), currentTheme[key])
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_THEME_NUMBER_RANGES, key)) {
+      const [min, max] = AI_THEME_NUMBER_RANGES[key]
+      return clamp(value, min, max, currentTheme[key])
+    }
+    if (key === 'gridVisible') {
+      return Boolean(value)
+    }
+    if (key === 'visualMode') {
+      return sanitizeVisualMode(value, currentTheme.visualMode)
+    }
+    if (key === 'raceCar') {
+      return normalizeRaceCar(value)
+    }
+    if (key === 'fontFamily') {
+      return sanitizeFontFamily(value, currentTheme.fontFamily)
+    }
+    if (key === 'bgImageUrl' || key === 'raceCarImageUrl' || key === 'logoUrl' || key === 'assetUrl') {
+      return sanitizeUrl(value, currentTheme[key])
+    }
+    return null
+  }
+
+  function normalizeAiTarget(rawTarget) {
+    const normalized = asText(rawTarget).replace(/[\s_-]+/g, '').toLowerCase()
+    if (!normalized) {
+      return ''
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_TARGET_ALIASES, normalized)) {
+      return AI_TARGET_ALIASES[normalized]
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_MOVE_TARGETS, rawTarget)) {
+      return rawTarget
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_BOX_RESIZE_TARGETS, rawTarget)) {
+      return rawTarget
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_SCALE_RESIZE_TARGETS, rawTarget)) {
+      return rawTarget
+    }
+    return ''
+  }
+
+  function applyAiMoveAction(action, themePatch) {
+    const target = normalizeAiTarget(action.target)
+    if (!target || !Object.prototype.hasOwnProperty.call(AI_MOVE_TARGETS, target)) {
+      return false
+    }
+    const config = AI_MOVE_TARGETS[target]
+    const baseX =
+      Object.prototype.hasOwnProperty.call(themePatch, config.xKey) &&
+      Number.isFinite(Number(themePatch[config.xKey]))
+        ? Number(themePatch[config.xKey])
+        : Number(currentTheme[config.xKey])
+    const baseY =
+      Object.prototype.hasOwnProperty.call(themePatch, config.yKey) &&
+      Number.isFinite(Number(themePatch[config.yKey]))
+        ? Number(themePatch[config.yKey])
+        : Number(currentTheme[config.yKey])
+    const hasX = Number.isFinite(Number(action.x))
+    const hasY = Number.isFinite(Number(action.y))
+    const hasDeltaX = Number.isFinite(Number(action.deltaX))
+    const hasDeltaY = Number.isFinite(Number(action.deltaY))
+    if (!hasX && !hasY && !hasDeltaX && !hasDeltaY) {
+      return false
+    }
+    const nextX = hasX ? Number(action.x) : baseX + (hasDeltaX ? Number(action.deltaX) : 0)
+    const nextY = hasY ? Number(action.y) : baseY + (hasDeltaY ? Number(action.deltaY) : 0)
+    themePatch[config.xKey] = clamp(nextX, config.minX, config.maxX, baseX)
+    themePatch[config.yKey] = clamp(nextY, config.minY, config.maxY, baseY)
+    return true
+  }
+
+  function applyAiResizeAction(action, themePatch) {
+    const target = normalizeAiTarget(action.target)
+    if (!target) {
+      return false
+    }
+    if (Object.prototype.hasOwnProperty.call(AI_BOX_RESIZE_TARGETS, target)) {
+      const config = AI_BOX_RESIZE_TARGETS[target]
+      const widthCleared = action.width === null
+      const heightCleared = action.height === null
+      const hasWidth = Number.isFinite(Number(action.width))
+      const hasHeight = Number.isFinite(Number(action.height))
+      if (!widthCleared && !heightCleared && !hasWidth && !hasHeight) {
+        return false
+      }
+      const baseWidth =
+        Object.prototype.hasOwnProperty.call(themePatch, config.widthKey) &&
+        Number.isFinite(Number(themePatch[config.widthKey]))
+          ? Number(themePatch[config.widthKey])
+          : sanitizeOptionalDimension(
+              currentTheme[config.widthKey],
+              config.minW,
+              config.maxW,
+              null
+            )
+      const baseHeight =
+        Object.prototype.hasOwnProperty.call(themePatch, config.heightKey) &&
+        Number.isFinite(Number(themePatch[config.heightKey]))
+          ? Number(themePatch[config.heightKey])
+          : sanitizeOptionalDimension(
+              currentTheme[config.heightKey],
+              config.minH,
+              config.maxH,
+              null
+            )
+      if (widthCleared) {
+        themePatch[config.widthKey] = null
+      } else if (hasWidth) {
+        themePatch[config.widthKey] = clamp(Number(action.width), config.minW, config.maxW, baseWidth)
+      }
+      if (heightCleared) {
+        themePatch[config.heightKey] = null
+      } else if (hasHeight) {
+        themePatch[config.heightKey] = clamp(Number(action.height), config.minH, config.maxH, baseHeight)
+      }
+      return true
+    }
+    if (!Object.prototype.hasOwnProperty.call(AI_SCALE_RESIZE_TARGETS, target)) {
+      return false
+    }
+    const config = AI_SCALE_RESIZE_TARGETS[target]
+    const uniformScale = Number.isFinite(Number(action.scale)) ? Number(action.scale) : null
+    const hasScaleX = Number.isFinite(Number(action.scaleX))
+    const hasScaleY = Number.isFinite(Number(action.scaleY))
+    if (uniformScale == null && !hasScaleX && !hasScaleY) {
+      return false
+    }
+    const baseScaleX =
+      Object.prototype.hasOwnProperty.call(themePatch, config.xKey) &&
+      Number.isFinite(Number(themePatch[config.xKey]))
+        ? Number(themePatch[config.xKey])
+        : Number(currentTheme[config.xKey])
+    const baseScaleY =
+      Object.prototype.hasOwnProperty.call(themePatch, config.yKey) &&
+      Number.isFinite(Number(themePatch[config.yKey]))
+        ? Number(themePatch[config.yKey])
+        : Number(currentTheme[config.yKey])
+    const rawScaleX = hasScaleX ? Number(action.scaleX) : uniformScale != null ? uniformScale : baseScaleX
+    const rawScaleY = hasScaleY ? Number(action.scaleY) : uniformScale != null ? uniformScale : baseScaleY
+    themePatch[config.xKey] = clamp(rawScaleX, config.minX, config.maxX, baseScaleX)
+    themePatch[config.yKey] = clamp(rawScaleY, config.minY, config.maxY, baseScaleY)
+    return true
+  }
+
+  function applyAiTextAction(action) {
+    const target = normalizeAiTarget(action.target)
+    if (!target) {
+      return false
+    }
+    const hasHtml = typeof action.html === 'string'
+    const hasValue = hasHtml || typeof action.value === 'string' || typeof action.value === 'number'
+    if (!hasValue) {
+      return false
+    }
+    const rawValue = hasHtml ? action.html : String(action.value)
+    if (target === 'question') {
+      const textKey =
+        asText(el.question.dataset.textKey) ||
+        (state.currentPoll ? getQuestionTextKey(state.currentPoll) : getQuestionStateTextKey('manual'))
+      return applyTextOverride(textKey, rawValue, hasHtml || action.asHtml === true)
+    }
+    if (target === 'eyebrow') {
+      return applyTextOverride(getEyebrowTextKey(), rawValue, hasHtml || action.asHtml === true)
+    }
+    return false
+  }
+
+  function applyAiOptionLabelAction(action) {
+    const resolved = resolveOptionFromAction(action)
+    if (!resolved) {
+      return false
+    }
+    const hasHtml = typeof action.html === 'string'
+    const hasValue = hasHtml || typeof action.value === 'string' || typeof action.value === 'number'
+    if (!hasValue) {
+      return false
+    }
+    const rawValue = hasHtml ? action.html : String(action.value)
+    const textKey = getOptionTextKey(state.currentPoll, resolved.option, resolved.index)
+    return applyTextOverride(textKey, rawValue, hasHtml || action.asHtml === true)
+  }
+
+  function resolveOptionFromAction(action) {
+    if (!state.currentPoll || !Array.isArray(state.currentPoll.options)) {
+      return null
+    }
+    const options = state.currentPoll.options
+    const optionId = asText(action.optionId)
+    if (optionId) {
+      const byIdIndex = options.findIndex((option) => asText(option?.id) === optionId)
+      if (byIdIndex >= 0) {
+        return { index: byIdIndex, option: options[byIdIndex] }
+      }
+    }
+    const optionIndex = Number.isFinite(Number(action.optionIndex)) ? Number(action.optionIndex) : NaN
+    if (Number.isInteger(optionIndex) && optionIndex >= 0 && optionIndex < options.length) {
+      return { index: optionIndex, option: options[optionIndex] }
+    }
+    const optionLabel = asText(action.optionLabel).toLowerCase()
+    if (optionLabel) {
+      const byLabelIndex = options.findIndex(
+        (option) => asText(option?.label).toLowerCase() === optionLabel
+      )
+      if (byLabelIndex >= 0) {
+        return { index: byLabelIndex, option: options[byLabelIndex] }
+      }
+    }
+    return null
+  }
+
+  function applyTextOverride(textKey, value, treatAsHtml = false) {
+    const key = asText(textKey)
+    if (!key || isLiveBoundTextKey(key)) {
+      return false
+    }
+    const rawInput = typeof value === 'string' ? value : String(value ?? '')
+    const nextHtml = treatAsHtml ? sanitizeRichTextHtml(rawInput) : textToRichHtml(rawInput)
+    if (!Object.prototype.hasOwnProperty.call(state.textOverrides, key) || state.textOverrides[key] !== nextHtml) {
+      state.textOverrides[key] = nextHtml
+      return true
+    }
+    return false
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+    try {
+      return await fetch(url, {
+        ...options,
+        signal: controller.signal
+      })
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('Request timed out.')
+      }
+      throw error
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
   }
 
   function setupHistoryControls() {
@@ -4789,13 +5787,8 @@
     resetAllElementPositions()
   }
 
-  function resetAllElementPositions() {
-    if (dragState.active) {
-      dragState.active.node.classList.remove('dragging')
-      dragState.active = null
-    }
-
-    updateTheme({
+  function buildDefaultPositionThemePatch() {
+    return {
       panelX: defaultTheme.panelX,
       panelY: defaultTheme.panelY,
       panelScaleX: defaultTheme.panelScaleX,
@@ -4852,7 +5845,16 @@
       optionSizes: clone(defaultTheme.optionSizes),
       optionScales: clone(defaultTheme.optionScales),
       optionAnchors: clone(defaultTheme.optionAnchors)
-    }, { historyLabel: 'Reset positions' })
+    }
+  }
+
+  function resetAllElementPositions() {
+    if (dragState.active) {
+      dragState.active.node.classList.remove('dragging')
+      dragState.active = null
+    }
+
+    updateTheme(buildDefaultPositionThemePatch(), { historyLabel: 'Reset positions' })
 
     if (state.snapshot) {
       renderFromSnapshot(true)
@@ -6086,6 +7088,13 @@
     el.wrap.removeEventListener('input', handleRichTextInput)
     el.wrap.removeEventListener('paste', handleRichTextPaste)
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
+    el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
+    el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
+    el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
+    el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
+    for (const quickAction of el.aiQuickActions) {
+      quickAction.removeEventListener('click', handleAiQuickActionClick)
+    }
     document.removeEventListener('selectionchange', handleRichTextSelectionChange)
     document.removeEventListener('pointerdown', handleRichTextPointerDown, true)
     document.removeEventListener('pointerdown', handleResizeSelectionPointerDown, true)
@@ -6117,6 +7126,9 @@
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null
     }
+    state.ai.queue = []
+    state.ai.activePrompt = ''
+    state.ai.busy = false
     disconnectSocket()
   }
 })()
