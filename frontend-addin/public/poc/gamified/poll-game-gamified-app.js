@@ -95,6 +95,8 @@ import {
       html: '',
       frameReady: false,
       lastPayloadKey: '',
+      lastDeliveredPayload: null,
+      pendingPayload: null,
       frameHeight: 520
     },
     ai: {
@@ -742,10 +744,12 @@ import {
   function handleArtifactFrameLoad() {
     state.artifact.frameReady = true
     state.artifact.lastPayloadKey = ''
-    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.currentPoll) {
+    if (flushPendingArtifactPayload({ force: true })) {
       return
     }
-    pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
+      pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+    }
   }
 
   function handleArtifactFrameMessage(event) {
@@ -754,14 +758,6 @@ import {
     }
     const payload = event.data
     if (!payload || typeof payload !== 'object') {
-      return
-    }
-    if (payload.type === 'prezo-artifact-ready') {
-      state.artifact.frameReady = true
-      state.artifact.lastPayloadKey = ''
-      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
-        pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
-      }
       return
     }
     if (payload.type === 'prezo-artifact-size') {
@@ -777,6 +773,36 @@ import {
     }
     state.artifact.frameHeight = normalized
     el.artifactFrame.style.height = `${Math.round(normalized)}px`
+  }
+
+  function flushPendingArtifactPayload(options = {}) {
+    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
+      return false
+    }
+    let payload = state.artifact.pendingPayload
+    if (!payload && currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
+      payload = buildArtifactPollPayload(state.currentPoll, getTotalVotes(state.currentPoll))
+    }
+    if (!payload) {
+      return false
+    }
+    const force = Boolean(options.force)
+    const payloadKey = buildArtifactPayloadKey(payload)
+    if (!force && payloadKey === state.artifact.lastPayloadKey) {
+      state.artifact.pendingPayload = null
+      return true
+    }
+    el.artifactFrame.contentWindow.postMessage(
+      {
+        type: 'prezo-poll-state',
+        payload
+      },
+      '*'
+    )
+    state.artifact.lastPayloadKey = payloadKey
+    state.artifact.lastDeliveredPayload = clone(payload)
+    state.artifact.pendingPayload = null
+    return true
   }
 
   async function submitArtifactPrompt(prompt) {
@@ -1142,6 +1168,8 @@ import {
     state.artifact.html = normalized
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
+    state.artifact.lastDeliveredPayload = null
+    state.artifact.pendingPayload = null
     const srcDoc = buildArtifactSrcDoc(normalized)
     if (!srcDoc) {
       return false
@@ -1155,6 +1183,8 @@ import {
     state.artifact.html = ''
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
+    state.artifact.lastDeliveredPayload = null
+    state.artifact.pendingPayload = null
     setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
   }
@@ -1163,16 +1193,35 @@ import {
     if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
       return
     }
-    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
-      return
-    }
     const force = Boolean(options.force)
     const payload = buildArtifactPollPayload(poll, totalVotes)
-    const payloadKey = JSON.stringify(payload)
+    const payloadKey = buildArtifactPayloadKey(payload)
+    if (
+      !force &&
+      shouldHardResyncArtifactPayload(state.artifact.lastDeliveredPayload, payload)
+    ) {
+      state.artifact.pendingPayload = payload
+      state.artifact.frameReady = false
+      state.artifact.lastPayloadKey = ''
+      if (asText(state.artifact.html)) {
+        const srcDoc = buildArtifactSrcDoc(state.artifact.html)
+        if (srcDoc) {
+          setArtifactFrameHeight(520, { force: true })
+          el.artifactFrame.srcdoc = srcDoc
+          return
+        }
+      }
+    }
+    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
+      state.artifact.pendingPayload = payload
+      return
+    }
     if (!force && payloadKey === state.artifact.lastPayloadKey) {
       return
     }
     state.artifact.lastPayloadKey = payloadKey
+    state.artifact.lastDeliveredPayload = clone(payload)
+    state.artifact.pendingPayload = null
     el.artifactFrame.contentWindow.postMessage(
       {
         type: 'prezo-poll-state',
@@ -1208,10 +1257,77 @@ import {
         sessionId: asText(state.sessionId),
         code: asText(state.code),
         selector: asText(state.pollSelector?.descriptor),
-        socketStatus: asText(state.socketStatus),
-        timestamp: new Date().toISOString()
+        socketStatus: asText(state.socketStatus)
       }
     }
+  }
+
+  function buildArtifactPayloadKey(payload) {
+    const poll = payload && typeof payload === 'object' ? payload.poll : {}
+    const options = Array.isArray(poll?.options) ? poll.options : []
+    const stable = {
+      poll: {
+        id: asText(poll?.id),
+        question: asText(poll?.question),
+        status: asText(poll?.status),
+        options: options.map((option, index) => ({
+          id: asText(option?.id) || `option-${index}`,
+          label: asText(option?.label),
+          votes: toInt(option?.votes),
+          percentage: toInt(option?.percentage)
+        }))
+      },
+      totalVotes: toInt(payload?.totalVotes)
+    }
+    return JSON.stringify(stable)
+  }
+
+  function shouldHardResyncArtifactPayload(previousPayload, nextPayload) {
+    if (!previousPayload || typeof previousPayload !== 'object') {
+      return false
+    }
+    if (!nextPayload || typeof nextPayload !== 'object') {
+      return false
+    }
+
+    const previousPoll = previousPayload.poll && typeof previousPayload.poll === 'object'
+      ? previousPayload.poll
+      : {}
+    const nextPoll = nextPayload.poll && typeof nextPayload.poll === 'object'
+      ? nextPayload.poll
+      : {}
+
+    if (asText(previousPoll.id) !== asText(nextPoll.id)) {
+      return true
+    }
+
+    const previousOptions = Array.isArray(previousPoll.options) ? previousPoll.options : []
+    const nextOptions = Array.isArray(nextPoll.options) ? nextPoll.options : []
+    if (previousOptions.length !== nextOptions.length) {
+      return true
+    }
+
+    const previousVotesById = new Map()
+    for (let index = 0; index < previousOptions.length; index += 1) {
+      const option = previousOptions[index]
+      const id = asText(option?.id) || `option-${index}`
+      previousVotesById.set(id, toInt(option?.votes))
+    }
+
+    for (let index = 0; index < nextOptions.length; index += 1) {
+      const option = nextOptions[index]
+      const id = asText(option?.id) || `option-${index}`
+      if (!previousVotesById.has(id)) {
+        return true
+      }
+      const previousVotes = toInt(previousVotesById.get(id))
+      const nextVotes = toInt(option?.votes)
+      if (nextVotes < previousVotes) {
+        return true
+      }
+    }
+
+    return false
   }
 
   function buildAiEditorContext() {
@@ -7726,6 +7842,8 @@ import {
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
+    state.artifact.lastDeliveredPayload = null
+    state.artifact.pendingPayload = null
     state.ai.queue = []
     state.ai.activePrompt = ''
     state.ai.busy = false
