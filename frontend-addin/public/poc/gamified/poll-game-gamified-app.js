@@ -685,12 +685,13 @@ import {
 
     const profile = resolveArtifactProfile(prompt)
     state.artifact.profile = profile
-    state.artifact.lastPrompt = prompt
     el.artifactPromptInput.placeholder = profile.placeholder
 
     updateTheme(buildArtifactThemePatch(profile), {
       historyLabel: 'Artifact profile'
     })
+
+    state.artifact.lastPrompt = prompt
 
     if (state.snapshot) {
       renderFromSnapshot(true)
@@ -1038,14 +1039,14 @@ import {
   function parseAiJsonResponse(rawText) {
     const direct = safeJsonParse(rawText)
     if (direct && typeof direct === 'object') {
-      return direct
+      return normalizeAiPlanResponse(direct, rawText)
     }
 
     const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(rawText)
     if (fenced && fenced[1]) {
       const parsed = safeJsonParse(fenced[1])
       if (parsed && typeof parsed === 'object') {
-        return parsed
+        return normalizeAiPlanResponse(parsed, rawText)
       }
     }
 
@@ -1055,10 +1056,45 @@ import {
       const sliced = rawText.slice(start, end + 1)
       const parsed = safeJsonParse(sliced)
       if (parsed && typeof parsed === 'object') {
-        return parsed
+        return normalizeAiPlanResponse(parsed, rawText)
       }
     }
-    throw new Error('AI response could not be parsed as JSON.')
+    return normalizeAiPlanResponse(null, rawText)
+  }
+
+  function normalizeAiPlanResponse(value, rawText = '') {
+    if (Array.isArray(value)) {
+      return {
+        assistantMessage: 'Applied parsed action list.',
+        actions: value.filter((item) => item && typeof item === 'object')
+      }
+    }
+
+    if (!value || typeof value !== 'object') {
+      return {
+        assistantMessage:
+          'AI response was not valid JSON. No structured actions were applied.',
+        actions: []
+      }
+    }
+
+    const assistantMessage =
+      asText(value.assistantMessage) ||
+      asText(value.message) ||
+      asText(rawText).slice(0, 220) ||
+      'AI response parsed.'
+    const actionCandidates = Array.isArray(value.actions)
+      ? value.actions
+      : Array.isArray(value.edits)
+        ? value.edits
+        : Array.isArray(value.operations)
+          ? value.operations
+          : []
+
+    return {
+      assistantMessage,
+      actions: actionCandidates.filter((item) => item && typeof item === 'object')
+    }
   }
 
   function applyAiPlanActions(plan) {
@@ -5222,7 +5258,9 @@ import {
       asText(poll.question) || 'Untitled poll'
     )
     if (!editingWithinOptions) {
-      if (currentTheme.visualMode === 'race') {
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && !hasArtifactPrompt()) {
+        renderArtifactAwaitingPrompt()
+      } else if (currentTheme.visualMode === 'race') {
         renderRaceOptions(poll, totalVotes)
       } else if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
         renderArtifactOptions(poll, totalVotes)
@@ -5246,6 +5284,21 @@ import {
       }
       commitRichTextHost(host, { normalizeDom: false, recordHistory: false })
     }
+  }
+
+  function hasArtifactPrompt() {
+    return Boolean(asText(state.artifact.lastPrompt))
+  }
+
+  function renderArtifactAwaitingPrompt() {
+    if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
+      clearRaceRows()
+    }
+    clearArtifactModeClasses()
+    renderEmptyStateNote(
+      'artifact-awaiting-prompt',
+      'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
+    )
   }
 
   function renderClassicOptions(poll, totalVotes) {
@@ -6175,6 +6228,7 @@ import {
     const persist = options.persist !== false
     const recordHistory = options.recordHistory !== false && persist && !historyState.applying
     const historyLabel = asText(options.historyLabel) || 'Update design'
+    const previousVisualMode = currentTheme.visualMode
     const nextTheme = {
       ...currentTheme,
       ...partialTheme
@@ -6191,6 +6245,19 @@ import {
     }
 
     currentTheme = sanitizeTheme(nextTheme)
+    if (
+      !state.artifact.busy &&
+      previousVisualMode !== ARTIFACT_VISUAL_MODE &&
+      currentTheme.visualMode === ARTIFACT_VISUAL_MODE
+    ) {
+      state.artifact.lastPrompt = ''
+      state.artifact.profile = getDefaultArtifactProfile()
+      el.artifactPromptInput.value = ''
+      el.artifactPromptInput.placeholder = state.artifact.profile.placeholder
+      setArtifactComposerStatus(
+        'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
+      )
+    }
     applyTheme(currentTheme)
     if (
       partialTheme &&

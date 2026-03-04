@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -131,8 +132,12 @@ async def create_poll_game_edit_plan(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Gemini response did not include text content.",
         )
+    normalized_plan = normalize_poll_game_plan(text)
 
-    return PollGameEditPlanResponse(text=text, model=model)
+    return PollGameEditPlanResponse(
+        text=json.dumps(normalized_plan, ensure_ascii=False),
+        model=model,
+    )
 
 
 def extract_gemini_text(payload: Any) -> str:
@@ -178,3 +183,93 @@ def normalize_gemini_model_name(value: str | None) -> str:
     if text.startswith("models/"):
         return text.removeprefix("models/").strip()
     return text
+
+
+def normalize_poll_game_plan(raw_text: str) -> dict[str, Any]:
+    parsed = try_parse_json(raw_text)
+    if parsed is None:
+        fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw_text, re.IGNORECASE)
+        if fenced and fenced.group(1):
+            parsed = try_parse_json(fenced.group(1))
+    if parsed is None:
+        object_slice = extract_first_json_object(raw_text)
+        if object_slice:
+            parsed = try_parse_json(object_slice)
+
+    if isinstance(parsed, list):
+        return {
+            "assistantMessage": "Applied parsed action list.",
+            "actions": [item for item in parsed if isinstance(item, dict)],
+        }
+
+    if not isinstance(parsed, dict):
+        return {
+            "assistantMessage": (
+                "AI response was not valid JSON. No structured actions were applied."
+            ),
+            "actions": [],
+        }
+
+    assistant_message = (
+        parsed.get("assistantMessage")
+        if isinstance(parsed.get("assistantMessage"), str)
+        else parsed.get("message")
+        if isinstance(parsed.get("message"), str)
+        else "AI plan parsed."
+    )
+    actions_raw = parsed.get("actions")
+    if not isinstance(actions_raw, list):
+        for fallback_key in ("edits", "operations", "steps"):
+            candidate = parsed.get(fallback_key)
+            if isinstance(candidate, list):
+                actions_raw = candidate
+                break
+    if not isinstance(actions_raw, list):
+        actions_raw = []
+
+    actions = [item for item in actions_raw if isinstance(item, dict)]
+    return {"assistantMessage": assistant_message.strip(), "actions": actions}
+
+
+def try_parse_json(value: str) -> Any | None:
+    text = (value or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def extract_first_json_object(raw_text: str) -> str:
+    text = (raw_text or "").strip()
+    if not text:
+        return ""
+    start = text.find("{")
+    if start < 0:
+        return ""
+
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return ""
