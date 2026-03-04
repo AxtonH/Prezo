@@ -19,6 +19,8 @@ uvicorn app.main:app --reload --port 8000
 Optional environment variables (create `backend/.env`):
 - `PUBLIC_BASE_URL` (default `http://localhost:5174`)
 - `CORS_ORIGINS` (JSON array, default `["http://localhost:5173", "http://localhost:5174"]`)
+- `GEMINI_API_KEY` (required for PoC AI editor chat)
+- `GEMINI_MODEL` (default `gemini-2.0-flash`)
 
 ## Frontend (Host Add-in)
 ```powershell

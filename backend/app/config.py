@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:5174"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
 
 
 settings = Settings()

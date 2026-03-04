@@ -9,10 +9,8 @@
   const RIBBON_ADVANCED_KEY = 'prezo.poll-game-poc.ribbon-advanced.v1'
   const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
   const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
-  const AI_GEMINI_API_KEY_STORAGE_KEY = 'prezo.poll-game-poc.gemini-api-key.v1'
   const AI_GEMINI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.gemini-model.v1'
   const AI_GEMINI_DEFAULT_MODEL = 'gemini-2.0-flash'
-  const AI_GEMINI_DEFAULT_API_KEY = 'AIzaSyDc9EzErSL1vA4bMVdaZYtn1n25WWbVnKA'
   const AI_THEME_NUMBER_RANGES = Object.freeze({
     bgImageOpacity: [0, 1],
     overlayOpacity: [0, 1],
@@ -276,7 +274,6 @@
       queue: [],
       activePrompt: '',
       messageSeq: 0,
-      apiKey: '',
       model: ''
     }
   }
@@ -798,7 +795,9 @@
   }
 
   function setupAiChat() {
-    state.ai.apiKey = resolveAiGeminiApiKey()
+    try {
+      localStorage.removeItem('prezo.poll-game-poc.gemini-api-key.v1')
+    } catch {}
     state.ai.model = resolveAiGeminiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
@@ -816,26 +815,7 @@
       'assistant',
       'AI editor is ready. Ask for design or text changes and I will apply them directly.'
     )
-    if (!state.ai.apiKey) {
-      updateAiChatStatus('Gemini API key is missing. Add ?geminiKey=<key> in URL.', 'error')
-      return
-    }
     updateAiChatStatus('Ready for edits.', 'success')
-  }
-
-  function resolveAiGeminiApiKey() {
-    const queryKey = asText(query.get('geminiKey') || query.get('geminiApiKey'))
-    if (queryKey) {
-      try {
-        localStorage.setItem(AI_GEMINI_API_KEY_STORAGE_KEY, queryKey)
-      } catch {}
-      return queryKey
-    }
-    const storedKey = asText(safeStorageGet(AI_GEMINI_API_KEY_STORAGE_KEY))
-    if (storedKey) {
-      return storedKey
-    }
-    return AI_GEMINI_DEFAULT_API_KEY
   }
 
   function resolveAiGeminiModel() {
@@ -1052,45 +1032,12 @@
   }
 
   async function requestAiEditPlan(prompt, context) {
-    const apiKey = asText(state.ai.apiKey)
-    if (!apiKey) {
-      throw new Error('Gemini API key is not configured.')
-    }
     const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
-    const endpoint =
-      `https://generativelanguage.googleapis.com/v1beta/models/` +
-      `${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
+    const endpoint = `${state.apiBase}/ai/poll-game-edit-plan`
     const body = {
-      systemInstruction: {
-        parts: [
-          {
-            text: buildAiSystemInstruction()
-          }
-        ]
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: JSON.stringify(
-                {
-                  prompt,
-                  context
-                },
-                null,
-                2
-              )
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.9,
-        maxOutputTokens: 1400,
-        responseMimeType: 'application/json'
-      }
+      prompt,
+      context,
+      model
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -1102,47 +1049,16 @@
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const message =
+        asText(payload?.detail) ||
         asText(payload?.error?.message) ||
-        asText(payload?.error?.status) ||
         `Request failed (${response.status})`
       throw new Error(message)
     }
-    const text = extractGeminiText(payload)
+    const text = asText(payload?.text) || extractGeminiText(payload)
     if (!text) {
-      throw new Error('Gemini returned an empty response.')
+      throw new Error('AI service returned an empty response.')
     }
     return parseAiJsonResponse(text)
-  }
-
-  function buildAiSystemInstruction() {
-    const allowedThemeKeys = [...AI_THEME_ALLOWED_KEYS].sort().join(', ')
-    const moveTargets = Object.keys(AI_MOVE_TARGETS).join(', ')
-    const resizeTargets = [
-      ...Object.keys(AI_BOX_RESIZE_TARGETS),
-      ...Object.keys(AI_SCALE_RESIZE_TARGETS)
-    ]
-      .filter((value, index, list) => list.indexOf(value) === index)
-      .join(', ')
-    return [
-      'You translate user intent into JSON edit actions for a poll game canvas.',
-      'Output JSON only, no markdown.',
-      'Response shape:',
-      '{ "assistantMessage": string, "actions": Action[] }',
-      'Supported actions:',
-      '- { "type":"update_theme", "theme": { ... } }',
-      '- { "type":"set_text", "target":"question|eyebrow", "value": string, "asHtml": boolean? }',
-      '- { "type":"set_option_label", "optionIndex": number, "optionId": string?, "value": string, "asHtml": boolean? }',
-      '- { "type":"move_element", "target": string, "x": number?, "y": number?, "deltaX": number?, "deltaY": number? }',
-      '- { "type":"resize_element", "target": string, "width": number?, "height": number?, "scaleX": number?, "scaleY": number?, "scale": number? }',
-      '- { "type":"reset_positions" }',
-      '- { "type":"reset_theme" }',
-      `Allowed theme keys: ${allowedThemeKeys}.`,
-      `Allowed move targets: ${moveTargets}.`,
-      `Allowed resize targets: ${resizeTargets}.`,
-      'Use hex colors only (#RRGGBB).',
-      'Use minimal actions required for the request.',
-      'Do not invent keys, fields, or unsupported action types.'
-    ].join('\n')
   }
 
   function buildAiEditorContext() {
