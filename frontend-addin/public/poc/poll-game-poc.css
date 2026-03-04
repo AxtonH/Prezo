@@ -858,6 +858,11 @@ body.ribbon-advanced .advanced-control.note {
   left: calc(-1 * var(--panel-grab-band));
 }
 
+.wrap.panel-deleted .panel-bg-drag,
+.wrap.panel-deleted .panel-drag-handle {
+  display: none;
+}
+
 .wrap > :not(.custom-asset):not(.custom-logo):not(.panel-bg-drag):not(.panel-drag-handle):not(.resize-selection) {
   position: relative;
   z-index: 2;

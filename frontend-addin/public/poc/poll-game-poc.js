@@ -304,6 +304,7 @@
     settingsClose: must('settings-close'),
     historyUndo: must('history-undo'),
     historyRedo: must('history-redo'),
+    deleteSelectedObject: must('delete-selected-object'),
     dragModeEnabled: must('drag-mode-enabled'),
     resetPositions: must('reset-positions'),
     themeName: must('theme-name'),
@@ -452,6 +453,7 @@
     optionSizes: {},
     optionScales: {},
     optionAnchors: {},
+    deletedObjects: {},
     fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
   })
 
@@ -538,6 +540,7 @@
     setupRichTextEditor()
     setupAiChat()
     setupHistoryControls()
+    setupDeleteControls()
     setupDragInteractions()
     setupResizeInteractions()
     setupRibbonOffsetTracking()
@@ -1544,6 +1547,188 @@
     })
     window.addEventListener('keydown', handleHistoryKeydown, true)
     updateHistoryControls()
+  }
+
+  function setupDeleteControls() {
+    el.deleteSelectedObject.addEventListener('click', handleDeleteSelectedObjectClick)
+    window.addEventListener('keydown', handleDeleteKeydown, true)
+  }
+
+  function handleDeleteSelectedObjectClick() {
+    deleteSelectedObject()
+  }
+
+  function handleDeleteKeydown(event) {
+    if (event.defaultPrevented || isResetPositionsModalOpen()) {
+      return
+    }
+    const key = asText(event.key).toLowerCase()
+    if (key !== 'delete' && key !== 'backspace') {
+      return
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return
+    }
+    const target = event.target
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    ) {
+      return
+    }
+    if (target instanceof HTMLElement && target.isContentEditable) {
+      return
+    }
+    if (isTextControlElement(target)) {
+      return
+    }
+    const host = getRichTextHost(target)
+    if (host && document.activeElement === host) {
+      return
+    }
+    if (deleteSelectedObject()) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
+
+  function deleteSelectedObject() {
+    flushTypingHistoryCheckpoint()
+    const node = getActiveResizeTarget()
+    if (!node) {
+      showThemeFeedback('Select an element first.', 'error')
+      return false
+    }
+    const target = resolveDeleteTarget(node)
+    if (!target) {
+      showThemeFeedback('This element cannot be deleted yet.', 'error')
+      return false
+    }
+    if (isThemeObjectDeleted(target.key)) {
+      showThemeFeedback('This element is already deleted.', 'error')
+      return false
+    }
+
+    setThemeObjectDeleted(target.key, true)
+    updateTheme(
+      { deletedObjects: clone(currentTheme.deletedObjects) },
+      { recordHistory: false, historyLabel: 'Delete object' }
+    )
+    clearActiveResizeTarget()
+    clearCachedRichTextSelection()
+    hideSelectionToolbar()
+    state.activeTextHost = null
+    state.activeInlineStyleNode = null
+    if (state.snapshot) {
+      renderFromSnapshot(true)
+    } else {
+      renderInitialState()
+    }
+    refreshTextToolStates()
+    syncTextStyleControlsFromSelection()
+    recordHistoryCheckpoint('Delete object')
+    showThemeFeedback(`${target.label} deleted. Use Undo to restore.`, 'success')
+    return true
+  }
+
+  function resolveDeleteTarget(node) {
+    if (!(node instanceof HTMLElement)) {
+      return null
+    }
+    if (node === el.panelBgDrag) {
+      return { key: 'panel', label: 'Panel' }
+    }
+    if (node === el.bgImage) {
+      return { key: 'bgImage', label: 'Background image' }
+    }
+    if (node === el.bgOverlay) {
+      return { key: 'overlay', label: 'Overlay' }
+    }
+    if (node === el.gridBg) {
+      return { key: 'grid', label: 'Grid' }
+    }
+    if (node === el.customLogo) {
+      return { key: 'logo', label: 'Logo' }
+    }
+    if (node === el.customAsset) {
+      return { key: 'asset', label: 'Asset' }
+    }
+    if (node === el.eyebrow) {
+      return { key: 'eyebrow', label: 'Eyebrow text' }
+    }
+    if (node === el.question) {
+      return { key: 'question', label: 'Question text' }
+    }
+    if (node === el.metaBar) {
+      return { key: 'meta', label: 'Meta badge' }
+    }
+    if (node === el.options) {
+      return { key: 'options', label: 'Options block' }
+    }
+    if (node === el.footer) {
+      return { key: 'footer', label: 'Footer text' }
+    }
+
+    const optionTarget = getOptionDeleteTarget(node)
+    if (optionTarget) {
+      return optionTarget
+    }
+    return null
+  }
+
+  function getOptionDeleteTarget(node) {
+    if (!(node instanceof HTMLElement)) {
+      return null
+    }
+    const optionContainer = node.closest('[data-option-drag-id]')
+    if (!(optionContainer instanceof HTMLElement)) {
+      return null
+    }
+    const optionId = asText(optionContainer.dataset.optionDragId)
+    if (!optionId) {
+      return null
+    }
+    const part = resolveOptionPartForNode(node)
+    if (!part) {
+      return null
+    }
+    const key = getOptionDeleteTargetKey(state.currentPoll, optionId, part)
+    if (!key) {
+      return null
+    }
+    const label = part === 'label' ? 'Option label' : part === 'stats' ? 'Option stats' : part === 'bar' ? 'Option bar' : 'Option row'
+    return { key, label }
+  }
+
+  function resolveOptionPartForNode(node) {
+    const part = asText(node.dataset.optionDragPart).toLowerCase()
+    if (part === 'label' || part === 'stats' || part === 'bar' || part === 'row') {
+      return part
+    }
+    if (node.classList.contains('label') || node.classList.contains('race-label')) {
+      return 'label'
+    }
+    if (node.classList.contains('stats')) {
+      return 'stats'
+    }
+    if (node.classList.contains('track') || node.classList.contains('race-track')) {
+      return 'bar'
+    }
+    if (node.classList.contains('option') || node.classList.contains('race-option')) {
+      return 'row'
+    }
+    return ''
+  }
+
+  function getOptionDeleteTargetKey(poll, optionId, part = 'row') {
+    const safeOptionId = asText(optionId)
+    if (!safeOptionId) {
+      return ''
+    }
+    const pollId = asText(poll?.id) || 'unknown'
+    const safePart = asText(part).toLowerCase() || 'row'
+    return `poll:${pollId}:option:${safeOptionId}:deleted:${safePart}`
   }
 
   function initializeHistoryState() {
@@ -3200,6 +3385,72 @@
       })
     )
     registerResizeTarget(
+      el.bgImage,
+      createThemeResizeProfile({
+        xKey: 'bgImageX',
+        yKey: 'bgImageY',
+        scaleXKey: 'bgImageScaleX',
+        scaleYKey: 'bgImageScaleY',
+        minScaleX: 0.35,
+        maxScaleX: 3.5,
+        minScaleY: 0.35,
+        maxScaleY: 3.5,
+        apply: () => {
+          applyElementOffset(
+            el.bgImage,
+            currentTheme.bgImageX,
+            currentTheme.bgImageY,
+            currentTheme.bgImageScaleX,
+            currentTheme.bgImageScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.bgOverlay,
+      createThemeResizeProfile({
+        xKey: 'bgOverlayX',
+        yKey: 'bgOverlayY',
+        scaleXKey: 'bgOverlayScaleX',
+        scaleYKey: 'bgOverlayScaleY',
+        minScaleX: 0.35,
+        maxScaleX: 3.5,
+        minScaleY: 0.35,
+        maxScaleY: 3.5,
+        apply: () => {
+          applyElementOffset(
+            el.bgOverlay,
+            currentTheme.bgOverlayX,
+            currentTheme.bgOverlayY,
+            currentTheme.bgOverlayScaleX,
+            currentTheme.bgOverlayScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
+      el.gridBg,
+      createThemeResizeProfile({
+        xKey: 'gridX',
+        yKey: 'gridY',
+        scaleXKey: 'gridScaleX',
+        scaleYKey: 'gridScaleY',
+        minScaleX: 0.35,
+        maxScaleX: 3.5,
+        minScaleY: 0.35,
+        maxScaleY: 3.5,
+        apply: () => {
+          applyElementOffset(
+            el.gridBg,
+            currentTheme.gridX,
+            currentTheme.gridY,
+            currentTheme.gridScaleX,
+            currentTheme.gridScaleY
+          )
+        }
+      })
+    )
+    registerResizeTarget(
       el.eyebrow,
       createThemeBoxResizeProfile({
         xKey: 'eyebrowX',
@@ -4243,6 +4494,81 @@
     )
   }
 
+  function ensureDeletedObjectsMap() {
+    if (!currentTheme.deletedObjects || typeof currentTheme.deletedObjects !== 'object') {
+      currentTheme.deletedObjects = {}
+    }
+    return currentTheme.deletedObjects
+  }
+
+  function isThemeObjectDeleted(targetKey) {
+    const key = asText(targetKey)
+    if (!key) {
+      return false
+    }
+    const map = ensureDeletedObjectsMap()
+    return Boolean(map[key])
+  }
+
+  function setThemeObjectDeleted(targetKey, deleted = true) {
+    const key = asText(targetKey)
+    if (!key) {
+      return
+    }
+    const map = ensureDeletedObjectsMap()
+    if (deleted) {
+      map[key] = true
+      return
+    }
+    delete map[key]
+  }
+
+  function applyDeletedStaticTargets(theme) {
+    const deletedObjects =
+      theme && typeof theme.deletedObjects === 'object' ? theme.deletedObjects : {}
+    const isDeleted = (targetKey) => Boolean(deletedObjects[targetKey])
+
+    el.bgImage.classList.toggle('hidden', isDeleted('bgImage'))
+    el.bgOverlay.classList.toggle('hidden', isDeleted('overlay'))
+    el.gridBg.classList.toggle('hidden', isDeleted('grid'))
+    el.eyebrow.classList.toggle('hidden', isDeleted('eyebrow'))
+    el.question.classList.toggle('hidden', isDeleted('question'))
+    el.metaBar.classList.toggle('hidden', isDeleted('meta'))
+    el.options.classList.toggle('hidden', isDeleted('options'))
+    el.footer.classList.toggle('hidden', isDeleted('footer'))
+
+    if (isDeleted('logo')) {
+      el.customLogo.classList.add('hidden')
+    }
+    if (isDeleted('asset')) {
+      el.customAsset.classList.add('hidden')
+    }
+
+    const panelDeleted = isDeleted('panel')
+    el.panelBgDrag.classList.toggle('hidden', panelDeleted)
+    for (const handle of [
+      el.panelDragTop,
+      el.panelDragRight,
+      el.panelDragBottom,
+      el.panelDragLeft,
+      el.panelDragTl,
+      el.panelDragTr,
+      el.panelDragBr,
+      el.panelDragBl
+    ]) {
+      handle.classList.toggle('hidden', panelDeleted)
+    }
+    el.wrap.classList.toggle('panel-deleted', panelDeleted)
+  }
+
+  function applyDeletedOptionTarget(node, poll, optionId, part = 'row') {
+    if (!(node instanceof HTMLElement)) {
+      return
+    }
+    const key = getOptionDeleteTargetKey(poll, optionId, part)
+    node.classList.toggle('hidden', Boolean(key && isThemeObjectDeleted(key)))
+  }
+
   function ensureOptionOffsets() {
     if (!currentTheme.optionOffsets || typeof currentTheme.optionOffsets !== 'object') {
       currentTheme.optionOffsets = {}
@@ -5059,6 +5385,10 @@
       fill.style.width = `${pct}%`
 
       track.appendChild(fill)
+      applyDeletedOptionTarget(optionNode, poll, optionId, 'row')
+      applyDeletedOptionTarget(label, poll, optionId, 'label')
+      applyDeletedOptionTarget(stats, poll, optionId, 'stats')
+      applyDeletedOptionTarget(track, poll, optionId, 'bar')
       optionNode.append(labelRow, track)
       registerOptionDragTarget(label, optionId, 'label', { edgeGrabPadding: 12 })
       registerOptionResizeTarget(label, optionId, 'label', {
@@ -5160,6 +5490,10 @@
       row.targetProgress = pct
       row.root.classList.toggle('leading', index === 0)
       row.root.style.zIndex = `${sorted.length - index}`
+      applyDeletedOptionTarget(row.root, poll, optionId, 'row')
+      applyDeletedOptionTarget(row.label, poll, optionId, 'label')
+      applyDeletedOptionTarget(row.stats, poll, optionId, 'stats')
+      applyDeletedOptionTarget(row.track, poll, optionId, 'bar')
       applyRaceRowTransform(row)
       applyOptionBoxSize(row.root, optionId, 'row')
       applyRaceCarContent(row.car)
@@ -5215,6 +5549,7 @@
       root,
       label,
       stats,
+      track,
       fill,
       car,
       optionId,
@@ -5938,6 +6273,7 @@
       scaleX: theme.assetScaleX,
       scaleY: theme.assetScaleY
     })
+    applyDeletedStaticTargets(theme)
     syncRaceThemeVisuals()
     scheduleResizeSelectionUpdate()
   }
@@ -6739,6 +7075,7 @@
       optionSizes: sanitizeOptionSizes(incoming.optionSizes, defaultTheme.optionSizes),
       optionScales: sanitizeOptionScales(incoming.optionScales, defaultTheme.optionScales),
       optionAnchors: sanitizeOptionAnchors(incoming.optionAnchors, defaultTheme.optionAnchors),
+      deletedObjects: sanitizeDeletedObjects(incoming.deletedObjects, defaultTheme.deletedObjects),
       fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
     }
   }
@@ -6817,6 +7154,22 @@
         continue
       }
       sanitized[optionId] = { x, y }
+    }
+    return sanitized
+  }
+
+  function sanitizeDeletedObjects(value, fallback) {
+    const source = value && typeof value === 'object' ? value : fallback
+    if (!source || typeof source !== 'object') {
+      return {}
+    }
+    const sanitized = {}
+    for (const [rawKey, rawValue] of Object.entries(source)) {
+      const key = asText(rawKey)
+      if (!key || !rawValue) {
+        continue
+      }
+      sanitized[key] = true
     }
     return sanitized
   }
@@ -7035,7 +7388,9 @@
     window.removeEventListener('resize', scheduleResizeSelectionUpdate)
     window.removeEventListener('scroll', scheduleResizeSelectionUpdate, true)
     window.removeEventListener('keydown', handleHistoryKeydown, true)
+    window.removeEventListener('keydown', handleDeleteKeydown, true)
     window.removeEventListener('keydown', handleResetPositionsModalKeydown, true)
+    el.deleteSelectedObject.removeEventListener('click', handleDeleteSelectedObjectClick)
     clearTypingHistoryTimer()
     if (state.selectionToolbarRafId != null) {
       cancelAnimationFrame(state.selectionToolbarRafId)
