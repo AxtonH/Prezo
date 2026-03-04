@@ -1290,6 +1290,10 @@ h1 {
   box-shadow: 0 12px 24px rgba(56, 91, 129, 0.2);
 }
 
+.ai-chat-fab.hidden {
+  display: none;
+}
+
 .ai-chat-fab:hover {
   border-color: rgba(80, 143, 223, 0.95);
   filter: brightness(1.02);
@@ -1308,6 +1312,10 @@ h1 {
   backdrop-filter: blur(10px);
   box-shadow: 0 18px 34px rgba(42, 74, 109, 0.24);
   padding: 10px;
+}
+
+.ai-chat-panel.hidden {
+  display: none;
 }
 
 .ai-chat-header {
