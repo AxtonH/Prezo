@@ -40,6 +40,7 @@ import {
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
+  const ARTIFACT_SAFE_FIT_SCALE = 0.92
 
   const query = new URLSearchParams(window.location.search)
 
@@ -788,9 +789,12 @@ import {
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    el.artifactFrame.style.width = `${Math.round(stageWidth)}px`
-    el.artifactFrame.style.height = `${Math.round(stageHeight)}px`
-    el.artifactFrame.style.transform = 'translate(0px, 0px) scale(1)'
+    const fitScale = clamp(ARTIFACT_SAFE_FIT_SCALE, 0.78, 1, 0.92)
+    const virtualWidth = stageWidth / fitScale
+    const virtualHeight = stageHeight / fitScale
+    el.artifactFrame.style.width = `${Math.round(virtualWidth)}px`
+    el.artifactFrame.style.height = `${Math.round(virtualHeight)}px`
+    el.artifactFrame.style.transform = `translate(0px, 0px) scale(${fitScale})`
     el.artifactFrame.style.transformOrigin = 'top left'
   }
 
