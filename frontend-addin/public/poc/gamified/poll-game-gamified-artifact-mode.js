@@ -40,6 +40,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
     'Output should be raw HTML that can render from live poll state updates.',
     'Define window.prezoRenderPoll(state) and use state.poll.question, state.poll.options, state.totalVotes, state.meta.',
+    'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
     'Poll updates must be smooth and flicker-free (200ms-500ms easing) without re-mounting the whole scene.',
     'Use keyed reconciliation by option id and update only changed nodes when possible.',
     'Avoid markdown fences and explanations; return artifact HTML only.',

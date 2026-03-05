@@ -1270,7 +1270,9 @@ h1 {
 .artifact-stage {
   position: relative;
   margin-top: 10px;
-  min-height: 300px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 0;
   border: 1px solid rgba(146, 181, 219, 0.64);
   border-radius: 14px;
   overflow: hidden;
@@ -1280,13 +1282,17 @@ h1 {
 }
 
 .artifact-frame {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
   width: 100%;
-  min-height: 300px;
-  height: 520px;
+  height: 100%;
+  min-height: 0;
   border: 0;
   background: transparent;
-  transition: height 180ms ease;
+  transform-origin: top left;
+  transition: transform 160ms ease;
 }
 
 .artifact-stage-placeholder {
@@ -1932,9 +1938,8 @@ h1 {
     width: 100%;
   }
 
-  .artifact-frame {
-    min-height: 220px;
-    height: 420px;
+  .artifact-stage {
+    aspect-ratio: 16 / 9;
   }
 
   .state.artifact-mode.artifact-layout-vertical {
