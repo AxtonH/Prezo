@@ -98,9 +98,7 @@ import {
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
-      frameHeight: 520,
-      contentWidth: 0,
-      contentHeight: 0
+      frameHeight: 520
     },
     ai: {
       open: false,
@@ -643,7 +641,6 @@ import {
     setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
-    window.addEventListener('message', handleArtifactFrameMessage)
     window.addEventListener('resize', handleArtifactViewportResize)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
@@ -751,40 +748,12 @@ import {
   function handleArtifactFrameLoad() {
     state.artifact.frameReady = true
     state.artifact.lastPayloadKey = ''
-    state.artifact.contentWidth = 0
-    state.artifact.contentHeight = 0
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     if (flushPendingArtifactPayload({ force: true })) {
       return
     }
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
       pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
-    }
-  }
-
-  function handleArtifactFrameMessage(event) {
-    if (event.source !== el.artifactFrame.contentWindow) {
-      return
-    }
-    const payload = event.data
-    if (!payload || typeof payload !== 'object') {
-      return
-    }
-    if (payload.type === 'prezo-artifact-size') {
-      const reportedWidth = Number(payload.width)
-      const reportedHeight = Number(payload.height)
-      if (Number.isFinite(reportedWidth) && reportedWidth >= 120) {
-        state.artifact.contentWidth = clamp(reportedWidth, 1, 12000, state.artifact.contentWidth || 0)
-      }
-      if (Number.isFinite(reportedHeight) && reportedHeight >= 80) {
-        state.artifact.contentHeight = clamp(
-          reportedHeight,
-          1,
-          12000,
-          state.artifact.contentHeight || 0
-        )
-      }
-      setArtifactFrameHeight(state.artifact.frameHeight)
     }
   }
 
@@ -819,39 +788,9 @@ import {
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-
-    const rawContentWidth = clamp(
-      state.artifact.contentWidth,
-      1,
-      12000,
-      Math.round(stageWidth)
-    )
-    const rawContentHeight = clamp(
-      state.artifact.contentHeight,
-      1,
-      12000,
-      Math.round(stageHeight)
-    )
-    const rawScale = Math.min(stageWidth / rawContentWidth, stageHeight / rawContentHeight)
-    const minUsableWidth = Math.max(320, Math.round(stageWidth * 0.35))
-    const minUsableHeight = Math.max(180, Math.round(stageHeight * 0.35))
-    const tinySize = rawContentWidth < minUsableWidth || rawContentHeight < minUsableHeight
-    const extremeSize =
-      !Number.isFinite(rawScale) ||
-      rawContentWidth > stageWidth * 2.4 ||
-      rawContentHeight > stageHeight * 2.4 ||
-      rawScale < 0.42
-    const contentWidth = tinySize || extremeSize ? Math.round(stageWidth) : rawContentWidth
-    const contentHeight = tinySize || extremeSize ? Math.round(stageHeight) : rawContentHeight
-    const scale = Math.min(stageWidth / contentWidth, stageHeight / contentHeight)
-    const fittedWidth = contentWidth * scale
-    const fittedHeight = contentHeight * scale
-    const offsetX = Math.max(0, (stageWidth - fittedWidth) / 2)
-    const offsetY = Math.max(0, (stageHeight - fittedHeight) / 2)
-
-    el.artifactFrame.style.width = `${Math.round(contentWidth)}px`
-    el.artifactFrame.style.height = `${Math.round(contentHeight)}px`
-    el.artifactFrame.style.transform = `translate(${Math.round(offsetX)}px, ${Math.round(offsetY)}px) scale(${scale})`
+    el.artifactFrame.style.width = `${Math.round(stageWidth)}px`
+    el.artifactFrame.style.height = `${Math.round(stageHeight)}px`
+    el.artifactFrame.style.transform = 'translate(0px, 0px) scale(1)'
     el.artifactFrame.style.transformOrigin = 'top left'
   }
 
@@ -1250,8 +1189,6 @@ import {
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
-    state.artifact.contentWidth = 0
-    state.artifact.contentHeight = 0
     const srcDoc = buildArtifactSrcDoc(normalized)
     if (!srcDoc) {
       return false
@@ -1267,8 +1204,6 @@ import {
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
-    state.artifact.contentWidth = 0
-    state.artifact.contentHeight = 0
     setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
   }
@@ -7822,7 +7757,6 @@ import {
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
-    window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('resize', handleArtifactViewportResize)
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
