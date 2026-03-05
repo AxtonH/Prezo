@@ -820,18 +820,25 @@ import {
       return
     }
 
-    const contentWidth = clamp(
+    const rawContentWidth = clamp(
       state.artifact.contentWidth,
       1,
       12000,
       Math.round(stageWidth)
     )
-    const contentHeight = clamp(
+    const rawContentHeight = clamp(
       state.artifact.contentHeight,
       1,
       12000,
       Math.round(stageHeight)
     )
+    const rawScale = Math.min(stageWidth / rawContentWidth, stageHeight / rawContentHeight, 1)
+    const extremeSize =
+      rawContentWidth > stageWidth * 2.4 ||
+      rawContentHeight > stageHeight * 2.4 ||
+      rawScale < 0.42
+    const contentWidth = extremeSize ? Math.round(stageWidth) : rawContentWidth
+    const contentHeight = extremeSize ? Math.round(stageHeight) : rawContentHeight
     const scale = Math.min(stageWidth / contentWidth, stageHeight / contentHeight, 1)
     const fittedWidth = contentWidth * scale
     const fittedHeight = contentHeight * scale
