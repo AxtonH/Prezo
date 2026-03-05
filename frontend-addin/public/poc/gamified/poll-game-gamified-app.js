@@ -773,10 +773,10 @@ import {
     if (payload.type === 'prezo-artifact-size') {
       const reportedWidth = Number(payload.width)
       const reportedHeight = Number(payload.height)
-      if (Number.isFinite(reportedWidth) && reportedWidth > 0) {
+      if (Number.isFinite(reportedWidth) && reportedWidth >= 120) {
         state.artifact.contentWidth = clamp(reportedWidth, 1, 12000, state.artifact.contentWidth || 0)
       }
-      if (Number.isFinite(reportedHeight) && reportedHeight > 0) {
+      if (Number.isFinite(reportedHeight) && reportedHeight >= 80) {
         state.artifact.contentHeight = clamp(
           reportedHeight,
           1,
@@ -832,14 +832,18 @@ import {
       12000,
       Math.round(stageHeight)
     )
-    const rawScale = Math.min(stageWidth / rawContentWidth, stageHeight / rawContentHeight, 1)
+    const rawScale = Math.min(stageWidth / rawContentWidth, stageHeight / rawContentHeight)
+    const minUsableWidth = Math.max(320, Math.round(stageWidth * 0.35))
+    const minUsableHeight = Math.max(180, Math.round(stageHeight * 0.35))
+    const tinySize = rawContentWidth < minUsableWidth || rawContentHeight < minUsableHeight
     const extremeSize =
+      !Number.isFinite(rawScale) ||
       rawContentWidth > stageWidth * 2.4 ||
       rawContentHeight > stageHeight * 2.4 ||
       rawScale < 0.42
-    const contentWidth = extremeSize ? Math.round(stageWidth) : rawContentWidth
-    const contentHeight = extremeSize ? Math.round(stageHeight) : rawContentHeight
-    const scale = Math.min(stageWidth / contentWidth, stageHeight / contentHeight, 1)
+    const contentWidth = tinySize || extremeSize ? Math.round(stageWidth) : rawContentWidth
+    const contentHeight = tinySize || extremeSize ? Math.round(stageHeight) : rawContentHeight
+    const scale = Math.min(stageWidth / contentWidth, stageHeight / contentHeight)
     const fittedWidth = contentWidth * scale
     const fittedHeight = contentHeight * scale
     const offsetX = Math.max(0, (stageWidth - fittedWidth) / 2)
