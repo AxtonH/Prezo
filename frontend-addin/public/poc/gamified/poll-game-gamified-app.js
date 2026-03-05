@@ -1196,22 +1196,6 @@ import {
     const force = Boolean(options.force)
     const payload = buildArtifactPollPayload(poll, totalVotes)
     const payloadKey = buildArtifactPayloadKey(payload)
-    if (
-      !force &&
-      shouldHardResyncArtifactPayload(state.artifact.lastDeliveredPayload, payload)
-    ) {
-      state.artifact.pendingPayload = payload
-      state.artifact.frameReady = false
-      state.artifact.lastPayloadKey = ''
-      if (asText(state.artifact.html)) {
-        const srcDoc = buildArtifactSrcDoc(state.artifact.html)
-        if (srcDoc) {
-          setArtifactFrameHeight(520, { force: true })
-          el.artifactFrame.srcdoc = srcDoc
-          return
-        }
-      }
-    }
     if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
       state.artifact.pendingPayload = payload
       return
@@ -1280,54 +1264,6 @@ import {
       totalVotes: toInt(payload?.totalVotes)
     }
     return JSON.stringify(stable)
-  }
-
-  function shouldHardResyncArtifactPayload(previousPayload, nextPayload) {
-    if (!previousPayload || typeof previousPayload !== 'object') {
-      return false
-    }
-    if (!nextPayload || typeof nextPayload !== 'object') {
-      return false
-    }
-
-    const previousPoll = previousPayload.poll && typeof previousPayload.poll === 'object'
-      ? previousPayload.poll
-      : {}
-    const nextPoll = nextPayload.poll && typeof nextPayload.poll === 'object'
-      ? nextPayload.poll
-      : {}
-
-    if (asText(previousPoll.id) !== asText(nextPoll.id)) {
-      return true
-    }
-
-    const previousOptions = Array.isArray(previousPoll.options) ? previousPoll.options : []
-    const nextOptions = Array.isArray(nextPoll.options) ? nextPoll.options : []
-    if (previousOptions.length !== nextOptions.length) {
-      return true
-    }
-
-    const previousVotesById = new Map()
-    for (let index = 0; index < previousOptions.length; index += 1) {
-      const option = previousOptions[index]
-      const id = asText(option?.id) || `option-${index}`
-      previousVotesById.set(id, toInt(option?.votes))
-    }
-
-    for (let index = 0; index < nextOptions.length; index += 1) {
-      const option = nextOptions[index]
-      const id = asText(option?.id) || `option-${index}`
-      if (!previousVotesById.has(id)) {
-        return true
-      }
-      const previousVotes = toInt(previousVotesById.get(id))
-      const nextVotes = toInt(option?.votes)
-      if (nextVotes < previousVotes) {
-        return true
-      }
-    }
-
-    return false
   }
 
   function buildAiEditorContext() {
