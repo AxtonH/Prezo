@@ -18,6 +18,8 @@ LEGACY_GEMINI_MODELS = {
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
+ARTIFACT_SCRIPT_OPEN_RE = re.compile(r"<script\b", re.IGNORECASE)
+ARTIFACT_SCRIPT_CLOSE_RE = re.compile(r"</script>", re.IGNORECASE)
 ARTIFACT_HTML_SHAPE_RE = re.compile(
     r"<(?:!doctype|html|body|main|section|article|div|style|script)\b",
     re.IGNORECASE,
@@ -117,6 +119,8 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Always preserve exact vote counts and percentages in text even when the main visual uses grouped or bucketed units.",
         "- Prefer proportion, grouped units, stacked segments, or bucketed representations over naive one-object-per-vote visuals.",
         "- Keep all scripts self-contained inside the generated HTML.",
+        "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
+        "- Do not output JSX, TSX, module import/export syntax, or unfinished code.",
         "- Do not require external libraries or network assets unless the user explicitly requests them.",
         "- Build resilient rendering when options/votes change over time.",
     ]
@@ -500,6 +504,10 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         issues.append("artifact output does not look like HTML.")
     if not any(token in text for token in ARTIFACT_LIVE_STATE_TOKENS):
         issues.append("artifact output does not appear to consume live poll state.")
+    open_script_count = len(ARTIFACT_SCRIPT_OPEN_RE.findall(text))
+    close_script_count = len(ARTIFACT_SCRIPT_CLOSE_RE.findall(text))
+    if open_script_count != close_script_count:
+        issues.append("artifact output has unbalanced <script> tags.")
 
     for script_match in ARTIFACT_SCRIPT_RE.finditer(text):
         script_body = script_match.group("body").strip()
@@ -511,6 +519,9 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         for pattern, message in ARTIFACT_JSX_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
+        syntax_issue = validate_inline_script_syntax(script_body)
+        if syntax_issue:
+            issues.append(syntax_issue)
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -521,3 +532,148 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def validate_inline_script_syntax(script_body: str) -> str:
+    text = script_body or ""
+    mode_stack: list[str] = ["code"]
+    delimiter_stack: list[str] = []
+    index = 0
+    length = len(text)
+
+    while index < length:
+        mode = mode_stack[-1]
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < length else ""
+
+        if mode == "line_comment":
+            if char in "\r\n":
+                mode_stack.pop()
+            index += 1
+            continue
+
+        if mode == "block_comment":
+            if char == "*" and next_char == "/":
+                mode_stack.pop()
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if mode == "single_quote":
+            if char == "\\":
+                index += 2
+                continue
+            if char == "'":
+                mode_stack.pop()
+            index += 1
+            continue
+
+        if mode == "double_quote":
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                mode_stack.pop()
+            index += 1
+            continue
+
+        if mode == "template":
+            if char == "\\":
+                index += 2
+                continue
+            if char == "`":
+                mode_stack.pop()
+                index += 1
+                continue
+            if char == "$" and next_char == "{":
+                delimiter_stack.append("${")
+                mode_stack.append("code")
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if char == "/" and next_char == "/":
+            mode_stack.append("line_comment")
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            mode_stack.append("block_comment")
+            index += 2
+            continue
+        if char == "'":
+            mode_stack.append("single_quote")
+            index += 1
+            continue
+        if char == '"':
+            mode_stack.append("double_quote")
+            index += 1
+            continue
+        if char == "`":
+            mode_stack.append("template")
+            index += 1
+            continue
+        if char in "({[":
+            delimiter_stack.append(char)
+            index += 1
+            continue
+        if char == "}":
+            if delimiter_stack:
+                top = delimiter_stack[-1]
+                if top == "{":
+                    delimiter_stack.pop()
+                    index += 1
+                    continue
+                if top == "${":
+                    delimiter_stack.pop()
+                    if len(mode_stack) > 1:
+                        mode_stack.pop()
+                    index += 1
+                    continue
+                return f"script has mismatched closing `{char}`."
+            return f"script has unexpected closing `{char}`."
+        if char == ")":
+            if not delimiter_stack:
+                return f"script has unexpected closing `{char}`."
+            top = delimiter_stack[-1]
+            if top != "(":
+                return f"script has mismatched closing `{char}`."
+            delimiter_stack.pop()
+            index += 1
+            continue
+        if char == "]":
+            if not delimiter_stack:
+                return f"script has unexpected closing `{char}`."
+            top = delimiter_stack[-1]
+            if top != "[":
+                return f"script has mismatched closing `{char}`."
+            delimiter_stack.pop()
+            index += 1
+            continue
+        index += 1
+
+    unfinished_mode = mode_stack[-1] if mode_stack else "code"
+    if unfinished_mode == "single_quote":
+        return "script has an unterminated single-quoted string."
+    if unfinished_mode == "double_quote":
+        return 'script has an unterminated double-quoted string.'
+    if unfinished_mode == "template":
+        return "script has an unterminated template literal."
+    if unfinished_mode == "block_comment":
+        return "script has an unterminated block comment."
+    if unfinished_mode == "line_comment":
+        mode_stack.pop()
+
+    if delimiter_stack:
+        top = delimiter_stack[-1]
+        if top == "${":
+            return "script has an unterminated template expression."
+        if top == "{":
+            return "script has an unterminated block or object literal."
+        if top == "(":
+            return "script has an unterminated parenthesized expression."
+        if top == "[":
+            return "script has an unterminated array or property access expression."
+
+    return ""
