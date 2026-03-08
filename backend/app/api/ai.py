@@ -15,6 +15,43 @@ DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
 LEGACY_GEMINI_MODELS = {
     "gemini-2.0-flash",
 }
+ARTIFACT_SCRIPT_RE = re.compile(
+    r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
+)
+ARTIFACT_HTML_SHAPE_RE = re.compile(
+    r"<(?:!doctype|html|body|main|section|article|div|style|script)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_LIVE_STATE_TOKENS = (
+    "prezoRenderPoll",
+    "prezo:poll-update",
+    "prezoGetPollState",
+    "__PREZO_POLL_STATE",
+)
+ARTIFACT_JSX_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"\breturn\s*<\s*[A-Za-z]", re.IGNORECASE),
+        "script appears to contain JSX/TSX (`return <Tag ...>`).",
+    ),
+    (
+        re.compile(r"=>\s*<\s*[A-Za-z]", re.IGNORECASE),
+        "script appears to contain JSX/TSX arrow-return markup.",
+    ),
+    (
+        re.compile(r"=\s*<\s*[A-Za-z]", re.IGNORECASE),
+        "script appears to assign JSX/TSX markup directly.",
+    ),
+)
+ARTIFACT_ESM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^\s*import\s+.+$", re.MULTILINE),
+        "script contains an `import` statement, which is not allowed in artifact output.",
+    ),
+    (
+        re.compile(r"^\s*export\s+.+$", re.MULTILINE),
+        "script contains an `export` statement, which is not allowed in artifact output.",
+    ),
+)
 
 POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
     [
@@ -283,6 +320,13 @@ async def create_poll_game_artifact_build(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Gemini response did not include artifact HTML.",
         )
+    validation_issues = validate_poll_game_artifact_html(html)
+    if validation_issues:
+        issue_text = "; ".join(validation_issues[:4])
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Artifact build failed validation: {issue_text}",
+        )
 
     return PollGameArtifactBuildResponse(
         html=html,
@@ -442,3 +486,38 @@ def normalize_poll_game_artifact_html(raw_text: str) -> str:
         text = fenced.group(1).strip()
 
     return text.strip()
+
+
+def validate_poll_game_artifact_html(html: str) -> list[str]:
+    text = (html or "").strip()
+    if not text:
+        return ["artifact output is empty."]
+
+    issues: list[str] = []
+    if "```" in text:
+        issues.append("artifact output still contains markdown fences.")
+    if not ARTIFACT_HTML_SHAPE_RE.search(text):
+        issues.append("artifact output does not look like HTML.")
+    if not any(token in text for token in ARTIFACT_LIVE_STATE_TOKENS):
+        issues.append("artifact output does not appear to consume live poll state.")
+
+    for script_match in ARTIFACT_SCRIPT_RE.finditer(text):
+        script_body = script_match.group("body").strip()
+        if not script_body:
+            continue
+        for pattern, message in ARTIFACT_ESM_PATTERNS:
+            if pattern.search(script_body):
+                issues.append(message)
+        for pattern, message in ARTIFACT_JSX_PATTERNS:
+            if pattern.search(script_body):
+                issues.append(message)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for issue in issues:
+        normalized = issue.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
