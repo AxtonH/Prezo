@@ -1072,11 +1072,11 @@ import {
       return
     }
     const fitScale = clamp(ARTIFACT_SAFE_FIT_SCALE, 0.78, 1, 0.92)
-    const virtualWidth = stageWidth / fitScale
-    const virtualHeight = stageHeight / fitScale
-    el.artifactFrame.style.width = `${Math.round(virtualWidth)}px`
-    el.artifactFrame.style.height = `${Math.round(virtualHeight)}px`
-    el.artifactFrame.style.transform = `translate(0px, 0px) scale(${fitScale})`
+    const insetX = Math.max(0, (stageWidth - stageWidth * fitScale) / 2)
+    const insetY = Math.max(0, (stageHeight - stageHeight * fitScale) / 2)
+    el.artifactFrame.style.width = `${Math.round(stageWidth)}px`
+    el.artifactFrame.style.height = `${Math.round(stageHeight)}px`
+    el.artifactFrame.style.transform = `translate(${Math.round(insetX)}px, ${Math.round(insetY)}px) scale(${fitScale})`
     el.artifactFrame.style.transformOrigin = 'top left'
   }
 
