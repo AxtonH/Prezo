@@ -43,7 +43,9 @@ import {
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
-  const ARTIFACT_SAFE_FIT_SCALE = 0.92
+  const ARTIFACT_SAFE_FIT_SCALE = 0.98
+  const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
+  const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
@@ -111,6 +113,8 @@ import {
       lastDeliveredPayload: null,
       pendingPayload: null,
       postLoadReplayTimerIds: [],
+      reportedContentWidth: 0,
+      reportedContentHeight: 0,
       frameHeight: 520,
       loaderFrameId: 0,
       loaderTime: 0,
@@ -663,6 +667,7 @@ import {
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
     window.addEventListener('resize', handleArtifactViewportResize)
+    window.addEventListener('message', handleArtifactFrameMessage)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
 
@@ -1003,6 +1008,59 @@ import {
     }
   }
 
+  function handleArtifactFrameMessage(event) {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow || event.source !== frameWindow) {
+      return
+    }
+    const message = event.data
+    if (!message || typeof message !== 'object') {
+      return
+    }
+    if (message.type === ARTIFACT_READY_MESSAGE_TYPE) {
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
+        pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+      } else {
+        flushPendingArtifactPayload({ force: true })
+      }
+      scheduleArtifactPostLoadReplays()
+      return
+    }
+    if (message.type === ARTIFACT_SIZE_MESSAGE_TYPE) {
+      updateArtifactReportedContentSize(message.width, message.height)
+    }
+  }
+
+  function updateArtifactReportedContentSize(widthValue, heightValue) {
+    const stageRect = el.artifactStage.getBoundingClientRect()
+    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
+    const stageHeight = Number.isFinite(stageRect.height) ? stageRect.height : 0
+    if (stageWidth <= 0 || stageHeight <= 0) {
+      return
+    }
+    const rawWidth = Number(widthValue)
+    const rawHeight = Number(heightValue)
+    const maxWidth = Math.max(stageWidth * 2.4, 1400)
+    const maxHeight = Math.max(stageHeight * 2.4, 1400)
+    const normalizedWidth =
+      Number.isFinite(rawWidth) && rawWidth > 0 && rawWidth <= maxWidth
+        ? Math.max(stageWidth, rawWidth)
+        : stageWidth
+    const normalizedHeight =
+      Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
+        ? Math.max(stageHeight, rawHeight)
+        : stageHeight
+    if (
+      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < 2 &&
+      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < 2
+    ) {
+      return
+    }
+    state.artifact.reportedContentWidth = normalizedWidth
+    state.artifact.reportedContentHeight = normalizedHeight
+    applyArtifactFrameFit()
+  }
+
   function clearArtifactPostLoadReplays() {
     const timerIds = Array.isArray(state.artifact.postLoadReplayTimerIds)
       ? state.artifact.postLoadReplayTimerIds
@@ -1071,11 +1129,26 @@ import {
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    const fitScale = clamp(ARTIFACT_SAFE_FIT_SCALE, 0.78, 1, 0.92)
-    const insetX = Math.max(0, (stageWidth - stageWidth * fitScale) / 2)
-    const insetY = Math.max(0, (stageHeight - stageHeight * fitScale) / 2)
-    el.artifactFrame.style.width = `${Math.round(stageWidth)}px`
-    el.artifactFrame.style.height = `${Math.round(stageHeight)}px`
+    const contentWidth = clamp(
+      state.artifact.reportedContentWidth,
+      stageWidth,
+      Math.max(stageWidth * 2.4, 1400),
+      stageWidth
+    )
+    const contentHeight = clamp(
+      state.artifact.reportedContentHeight,
+      stageHeight,
+      Math.max(stageHeight * 2.4, 1400),
+      stageHeight
+    )
+    const scaleToFit = Math.min(stageWidth / contentWidth, stageHeight / contentHeight, 1)
+    const fitScale = clamp(scaleToFit * ARTIFACT_SAFE_FIT_SCALE, 0.4, 1, ARTIFACT_SAFE_FIT_SCALE)
+    const scaledWidth = contentWidth * fitScale
+    const scaledHeight = contentHeight * fitScale
+    const insetX = Math.max(0, (stageWidth - scaledWidth) / 2)
+    const insetY = Math.max(0, (stageHeight - scaledHeight) / 2)
+    el.artifactFrame.style.width = `${Math.round(contentWidth)}px`
+    el.artifactFrame.style.height = `${Math.round(contentHeight)}px`
     el.artifactFrame.style.transform = `translate(${Math.round(insetX)}px, ${Math.round(insetY)}px) scale(${fitScale})`
     el.artifactFrame.style.transformOrigin = 'top left'
   }
@@ -1558,6 +1631,8 @@ import {
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
+    state.artifact.reportedContentWidth = 0
+    state.artifact.reportedContentHeight = 0
     const srcDoc = buildArtifactSrcDoc(normalized)
     if (!srcDoc) {
       return false
@@ -1574,6 +1649,8 @@ import {
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
+    state.artifact.reportedContentWidth = 0
+    state.artifact.reportedContentHeight = 0
     setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
   }
@@ -8151,6 +8228,7 @@ import {
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', handleArtifactViewportResize)
+    window.removeEventListener('message', handleArtifactFrameMessage)
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }
