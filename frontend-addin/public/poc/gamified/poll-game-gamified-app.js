@@ -180,6 +180,7 @@ import {
     aiChatInput: must('ai-chat-input'),
     aiChatSend: must('ai-chat-send'),
     artifactComposer: must('artifact-composer'),
+    artifactComposerAnchor: must('artifact-composer-anchor'),
     artifactComposerCollapse: must('artifact-composer-collapse'),
     artifactComposerFab: must('artifact-composer-fab'),
     artifactChatLog: must('artifact-chat-log'),
@@ -682,7 +683,18 @@ import {
     const shouldFloatComposer = isArtifactMode && Boolean(state.artifact.html)
     const shouldShowComposer =
       isArtifactMode && (!shouldFloatComposer || state.artifact.floatingOpen)
-    el.aiChatShell.classList.toggle('hidden', isArtifactMode)
+    syncArtifactComposerDocking(shouldFloatComposer)
+    const shouldShowArtifactShell = isArtifactMode && shouldFloatComposer
+    el.aiChatShell.classList.toggle('artifact-shell-active', shouldShowArtifactShell)
+    el.aiChatShell.classList.toggle('hidden', isArtifactMode ? !shouldShowArtifactShell : false)
+    if (shouldShowArtifactShell) {
+      el.aiChatPanel.classList.add('hidden')
+      el.aiChatFab.classList.add('hidden')
+      el.aiChatShell.classList.toggle('is-open', state.artifact.floatingOpen)
+      el.aiChatShell.classList.toggle('is-collapsed', !state.artifact.floatingOpen)
+    } else if (!isArtifactMode) {
+      setAiChatOpen(state.ai.open, { persist: false })
+    }
     el.artifactComposer.classList.toggle('is-floating', shouldFloatComposer)
     el.artifactComposer.classList.toggle('hidden', !shouldShowComposer)
     el.artifactComposerCollapse.classList.toggle('hidden', !shouldFloatComposer)
@@ -697,6 +709,23 @@ import {
     syncArtifactStageVisibility(isArtifactMode)
     if (isArtifactMode) {
       syncArtifactConversationUi()
+    }
+  }
+
+  function syncArtifactComposerDocking(shouldDock) {
+    const inlineParent = el.artifactComposerAnchor.parentElement
+    if (shouldDock) {
+      if (el.artifactComposer.parentElement !== el.aiChatShell) {
+        el.aiChatShell.insertBefore(el.artifactComposer, el.artifactComposerFab)
+      }
+      return
+    }
+    if (
+      inlineParent &&
+      (el.artifactComposer.parentElement !== inlineParent ||
+        el.artifactComposer.nextElementSibling !== el.artifactComposerAnchor)
+    ) {
+      inlineParent.insertBefore(el.artifactComposer, el.artifactComposerAnchor)
     }
   }
 

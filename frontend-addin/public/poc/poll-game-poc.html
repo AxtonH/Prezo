@@ -371,6 +371,7 @@
           Artifact builder is ready. Answer the first question to begin.
         </p>
       </section>
+      <div id="artifact-composer-anchor" class="hidden" aria-hidden="true"></div>
       <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact game preview">
         <div id="artifact-stage-loader" class="artifact-stage-loader hidden" aria-live="polite">
           <canvas id="artifact-loader-canvas" class="artifact-loader-canvas"></canvas>
@@ -440,16 +441,16 @@
           <button id="ai-chat-send" class="ai-chat-send" type="submit">Send</button>
         </form>
       </div>
+      <button
+        id="artifact-composer-fab"
+        class="artifact-composer-fab hidden"
+        type="button"
+        aria-controls="artifact-composer"
+        aria-expanded="false"
+      >
+        Artifact Builder
+      </button>
     </section>
-    <button
-      id="artifact-composer-fab"
-      class="artifact-composer-fab hidden"
-      type="button"
-      aria-controls="artifact-composer"
-      aria-expanded="false"
-    >
-      Artifact Builder
-    </button>
 
     <div id="reset-positions-modal" class="confirm-modal" aria-hidden="true">
       <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-positions-title">
