@@ -110,6 +110,7 @@ import {
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
+      postLoadReplayTimerIds: [],
       frameHeight: 520,
       loaderFrameId: 0,
       loaderTime: 0,
@@ -993,10 +994,49 @@ import {
     state.artifact.lastPayloadKey = ''
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     if (flushPendingArtifactPayload({ force: true })) {
+      scheduleArtifactPostLoadReplays()
       return
     }
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
       pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+      scheduleArtifactPostLoadReplays()
+    }
+  }
+
+  function clearArtifactPostLoadReplays() {
+    const timerIds = Array.isArray(state.artifact.postLoadReplayTimerIds)
+      ? state.artifact.postLoadReplayTimerIds
+      : []
+    for (let index = 0; index < timerIds.length; index += 1) {
+      window.clearTimeout(timerIds[index])
+    }
+    state.artifact.postLoadReplayTimerIds = []
+  }
+
+  function scheduleArtifactPostLoadReplays() {
+    clearArtifactPostLoadReplays()
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    const delays = [140, 360, 820, 1600, 2600]
+    for (let index = 0; index < delays.length; index += 1) {
+      const delay = delays[index]
+      const timerId = window.setTimeout(() => {
+        state.artifact.postLoadReplayTimerIds = state.artifact.postLoadReplayTimerIds.filter(
+          (activeId) => activeId !== timerId
+        )
+        if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.artifact.frameReady) {
+          return
+        }
+        if (state.currentPoll) {
+          pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), {
+            force: true
+          })
+          return
+        }
+        flushPendingArtifactPayload({ force: true })
+      }, delay)
+      state.artifact.postLoadReplayTimerIds.push(timerId)
     }
   }
 
@@ -1512,6 +1552,7 @@ import {
     if (!normalized) {
       return false
     }
+    clearArtifactPostLoadReplays()
     state.artifact.html = normalized
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
@@ -1527,6 +1568,7 @@ import {
   }
 
   function clearArtifactMarkup() {
+    clearArtifactPostLoadReplays()
     state.artifact.html = ''
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
@@ -8146,6 +8188,7 @@ import {
       state.reconnectTimer = null
     }
     stopArtifactLoaderAnimation()
+    clearArtifactPostLoadReplays()
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
