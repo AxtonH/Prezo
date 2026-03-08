@@ -1488,6 +1488,19 @@ import {
   function setAiChatOpen(open, options = {}) {
     const persist = options.persist !== false
     state.ai.open = Boolean(open)
+    const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
+    el.aiChatShell.classList.toggle('hidden', isArtifactMode)
+    if (isArtifactMode) {
+      el.aiChatPanel.classList.add('hidden')
+      el.aiChatFab.classList.add('hidden')
+      el.aiChatShell.classList.remove('is-open', 'is-collapsed')
+      if (persist) {
+        try {
+          localStorage.setItem(AI_CHAT_OPEN_KEY, state.ai.open ? '1' : '0')
+        } catch {}
+      }
+      return
+    }
     el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
     el.aiChatFab.classList.toggle('hidden', state.ai.open)
     el.aiChatShell.classList.toggle('is-open', state.ai.open)
