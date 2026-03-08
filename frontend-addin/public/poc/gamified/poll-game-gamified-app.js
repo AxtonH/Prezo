@@ -50,8 +50,9 @@ import {
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
-  const ARTIFACT_LOADER_SIZE_PX = 150
-  const ARTIFACT_LOADER_COLOR = '#5f86d8'
+  const ARTIFACT_LOADER_SIZE_PX = 120
+  const ARTIFACT_LOADER_COLOR = '#3f7cff'
+  const ARTIFACT_LOADER_RING_COUNT = 4
 
   const query = new URLSearchParams(window.location.search)
 
@@ -923,30 +924,43 @@ import {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, size, size)
 
-      const center = size / 2
-      for (let index = 0; index < 8; index += 1) {
-        const angle = (index / 8) * Math.PI * 2
-        const pulse =
-          Math.sin(state.artifact.loaderTime * 0.03 + index * 0.5) * (size * 0.2) + size * 0.25
-        const x = center + Math.cos(angle) * pulse
-        const y = center + Math.sin(angle) * pulse
-        const opacity = 0.3 + Math.sin(state.artifact.loaderTime * 0.03 + index * 0.5) * 0.35
+      const centerX = size / 2
+      const centerY = size / 2
+      for (let ringIndex = 0; ringIndex < ARTIFACT_LOADER_RING_COUNT; ringIndex += 1) {
+        const baseRadius = size * 0.1 + ringIndex * (size * 0.15)
+        const pulse = Math.sin(state.artifact.loaderTime * 0.03 - ringIndex * 0.5) * (size * 0.05)
+        const radius = Math.min(baseRadius + pulse, size / 2 - 2)
+        const opacity = clamp(
+          0.2 + Math.sin(state.artifact.loaderTime * 0.03 - ringIndex * 0.5) * 0.3,
+          0.08,
+          0.95,
+          0.3
+        )
 
         ctx.beginPath()
-        ctx.moveTo(center, center)
-        ctx.lineTo(x, y)
-        ctx.strokeStyle = toLoaderRgba(ARTIFACT_LOADER_COLOR, clamp(opacity, 0.08, 1, 0.3))
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+        ctx.strokeStyle = toLoaderRgba(ARTIFACT_LOADER_COLOR, opacity)
         ctx.lineWidth = 2
         ctx.stroke()
 
-        ctx.beginPath()
-        ctx.arc(x, y, 3, 0, Math.PI * 2)
-        ctx.fillStyle = ARTIFACT_LOADER_COLOR
-        ctx.fill()
+        const dotCount = 8
+        for (let dotIndex = 0; dotIndex < dotCount; dotIndex += 1) {
+          const angle =
+            (dotIndex / dotCount) * Math.PI * 2 +
+            state.artifact.loaderTime * 0.02 * (ringIndex % 2 === 1 ? 1 : -1)
+          const dotX = centerX + Math.cos(angle) * radius
+          const dotY = centerY + Math.sin(angle) * radius
+
+          ctx.beginPath()
+          ctx.arc(dotX, dotY, 2, 0, Math.PI * 2)
+          ctx.fillStyle = ARTIFACT_LOADER_COLOR
+          ctx.fill()
+        }
       }
 
+      const centerPulse = Math.sin(state.artifact.loaderTime * 0.05) * 0.3 + 0.7
       ctx.beginPath()
-      ctx.arc(center, center, 4, 0, Math.PI * 2)
+      ctx.arc(centerX, centerY, 5 * centerPulse, 0, Math.PI * 2)
       ctx.fillStyle = ARTIFACT_LOADER_COLOR
       ctx.fill()
 
