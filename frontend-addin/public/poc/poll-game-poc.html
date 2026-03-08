@@ -344,7 +344,17 @@
         </div>
       </section>
       <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact game builder">
-        <p class="artifact-kicker">Artifact Builder</p>
+        <div class="artifact-composer-header">
+          <p class="artifact-kicker">Artifact Builder</p>
+          <button
+            id="artifact-composer-collapse"
+            class="artifact-composer-collapse hidden"
+            type="button"
+            aria-label="Collapse artifact builder"
+          >
+            Collapse
+          </button>
+        </div>
         <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
         <form id="artifact-prompt-form" class="artifact-prompt-form">
           <input
@@ -431,6 +441,15 @@
         </form>
       </div>
     </section>
+    <button
+      id="artifact-composer-fab"
+      class="artifact-composer-fab hidden"
+      type="button"
+      aria-controls="artifact-composer"
+      aria-expanded="false"
+    >
+      Artifact Builder
+    </button>
 
     <div id="reset-positions-modal" class="confirm-modal" aria-hidden="true">
       <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-positions-title">

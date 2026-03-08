@@ -108,6 +108,7 @@ import {
       lastPrompt: '',
       lastAnswers: createEmptyArtifactAnswers(),
       html: '',
+      floatingOpen: false,
       stageSurface: ARTIFACT_STAGE_SURFACE_HIDDEN,
       frameReady: false,
       lastPayloadKey: '',
@@ -179,6 +180,8 @@ import {
     aiChatInput: must('ai-chat-input'),
     aiChatSend: must('ai-chat-send'),
     artifactComposer: must('artifact-composer'),
+    artifactComposerCollapse: must('artifact-composer-collapse'),
+    artifactComposerFab: must('artifact-composer-fab'),
     artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
     artifactPromptInput: must('artifact-prompt-input'),
@@ -669,12 +672,28 @@ import {
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
     window.addEventListener('resize', handleArtifactViewportResize)
     window.addEventListener('message', handleArtifactFrameMessage)
+    el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
+    el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
   }
 
   function syncArtifactComposerVisibility() {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-    el.artifactComposer.classList.toggle('hidden', !isArtifactMode)
+    const shouldFloatComposer = isArtifactMode && Boolean(state.artifact.html)
+    const shouldShowComposer =
+      isArtifactMode && (!shouldFloatComposer || state.artifact.floatingOpen)
+    el.aiChatShell.classList.toggle('hidden', isArtifactMode)
+    el.artifactComposer.classList.toggle('is-floating', shouldFloatComposer)
+    el.artifactComposer.classList.toggle('hidden', !shouldShowComposer)
+    el.artifactComposerCollapse.classList.toggle('hidden', !shouldFloatComposer)
+    el.artifactComposerFab.classList.toggle(
+      'hidden',
+      !(shouldFloatComposer && !state.artifact.floatingOpen)
+    )
+    el.artifactComposerFab.setAttribute(
+      'aria-expanded',
+      shouldFloatComposer && state.artifact.floatingOpen ? 'true' : 'false'
+    )
     syncArtifactStageVisibility(isArtifactMode)
     if (isArtifactMode) {
       syncArtifactConversationUi()
@@ -726,6 +745,16 @@ import {
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
     el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Building...' : 'Send'
+  }
+
+  function setArtifactComposerFloatingOpen(open) {
+    state.artifact.floatingOpen = Boolean(open)
+    syncArtifactComposerVisibility()
+    if (state.artifact.floatingOpen && currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      window.setTimeout(() => {
+        el.artifactPromptInput.focus()
+      }, 0)
+    }
   }
 
   function resetArtifactConversation(options = {}) {
@@ -1006,6 +1035,20 @@ import {
       resetArtifactConversation({ preserveInput: true })
     }
     void submitArtifactConversationAnswer(answer)
+  }
+
+  function handleArtifactComposerFabClick() {
+    if (!state.artifact.html || currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    setArtifactComposerFloatingOpen(true)
+  }
+
+  function handleArtifactComposerCollapseClick() {
+    if (!state.artifact.html || currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    setArtifactComposerFloatingOpen(false)
   }
 
   function handleArtifactFrameLoad() {
@@ -1647,12 +1690,14 @@ import {
     state.artifact.pendingPayload = null
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
+    state.artifact.floatingOpen = true
     const srcDoc = buildArtifactSrcDoc(normalized)
     if (!srcDoc) {
       return false
     }
     setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.srcdoc = srcDoc
+    syncArtifactComposerVisibility()
     return true
   }
 
@@ -1665,8 +1710,10 @@ import {
     state.artifact.pendingPayload = null
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
+    state.artifact.floatingOpen = false
     setArtifactFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
+    syncArtifactComposerVisibility()
   }
 
   function pushArtifactPollState(poll, totalVotes, options = {}) {
@@ -4520,6 +4567,8 @@ import {
     if (
       target.closest('#settings-ribbon') ||
       target.closest('#settings-minimized') ||
+      target.closest('#artifact-composer') ||
+      target.closest('#artifact-composer-fab') ||
       target.closest('#ai-chat-shell') ||
       target.closest('#reset-positions-modal')
     ) {
@@ -8239,6 +8288,8 @@ import {
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
+    el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
+    el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', handleArtifactViewportResize)
