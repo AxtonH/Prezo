@@ -1311,6 +1311,37 @@ h1 {
   box-shadow: 0 10px 22px rgba(66, 102, 143, 0.14);
 }
 
+.artifact-stage-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(247, 252, 255, 0.96), rgba(233, 244, 255, 0.94));
+  z-index: 3;
+}
+
+.artifact-stage-loader.hidden {
+  display: none;
+}
+
+.artifact-loader-canvas {
+  display: block;
+  width: 150px;
+  height: 150px;
+}
+
+.artifact-loader-text {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: #2c5a90;
+}
+
 .artifact-frame {
   position: absolute;
   top: 0;
@@ -1323,6 +1354,7 @@ h1 {
   background: transparent;
   transform-origin: top left;
   transition: transform 160ms ease;
+  z-index: 1;
 }
 
 .artifact-stage-placeholder {
@@ -1339,6 +1371,7 @@ h1 {
   color: #2b5b8f;
   background: linear-gradient(135deg, rgba(243, 250, 255, 0.95), rgba(225, 240, 255, 0.94));
   pointer-events: none;
+  z-index: 2;
 }
 
 .artifact-stage-placeholder.hidden {

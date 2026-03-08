@@ -44,6 +44,12 @@ import {
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
   const ARTIFACT_SAFE_FIT_SCALE = 0.92
+  const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
+  const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
+  const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
+  const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
+  const ARTIFACT_LOADER_SIZE_PX = 150
+  const ARTIFACT_LOADER_COLOR = '#5f86d8'
 
   const query = new URLSearchParams(window.location.search)
 
@@ -99,11 +105,14 @@ import {
       lastPrompt: '',
       lastAnswers: createEmptyArtifactAnswers(),
       html: '',
+      stageSurface: ARTIFACT_STAGE_SURFACE_HIDDEN,
       frameReady: false,
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
       frameHeight: 520,
+      loaderFrameId: 0,
+      loaderTime: 0,
       conversationStepIndex: 0,
       conversationAnswers: createEmptyArtifactAnswers()
     },
@@ -170,6 +179,9 @@ import {
     artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
     artifactStage: must('artifact-stage'),
+    artifactStageLoader: must('artifact-stage-loader'),
+    artifactLoaderCanvas: must('artifact-loader-canvas'),
+    artifactLoaderText: must('artifact-loader-text'),
     artifactFrame: must('artifact-frame'),
     artifactStagePlaceholder: must('artifact-stage-placeholder'),
     resetPositionsModal: must('reset-positions-modal'),
@@ -645,7 +657,8 @@ import {
     syncArtifactComposerVisibility()
     resetArtifactConversation({ preserveInput: false })
     syncArtifactComposerBusyState()
-    setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
+    hideArtifactStagePlaceholder()
+    hideArtifactStage()
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
     window.addEventListener('resize', handleArtifactViewportResize)
@@ -662,14 +675,22 @@ import {
   }
 
   function syncArtifactStageVisibility(isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-    el.artifactStage.classList.toggle('hidden', !isArtifactMode)
+    const shouldShowStage =
+      isArtifactMode && state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
+    el.artifactStage.classList.toggle('hidden', !shouldShowStage)
     el.options.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.pollHead.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.footer.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.customLogo.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.customAsset.classList.toggle('hidden-by-artifact', isArtifactMode)
+    if (!shouldShowStage) {
+      stopArtifactLoaderAnimation()
+    }
     if (!isArtifactMode) {
       return
+    }
+    if (state.artifact.stageSurface === ARTIFACT_STAGE_SURFACE_LOADING && shouldShowStage) {
+      startArtifactLoaderAnimation()
     }
     const activeRichTextHost = getActiveRichTextHost()
     const shouldBlurHost =
@@ -686,6 +707,9 @@ import {
       hideSelectionToolbar()
     }
     clearActiveResizeTarget()
+    if (!shouldShowStage) {
+      return
+    }
     requestAnimationFrame(() => {
       setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     })
@@ -793,7 +817,6 @@ import {
   function setArtifactStagePlaceholder(text, type = 'pending') {
     el.artifactStagePlaceholder.textContent =
       asText(text) || 'Artifact builder is ready. Answer the questions to generate your artifact.'
-    el.artifactStagePlaceholder.classList.remove('hidden')
     el.artifactStagePlaceholder.classList.remove(
       'status-success',
       'status-error',
@@ -817,6 +840,139 @@ import {
       'status-error',
       'status-pending'
     )
+  }
+
+  function setArtifactStageSurface(surface, options = {}) {
+    const normalizedSurface = normalizeArtifactStageSurface(surface)
+    const loaderText = asText(options.loaderText)
+    if (loaderText) {
+      el.artifactLoaderText.textContent = loaderText
+    }
+    state.artifact.stageSurface = normalizedSurface
+    el.artifactStageLoader.classList.toggle(
+      'hidden',
+      normalizedSurface !== ARTIFACT_STAGE_SURFACE_LOADING
+    )
+    el.artifactFrame.classList.toggle('hidden', normalizedSurface !== ARTIFACT_STAGE_SURFACE_FRAME)
+    el.artifactStagePlaceholder.classList.toggle(
+      'hidden',
+      normalizedSurface !== ARTIFACT_STAGE_SURFACE_PLACEHOLDER
+    )
+    if (normalizedSurface === ARTIFACT_STAGE_SURFACE_LOADING) {
+      startArtifactLoaderAnimation()
+    } else {
+      stopArtifactLoaderAnimation()
+    }
+    syncArtifactStageVisibility()
+  }
+
+  function normalizeArtifactStageSurface(surface) {
+    if (
+      surface === ARTIFACT_STAGE_SURFACE_LOADING ||
+      surface === ARTIFACT_STAGE_SURFACE_FRAME ||
+      surface === ARTIFACT_STAGE_SURFACE_PLACEHOLDER
+    ) {
+      return surface
+    }
+    return ARTIFACT_STAGE_SURFACE_HIDDEN
+  }
+
+  function showArtifactStagePlaceholder(text, type = 'pending') {
+    setArtifactStagePlaceholder(text, type)
+    setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_PLACEHOLDER)
+  }
+
+  function hideArtifactStage() {
+    setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_HIDDEN)
+  }
+
+  function showArtifactStageLoader(text = 'Building artifact canvas...') {
+    setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_LOADING, { loaderText: text })
+  }
+
+  function showArtifactStageFrame() {
+    hideArtifactStagePlaceholder()
+    setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_FRAME)
+  }
+
+  function startArtifactLoaderAnimation() {
+    if (state.artifact.loaderFrameId) {
+      return
+    }
+    const canvas = el.artifactLoaderCanvas
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+    const size = ARTIFACT_LOADER_SIZE_PX
+    const dpr = Math.max(window.devicePixelRatio || 1, 1)
+    canvas.width = Math.round(size * dpr)
+    canvas.height = Math.round(size * dpr)
+    canvas.style.width = `${size}px`
+    canvas.style.height = `${size}px`
+    state.artifact.loaderTime = 0
+
+    const render = () => {
+      state.artifact.loaderTime += 1
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, size, size)
+
+      const center = size / 2
+      for (let index = 0; index < 8; index += 1) {
+        const angle = (index / 8) * Math.PI * 2
+        const pulse =
+          Math.sin(state.artifact.loaderTime * 0.03 + index * 0.5) * (size * 0.2) + size * 0.25
+        const x = center + Math.cos(angle) * pulse
+        const y = center + Math.sin(angle) * pulse
+        const opacity = 0.3 + Math.sin(state.artifact.loaderTime * 0.03 + index * 0.5) * 0.35
+
+        ctx.beginPath()
+        ctx.moveTo(center, center)
+        ctx.lineTo(x, y)
+        ctx.strokeStyle = toLoaderRgba(ARTIFACT_LOADER_COLOR, clamp(opacity, 0.08, 1, 0.3))
+        ctx.lineWidth = 2
+        ctx.stroke()
+
+        ctx.beginPath()
+        ctx.arc(x, y, 3, 0, Math.PI * 2)
+        ctx.fillStyle = ARTIFACT_LOADER_COLOR
+        ctx.fill()
+      }
+
+      ctx.beginPath()
+      ctx.arc(center, center, 4, 0, Math.PI * 2)
+      ctx.fillStyle = ARTIFACT_LOADER_COLOR
+      ctx.fill()
+
+      state.artifact.loaderFrameId = window.requestAnimationFrame(render)
+    }
+
+    render()
+  }
+
+  function stopArtifactLoaderAnimation() {
+    if (state.artifact.loaderFrameId) {
+      window.cancelAnimationFrame(state.artifact.loaderFrameId)
+      state.artifact.loaderFrameId = 0
+    }
+    const canvas = el.artifactLoaderCanvas
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      return
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  function toLoaderRgba(hex, alpha) {
+    const normalized = asText(hex).replace('#', '')
+    if (!/^[0-9a-f]{6}$/i.test(normalized)) {
+      return `rgba(95, 134, 216, ${clamp(alpha, 0, 1, 1)})`
+    }
+    const r = Number.parseInt(normalized.slice(0, 2), 16)
+    const g = Number.parseInt(normalized.slice(2, 4), 16)
+    const b = Number.parseInt(normalized.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${clamp(alpha, 0, 1, 1)})`
   }
 
   function handleArtifactPromptFormSubmit(event) {
@@ -944,7 +1100,7 @@ import {
     state.artifact.lastPrompt = prompt
     state.artifact.lastAnswers = cloneArtifactConversationAnswers(options.conversationAnswers)
     setArtifactComposerStatus('Generating artifact from your answers...', 'pending')
-    setArtifactStagePlaceholder('Building artifact canvas...', 'pending')
+    showArtifactStageLoader('Building artifact canvas...')
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
@@ -966,10 +1122,10 @@ import {
           'Artifact build returned empty markup. Try a more specific prompt.',
           'error'
         )
-        setArtifactStagePlaceholder('Artifact build returned empty markup.', 'error')
+        showArtifactStagePlaceholder('Artifact build returned empty markup.', 'error')
       } else {
         renderFromSnapshot(true)
-        hideArtifactStagePlaceholder()
+        showArtifactStageFrame()
         const statusMessage =
           asText(buildResult.assistantMessage) ||
           'Artifact build applied. Keep prompting to iterate.'
@@ -977,7 +1133,7 @@ import {
       }
     } catch (error) {
       setArtifactComposerStatus(`Artifact request failed: ${errorToMessage(error)}`, 'error')
-      setArtifactStagePlaceholder(`Artifact request failed: ${errorToMessage(error)}`, 'error')
+      showArtifactStagePlaceholder(`Artifact request failed: ${errorToMessage(error)}`, 'error')
     } finally {
       state.artifact.busy = false
       syncArtifactComposerBusyState()
@@ -5484,7 +5640,13 @@ import {
       'Waiting for poll data...'
     )
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-      setArtifactStagePlaceholder('Waiting for poll data...', 'pending')
+      if (state.artifact.busy) {
+        showArtifactStageLoader('Building artifact canvas...')
+      } else if (asText(state.artifact.html)) {
+        showArtifactStageFrame()
+      } else {
+        hideArtifactStage()
+      }
     } else {
       el.options.replaceChildren()
     }
@@ -5786,7 +5948,10 @@ import {
       clearRaceRows()
     }
     clearArtifactModeClasses()
-    syncArtifactStageVisibility(true)
+    if (state.artifact.busy) {
+      showArtifactStageLoader('Building artifact canvas...')
+      return
+    }
 
     if (!hasArtifactPrompt()) {
       renderArtifactAwaitingPrompt()
@@ -5794,16 +5959,20 @@ import {
     }
 
     if (!asText(state.artifact.html)) {
-      setArtifactStagePlaceholder('Answer the questions to generate an artifact.', 'pending')
+      if (state.artifact.stageSurface === ARTIFACT_STAGE_SURFACE_PLACEHOLDER) {
+        syncArtifactStageVisibility(true)
+        return
+      }
+      hideArtifactStage()
       return
     }
 
-    hideArtifactStagePlaceholder()
+    showArtifactStageFrame()
     pushArtifactPollState(poll, totalVotes)
   }
 
   function renderArtifactAwaitingPrompt() {
-    setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
+    hideArtifactStage()
   }
 
   function renderClassicOptions(poll, totalVotes) {
@@ -6131,7 +6300,7 @@ import {
       'Missing required query param'
     )
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-      setArtifactStagePlaceholder('Open with ?sessionId=<id> or ?code=<join_code>.', 'error')
+      showArtifactStagePlaceholder('Open with ?sessionId=<id> or ?code=<join_code>.', 'error')
     } else {
       renderEmptyStateNote(
         'missing-session',
@@ -6153,7 +6322,7 @@ import {
         : 'No poll is available in this session yet.'
     renderRichText(el.question, getQuestionStateTextKey('missing-poll'), message)
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-      setArtifactStagePlaceholder(
+      showArtifactStagePlaceholder(
         'Create and open a poll in Host Console to render it here.',
         'pending'
       )
@@ -6180,7 +6349,7 @@ import {
       'Unable to load poll data'
     )
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
-      setArtifactStagePlaceholder(message, 'error')
+      showArtifactStagePlaceholder(message, 'error')
     } else {
       renderEmptyStateNote('error-detail', message)
     }
@@ -6679,7 +6848,7 @@ import {
       state.artifact.lastAnswers = createEmptyArtifactAnswers()
       clearArtifactMarkup()
       resetArtifactConversation({ preserveInput: false })
-      setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
+      hideArtifactStage()
     }
     applyTheme(currentTheme)
     if (
@@ -7976,6 +8145,7 @@ import {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null
     }
+    stopArtifactLoaderAnimation()
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''

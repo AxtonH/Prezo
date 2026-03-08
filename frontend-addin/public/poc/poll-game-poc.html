@@ -362,13 +362,17 @@
         </p>
       </section>
       <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact game preview">
+        <div id="artifact-stage-loader" class="artifact-stage-loader hidden" aria-live="polite">
+          <canvas id="artifact-loader-canvas" class="artifact-loader-canvas"></canvas>
+          <div id="artifact-loader-text" class="artifact-loader-text">Building artifact canvas...</div>
+        </div>
         <iframe
           id="artifact-frame"
           class="artifact-frame"
           title="Artifact game preview"
           sandbox="allow-scripts"
         ></iframe>
-        <p id="artifact-stage-placeholder" class="artifact-stage-placeholder">
+        <p id="artifact-stage-placeholder" class="artifact-stage-placeholder hidden">
           Artifact builder is ready. Answer the questions to generate your artifact.
         </p>
       </section>
