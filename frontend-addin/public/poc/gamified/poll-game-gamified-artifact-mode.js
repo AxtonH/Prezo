@@ -2,11 +2,54 @@ export const ARTIFACT_VISUAL_MODE = 'artifact'
 export const ARTIFACT_LAYOUT_HORIZONTAL = 'horizontal'
 export const ARTIFACT_LAYOUT_VERTICAL = 'vertical'
 
-export const ARTIFACT_DEFAULT_PLACEHOLDER =
-  'Describe your game concept (example: vertically aligned bars with floating labels and smooth transitions).'
+export const ARTIFACT_DEFAULT_PLACEHOLDER = 'Type your answer here.'
 
 export const ARTIFACT_WAITING_STATUS =
-  'Artifact mode is waiting for your prompt. Describe the game style, then click Build.'
+  'Artifact builder is ready. Answer the first question to begin.'
+
+export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
+  {
+    key: 'artifactType',
+    question: 'What kind of artifact would you like?',
+    placeholder: 'Example: 1920s, cinematic, black and white poll'
+  },
+  {
+    key: 'audienceSize',
+    question: 'What is your expected audience size?',
+    placeholder: 'Example: 5'
+  },
+  {
+    key: 'designGuidelines',
+    question: 'What design guidelines would you like me to use?',
+    placeholder: 'Example: black and white'
+  }
+])
+
+export function createEmptyArtifactAnswers() {
+  return {
+    artifactType: '',
+    audienceSize: '',
+    designGuidelines: ''
+  }
+}
+
+export function buildArtifactConversationPrompt(answers = {}) {
+  const artifactType =
+    typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
+  const audienceSize =
+    typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
+  const designGuidelines =
+    typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+
+  return [
+    artifactType ? `Artifact type: ${artifactType}` : '',
+    audienceSize ? `Expected audience size: ${audienceSize}` : '',
+    designGuidelines ? `Design guidelines: ${designGuidelines}` : '',
+    'Build a complete artifact experience that satisfies all of these requirements.'
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
 
 export function sanitizeArtifactLayout(value, fallback = ARTIFACT_LAYOUT_HORIZONTAL) {
   const layout = typeof value === 'string' ? value.trim().toLowerCase() : ''

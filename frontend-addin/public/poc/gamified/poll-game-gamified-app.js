@@ -26,11 +26,14 @@ import {
   AI_CHAT_OPEN_KEY
 } from './poll-game-gamified-constants.js'
 import {
+  ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
   ARTIFACT_LAYOUT_HORIZONTAL,
   ARTIFACT_WAITING_STATUS,
   ARTIFACT_VISUAL_MODE,
+  buildArtifactConversationPrompt,
   buildArtifactAiPrompt,
+  createEmptyArtifactAnswers,
   sanitizeArtifactLayout
 } from './poll-game-gamified-artifact-mode.js'
 import {
@@ -94,12 +97,15 @@ import {
     artifact: {
       busy: false,
       lastPrompt: '',
+      lastAnswers: createEmptyArtifactAnswers(),
       html: '',
       frameReady: false,
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
-      frameHeight: 520
+      frameHeight: 520,
+      conversationStepIndex: 0,
+      conversationAnswers: createEmptyArtifactAnswers()
     },
     ai: {
       open: false,
@@ -158,6 +164,7 @@ import {
     aiChatInput: must('ai-chat-input'),
     aiChatSend: must('ai-chat-send'),
     artifactComposer: must('artifact-composer'),
+    artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
@@ -636,9 +643,8 @@ import {
 
   function setupArtifactMode() {
     syncArtifactComposerVisibility()
+    resetArtifactConversation({ preserveInput: false })
     syncArtifactComposerBusyState()
-    el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
-    setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
     setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
@@ -650,8 +656,8 @@ import {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     el.artifactComposer.classList.toggle('hidden', !isArtifactMode)
     syncArtifactStageVisibility(isArtifactMode)
-    if (isArtifactMode && !asText(el.artifactPromptInput.placeholder)) {
-      el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
+    if (isArtifactMode) {
+      syncArtifactConversationUi()
     }
   }
 
@@ -688,11 +694,88 @@ import {
   function syncArtifactComposerBusyState() {
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
-    el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Building...' : 'Build'
+    el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Building...' : 'Send'
+  }
+
+  function resetArtifactConversation(options = {}) {
+    state.artifact.conversationStepIndex = 0
+    state.artifact.conversationAnswers = createEmptyArtifactAnswers()
+    if (!options.preserveInput) {
+      el.artifactPromptInput.value = ''
+    }
+    syncArtifactConversationUi()
+  }
+
+  function syncArtifactConversationUi() {
+    const currentStep = getArtifactConversationStep()
+    el.artifactPromptInput.placeholder = currentStep
+      ? currentStep.placeholder
+      : ARTIFACT_DEFAULT_PLACEHOLDER
+    renderArtifactConversation()
+    if (state.artifact.busy) {
+      return
+    }
+    if (currentStep) {
+      setArtifactComposerStatus(
+        `Question ${state.artifact.conversationStepIndex + 1} of ${ARTIFACT_CONVERSATION_STEPS.length}`,
+        'pending'
+      )
+      return
+    }
+    setArtifactComposerStatus(
+      'Artifact ready. Type a new answer to start a fresh artifact conversation.',
+      'success'
+    )
+  }
+
+  function renderArtifactConversation() {
+    const currentStepIndex = state.artifact.conversationStepIndex
+    const fragment = document.createDocumentFragment()
+    for (let index = 0; index < ARTIFACT_CONVERSATION_STEPS.length; index += 1) {
+      const step = ARTIFACT_CONVERSATION_STEPS[index]
+      const answer = asText(state.artifact.conversationAnswers?.[step.key]).trim()
+      if (index > currentStepIndex && !answer) {
+        break
+      }
+      if (index < currentStepIndex || index === currentStepIndex) {
+        fragment.appendChild(createArtifactChatMessage(step.question, 'assistant'))
+      }
+      if (answer) {
+        fragment.appendChild(createArtifactChatMessage(answer, 'user'))
+      }
+      if (index === currentStepIndex && !answer) {
+        break
+      }
+    }
+    el.artifactChatLog.replaceChildren(fragment)
+  }
+
+  function createArtifactChatMessage(text, tone) {
+    const node = document.createElement('div')
+    node.className = `artifact-chat-message ${tone === 'user' ? 'user' : 'assistant'}`
+    node.textContent = asText(text)
+    return node
+  }
+
+  function getArtifactConversationStep(index = state.artifact.conversationStepIndex) {
+    return ARTIFACT_CONVERSATION_STEPS[index] || null
+  }
+
+  function isArtifactConversationComplete() {
+    return state.artifact.conversationStepIndex >= ARTIFACT_CONVERSATION_STEPS.length
+  }
+
+  function cloneArtifactConversationAnswers(answers) {
+    return {
+      artifactType: asText(answers?.artifactType),
+      audienceSize: asText(answers?.audienceSize),
+      designGuidelines: asText(answers?.designGuidelines)
+    }
   }
 
   function setArtifactComposerStatus(text, type = 'idle') {
-    el.artifactPromptStatus.textContent = asText(text) || 'Describe the look and motion.'
+    el.artifactPromptStatus.textContent =
+      asText(text) || 'Artifact builder is ready. Answer the first question to begin.'
     el.artifactPromptStatus.classList.remove('status-success', 'status-error', 'status-pending')
     if (type === 'success') {
       el.artifactPromptStatus.classList.add('status-success')
@@ -709,7 +792,7 @@ import {
 
   function setArtifactStagePlaceholder(text, type = 'pending') {
     el.artifactStagePlaceholder.textContent =
-      asText(text) || 'Artifact mode is waiting for your prompt.'
+      asText(text) || 'Artifact builder is ready. Answer the questions to generate your artifact.'
     el.artifactStagePlaceholder.classList.remove('hidden')
     el.artifactStagePlaceholder.classList.remove(
       'status-success',
@@ -738,12 +821,15 @@ import {
 
   function handleArtifactPromptFormSubmit(event) {
     event.preventDefault()
-    const prompt = asText(el.artifactPromptInput.value)
-    if (!prompt) {
-      setArtifactComposerStatus('Describe the game first, then press Build.', 'error')
+    const answer = asText(el.artifactPromptInput.value).trim()
+    if (!answer) {
+      setArtifactComposerStatus('Answer the current artifact question first.', 'error')
       return
     }
-    void submitArtifactPrompt(prompt)
+    if (isArtifactConversationComplete()) {
+      resetArtifactConversation({ preserveInput: true })
+    }
+    void submitArtifactConversationAnswer(answer)
   }
 
   function handleArtifactFrameLoad() {
@@ -828,7 +914,26 @@ import {
     return true
   }
 
-  async function submitArtifactPrompt(prompt) {
+  async function submitArtifactConversationAnswer(answer) {
+    const currentStep = getArtifactConversationStep()
+    if (!currentStep) {
+      return
+    }
+    state.artifact.conversationAnswers[currentStep.key] = answer
+    el.artifactPromptInput.value = ''
+    state.artifact.conversationStepIndex += 1
+    syncArtifactConversationUi()
+
+    if (!isArtifactConversationComplete()) {
+      return
+    }
+
+    const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
+    const prompt = buildArtifactConversationPrompt(conversationAnswers)
+    await submitArtifactPrompt(prompt, { conversationAnswers })
+  }
+
+  async function submitArtifactPrompt(prompt, options = {}) {
     if (state.artifact.busy) {
       setArtifactComposerStatus('Artifact build is already running. Wait for it to finish.', 'error')
       return
@@ -837,8 +942,8 @@ import {
     state.artifact.busy = true
     syncArtifactComposerBusyState()
     state.artifact.lastPrompt = prompt
-    el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
-    setArtifactComposerStatus('Building artifact canvas from live poll data...', 'pending')
+    state.artifact.lastAnswers = cloneArtifactConversationAnswers(options.conversationAnswers)
+    setArtifactComposerStatus('Generating artifact from your answers...', 'pending')
     setArtifactStagePlaceholder('Building artifact canvas...', 'pending')
     if (state.snapshot) {
       renderFromSnapshot(true)
@@ -846,7 +951,13 @@ import {
 
     try {
       const context = buildAiEditorContext()
-      context.artifact = buildArtifactContext(prompt, context.poll)
+      context.artifact = buildArtifactContext(
+        {
+          prompt,
+          answers: state.artifact.lastAnswers
+        },
+        context.poll
+      )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context)
       const applied = applyArtifactMarkup(buildResult.html)
@@ -873,19 +984,33 @@ import {
     }
   }
 
-  function buildArtifactContext(prompt, pollContext = null) {
+  function buildArtifactContext(artifactInput, pollContext = null) {
     const sessionId = asText(state.sessionId)
     const code = asText(state.code)
     const apiBase = asText(state.apiBase)
     const encodedSession = sessionId ? encodeURIComponent(sessionId) : '{session_id}'
     const encodedCode = code ? encodeURIComponent(code) : '{code}'
     const wsBase = toWsBase(apiBase)
+    const prompt =
+      typeof artifactInput === 'string' ? artifactInput : asText(artifactInput?.prompt)
+    const answers =
+      artifactInput && typeof artifactInput === 'object'
+        ? cloneArtifactConversationAnswers(artifactInput.answers)
+        : createEmptyArtifactAnswers()
+    const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
 
     return {
       enabled: true,
-      lastPrompt: asText(prompt),
+      lastPrompt: prompt,
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
+      artifactType: answers.artifactType,
+      audienceSize: answers.audienceSize,
+      designGuidelines: answers.designGuidelines,
+      expectedMaxVotes: voteCapacity.expectedMaxVotes,
+      recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
+      recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
+      avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects,
       dataEndpoints: {
         sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
         sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
@@ -896,6 +1021,49 @@ import {
         liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
       }
     }
+  }
+
+  function estimateArtifactVoteCapacity(poll, answers = null) {
+    const options = Array.isArray(poll?.options) ? poll.options : []
+    const optionCount = Math.max(2, options.length || 0)
+    const totalVotes = options.reduce((sum, option) => sum + toInt(option?.votes), 0)
+    const explicitAudienceSize = parseArtifactAudienceSize(answers?.audienceSize)
+    const expectedMaxVotes =
+      explicitAudienceSize > 0
+        ? explicitAudienceSize
+        : roundArtifactCapacityUp(Math.max(100, optionCount * 20, totalVotes * 2))
+    const recommendedVisibleUnits =
+      expectedMaxVotes <= 10 ? expectedMaxVotes : expectedMaxVotes <= 40 ? 10 : expectedMaxVotes <= 100 ? 20 : 25
+    const recommendedVotesPerUnit = Math.max(
+      1,
+      Math.ceil(expectedMaxVotes / recommendedVisibleUnits)
+    )
+
+    return {
+      expectedMaxVotes,
+      recommendedVisibleUnits,
+      recommendedVotesPerUnit,
+      avoidOneToOneVoteObjects: expectedMaxVotes > 24
+    }
+  }
+
+  function parseArtifactAudienceSize(value) {
+    const digits = asText(value).match(/\d+/)
+    if (!digits) {
+      return 0
+    }
+    return clamp(Number(digits[0]), 0, 100000, 0)
+  }
+
+  function roundArtifactCapacityUp(value) {
+    const numeric = Math.max(1, toInt(value))
+    const steps = [10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000]
+    for (const step of steps) {
+      if (numeric <= step) {
+        return step
+      }
+    }
+    return Math.ceil(numeric / 1000) * 1000
   }
 
   function resolveAiGeminiModel() {
@@ -1239,6 +1407,7 @@ import {
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
+    const voteCapacity = estimateArtifactVoteCapacity(poll, state.artifact.lastAnswers)
     const options = Array.isArray(poll?.options)
       ? poll.options.map((option, index) => {
           const votes = toInt(option?.votes)
@@ -1264,7 +1433,11 @@ import {
         sessionId: asText(state.sessionId),
         code: asText(state.code),
         selector: asText(state.pollSelector?.descriptor),
-        socketStatus: asText(state.socketStatus)
+        socketStatus: asText(state.socketStatus),
+        expectedMaxVotes: voteCapacity.expectedMaxVotes,
+        recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
+        recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
+        avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
       }
     }
   }
@@ -1303,7 +1476,13 @@ import {
       visualMode: currentTheme.visualMode,
       artifact:
         currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-          ? buildArtifactContext(state.artifact.lastPrompt || '', poll)
+          ? buildArtifactContext(
+              {
+                prompt: state.artifact.lastPrompt || '',
+                answers: state.artifact.lastAnswers
+              },
+              poll
+            )
           : { enabled: false },
       currentText: {
         eyebrow: extractPlainTextFromHtml(el.eyebrow.innerHTML),
@@ -5615,7 +5794,7 @@ import {
     }
 
     if (!asText(state.artifact.html)) {
-      setArtifactStagePlaceholder('Enter a prompt and click Build to generate an artifact.', 'pending')
+      setArtifactStagePlaceholder('Answer the questions to generate an artifact.', 'pending')
       return
     }
 
@@ -6497,10 +6676,9 @@ import {
       currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     ) {
       state.artifact.lastPrompt = ''
+      state.artifact.lastAnswers = createEmptyArtifactAnswers()
       clearArtifactMarkup()
-      el.artifactPromptInput.value = ''
-      el.artifactPromptInput.placeholder = ARTIFACT_DEFAULT_PLACEHOLDER
-      setArtifactComposerStatus(ARTIFACT_WAITING_STATUS)
+      resetArtifactConversation({ preserveInput: false })
       setArtifactStagePlaceholder(ARTIFACT_WAITING_STATUS, 'pending')
     }
     applyTheme(currentTheme)

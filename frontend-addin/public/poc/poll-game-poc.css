@@ -1203,6 +1203,36 @@ h1 {
   color: #4f79a5;
 }
 
+.artifact-chat-log {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.artifact-chat-message {
+  max-width: min(86%, 720px);
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 6px 14px rgba(67, 102, 143, 0.08);
+}
+
+.artifact-chat-message.assistant {
+  align-self: flex-start;
+  border: 1px solid rgba(150, 186, 226, 0.76);
+  background: rgba(255, 255, 255, 0.9);
+  color: #17395f;
+}
+
+.artifact-chat-message.user {
+  align-self: flex-end;
+  border: 1px solid rgba(116, 169, 236, 0.72);
+  background: linear-gradient(135deg, rgba(82, 151, 244, 0.18), rgba(111, 189, 255, 0.22));
+  color: #123b67;
+}
+
 .artifact-prompt-form {
   margin-top: 7px;
   display: grid;

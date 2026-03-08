@@ -345,19 +345,20 @@
       </section>
       <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact game builder">
         <p class="artifact-kicker">Artifact Builder</p>
+        <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
         <form id="artifact-prompt-form" class="artifact-prompt-form">
           <input
             id="artifact-prompt-input"
             class="artifact-prompt-input"
             type="text"
-            placeholder="Describe your game concept (example: lego pieces stacking into each poll bar)."
+            placeholder="Type your answer here."
             maxlength="220"
             aria-label="Describe artifact game mode"
           />
-          <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Build</button>
+          <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Send</button>
         </form>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
-          Describe the look and motion. AI will iteratively build your poll game.
+          Artifact builder is ready. Answer the first question to begin.
         </p>
       </section>
       <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact game preview">
@@ -368,7 +369,7 @@
           sandbox="allow-scripts"
         ></iframe>
         <p id="artifact-stage-placeholder" class="artifact-stage-placeholder">
-          Artifact mode is waiting for your prompt. Describe the game style, then click Build.
+          Artifact builder is ready. Answer the questions to generate your artifact.
         </p>
       </section>
       <section id="options" class="state"></section>
