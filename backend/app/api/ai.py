@@ -96,6 +96,8 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- State shape: state.poll.question, state.poll.options[], state.totalVotes, state.meta.",
         "- If available, use state.meta.expectedMaxVotes, state.meta.recommendedVisibleUnits, state.meta.recommendedVotesPerUnit, and state.meta.avoidOneToOneVoteObjects when designing scalable vote visuals.",
         "- Define window.prezoRenderPoll(state) to render and update the artifact when live data changes.",
+        "- If context.artifact.currentArtifactHtml is present, treat it as the current artifact to revise and return a full updated HTML artifact, not a diff.",
+        "- Preserve working live-data behavior, stable layout, and successful design decisions from the current artifact unless the user explicitly asks for a broader redesign.",
         "Update requirements:",
         "- Poll changes must animate smoothly (about 200ms-500ms easing) with no flicker.",
         "- Do not rebuild or re-mount the full scene on each update.",
@@ -329,13 +331,13 @@ async def create_poll_game_artifact_build(
         issue_text = "; ".join(validation_issues[:4])
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Artifact build failed validation: {issue_text}",
+            detail=f"Artifact request failed validation: {issue_text}",
         )
 
     return PollGameArtifactBuildResponse(
         html=html,
         model=model,
-        assistantMessage="Artifact build generated. Keep prompting to iterate.",
+        assistantMessage="Artifact ready. Keep prompting to iterate.",
     )
 
 

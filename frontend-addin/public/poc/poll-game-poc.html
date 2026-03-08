@@ -343,14 +343,14 @@
           </div>
         </div>
       </section>
-      <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact game builder">
+      <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact editor">
         <div class="artifact-composer-header">
-          <p class="artifact-kicker">Artifact Builder</p>
+          <p class="artifact-kicker">Artifact Editor</p>
           <button
             id="artifact-composer-collapse"
             class="artifact-composer-collapse hidden"
             type="button"
-            aria-label="Collapse artifact builder"
+            aria-label="Collapse artifact editor"
           >
             Collapse
           </button>
@@ -363,19 +363,19 @@
             type="text"
             placeholder="Type your answer here."
             maxlength="220"
-            aria-label="Describe artifact game mode"
+            aria-label="Describe artifact editor request"
           />
           <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Send</button>
         </form>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
-          Artifact builder is ready. Answer the first question to begin.
+          Artifact editor is ready. Answer the first question to begin.
         </p>
       </section>
       <div id="artifact-composer-anchor" class="hidden" aria-hidden="true"></div>
-      <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact game preview">
+      <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact preview">
         <div id="artifact-stage-loader" class="artifact-stage-loader hidden" aria-live="polite">
           <canvas id="artifact-loader-canvas" class="artifact-loader-canvas"></canvas>
-          <div id="artifact-loader-text" class="artifact-loader-text">Building artifact canvas...</div>
+          <div id="artifact-loader-text" class="artifact-loader-text">Generating artifact canvas...</div>
         </div>
         <iframe
           id="artifact-frame"
@@ -384,7 +384,7 @@
           sandbox="allow-scripts"
         ></iframe>
         <p id="artifact-stage-placeholder" class="artifact-stage-placeholder hidden">
-          Artifact builder is ready. Answer the questions to generate your artifact.
+          Artifact editor is ready. Answer the questions to generate your artifact.
         </p>
       </section>
       <section id="options" class="state"></section>
@@ -448,7 +448,7 @@
         aria-controls="artifact-composer"
         aria-expanded="false"
       >
-        Artifact Builder
+        Artifact Editor
       </button>
     </section>
 

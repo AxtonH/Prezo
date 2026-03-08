@@ -28,10 +28,13 @@ import {
 import {
   ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
+  ARTIFACT_EDIT_PLACEHOLDER,
+  ARTIFACT_EDIT_READY_STATUS,
   ARTIFACT_LAYOUT_HORIZONTAL,
   ARTIFACT_WAITING_STATUS,
   ARTIFACT_VISUAL_MODE,
   buildArtifactConversationPrompt,
+  buildArtifactEditPrompt,
   buildArtifactAiPrompt,
   createEmptyArtifactAnswers,
   sanitizeArtifactLayout
@@ -109,6 +112,7 @@ import {
       lastAnswers: createEmptyArtifactAnswers(),
       html: '',
       floatingOpen: false,
+      editHistory: [],
       stageSurface: ARTIFACT_STAGE_SURFACE_HIDDEN,
       frameReady: false,
       lastPayloadKey: '',
@@ -773,7 +777,7 @@ import {
   function syncArtifactComposerBusyState() {
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
-    el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Building...' : 'Send'
+    el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Working...' : 'Send'
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -789,6 +793,9 @@ import {
   function resetArtifactConversation(options = {}) {
     state.artifact.conversationStepIndex = 0
     state.artifact.conversationAnswers = createEmptyArtifactAnswers()
+    if (options.clearEditHistory !== false) {
+      state.artifact.editHistory = []
+    }
     if (!options.preserveInput) {
       el.artifactPromptInput.value = ''
     }
@@ -797,9 +804,12 @@ import {
 
   function syncArtifactConversationUi() {
     const currentStep = getArtifactConversationStep()
+    const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     el.artifactPromptInput.placeholder = currentStep
       ? currentStep.placeholder
-      : ARTIFACT_DEFAULT_PLACEHOLDER
+      : canEditArtifact
+        ? ARTIFACT_EDIT_PLACEHOLDER
+        : ARTIFACT_DEFAULT_PLACEHOLDER
     renderArtifactConversation()
     if (state.artifact.busy) {
       return
@@ -812,7 +822,9 @@ import {
       return
     }
     setArtifactComposerStatus(
-      'Artifact ready. Type a new answer to start a fresh artifact conversation.',
+      canEditArtifact
+        ? ARTIFACT_EDIT_READY_STATUS
+        : ARTIFACT_WAITING_STATUS,
       'success'
     )
   }
@@ -835,6 +847,13 @@ import {
       if (index === currentStepIndex && !answer) {
         break
       }
+    }
+    const editHistory = Array.isArray(state.artifact.editHistory) ? state.artifact.editHistory : []
+    for (const message of editHistory) {
+      if (!message || typeof message !== 'object') {
+        continue
+      }
+      fragment.appendChild(createArtifactChatMessage(message.text, message.tone))
     }
     el.artifactChatLog.replaceChildren(fragment)
   }
@@ -863,8 +882,7 @@ import {
   }
 
   function setArtifactComposerStatus(text, type = 'idle') {
-    el.artifactPromptStatus.textContent =
-      asText(text) || 'Artifact builder is ready. Answer the first question to begin.'
+    el.artifactPromptStatus.textContent = asText(text) || ARTIFACT_WAITING_STATUS
     el.artifactPromptStatus.classList.remove('status-success', 'status-error', 'status-pending')
     if (type === 'success') {
       el.artifactPromptStatus.classList.add('status-success')
@@ -881,7 +899,7 @@ import {
 
   function setArtifactStagePlaceholder(text, type = 'pending') {
     el.artifactStagePlaceholder.textContent =
-      asText(text) || 'Artifact builder is ready. Answer the questions to generate your artifact.'
+      asText(text) || 'Artifact editor is ready. Answer the questions to generate your artifact.'
     el.artifactStagePlaceholder.classList.remove(
       'status-success',
       'status-error',
@@ -951,7 +969,7 @@ import {
     setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_HIDDEN)
   }
 
-  function showArtifactStageLoader(text = 'Building artifact canvas...') {
+  function showArtifactStageLoader(text = 'Generating artifact canvas...') {
     setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_LOADING, { loaderText: text })
   }
 
@@ -1060,10 +1078,26 @@ import {
       setArtifactComposerStatus('Answer the current artifact question first.', 'error')
       return
     }
+    if (Boolean(state.artifact.html) && isArtifactConversationComplete()) {
+      void submitArtifactEditRequest(answer)
+      return
+    }
     if (isArtifactConversationComplete()) {
       resetArtifactConversation({ preserveInput: true })
     }
     void submitArtifactConversationAnswer(answer)
+  }
+
+  function appendArtifactEditMessage(tone, text) {
+    const normalizedText = asText(text).trim()
+    if (!normalizedText) {
+      return
+    }
+    state.artifact.editHistory.push({
+      tone: tone === 'user' ? 'user' : 'assistant',
+      text: normalizedText
+    })
+    renderArtifactConversation()
   }
 
   function handleArtifactComposerFabClick() {
@@ -1288,18 +1322,44 @@ import {
     await submitArtifactPrompt(prompt, { conversationAnswers })
   }
 
+  async function submitArtifactEditRequest(request) {
+    const normalizedRequest = asText(request).trim()
+    if (!normalizedRequest) {
+      return
+    }
+    appendArtifactEditMessage('user', normalizedRequest)
+    el.artifactPromptInput.value = ''
+    const prompt = buildArtifactEditPrompt(normalizedRequest, state.artifact.lastAnswers)
+    await submitArtifactPrompt(prompt, {
+      conversationAnswers: state.artifact.lastAnswers,
+      requestKind: 'edit'
+    })
+  }
+
   async function submitArtifactPrompt(prompt, options = {}) {
     if (state.artifact.busy) {
-      setArtifactComposerStatus('Artifact build is already running. Wait for it to finish.', 'error')
+      setArtifactComposerStatus('Artifact request is already running. Wait for it to finish.', 'error')
       return
     }
 
+    const requestKind = options.requestKind === 'edit' ? 'edit' : 'build'
+    const conversationAnswers =
+      options.conversationAnswers && typeof options.conversationAnswers === 'object'
+        ? options.conversationAnswers
+        : state.artifact.lastAnswers
     state.artifact.busy = true
     syncArtifactComposerBusyState()
     state.artifact.lastPrompt = prompt
-    state.artifact.lastAnswers = cloneArtifactConversationAnswers(options.conversationAnswers)
-    setArtifactComposerStatus('Generating artifact from your answers...', 'pending')
-    showArtifactStageLoader('Building artifact canvas...')
+    state.artifact.lastAnswers = cloneArtifactConversationAnswers(conversationAnswers)
+    setArtifactComposerStatus(
+      requestKind === 'edit'
+        ? 'Applying your artifact edits...'
+        : 'Generating artifact from your answers...',
+      'pending'
+    )
+    showArtifactStageLoader(
+      requestKind === 'edit' ? 'Updating artifact canvas...' : 'Generating artifact canvas...'
+    )
     if (state.snapshot) {
       renderFromSnapshot(true)
     }
@@ -1309,7 +1369,8 @@ import {
       context.artifact = buildArtifactContext(
         {
           prompt,
-          answers: state.artifact.lastAnswers
+          answers: state.artifact.lastAnswers,
+          mode: requestKind
         },
         context.poll
       )
@@ -1318,21 +1379,37 @@ import {
       const applied = applyArtifactMarkup(buildResult.html)
       if (!applied) {
         setArtifactComposerStatus(
-          'Artifact build returned empty markup. Try a more specific prompt.',
+          'Artifact request returned empty markup. Try a more specific prompt.',
           'error'
         )
-        showArtifactStagePlaceholder('Artifact build returned empty markup.', 'error')
+        showArtifactStagePlaceholder('Artifact request returned empty markup.', 'error')
+        if (requestKind === 'edit') {
+          appendArtifactEditMessage(
+            'assistant',
+            'Artifact edit failed because the AI returned empty markup.'
+          )
+        }
       } else {
         renderFromSnapshot(true)
         showArtifactStageFrame()
         const statusMessage =
-          asText(buildResult.assistantMessage) ||
-          'Artifact build applied. Keep prompting to iterate.'
+          requestKind === 'edit'
+            ? asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
+              ? 'Artifact updated. Keep prompting to iterate.'
+              : asText(buildResult.assistantMessage) || 'Artifact updated. Keep prompting to iterate.'
+            : asText(buildResult.assistantMessage) || 'Artifact generated. Keep prompting to iterate.'
         setArtifactComposerStatus(statusMessage, 'success')
+        if (requestKind === 'edit') {
+          appendArtifactEditMessage('assistant', statusMessage)
+        }
       }
     } catch (error) {
-      setArtifactComposerStatus(`Artifact request failed: ${errorToMessage(error)}`, 'error')
-      showArtifactStagePlaceholder(`Artifact request failed: ${errorToMessage(error)}`, 'error')
+      const message = `Artifact request failed: ${errorToMessage(error)}`
+      setArtifactComposerStatus(message, 'error')
+      showArtifactStagePlaceholder(message, 'error')
+      if (requestKind === 'edit') {
+        appendArtifactEditMessage('assistant', message)
+      }
     } finally {
       state.artifact.busy = false
       syncArtifactComposerBusyState()
@@ -1352,11 +1429,16 @@ import {
       artifactInput && typeof artifactInput === 'object'
         ? cloneArtifactConversationAnswers(artifactInput.answers)
         : createEmptyArtifactAnswers()
+    const requestMode =
+      artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.mode) : ''
     const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
 
     return {
       enabled: true,
       lastPrompt: prompt,
+      requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
+      hasExistingArtifact: Boolean(state.artifact.html),
+      currentArtifactHtml: asText(state.artifact.html),
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
@@ -5865,7 +5947,7 @@ import {
     )
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
       if (state.artifact.busy) {
-        showArtifactStageLoader('Building artifact canvas...')
+        showArtifactStageLoader('Generating artifact canvas...')
       } else if (asText(state.artifact.html)) {
         showArtifactStageFrame()
       } else {
@@ -6173,7 +6255,7 @@ import {
     }
     clearArtifactModeClasses()
     if (state.artifact.busy) {
-      showArtifactStageLoader('Building artifact canvas...')
+      showArtifactStageLoader('Generating artifact canvas...')
       return
     }
 
