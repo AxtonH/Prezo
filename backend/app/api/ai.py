@@ -224,7 +224,12 @@ async def request_openai_text(
 
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds, connect=10.0)
+            timeout=httpx.Timeout(
+                connect=max(1.0, float(settings.openai_connect_timeout_seconds)),
+                read=max(1.0, timeout_seconds),
+                write=max(30.0, min(timeout_seconds, 120.0)),
+                pool=max(15.0, min(timeout_seconds, 60.0)),
+            )
         ) as client:
             response = await client.post(
                 endpoint,
@@ -236,6 +241,8 @@ async def request_openai_text(
             )
     except httpx.RequestError as exc:
         detail = str(exc).strip() or exc.__class__.__name__
+        if isinstance(exc, httpx.ReadTimeout):
+            detail = f"ReadTimeout after {timeout_seconds:.0f}s"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Unable to reach OpenAI API at {normalized_base_url}: {detail}",
@@ -283,7 +290,7 @@ async def create_poll_game_edit_plan(
             indent=2,
         ),
         max_output_tokens=1400,
-        timeout_seconds=45.0,
+        timeout_seconds=max(30.0, float(settings.openai_plan_timeout_seconds)),
     )
     normalized_plan = normalize_poll_game_plan(text)
 
@@ -312,13 +319,19 @@ async def create_poll_game_artifact_build(
             detail="Artifact build is not configured. Set OPENAI_API_KEY on backend.",
         )
     generation_max_output_tokens = 5200
-    generation_timeout_seconds = 60.0
+    generation_timeout_seconds = max(
+        60.0, float(settings.openai_artifact_build_timeout_seconds)
+    )
     if request_mode == "edit":
         generation_max_output_tokens = 12000
-        generation_timeout_seconds = 90.0
+        generation_timeout_seconds = max(
+            90.0, float(settings.openai_artifact_edit_timeout_seconds)
+        )
     elif request_mode == "repair":
         generation_max_output_tokens = 14000
-        generation_timeout_seconds = 90.0
+        generation_timeout_seconds = max(
+            90.0, float(settings.openai_artifact_repair_timeout_seconds)
+        )
     prompt_text = json.dumps(
         {"prompt": payload.prompt, "context": payload.context},
         indent=2,
@@ -391,7 +404,9 @@ async def create_poll_game_artifact_answer(
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
         prompt_text=prompt_text,
         max_output_tokens=900,
-        timeout_seconds=45.0,
+        timeout_seconds=max(
+            45.0, float(settings.openai_artifact_answer_timeout_seconds)
+        ),
     )
 
     answer = (text or "").strip()
@@ -436,7 +451,9 @@ async def attempt_artifact_repair(
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
         max_output_tokens=14000,
-        timeout_seconds=90.0,
+        timeout_seconds=max(
+            90.0, float(settings.openai_artifact_repair_timeout_seconds)
+        ),
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()

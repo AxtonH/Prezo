@@ -56,7 +56,9 @@ import {
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
-  const ARTIFACT_BUILD_TIMEOUT_MS = 150000
+  const AI_PLAN_TIMEOUT_MS = 90000
+  const ARTIFACT_BUILD_TIMEOUT_MS = 360000
+  const ARTIFACT_ANSWER_TIMEOUT_MS = 120000
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -2118,13 +2120,17 @@ import {
       context,
       model
     }
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
       },
-      body: JSON.stringify(body)
-    })
+      ARTIFACT_ANSWER_TIMEOUT_MS
+    )
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const message =
@@ -2182,13 +2188,17 @@ import {
       context,
       model
     }
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
       },
-      body: JSON.stringify(body)
-    })
+      AI_PLAN_TIMEOUT_MS
+    )
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const message =

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-5.2"
     openai_artifact_edit_model: str = "gpt-5.2"
+    openai_connect_timeout_seconds: float = 15.0
+    openai_plan_timeout_seconds: float = 60.0
+    openai_artifact_build_timeout_seconds: float = 180.0
+    openai_artifact_edit_timeout_seconds: float = 240.0
+    openai_artifact_repair_timeout_seconds: float = 240.0
+    openai_artifact_answer_timeout_seconds: float = 90.0
 
 
 settings = Settings()
