@@ -109,6 +109,8 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
     'Output should be raw HTML that can render from live poll state updates.',
     'Define window.prezoRenderPoll(state) and use state.poll.question, state.poll.options, state.totalVotes, state.meta.',
+    'Do not fetch live poll data yourself. Do not open WebSockets, EventSource connections, or additional network requests for poll state.',
+    'Treat host-delivered state updates as the only live data source.',
     hasExistingArtifact
       ? 'If context.artifact.currentArtifactHtml is provided, treat it as the current artifact to revise and return a full updated version rather than a brand-new unrelated concept.'
       : '',

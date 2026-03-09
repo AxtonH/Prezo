@@ -1438,7 +1438,7 @@ import {
       lastPrompt: prompt,
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
       hasExistingArtifact: Boolean(state.artifact.html),
-      currentArtifactHtml: asText(state.artifact.html),
+      currentArtifactHtml: buildArtifactEditContextMarkup(state.artifact.html),
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
@@ -1458,6 +1458,15 @@ import {
         liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
       }
     }
+  }
+
+  function buildArtifactEditContextMarkup(markup) {
+    const text = asText(markup)
+    if (!text) {
+      return ''
+    }
+    const collapsed = text.replace(/\s+/g, ' ').trim()
+    return collapsed.length > 18000 ? `${collapsed.slice(0, 18000)}...` : collapsed
   }
 
   function estimateArtifactVoteCapacity(poll, answers = null) {
@@ -2429,9 +2438,9 @@ import {
       })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error('Request timed out.')
+        throw new Error(`Request timed out for ${url}.`)
       }
-      throw error
+      throw new Error(`Unable to reach ${url}: ${errorToMessage(error)}`)
     } finally {
       window.clearTimeout(timeoutId)
     }
@@ -6827,11 +6836,17 @@ import {
   }
 
   async function fetchJson(path) {
-    const response = await fetch(`${state.apiBase}${path}`)
+    let response
+    try {
+      response = await fetch(`${state.apiBase}${path}`)
+    } catch (error) {
+      const message = errorToMessage(error)
+      throw new Error(`Unable to reach API base ${state.apiBase}: ${message}`)
+    }
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
       const detail = typeof body?.detail === 'string' ? body.detail : `Request failed (${response.status})`
-      throw new Error(detail)
+      throw new Error(`${detail} [API ${state.apiBase}]`)
     }
     return response.json()
   }

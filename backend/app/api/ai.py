@@ -15,6 +15,7 @@ DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
 LEGACY_GEMINI_MODELS = {
     "gemini-2.0-flash",
 }
+ARTIFACT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
@@ -124,6 +125,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
         "- Do not output JSX, TSX, module import/export syntax, or unfinished code.",
         "- Do not require external libraries or network assets unless the user explicitly requests them.",
+        "- Do not fetch poll data over HTTP yourself and do not open WebSockets for poll updates.",
         "- Build resilient rendering when options/votes change over time.",
     ]
 )
@@ -152,52 +154,41 @@ class PollGameArtifactBuildResponse(BaseModel):
     assistantMessage: str
 
 
-@router.post("/poll-game-edit-plan", response_model=PollGameEditPlanResponse)
-async def create_poll_game_edit_plan(
-    payload: PollGameEditPlanRequest,
-) -> PollGameEditPlanResponse:
-    api_key = (settings.gemini_api_key or "").strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
-        )
-
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = configured_model or DEFAULT_GEMINI_MODEL
-    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
-        model = requested_model
+async def request_gemini_text(
+    *,
+    api_key: str,
+    model: str,
+    system_instruction: str,
+    prompt_text: str,
+    temperature: float,
+    top_p: float,
+    max_output_tokens: int,
+    response_mime_type: str,
+    timeout_seconds: float,
+) -> str:
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent"
     )
     body = {
-        "systemInstruction": {"parts": [{"text": POLL_GAME_SYSTEM_INSTRUCTION}]},
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {
-                        "text": json.dumps(
-                            {"prompt": payload.prompt, "context": payload.context},
-                            indent=2,
-                        )
-                    }
-                ],
+                "parts": [{"text": prompt_text}],
             }
         ],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.9,
-            "maxOutputTokens": 1400,
-            "responseMimeType": "application/json",
+            "temperature": temperature,
+            "topP": top_p,
+            "maxOutputTokens": max_output_tokens,
+            "responseMimeType": response_mime_type,
         },
     }
 
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(45.0, connect=10.0)
+            timeout=httpx.Timeout(timeout_seconds, connect=10.0)
         ) as client:
             response = await client.post(
                 endpoint,
@@ -229,6 +220,39 @@ async def create_poll_game_edit_plan(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Gemini response did not include text content.",
         )
+    return text
+
+
+@router.post("/poll-game-edit-plan", response_model=PollGameEditPlanResponse)
+async def create_poll_game_edit_plan(
+    payload: PollGameEditPlanRequest,
+) -> PollGameEditPlanResponse:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+        )
+
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    text = await request_gemini_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_SYSTEM_INSTRUCTION,
+        prompt_text=json.dumps(
+            {"prompt": payload.prompt, "context": payload.context},
+            indent=2,
+        ),
+        temperature=0.2,
+        top_p=0.9,
+        max_output_tokens=1400,
+        response_mime_type="application/json",
+        timeout_seconds=45.0,
+    )
     normalized_plan = normalize_poll_game_plan(text)
 
     return PollGameEditPlanResponse(
@@ -253,72 +277,20 @@ async def create_poll_game_artifact_build(
     model = configured_model or DEFAULT_GEMINI_MODEL
     if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
         model = requested_model
-    endpoint = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent"
+    text = await request_gemini_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+        prompt_text=json.dumps(
+            {"prompt": payload.prompt, "context": payload.context},
+            indent=2,
+        ),
+        temperature=0.8,
+        top_p=0.95,
+        max_output_tokens=5200,
+        response_mime_type="text/plain",
+        timeout_seconds=60.0,
     )
-    body = {
-        "systemInstruction": {
-            "parts": [{"text": POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION}]
-        },
-        "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {
-                        "text": json.dumps(
-                            {"prompt": payload.prompt, "context": payload.context},
-                            indent=2,
-                        )
-                    }
-                ],
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.8,
-            "topP": 0.95,
-            "maxOutputTokens": 5200,
-            "responseMimeType": "text/plain",
-        },
-    }
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=10.0)
-        ) as client:
-            response = await client.post(
-                endpoint,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": api_key,
-                },
-                json=body,
-            )
-    except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to reach Gemini API.",
-        ) from exc
-
-    raw_payload: Any = {}
-    if response.content:
-        try:
-            raw_payload = response.json()
-        except ValueError:
-            raw_payload = {}
-    if response.status_code >= 400:
-        detail = (
-            extract_gemini_error(raw_payload)
-            or f"Gemini request failed ({response.status_code})"
-        )
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
-
-    text = extract_gemini_text(raw_payload)
-    if not text:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini response did not include text content.",
-        )
 
     html = normalize_poll_game_artifact_html(text)
     if not html:
@@ -327,6 +299,18 @@ async def create_poll_game_artifact_build(
             detail="Gemini response did not include artifact HTML.",
         )
     validation_issues = validate_poll_game_artifact_html(html)
+    if validation_issues:
+        repaired_html = await attempt_artifact_repair(
+            api_key=api_key,
+            model=model,
+            original_prompt=payload.prompt,
+            context=payload.context,
+            html=html,
+            validation_issues=validation_issues,
+        )
+        if repaired_html:
+            html = repaired_html
+            validation_issues = validate_poll_game_artifact_html(html)
     if validation_issues:
         issue_text = "; ".join(validation_issues[:4])
         raise HTTPException(
@@ -339,6 +323,44 @@ async def create_poll_game_artifact_build(
         model=model,
         assistantMessage="Artifact ready. Keep prompting to iterate.",
     )
+
+
+async def attempt_artifact_repair(
+    *,
+    api_key: str,
+    model: str,
+    original_prompt: str,
+    context: dict[str, Any],
+    html: str,
+    validation_issues: list[str],
+) -> str:
+    if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
+        return ""
+    repair_prompt = "\n".join(
+        [
+            "Repair this artifact HTML so it passes validation and still satisfies the original request.",
+            "Return raw HTML only.",
+            f"Original prompt: {original_prompt}",
+            f"Validation issues: {'; '.join(validation_issues[:6])}",
+            "Context JSON:",
+            json.dumps(context, indent=2),
+            "Current artifact HTML:",
+            html,
+        ]
+    )
+    text = await request_gemini_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+        prompt_text=repair_prompt,
+        temperature=0.25,
+        top_p=0.9,
+        max_output_tokens=5200,
+        response_mime_type="text/plain",
+        timeout_seconds=60.0,
+    )
+    repaired = normalize_poll_game_artifact_html(text)
+    return repaired.strip()
 
 
 def extract_gemini_text(payload: Any) -> str:
