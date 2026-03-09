@@ -137,6 +137,20 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
     ]
 )
 
+POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION = "\n".join(
+    [
+        "You are a text assistant for the Prezo artifact editor.",
+        "Answer questions about the current artifact, its behavior, its live poll data, and likely causes of issues.",
+        "Use the provided context.artifact.currentArtifactHtml and context.artifact.currentArtifactLiveHooks when helpful.",
+        "Do not return HTML, CSS, JavaScript, JSON, markdown fences, or code unless the user explicitly asks for code.",
+        "Do not redesign or rebuild the artifact when the user is asking a question.",
+        "If the user asks an explanatory question, answer directly and concisely.",
+        "If the answer depends on inference from the current artifact HTML, say so briefly.",
+        "If the user is implicitly asking for a change rather than an explanation, explain that it should be treated as an edit request and suggest a precise edit phrasing.",
+        "Keep answers short and practical.",
+    ]
+)
+
 
 class PollGameEditPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
@@ -159,6 +173,11 @@ class PollGameArtifactBuildResponse(BaseModel):
     html: str
     model: str
     assistantMessage: str
+
+
+class PollGameArtifactAssistantResponse(BaseModel):
+    text: str
+    model: str
 
 
 async def request_gemini_text(
@@ -330,6 +349,47 @@ async def create_poll_game_artifact_build(
         model=model,
         assistantMessage="Artifact ready. Keep prompting to iterate.",
     )
+
+
+@router.post("/poll-game-artifact-answer", response_model=PollGameArtifactAssistantResponse)
+async def create_poll_game_artifact_answer(
+    payload: PollGameArtifactBuildRequest,
+) -> PollGameArtifactAssistantResponse:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+        )
+
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    text = await request_gemini_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
+        prompt_text=json.dumps(
+            {"prompt": payload.prompt, "context": payload.context},
+            indent=2,
+        ),
+        temperature=0.25,
+        top_p=0.9,
+        max_output_tokens=900,
+        response_mime_type="text/plain",
+        timeout_seconds=45.0,
+    )
+
+    answer = (text or "").strip()
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Artifact assistant returned an empty answer.",
+        )
+
+    return PollGameArtifactAssistantResponse(text=answer, model=model)
 
 
 async def attempt_artifact_repair(

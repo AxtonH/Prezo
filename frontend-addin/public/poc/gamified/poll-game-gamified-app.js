@@ -1420,11 +1420,48 @@ import {
     }
     appendArtifactEditMessage('user', normalizedRequest)
     el.artifactPromptInput.value = ''
+    if (isArtifactQuestionRequest(normalizedRequest)) {
+      await submitArtifactQuestionRequest(normalizedRequest)
+      return
+    }
     const prompt = buildArtifactEditPrompt(normalizedRequest, state.artifact.lastAnswers)
     await submitArtifactPrompt(prompt, {
       conversationAnswers: state.artifact.lastAnswers,
       requestKind: 'edit'
     })
+  }
+
+  async function submitArtifactQuestionRequest(request) {
+    if (state.artifact.busy) {
+      setArtifactComposerStatus('Artifact request is already running. Wait for it to finish.', 'error')
+      return
+    }
+
+    state.artifact.busy = true
+    syncArtifactComposerBusyState()
+    setArtifactComposerStatus('Answering your artifact question...', 'pending')
+
+    try {
+      const context = buildAiEditorContext()
+      context.artifact = buildArtifactContext(
+        {
+          prompt: request,
+          answers: state.artifact.lastAnswers,
+          mode: 'question'
+        },
+        context.poll
+      )
+      const answer = await requestAiArtifactAnswer(request, context)
+      appendArtifactEditMessage('assistant', answer.text)
+      setArtifactComposerStatus('Question answered.', 'success')
+    } catch (error) {
+      const message = `Artifact question failed: ${errorToMessage(error)}`
+      appendArtifactEditMessage('assistant', message)
+      setArtifactComposerStatus(message, 'error')
+    } finally {
+      state.artifact.busy = false
+      syncArtifactComposerBusyState()
+    }
   }
 
   async function submitArtifactPrompt(prompt, options = {}) {
@@ -1610,6 +1647,19 @@ import {
       .slice(-6)
       .map((entry) => asText(entry.text).trim())
       .filter(Boolean)
+  }
+
+  function isArtifactQuestionRequest(value) {
+    const text = asText(value).trim().toLowerCase()
+    if (!text) {
+      return false
+    }
+    if (text.endsWith('?')) {
+      return true
+    }
+    return /^(what|why|how|when|where|which|who|can|could|would|should|does|do|did|is|are|was|were|tell me|explain)\b/.test(
+      text
+    )
   }
 
   function estimateArtifactVoteCapacity(poll, answers = null) {
@@ -1950,6 +2000,39 @@ import {
     return {
       html,
       assistantMessage: asText(payload?.assistantMessage)
+    }
+  }
+
+  async function requestAiArtifactAnswer(prompt, context) {
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
+    const body = {
+      prompt,
+      context,
+      model
+    }
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message =
+        asText(payload?.detail) ||
+        asText(payload?.error?.message) ||
+        `Request failed (${response.status})`
+      throw new Error(message)
+    }
+    const text = asText(payload?.text)
+    if (!text) {
+      throw new Error('Artifact assistant returned an empty answer.')
+    }
+    return {
+      text,
+      assistantMessage: text
     }
   }
 
