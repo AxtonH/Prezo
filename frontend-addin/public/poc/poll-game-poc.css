@@ -1520,6 +1520,7 @@ h1 {
   border: 0;
   background: transparent;
   transform-origin: top left;
+  transition: transform 160ms ease;
   z-index: 1;
 }
 

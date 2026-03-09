@@ -1,8 +1,9 @@
 import {
   AI_BOX_RESIZE_TARGETS,
   AI_CHAT_MAX_MESSAGES,
-  AI_DEFAULT_MODEL,
-  AI_MODEL_STORAGE_KEY,
+  AI_GEMINI_DEFAULT_MODEL,
+  AI_GEMINI_LEGACY_MODELS,
+  AI_GEMINI_MODEL_STORAGE_KEY,
   AI_MOVE_TARGETS,
   AI_SCALE_RESIZE_TARGETS,
   AI_TARGET_ALIASES,
@@ -56,9 +57,7 @@ import {
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
-  const AI_PLAN_TIMEOUT_MS = 90000
-  const ARTIFACT_BUILD_TIMEOUT_MS = 360000
-  const ARTIFACT_ANSWER_TIMEOUT_MS = 120000
+  const ARTIFACT_BUILD_TIMEOUT_MS = 150000
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -131,7 +130,6 @@ import {
       frameReady: false,
       renderConfirmed: false,
       renderErrorCount: 0,
-      fitLocked: false,
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
@@ -663,7 +661,10 @@ import {
   }
 
   function setupAiChat() {
-    state.ai.model = resolveAiModel()
+    try {
+      localStorage.removeItem('prezo.poll-game-poc.gemini-api-key.v1')
+    } catch {}
+    state.ai.model = resolveAiGeminiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
     updateAiComposerState()
@@ -1274,9 +1275,6 @@ import {
   function confirmArtifactRenderSuccess() {
     state.artifact.renderConfirmed = true
     state.artifact.renderErrorCount = 0
-    if (state.artifact.reportedContentWidth > 0 && state.artifact.reportedContentHeight > 0) {
-      state.artifact.fitLocked = true
-    }
     if (state.artifact.html) {
       state.artifact.lastStableHtml = state.artifact.html
     }
@@ -1410,11 +1408,6 @@ import {
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    const hasReportedSize =
-      state.artifact.reportedContentWidth > 0 && state.artifact.reportedContentHeight > 0
-    if (state.artifact.fitLocked && hasReportedSize) {
-      return
-    }
     const rawWidth = Number(widthValue)
     const rawHeight = Number(heightValue)
     const maxWidth = Math.max(stageWidth * 2.4, 1400)
@@ -1427,19 +1420,15 @@ import {
       Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
         ? Math.max(stageHeight, rawHeight)
         : stageHeight
-    const minMaterialDelta = hasReportedSize ? 24 : 2
     if (
-      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < minMaterialDelta &&
-      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < minMaterialDelta
+      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < 2 &&
+      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < 2
     ) {
       return
     }
     state.artifact.reportedContentWidth = normalizedWidth
     state.artifact.reportedContentHeight = normalizedHeight
     applyArtifactFrameFit()
-    if (state.artifact.renderConfirmed) {
-      state.artifact.fitLocked = true
-    }
   }
 
   function clearArtifactPostLoadReplays() {
@@ -1788,7 +1777,7 @@ import {
       return ''
     }
     const normalized = text.trim()
-    if (normalized.length <= 120000) {
+    if (normalized.length <= 40000) {
       return normalized
     }
     const scriptMatches = [...normalized.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
@@ -1802,10 +1791,10 @@ import {
           scriptText.includes('prezoGetPollState')
       )
       .join('\n\n')
-    const head = normalized.slice(0, 45000)
-    const tail = normalized.slice(-20000)
+    const head = normalized.slice(0, 18000)
+    const tail = normalized.slice(-6000)
     const combined = [head, hookScripts, tail].filter(Boolean).join('\n\n<!-- artifact-context-cut -->\n\n')
-    return combined.length > 140000 ? `${combined.slice(0, 140000)}...` : combined
+    return combined.length > 52000 ? `${combined.slice(0, 52000)}...` : combined
   }
 
   function buildArtifactLiveHookContext(markup) {
@@ -1827,7 +1816,7 @@ import {
       return ''
     }
     const joined = hookScripts.join('\n\n')
-    return joined.length > 50000 ? `${joined.slice(0, 50000)}...` : joined
+    return joined.length > 20000 ? `${joined.slice(0, 20000)}...` : joined
   }
 
   function buildArtifactRecentEditRequests(history) {
@@ -1897,19 +1886,25 @@ import {
     return Math.ceil(numeric / 1000) * 1000
   }
 
-  function resolveAiModel() {
-    const queryModel = asText(query.get('model'))
+  function resolveAiGeminiModel() {
+    const queryModel = asText(query.get('geminiModel'))
     if (queryModel) {
       try {
-        localStorage.setItem(AI_MODEL_STORAGE_KEY, queryModel)
+        localStorage.setItem(AI_GEMINI_MODEL_STORAGE_KEY, queryModel)
       } catch {}
       return queryModel
     }
-    const storedModel = asText(safeStorageGet(AI_MODEL_STORAGE_KEY))
+    const storedModel = asText(safeStorageGet(AI_GEMINI_MODEL_STORAGE_KEY))
+    if (storedModel && AI_GEMINI_LEGACY_MODELS.has(storedModel)) {
+      try {
+        localStorage.removeItem(AI_GEMINI_MODEL_STORAGE_KEY)
+      } catch {}
+      return AI_GEMINI_DEFAULT_MODEL
+    }
     if (storedModel) {
       return storedModel
     }
-    return AI_DEFAULT_MODEL
+    return AI_GEMINI_DEFAULT_MODEL
   }
 
   function handleAiChatFabClick() {
@@ -2126,24 +2121,20 @@ import {
   }
 
   async function requestAiEditPlan(prompt, context) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-edit-plan`
     const body = {
       prompt,
       context,
       model
     }
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
-      ARTIFACT_ANSWER_TIMEOUT_MS
-    )
+      body: JSON.stringify(body)
+    })
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const message =
@@ -2152,7 +2143,7 @@ import {
         `Request failed (${response.status})`
       throw new Error(message)
     }
-    const text = asText(payload?.text) || extractAiText(payload)
+    const text = asText(payload?.text) || extractGeminiText(payload)
     if (!text) {
       throw new Error('AI service returned an empty response.')
     }
@@ -2160,7 +2151,7 @@ import {
   }
 
   async function requestAiArtifactBuild(prompt, context) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
     const body = {
       prompt,
@@ -2194,24 +2185,20 @@ import {
   }
 
   async function requestAiArtifactAnswer(prompt, context) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
     const body = {
       prompt,
       context,
       model
     }
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
+    const response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
       },
-      AI_PLAN_TIMEOUT_MS
-    )
+      body: JSON.stringify(body)
+    })
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
       const message =
@@ -2254,7 +2241,6 @@ import {
     state.artifact.frameReady = false
     state.artifact.renderConfirmed = false
     state.artifact.renderErrorCount = 0
-    state.artifact.fitLocked = false
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
@@ -2281,7 +2267,6 @@ import {
     state.artifact.pendingRequestKind = ''
     state.artifact.renderConfirmed = false
     state.artifact.renderErrorCount = 0
-    state.artifact.fitLocked = false
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
@@ -2424,27 +2409,7 @@ import {
     }
   }
 
-  function extractAiText(payload) {
-    const directText = asText(payload?.output_text)
-    if (directText) {
-      return directText
-    }
-    const output = payload?.output
-    if (Array.isArray(output)) {
-      const chunks = []
-      for (const item of output) {
-        const content = Array.isArray(item?.content) ? item.content : []
-        for (const part of content) {
-          const textValue = asText(part?.text) || asText(part?.output_text)
-          if (textValue) {
-            chunks.push(textValue)
-          }
-        }
-      }
-      if (chunks.length > 0) {
-        return chunks.join('\n')
-      }
-    }
+  function extractGeminiText(payload) {
     const parts = payload?.candidates?.[0]?.content?.parts
     if (!Array.isArray(parts) || parts.length === 0) {
       return ''

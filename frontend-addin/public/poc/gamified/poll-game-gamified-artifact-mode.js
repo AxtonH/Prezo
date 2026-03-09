@@ -148,6 +148,14 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
   const promptText = typeof userPrompt === 'string' ? userPrompt.trim() : ''
   const pollTitle =
     typeof artifactContext.pollTitle === 'string' ? artifactContext.pollTitle.trim() : ''
+  const selector =
+    typeof artifactContext.pollSelector === 'string'
+      ? artifactContext.pollSelector.trim()
+      : ''
+  const endpoints =
+    artifactContext.dataEndpoints && typeof artifactContext.dataEndpoints === 'object'
+      ? artifactContext.dataEndpoints
+      : {}
   const hasExistingArtifact = Boolean(artifactContext?.hasExistingArtifact)
   const requestMode =
     typeof artifactContext?.requestMode === 'string' ? artifactContext.requestMode.trim() : ''
@@ -160,14 +168,15 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
       artifactContext.failedArtifactHtml.trim()
   )
 
+  const endpointLines = Object.entries(endpoints)
+    .filter(([, value]) => typeof value === 'string' && value.trim())
+    .map(([key, value]) => `- ${key}: ${value}`)
+
   return [
     'Artifact mode is active.',
     'Generate a full creative artifact experience with complete control over layout, visuals, and motion.',
     'Do not constrain output to existing poll game shape/label templates.',
     'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
-    'Default to a genuinely gamified result, not a corporate dashboard or analytics UI.',
-    'Avoid generic glass cards, KPI panels, admin-console boxes, and technical control labels unless the user explicitly asks for that style.',
-    'Favor a bold game/show metaphor with one dominant visual mechanic instead of many informational boxes.',
     'Output should be raw HTML that can render from live poll state updates.',
     'Define window.prezoRenderPoll(state) and use state.poll.question, state.poll.options, state.totalVotes, state.meta.',
     'Do not fetch live poll data yourself. Do not open WebSockets, EventSource connections, or additional network requests for poll state.',
@@ -191,9 +200,12 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'If the concept would overflow, reduce scale, simplify, or reposition elements instead of allowing any part of the scene to be clipped.',
     'Poll updates must be smooth and flicker-free (200ms-500ms easing) without re-mounting the whole scene.',
     'Use keyed reconciliation by option id and update only changed nodes when possible.',
-    'Do not expose raw technical metadata in the UI such as session ids, poll ids, request mode labels, selector labels, endpoint labels, "latest/open", "visible units", or "block scale" unless the user explicitly asks for a technical diagnostic display.',
     'Avoid markdown fences and explanations; return artifact HTML only.',
     pollTitle ? `Live poll title: ${pollTitle}` : '',
+    selector ? `Poll selector: ${selector}` : '',
+    endpointLines.length > 0
+      ? `Live poll data endpoints:\n${endpointLines.join('\n')}`
+      : '',
     runtimeRenderError ? `Latest runtime render failure: ${runtimeRenderError}` : '',
     `User request: ${promptText || 'Build a custom artifact-style poll experience around the live data.'}`
   ]

@@ -11,14 +11,10 @@ from pydantic import BaseModel, Field
 from ..config import settings
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-DEFAULT_OPENAI_MODEL = "gpt-5.2"
-OPENAI_MODEL_PREFIXES = (
-    "gpt-",
-    "chatgpt-",
-    "o1",
-    "o3",
-    "o4",
-)
+DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
+LEGACY_GEMINI_MODELS = {
+    "gemini-2.0-flash",
+}
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
@@ -57,22 +53,6 @@ ARTIFACT_ESM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(r"^\s*export\s+.+$", re.MULTILINE),
         "script contains an `export` statement, which is not allowed in artifact output.",
-    ),
-)
-ARTIFACT_UNSAFE_DOM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (
-        re.compile(
-            r"""document\.(?:querySelector|getElementById)\s*\([^)]*\)\s*\.\s*(?:innerText|textContent|innerHTML)\s*=""",
-            re.IGNORECASE,
-        ),
-        "script mutates text/html on a direct DOM query result without checking the element exists.",
-    ),
-    (
-        re.compile(
-            r"""document\.(?:querySelector|getElementById)\s*\([^)]*\)\s*\.\s*style\s*\.""",
-            re.IGNORECASE,
-        ),
-        "script mutates style on a direct DOM query result without checking the element exists.",
     ),
 )
 
@@ -137,10 +117,6 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Assume base poll chrome can be replaced by your artifact scene composition.",
         "- You have full creative freedom with HTML, CSS, and JavaScript animation.",
         "- By default, produce a polished, presentation-quality artifact scene rather than a rough experiment.",
-        "- Default to a genuinely gamified scene, not a corporate dashboard, analytics panel, admin console, or generic glassmorphism UI.",
-        "- Avoid KPI cards, split-panel control-room layouts, repeated rounded info boxes, and obvious AI-dashboard aesthetics unless the user explicitly asks for them.",
-        "- Prefer one strong game/show metaphor with a focal mechanic, environmental framing, and a clear sense of play.",
-        "- If the prompt is open-ended, lean toward game-show, arcade, stage, arena, board-game, or physical-world metaphors rather than dashboards.",
         "- Favor balanced composition, clear alignment, and strong visual hierarchy across the full 16:9 frame.",
         "- Keep important content comfortably inside the canvas with safe padding so nothing critical is clipped.",
         "- Be expressive and creative, but avoid messy, chaotic, or gimmicky layouts unless the user explicitly asks for that.",
@@ -154,8 +130,6 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- If using discrete objects such as blocks, tokens, icons, or pieces, group them into scalable units and cap the visible count so the layout still works for 100+ votes.",
         "- Always preserve exact vote counts and percentages in text even when the main visual uses grouped or bucketed units.",
         "- Prefer proportion, grouped units, stacked segments, or bucketed representations over naive one-object-per-vote visuals.",
-        "- Do not expose raw implementation metadata in the visible UI: no session ids, poll ids, endpoint labels, selector labels, request modes, `latest/open`, `block scale`, `visible units`, or similar internal control text unless the user explicitly requests technical diagnostics.",
-        "- Hide support math and scaling heuristics behind the design. Show only player-facing or audience-facing information.",
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
         "- In window.prezoRenderPoll(state), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
@@ -209,49 +183,55 @@ class PollGameArtifactAssistantResponse(BaseModel):
     text: str
     model: str
 
-async def request_openai_text(
+
+async def request_gemini_text(
     *,
     api_key: str,
-    base_url: str,
     model: str,
     system_instruction: str,
     prompt_text: str,
+    temperature: float,
+    top_p: float,
     max_output_tokens: int,
+    response_mime_type: str,
     timeout_seconds: float,
 ) -> str:
-    normalized_base_url = normalize_openai_base_url(base_url)
-    endpoint = f"{normalized_base_url}/responses"
+    endpoint = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent"
+    )
     body = {
-        "model": model,
-        "instructions": system_instruction,
-        "input": prompt_text,
-        "max_output_tokens": max_output_tokens,
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt_text}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": temperature,
+            "topP": top_p,
+            "maxOutputTokens": max_output_tokens,
+            "responseMimeType": response_mime_type,
+        },
     }
 
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=max(1.0, float(settings.openai_connect_timeout_seconds)),
-                read=max(1.0, timeout_seconds),
-                write=max(30.0, min(timeout_seconds, 120.0)),
-                pool=max(15.0, min(timeout_seconds, 60.0)),
-            )
+            timeout=httpx.Timeout(timeout_seconds, connect=10.0)
         ) as client:
             response = await client.post(
                 endpoint,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
+                    "x-goog-api-key": api_key,
                 },
                 json=body,
             )
     except httpx.RequestError as exc:
-        detail = str(exc).strip() or exc.__class__.__name__
-        if isinstance(exc, httpx.ReadTimeout):
-            detail = f"ReadTimeout after {timeout_seconds:.0f}s"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unable to reach OpenAI API at {normalized_base_url}: {detail}",
+            detail="Unable to reach Gemini API.",
         ) from exc
 
     raw_payload: Any = {}
@@ -261,14 +241,14 @@ async def request_openai_text(
         except ValueError:
             raw_payload = {}
     if response.status_code >= 400:
-        detail = extract_openai_error(raw_payload) or f"OpenAI request failed ({response.status_code})"
+        detail = extract_gemini_error(raw_payload) or f"Gemini request failed ({response.status_code})"
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    text = extract_openai_text(raw_payload)
+    text = extract_gemini_text(raw_payload)
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="OpenAI response did not include text content.",
+            detail="Gemini response did not include text content.",
         )
     return text
 
@@ -277,26 +257,31 @@ async def request_openai_text(
 async def create_poll_game_edit_plan(
     payload: PollGameEditPlanRequest,
 ) -> PollGameEditPlanResponse:
-    openai_api_key = (settings.openai_api_key or "").strip()
-    if not openai_api_key:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set OPENAI_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_openai_model_name(payload.model)
-    model = requested_model or resolve_openai_default_model()
-    text = await request_openai_text(
-        api_key=openai_api_key,
-        base_url=settings.openai_base_url,
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    text = await request_gemini_text(
+        api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_SYSTEM_INSTRUCTION,
         prompt_text=json.dumps(
             {"prompt": payload.prompt, "context": payload.context},
             indent=2,
         ),
+        temperature=0.2,
+        top_p=0.9,
         max_output_tokens=1400,
-        timeout_seconds=max(30.0, float(settings.openai_plan_timeout_seconds)),
+        response_mime_type="application/json",
+        timeout_seconds=45.0,
     )
     normalized_plan = normalize_poll_game_plan(text)
 
@@ -310,58 +295,43 @@ async def create_poll_game_edit_plan(
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactBuildResponse:
-    artifact_context = payload.context.get("artifact", {})
-    request_mode = ""
-    if isinstance(artifact_context, dict):
-        request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
-    model = choose_artifact_generation_model(
-        requested_model=payload.model or "",
-        request_mode=request_mode,
-    )
-    openai_api_key = (settings.openai_api_key or "").strip()
-    if not openai_api_key:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Artifact build is not configured. Set OPENAI_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
-    generation_max_output_tokens = 5200
-    generation_timeout_seconds = max(
-        60.0, float(settings.openai_artifact_build_timeout_seconds)
-    )
-    if request_mode == "edit":
-        generation_max_output_tokens = 12000
-        generation_timeout_seconds = max(
-            90.0, float(settings.openai_artifact_edit_timeout_seconds)
-        )
-    elif request_mode == "repair":
-        generation_max_output_tokens = 14000
-        generation_timeout_seconds = max(
-            90.0, float(settings.openai_artifact_repair_timeout_seconds)
-        )
-    prompt_text = json.dumps(
-        {"prompt": payload.prompt, "context": payload.context},
-        indent=2,
-    )
-    text = await request_openai_text(
-        api_key=openai_api_key,
-        base_url=settings.openai_base_url,
+
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    text = await request_gemini_text(
+        api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-        prompt_text=prompt_text,
-        max_output_tokens=generation_max_output_tokens,
-        timeout_seconds=generation_timeout_seconds,
+        prompt_text=json.dumps(
+            {"prompt": payload.prompt, "context": payload.context},
+            indent=2,
+        ),
+        temperature=0.8,
+        top_p=0.95,
+        max_output_tokens=5200,
+        response_mime_type="text/plain",
+        timeout_seconds=60.0,
     )
 
     html = normalize_poll_game_artifact_html(text)
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="AI response did not include artifact HTML.",
+            detail="Gemini response did not include artifact HTML.",
         )
     validation_issues = validate_poll_game_artifact_html(html)
     if validation_issues:
         repaired_html = await attempt_artifact_repair(
-            api_key=openai_api_key,
+            api_key=api_key,
             model=model,
             original_prompt=payload.prompt,
             context=payload.context,
@@ -389,30 +359,31 @@ async def create_poll_game_artifact_build(
 async def create_poll_game_artifact_answer(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactAssistantResponse:
-    model = choose_artifact_generation_model(
-        requested_model=payload.model or "",
-        request_mode="answer",
-    )
-    openai_api_key = (settings.openai_api_key or "").strip()
-    prompt_text = json.dumps(
-        {"prompt": payload.prompt, "context": payload.context},
-        indent=2,
-    )
-    if not openai_api_key:
+    api_key = (settings.gemini_api_key or "").strip()
+    if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Artifact assistant is not configured. Set OPENAI_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
-    text = await request_openai_text(
-        api_key=openai_api_key,
-        base_url=settings.openai_base_url,
+
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = configured_model or DEFAULT_GEMINI_MODEL
+    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
+        model = requested_model
+    text = await request_gemini_text(
+        api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
-        prompt_text=prompt_text,
-        max_output_tokens=900,
-        timeout_seconds=max(
-            45.0, float(settings.openai_artifact_answer_timeout_seconds)
+        prompt_text=json.dumps(
+            {"prompt": payload.prompt, "context": payload.context},
+            indent=2,
         ),
+        temperature=0.25,
+        top_p=0.9,
+        max_output_tokens=900,
+        response_mime_type="text/plain",
+        timeout_seconds=45.0,
     )
 
     answer = (text or "").strip()
@@ -450,119 +421,64 @@ async def attempt_artifact_repair(
             html,
         ]
     )
-    text = await request_openai_text(
+    text = await request_gemini_text(
         api_key=api_key,
-        base_url=settings.openai_base_url,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
-        max_output_tokens=14000,
-        timeout_seconds=max(
-            90.0, float(settings.openai_artifact_repair_timeout_seconds)
-        ),
+        temperature=0.25,
+        top_p=0.9,
+        max_output_tokens=5200,
+        response_mime_type="text/plain",
+        timeout_seconds=60.0,
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()
 
-def extract_openai_text(payload: Any) -> str:
+
+def extract_gemini_text(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
-    direct = payload.get("output_text")
-    if isinstance(direct, str) and direct.strip():
-        return direct.strip()
-    output = payload.get("output")
-    if not isinstance(output, list):
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return ""
+    first = candidates[0] if isinstance(candidates[0], dict) else {}
+    content = first.get("content") if isinstance(first, dict) else {}
+    if not isinstance(content, dict):
+        return ""
+    parts = content.get("parts")
+    if not isinstance(parts, list):
         return ""
     chunks: list[str] = []
-    for item in output:
-        if not isinstance(item, dict):
+    for part in parts:
+        if not isinstance(part, dict):
             continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            text_value = part.get("text")
-            if isinstance(text_value, str) and text_value.strip():
-                chunks.append(text_value.strip())
-                continue
-            if isinstance(part.get("output_text"), str) and part["output_text"].strip():
-                chunks.append(part["output_text"].strip())
+        text = part.get("text")
+        if isinstance(text, str) and text.strip():
+            chunks.append(text.strip())
     return "\n".join(chunks).strip()
 
 
-def extract_openai_error(payload: Any) -> str:
+def extract_gemini_error(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
     error = payload.get("error")
     if not isinstance(error, dict):
         return ""
-    for key in ("message", "code", "type"):
+    for key in ("message", "status"):
         value = error.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
 
 
-def normalize_openai_model_name(value: str | None) -> str:
-    return (value or "").strip()
-
-
-def normalize_openai_base_url(value: str | None) -> str:
+def normalize_gemini_model_name(value: str | None) -> str:
     text = (value or "").strip()
     if not text:
-        return "https://api.openai.com/v1"
-    return text.rstrip("/")
-
-
-def is_openai_model_name(value: str | None) -> bool:
-    text = (value or "").strip().lower()
-    if not text:
-        return False
-    if "codex" in text:
-        return True
-    return text.startswith(OPENAI_MODEL_PREFIXES)
-
-
-def resolve_openai_default_model() -> str:
-    return (
-        normalize_openai_model_name(settings.openai_model)
-        or normalize_openai_model_name(settings.openai_artifact_edit_model)
-        or DEFAULT_OPENAI_MODEL
-    )
-
-
-def choose_artifact_generation_model(
-    *,
-    requested_model: str,
-    request_mode: str,
-) -> str:
-    normalized_requested_model = (requested_model or "").strip()
-    openai_api_key = (settings.openai_api_key or "").strip()
-    openai_default_model = resolve_openai_default_model()
-
-    if is_openai_model_name(normalized_requested_model):
-        if not openai_api_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Requested an OpenAI model but OPENAI_API_KEY is not configured.",
-            )
-        return normalized_requested_model
-
-    if normalized_requested_model:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported AI model '{normalized_requested_model}'. Use an OpenAI model such as gpt-5.2.",
-        )
-
-    if openai_api_key and openai_default_model:
-        return openai_default_model
-
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="No AI model is configured. Set OPENAI_API_KEY to use GPT-5.2.",
-    )
+        return ""
+    if text.startswith("models/"):
+        return text.removeprefix("models/").strip()
+    return text
 
 
 def normalize_poll_game_plan(raw_text: str) -> dict[str, Any]:
@@ -698,9 +614,6 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
             if pattern.search(script_body):
                 issues.append(message)
         for pattern, message in ARTIFACT_JSX_PATTERNS:
-            if pattern.search(script_body):
-                issues.append(message)
-        for pattern, message in ARTIFACT_UNSAFE_DOM_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
         syntax_issue = validate_inline_script_syntax(script_body)
