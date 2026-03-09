@@ -1530,6 +1530,7 @@ import {
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
       hasExistingArtifact: Boolean(state.artifact.html),
       currentArtifactHtml: buildArtifactEditContextMarkup(state.artifact.html),
+      currentArtifactLiveHooks: buildArtifactLiveHookContext(state.artifact.html),
       recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
@@ -1557,8 +1558,47 @@ import {
     if (!text) {
       return ''
     }
-    const collapsed = text.replace(/\s+/g, ' ').trim()
-    return collapsed.length > 18000 ? `${collapsed.slice(0, 18000)}...` : collapsed
+    const normalized = text.trim()
+    if (normalized.length <= 40000) {
+      return normalized
+    }
+    const scriptMatches = [...normalized.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
+    const hookScripts = scriptMatches
+      .map((match) => asText(match?.[0]))
+      .filter(
+        (scriptText) =>
+          scriptText.includes('prezoRenderPoll') ||
+          scriptText.includes('prezo:poll-update') ||
+          scriptText.includes('__PREZO_POLL_STATE') ||
+          scriptText.includes('prezoGetPollState')
+      )
+      .join('\n\n')
+    const head = normalized.slice(0, 18000)
+    const tail = normalized.slice(-6000)
+    const combined = [head, hookScripts, tail].filter(Boolean).join('\n\n<!-- artifact-context-cut -->\n\n')
+    return combined.length > 52000 ? `${combined.slice(0, 52000)}...` : combined
+  }
+
+  function buildArtifactLiveHookContext(markup) {
+    const text = asText(markup)
+    if (!text) {
+      return ''
+    }
+    const scriptMatches = [...text.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
+    const hookScripts = scriptMatches
+      .map((match) => asText(match?.[0]).trim())
+      .filter(
+        (scriptText) =>
+          scriptText.includes('prezoRenderPoll') ||
+          scriptText.includes('prezo:poll-update') ||
+          scriptText.includes('__PREZO_POLL_STATE') ||
+          scriptText.includes('prezoGetPollState')
+      )
+    if (hookScripts.length === 0) {
+      return ''
+    }
+    const joined = hookScripts.join('\n\n')
+    return joined.length > 20000 ? `${joined.slice(0, 20000)}...` : joined
   }
 
   function buildArtifactRecentEditRequests(history) {
