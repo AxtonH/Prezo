@@ -130,6 +130,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Prefer proportion, grouped units, stacked segments, or bucketed representations over naive one-object-per-vote visuals.",
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
+        "- In window.prezoRenderPoll(state), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "- Do not output JSX, TSX, module import/export syntax, or unfinished code.",
         "- Do not require external libraries or network assets unless the user explicitly requests them.",
         "- Do not fetch poll data over HTTP yourself and do not open WebSockets for poll updates.",
