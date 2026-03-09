@@ -131,6 +131,7 @@ import {
       frameReady: false,
       renderConfirmed: false,
       renderErrorCount: 0,
+      fitLocked: false,
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
@@ -1273,6 +1274,9 @@ import {
   function confirmArtifactRenderSuccess() {
     state.artifact.renderConfirmed = true
     state.artifact.renderErrorCount = 0
+    if (state.artifact.reportedContentWidth > 0 && state.artifact.reportedContentHeight > 0) {
+      state.artifact.fitLocked = true
+    }
     if (state.artifact.html) {
       state.artifact.lastStableHtml = state.artifact.html
     }
@@ -1406,6 +1410,11 @@ import {
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
+    const hasReportedSize =
+      state.artifact.reportedContentWidth > 0 && state.artifact.reportedContentHeight > 0
+    if (state.artifact.fitLocked && hasReportedSize) {
+      return
+    }
     const rawWidth = Number(widthValue)
     const rawHeight = Number(heightValue)
     const maxWidth = Math.max(stageWidth * 2.4, 1400)
@@ -1418,15 +1427,19 @@ import {
       Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
         ? Math.max(stageHeight, rawHeight)
         : stageHeight
+    const minMaterialDelta = hasReportedSize ? 24 : 2
     if (
-      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < 2 &&
-      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < 2
+      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < minMaterialDelta &&
+      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < minMaterialDelta
     ) {
       return
     }
     state.artifact.reportedContentWidth = normalizedWidth
     state.artifact.reportedContentHeight = normalizedHeight
     applyArtifactFrameFit()
+    if (state.artifact.renderConfirmed) {
+      state.artifact.fitLocked = true
+    }
   }
 
   function clearArtifactPostLoadReplays() {
@@ -2241,6 +2254,7 @@ import {
     state.artifact.frameReady = false
     state.artifact.renderConfirmed = false
     state.artifact.renderErrorCount = 0
+    state.artifact.fitLocked = false
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
@@ -2267,6 +2281,7 @@ import {
     state.artifact.pendingRequestKind = ''
     state.artifact.renderConfirmed = false
     state.artifact.renderErrorCount = 0
+    state.artifact.fitLocked = false
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
