@@ -213,7 +213,8 @@ async def request_openai_text(
     max_output_tokens: int,
     timeout_seconds: float,
 ) -> str:
-    endpoint = f"{(base_url or 'https://api.openai.com/v1').rstrip('/')}/responses"
+    normalized_base_url = normalize_openai_base_url(base_url)
+    endpoint = f"{normalized_base_url}/responses"
     body = {
         "model": model,
         "instructions": system_instruction,
@@ -234,9 +235,10 @@ async def request_openai_text(
                 json=body,
             )
     except httpx.RequestError as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to reach OpenAI API.",
+            detail=f"Unable to reach OpenAI API at {normalized_base_url}: {detail}",
         ) from exc
 
     raw_payload: Any = {}
@@ -482,6 +484,13 @@ def extract_openai_error(payload: Any) -> str:
 
 def normalize_openai_model_name(value: str | None) -> str:
     return (value or "").strip()
+
+
+def normalize_openai_base_url(value: str | None) -> str:
+    text = (value or "").strip()
+    if not text:
+        return "https://api.openai.com/v1"
+    return text.rstrip("/")
 
 
 def is_openai_model_name(value: str | None) -> bool:
