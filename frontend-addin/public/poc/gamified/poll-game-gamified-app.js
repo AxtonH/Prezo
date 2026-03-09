@@ -1,9 +1,8 @@
 import {
   AI_BOX_RESIZE_TARGETS,
   AI_CHAT_MAX_MESSAGES,
-  AI_GEMINI_DEFAULT_MODEL,
-  AI_GEMINI_LEGACY_MODELS,
-  AI_GEMINI_MODEL_STORAGE_KEY,
+  AI_DEFAULT_MODEL,
+  AI_MODEL_STORAGE_KEY,
   AI_MOVE_TARGETS,
   AI_SCALE_RESIZE_TARGETS,
   AI_TARGET_ALIASES,
@@ -661,10 +660,7 @@ import {
   }
 
   function setupAiChat() {
-    try {
-      localStorage.removeItem('prezo.poll-game-poc.gemini-api-key.v1')
-    } catch {}
-    state.ai.model = resolveAiGeminiModel()
+    state.ai.model = resolveAiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
     updateAiComposerState()
@@ -1777,7 +1773,7 @@ import {
       return ''
     }
     const normalized = text.trim()
-    if (normalized.length <= 40000) {
+    if (normalized.length <= 120000) {
       return normalized
     }
     const scriptMatches = [...normalized.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
@@ -1791,10 +1787,10 @@ import {
           scriptText.includes('prezoGetPollState')
       )
       .join('\n\n')
-    const head = normalized.slice(0, 18000)
-    const tail = normalized.slice(-6000)
+    const head = normalized.slice(0, 45000)
+    const tail = normalized.slice(-20000)
     const combined = [head, hookScripts, tail].filter(Boolean).join('\n\n<!-- artifact-context-cut -->\n\n')
-    return combined.length > 52000 ? `${combined.slice(0, 52000)}...` : combined
+    return combined.length > 140000 ? `${combined.slice(0, 140000)}...` : combined
   }
 
   function buildArtifactLiveHookContext(markup) {
@@ -1816,7 +1812,7 @@ import {
       return ''
     }
     const joined = hookScripts.join('\n\n')
-    return joined.length > 20000 ? `${joined.slice(0, 20000)}...` : joined
+    return joined.length > 50000 ? `${joined.slice(0, 50000)}...` : joined
   }
 
   function buildArtifactRecentEditRequests(history) {
@@ -1886,25 +1882,19 @@ import {
     return Math.ceil(numeric / 1000) * 1000
   }
 
-  function resolveAiGeminiModel() {
-    const queryModel = asText(query.get('geminiModel'))
+  function resolveAiModel() {
+    const queryModel = asText(query.get('model'))
     if (queryModel) {
       try {
-        localStorage.setItem(AI_GEMINI_MODEL_STORAGE_KEY, queryModel)
+        localStorage.setItem(AI_MODEL_STORAGE_KEY, queryModel)
       } catch {}
       return queryModel
     }
-    const storedModel = asText(safeStorageGet(AI_GEMINI_MODEL_STORAGE_KEY))
-    if (storedModel && AI_GEMINI_LEGACY_MODELS.has(storedModel)) {
-      try {
-        localStorage.removeItem(AI_GEMINI_MODEL_STORAGE_KEY)
-      } catch {}
-      return AI_GEMINI_DEFAULT_MODEL
-    }
+    const storedModel = asText(safeStorageGet(AI_MODEL_STORAGE_KEY))
     if (storedModel) {
       return storedModel
     }
-    return AI_GEMINI_DEFAULT_MODEL
+    return AI_DEFAULT_MODEL
   }
 
   function handleAiChatFabClick() {
@@ -2121,7 +2111,7 @@ import {
   }
 
   async function requestAiEditPlan(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-edit-plan`
     const body = {
       prompt,
@@ -2143,7 +2133,7 @@ import {
         `Request failed (${response.status})`
       throw new Error(message)
     }
-    const text = asText(payload?.text) || extractGeminiText(payload)
+    const text = asText(payload?.text) || extractAiText(payload)
     if (!text) {
       throw new Error('AI service returned an empty response.')
     }
@@ -2151,7 +2141,7 @@ import {
   }
 
   async function requestAiArtifactBuild(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
     const body = {
       prompt,
@@ -2185,7 +2175,7 @@ import {
   }
 
   async function requestAiArtifactAnswer(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
     const body = {
       prompt,
@@ -2409,7 +2399,27 @@ import {
     }
   }
 
-  function extractGeminiText(payload) {
+  function extractAiText(payload) {
+    const directText = asText(payload?.output_text)
+    if (directText) {
+      return directText
+    }
+    const output = payload?.output
+    if (Array.isArray(output)) {
+      const chunks = []
+      for (const item of output) {
+        const content = Array.isArray(item?.content) ? item.content : []
+        for (const part of content) {
+          const textValue = asText(part?.text) || asText(part?.output_text)
+          if (textValue) {
+            chunks.push(textValue)
+          }
+        }
+      }
+      if (chunks.length > 0) {
+        return chunks.join('\n')
+      }
+    }
     const parts = payload?.candidates?.[0]?.content?.parts
     if (!Array.isArray(parts) || parts.length === 0) {
       return ''

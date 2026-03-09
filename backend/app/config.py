@@ -22,8 +22,10 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:5174"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-3-flash-preview"
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-5.2"
+    openai_artifact_edit_model: str = "gpt-5.2"
 
 
 settings = Settings()
