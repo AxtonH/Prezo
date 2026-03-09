@@ -28,6 +28,7 @@ import {
 import {
   ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
+  ARTIFACT_EDIT_QUICK_ACTIONS,
   ARTIFACT_EDIT_PLACEHOLDER,
   ARTIFACT_EDIT_READY_STATUS,
   ARTIFACT_LAYOUT_HORIZONTAL,
@@ -188,7 +189,9 @@ import {
     artifactComposerAnchor: must('artifact-composer-anchor'),
     artifactComposerCollapse: must('artifact-composer-collapse'),
     artifactComposerFab: must('artifact-composer-fab'),
+    artifactComposerSubtitle: must('artifact-composer-subtitle'),
     artifactChatLog: must('artifact-chat-log'),
+    artifactEditQuickActions: must('artifact-edit-quick-actions'),
     artifactPromptForm: must('artifact-prompt-form'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
@@ -672,6 +675,7 @@ import {
     syncArtifactComposerVisibility()
     resetArtifactConversation({ preserveInput: false })
     syncArtifactComposerBusyState()
+    renderArtifactEditQuickActions()
     hideArtifactStagePlaceholder()
     hideArtifactStage()
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
@@ -681,6 +685,7 @@ import {
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactEditQuickActions.addEventListener('click', handleArtifactEditQuickActionClick)
   }
 
   function syncArtifactComposerVisibility() {
@@ -776,9 +781,14 @@ import {
   }
 
   function syncArtifactComposerBusyState() {
+    const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
-    el.artifactPromptSubmit.textContent = state.artifact.busy ? 'Working...' : 'Send'
+    el.artifactPromptSubmit.textContent = state.artifact.busy
+      ? 'Working...'
+      : canEditArtifact
+        ? 'Apply'
+        : 'Send'
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -811,7 +821,14 @@ import {
       : canEditArtifact
         ? ARTIFACT_EDIT_PLACEHOLDER
         : ARTIFACT_DEFAULT_PLACEHOLDER
+    el.artifactComposerSubtitle.textContent = currentStep
+      ? 'Answer 3 short questions to generate the first artifact.'
+      : canEditArtifact
+        ? 'Refine the current artifact with targeted changes. Small edits work best.'
+        : 'Answer the first question to begin building an artifact.'
     renderArtifactConversation()
+    renderArtifactEditQuickActions()
+    syncArtifactComposerBusyState()
     if (state.artifact.busy) {
       return
     }
@@ -832,21 +849,37 @@ import {
 
   function renderArtifactConversation() {
     const currentStepIndex = state.artifact.conversationStepIndex
+    const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     const fragment = document.createDocumentFragment()
-    for (let index = 0; index < ARTIFACT_CONVERSATION_STEPS.length; index += 1) {
-      const step = ARTIFACT_CONVERSATION_STEPS[index]
-      const answer = asText(state.artifact.conversationAnswers?.[step.key]).trim()
-      if (index > currentStepIndex && !answer) {
-        break
+    if (canEditArtifact) {
+      const summary = buildArtifactConversationSummary(state.artifact.lastAnswers)
+      if (summary) {
+        fragment.appendChild(createArtifactChatMessage(summary, 'assistant summary'))
       }
-      if (index < currentStepIndex || index === currentStepIndex) {
-        fragment.appendChild(createArtifactChatMessage(step.question, 'assistant'))
+      if (!state.artifact.editHistory.length) {
+        fragment.appendChild(
+          createArtifactChatMessage(
+            'Ask for one focused change at a time. For larger reworks, say so explicitly.',
+            'assistant'
+          )
+        )
       }
-      if (answer) {
-        fragment.appendChild(createArtifactChatMessage(answer, 'user'))
-      }
-      if (index === currentStepIndex && !answer) {
-        break
+    } else {
+      for (let index = 0; index < ARTIFACT_CONVERSATION_STEPS.length; index += 1) {
+        const step = ARTIFACT_CONVERSATION_STEPS[index]
+        const answer = asText(state.artifact.conversationAnswers?.[step.key]).trim()
+        if (index > currentStepIndex && !answer) {
+          break
+        }
+        if (index < currentStepIndex || index === currentStepIndex) {
+          fragment.appendChild(createArtifactChatMessage(step.question, 'assistant'))
+        }
+        if (answer) {
+          fragment.appendChild(createArtifactChatMessage(answer, 'user'))
+        }
+        if (index === currentStepIndex && !answer) {
+          break
+        }
       }
     }
     const editHistory = Array.isArray(state.artifact.editHistory) ? state.artifact.editHistory : []
@@ -861,9 +894,46 @@ import {
 
   function createArtifactChatMessage(text, tone) {
     const node = document.createElement('div')
-    node.className = `artifact-chat-message ${tone === 'user' ? 'user' : 'assistant'}`
+    const normalizedTone = asText(tone).trim().toLowerCase()
+    node.className = `artifact-chat-message ${normalizedTone === 'user' ? 'user' : 'assistant'}`
+    if (normalizedTone.includes('summary')) {
+      node.classList.add('summary')
+    }
     node.textContent = asText(text)
     return node
+  }
+
+  function renderArtifactEditQuickActions() {
+    const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
+    el.artifactEditQuickActions.classList.toggle('hidden', !canEditArtifact)
+    if (!canEditArtifact) {
+      el.artifactEditQuickActions.replaceChildren()
+      return
+    }
+    const fragment = document.createDocumentFragment()
+    for (const action of ARTIFACT_EDIT_QUICK_ACTIONS) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'artifact-edit-quick-action'
+      button.dataset.artifactPrompt = asText(action?.prompt)
+      button.textContent = asText(action?.label)
+      fragment.appendChild(button)
+    }
+    el.artifactEditQuickActions.replaceChildren(fragment)
+  }
+
+  function handleArtifactEditQuickActionClick(event) {
+    const button = event.target instanceof HTMLElement ? event.target.closest('button') : null
+    if (!(button instanceof HTMLButtonElement)) {
+      return
+    }
+    const prompt = asText(button.dataset.artifactPrompt).trim()
+    if (!prompt || state.artifact.busy) {
+      return
+    }
+    el.artifactPromptInput.value = prompt
+    el.artifactPromptInput.focus()
+    setArtifactComposerStatus('Suggested edit loaded. Review it and click Apply.', 'idle')
   }
 
   function getArtifactConversationStep(index = state.artifact.conversationStepIndex) {
@@ -880,6 +950,26 @@ import {
       audienceSize: asText(answers?.audienceSize),
       designGuidelines: asText(answers?.designGuidelines)
     }
+  }
+
+  function buildArtifactConversationSummary(answers) {
+    const artifactType = asText(answers?.artifactType).trim()
+    const audienceSize = asText(answers?.audienceSize).trim()
+    const designGuidelines = asText(answers?.designGuidelines).trim()
+    const parts = []
+    if (artifactType) {
+      parts.push(`Type: ${artifactType}`)
+    }
+    if (audienceSize) {
+      parts.push(`Audience: ${audienceSize}`)
+    }
+    if (designGuidelines) {
+      parts.push(`Guidelines: ${designGuidelines}`)
+    }
+    if (parts.length === 0) {
+      return ''
+    }
+    return `Current artifact brief\n${parts.join('\n')}`
   }
 
   function setArtifactComposerStatus(text, type = 'idle') {
@@ -1440,6 +1530,7 @@ import {
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
       hasExistingArtifact: Boolean(state.artifact.html),
       currentArtifactHtml: buildArtifactEditContextMarkup(state.artifact.html),
+      recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
@@ -1468,6 +1559,17 @@ import {
     }
     const collapsed = text.replace(/\s+/g, ' ').trim()
     return collapsed.length > 18000 ? `${collapsed.slice(0, 18000)}...` : collapsed
+  }
+
+  function buildArtifactRecentEditRequests(history) {
+    if (!Array.isArray(history)) {
+      return []
+    }
+    return history
+      .filter((entry) => entry && typeof entry === 'object' && asText(entry.tone) === 'user')
+      .slice(-6)
+      .map((entry) => asText(entry.text).trim())
+      .filter(Boolean)
   }
 
   function estimateArtifactVoteCapacity(poll, answers = null) {
@@ -8431,6 +8533,7 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', handleArtifactViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)

@@ -1210,6 +1210,13 @@ h1 {
   color: #4f79a5;
 }
 
+.artifact-composer-subtitle {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #4c7099;
+}
+
 .artifact-composer-collapse {
   display: none;
   border: 1px solid rgba(151, 184, 222, 0.78);
@@ -1258,22 +1265,72 @@ h1 {
   color: #123b67;
 }
 
+.artifact-chat-message.summary {
+  max-width: 100%;
+  border-style: dashed;
+  background: rgba(245, 250, 255, 0.98);
+}
+
+.artifact-edit-quick-actions {
+  margin-top: 7px;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.artifact-edit-quick-actions.hidden {
+  display: none;
+}
+
+.artifact-edit-quick-actions::-webkit-scrollbar {
+  height: 5px;
+}
+
+.artifact-edit-quick-actions::-webkit-scrollbar-thumb {
+  background: rgba(145, 179, 217, 0.5);
+  border-radius: 4px;
+}
+
+.artifact-edit-quick-action {
+  flex: 0 0 auto;
+  border: 1px solid rgba(155, 188, 226, 0.8);
+  border-radius: 999px;
+  min-height: 28px;
+  padding: 5px 10px;
+  background: rgba(241, 248, 255, 0.98);
+  color: #244a79;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.artifact-edit-quick-action:hover {
+  border-color: rgba(84, 144, 219, 0.9);
+  background: rgba(227, 240, 255, 0.98);
+}
+
 .artifact-prompt-form {
   margin-top: 7px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
+  align-items: end;
 }
 
 .artifact-prompt-input {
   width: 100%;
-  min-height: 32px;
+  min-height: 68px;
+  max-height: 150px;
   border: 1px solid rgba(150, 186, 226, 0.78);
   background: rgba(255, 255, 255, 0.98);
   color: #17395f;
   border-radius: 8px;
   padding: 6px 9px;
   font-size: 12px;
+  line-height: 1.42;
+  resize: vertical;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
 .artifact-prompt-input:focus-visible {
@@ -1356,6 +1413,10 @@ h1 {
   min-height: 0;
   max-height: min(32vh, 280px);
   padding-right: 3px;
+}
+
+.artifact-composer.is-floating .artifact-edit-quick-actions {
+  margin-top: 0;
 }
 
 .artifact-composer.is-floating .artifact-chat-message {

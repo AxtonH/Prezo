@@ -3,12 +3,40 @@ export const ARTIFACT_LAYOUT_HORIZONTAL = 'horizontal'
 export const ARTIFACT_LAYOUT_VERTICAL = 'vertical'
 
 export const ARTIFACT_DEFAULT_PLACEHOLDER = 'Type your answer here.'
-export const ARTIFACT_EDIT_PLACEHOLDER = 'Describe what to change in the artifact.'
+export const ARTIFACT_EDIT_PLACEHOLDER =
+  'Example: make the title 20% smaller and keep the rest of the scene unchanged.'
 
 export const ARTIFACT_WAITING_STATUS =
   'Artifact editor is ready. Answer the first question to begin.'
 export const ARTIFACT_EDIT_READY_STATUS =
-  'Artifact ready. Describe what to change to refine it.'
+  'Edit mode is active. Ask for targeted changes, or say "redesign it" for a broader rework.'
+
+export const ARTIFACT_EDIT_QUICK_ACTIONS = Object.freeze([
+  {
+    label: 'Improve Readability',
+    prompt: 'Improve readability. Keep the current concept, layout, and scene style.'
+  },
+  {
+    label: 'Tighten Layout',
+    prompt: 'Tighten the layout and spacing. Do not redesign the artifact.'
+  },
+  {
+    label: 'Soften Motion',
+    prompt: 'Make the motion smoother and less distracting. Keep the current visuals.'
+  },
+  {
+    label: 'Smaller Title',
+    prompt: 'Make the title smaller and rebalance the composition without changing the overall concept.'
+  },
+  {
+    label: 'Reduce Clutter',
+    prompt: 'Reduce clutter and simplify decorative elements while keeping the same concept.'
+  },
+  {
+    label: 'Broader Redesign',
+    prompt: 'Redesign the artifact more broadly while preserving live poll functionality.'
+  }
+])
 
 export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
   {
@@ -69,7 +97,11 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     designGuidelines ? `Current design guidelines: ${designGuidelines}` : '',
     request ? `Edit request: ${request}` : '',
     'Revise the current artifact instead of starting from scratch.',
-    'Preserve the existing live poll wiring, structure, and working design decisions unless the edit request explicitly asks for a broader redesign.',
+    'This is edit mode, not rebuild mode.',
+    'Make the smallest viable change that satisfies the latest edit request.',
+    'Preserve the existing live poll wiring, structure, scene concept, layout, and working design decisions unless the edit request explicitly asks for a broader redesign.',
+    'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
+    'Prefer surgical refinements over reinterpretation.',
     'Return the full updated artifact HTML.'
   ]
     .filter(Boolean)
@@ -97,6 +129,8 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
       ? artifactContext.dataEndpoints
       : {}
   const hasExistingArtifact = Boolean(artifactContext?.hasExistingArtifact)
+  const requestMode =
+    typeof artifactContext?.requestMode === 'string' ? artifactContext.requestMode.trim() : ''
 
   const endpointLines = Object.entries(endpoints)
     .filter(([, value]) => typeof value === 'string' && value.trim())
@@ -113,6 +147,9 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Treat host-delivered state updates as the only live data source.',
     hasExistingArtifact
       ? 'If context.artifact.currentArtifactHtml is provided, treat it as the current artifact to revise and return a full updated version rather than a brand-new unrelated concept.'
+      : '',
+    requestMode === 'edit'
+      ? 'Edit mode is active. Apply the latest request as a targeted refinement. Do not redesign the full artifact unless the user explicitly asks for that.'
       : '',
     'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
     'Keep all primary UI fully inside the viewport with safe padding (about 6-10%); no vertical or horizontal clipping.',

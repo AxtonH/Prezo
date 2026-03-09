@@ -345,7 +345,12 @@
       </section>
       <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact editor">
         <div class="artifact-composer-header">
-          <p class="artifact-kicker">Artifact Editor</p>
+          <div>
+            <p class="artifact-kicker">Artifact Editor</p>
+            <p id="artifact-composer-subtitle" class="artifact-composer-subtitle">
+              Answer 3 short questions to generate the first artifact.
+            </p>
+          </div>
           <button
             id="artifact-composer-collapse"
             class="artifact-composer-collapse hidden"
@@ -356,15 +361,20 @@
           </button>
         </div>
         <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
+        <div
+          id="artifact-edit-quick-actions"
+          class="artifact-edit-quick-actions hidden"
+          aria-label="Artifact edit suggestions"
+        ></div>
         <form id="artifact-prompt-form" class="artifact-prompt-form">
-          <input
+          <textarea
             id="artifact-prompt-input"
             class="artifact-prompt-input"
-            type="text"
             placeholder="Type your answer here."
-            maxlength="220"
+            rows="3"
+            maxlength="900"
             aria-label="Describe artifact editor request"
-          />
+          ></textarea>
           <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Send</button>
         </form>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
