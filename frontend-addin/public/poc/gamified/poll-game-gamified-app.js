@@ -36,6 +36,7 @@ import {
   ARTIFACT_VISUAL_MODE,
   buildArtifactConversationPrompt,
   buildArtifactEditPrompt,
+  buildArtifactRepairPrompt,
   buildArtifactAiPrompt,
   createEmptyArtifactAnswers,
   sanitizeArtifactLayout
@@ -50,6 +51,8 @@ import {
   const ARTIFACT_SAFE_FIT_SCALE = 0.98
   const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
   const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
+  const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
+  const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
@@ -113,10 +116,20 @@ import {
       lastPrompt: '',
       lastAnswers: createEmptyArtifactAnswers(),
       html: '',
+      lastStableHtml: '',
+      rollbackHtml: '',
+      activeEditRequest: '',
+      autoRepairInFlight: false,
+      repairAttemptCount: 0,
+      lastRuntimeError: '',
       floatingOpen: false,
       editHistory: [],
       stageSurface: ARTIFACT_STAGE_SURFACE_HIDDEN,
+      instanceId: 0,
+      pendingRequestKind: '',
       frameReady: false,
+      renderConfirmed: false,
+      renderErrorCount: 0,
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
@@ -1207,6 +1220,7 @@ import {
 
   function handleArtifactFrameLoad() {
     state.artifact.frameReady = true
+    state.artifact.renderErrorCount = 0
     state.artifact.lastPayloadKey = ''
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
     if (flushPendingArtifactPayload({ force: true })) {
@@ -1228,6 +1242,14 @@ import {
     if (!message || typeof message !== 'object') {
       return
     }
+    const isArtifactFrameMessage =
+      message.type === ARTIFACT_READY_MESSAGE_TYPE ||
+      message.type === ARTIFACT_SIZE_MESSAGE_TYPE ||
+      message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE ||
+      message.type === ARTIFACT_RENDER_ERROR_MESSAGE_TYPE
+    if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
+      return
+    }
     if (message.type === ARTIFACT_READY_MESSAGE_TYPE) {
       if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
         pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
@@ -1239,6 +1261,143 @@ import {
     }
     if (message.type === ARTIFACT_SIZE_MESSAGE_TYPE) {
       updateArtifactReportedContentSize(message.width, message.height)
+      return
+    }
+    if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
+      confirmArtifactRenderSuccess()
+      return
+    }
+    if (message.type === ARTIFACT_RENDER_ERROR_MESSAGE_TYPE) {
+      handleArtifactRenderError(message)
+    }
+  }
+
+  function confirmArtifactRenderSuccess() {
+    state.artifact.renderConfirmed = true
+    state.artifact.renderErrorCount = 0
+    if (state.artifact.html) {
+      state.artifact.lastStableHtml = state.artifact.html
+    }
+    state.artifact.rollbackHtml = ''
+    state.artifact.pendingRequestKind = ''
+  }
+
+  function handleArtifactRenderError(message) {
+    state.artifact.renderErrorCount = Math.max(
+      state.artifact.renderErrorCount + 1,
+      toInt(message?.failureCount)
+    )
+    if (state.artifact.renderConfirmed || state.artifact.pendingRequestKind !== 'edit') {
+      return
+    }
+    if (!state.artifact.rollbackHtml || state.artifact.renderErrorCount < 3) {
+      return
+    }
+    restoreArtifactAfterFailedEdit(asText(message?.message))
+  }
+
+  function restoreArtifactAfterFailedEdit(errorMessage) {
+    const failedArtifactHtml = normalizeArtifactMarkup(state.artifact.html)
+    const rollbackHtml = normalizeArtifactMarkup(
+      state.artifact.rollbackHtml || state.artifact.lastStableHtml
+    )
+    if (!rollbackHtml) {
+      return
+    }
+    const detail = asText(errorMessage)
+    const statusMessage = 'Artifact edit was reverted because the updated artifact failed to render.'
+    applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback' })
+    showArtifactStageFrame()
+    state.artifact.lastRuntimeError = detail
+    if (
+      state.artifact.activeEditRequest &&
+      !state.artifact.autoRepairInFlight &&
+      state.artifact.repairAttemptCount < 1
+    ) {
+      state.artifact.repairAttemptCount += 1
+      state.artifact.autoRepairInFlight = true
+      const retryMessage =
+        'The edited artifact failed at runtime. Retrying the edit against the last working artifact.'
+      setArtifactComposerStatus(retryMessage, 'pending')
+      appendArtifactEditMessage(
+        'assistant',
+        detail ? `${retryMessage} ${detail}` : retryMessage
+      )
+      void submitArtifactRuntimeRepairRequest({
+        request: state.artifact.activeEditRequest,
+        runtimeError: detail,
+        failedArtifactHtml,
+        baseArtifactHtml: rollbackHtml
+      })
+      return
+    }
+    setArtifactComposerStatus(statusMessage, 'error')
+    appendArtifactEditMessage(
+      'assistant',
+      detail ? `${statusMessage} ${detail}` : statusMessage
+    )
+  }
+
+  async function submitArtifactRuntimeRepairRequest({
+    request,
+    runtimeError,
+    failedArtifactHtml,
+    baseArtifactHtml
+  }) {
+    const normalizedRequest = asText(request).trim()
+    if (!normalizedRequest) {
+      state.artifact.autoRepairInFlight = false
+      return
+    }
+
+    state.artifact.busy = true
+    syncArtifactComposerBusyState()
+
+    try {
+      const context = buildAiEditorContext()
+      const repairPrompt = buildArtifactRepairPrompt(
+        normalizedRequest,
+        runtimeError,
+        state.artifact.lastAnswers
+      )
+      context.artifact = buildArtifactContext(
+        {
+          prompt: repairPrompt,
+          answers: state.artifact.lastAnswers,
+          mode: 'repair',
+          originalEditRequest: normalizedRequest,
+          runtimeRenderError: runtimeError,
+          failedMarkup: failedArtifactHtml,
+          baseMarkup: baseArtifactHtml
+        },
+        context.poll
+      )
+      const aiPrompt = buildArtifactAiPrompt(repairPrompt, context.artifact)
+      const buildResult = await requestAiArtifactBuild(aiPrompt, context)
+      const applied = applyArtifactMarkup(buildResult.html, { requestKind: 'edit' })
+      if (!applied) {
+        const message =
+          'Artifact repair failed because the AI returned empty markup. The previous working artifact was kept.'
+        setArtifactComposerStatus(message, 'error')
+        appendArtifactEditMessage('assistant', message)
+        return
+      }
+      renderFromSnapshot(true)
+      showArtifactStageFrame()
+      const statusMessage =
+        asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
+          ? 'Artifact repaired and updated.'
+          : asText(buildResult.assistantMessage) || 'Artifact repaired and updated.'
+      setArtifactComposerStatus(statusMessage, 'success')
+      appendArtifactEditMessage('assistant', statusMessage)
+    } catch (error) {
+      const message = `Artifact repair failed: ${errorToMessage(error)}`
+      setArtifactComposerStatus(message, 'error')
+      appendArtifactEditMessage('assistant', message)
+    } finally {
+      state.artifact.busy = false
+      state.artifact.autoRepairInFlight = false
+      syncArtifactComposerBusyState()
     }
   }
 
@@ -1418,9 +1577,14 @@ import {
     if (!normalizedRequest) {
       return
     }
+    state.artifact.activeEditRequest = normalizedRequest
+    state.artifact.autoRepairInFlight = false
+    state.artifact.repairAttemptCount = 0
+    state.artifact.lastRuntimeError = ''
     appendArtifactEditMessage('user', normalizedRequest)
     el.artifactPromptInput.value = ''
     if (isArtifactQuestionRequest(normalizedRequest)) {
+      state.artifact.activeEditRequest = ''
       await submitArtifactQuestionRequest(normalizedRequest)
       return
     }
@@ -1504,7 +1668,7 @@ import {
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context)
-      const applied = applyArtifactMarkup(buildResult.html)
+      const applied = applyArtifactMarkup(buildResult.html, { requestKind })
       if (!applied) {
         setArtifactComposerStatus(
           'Artifact request returned empty markup. Try a more specific prompt.',
@@ -1559,15 +1723,32 @@ import {
         : createEmptyArtifactAnswers()
     const requestMode =
       artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.mode) : ''
+    const baseArtifactMarkup =
+      artifactInput && typeof artifactInput === 'object'
+        ? asText(artifactInput.baseMarkup) || state.artifact.html
+        : state.artifact.html
+    const failedArtifactMarkup =
+      artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.failedMarkup) : ''
+    const runtimeRenderError =
+      artifactInput && typeof artifactInput === 'object'
+        ? asText(artifactInput.runtimeRenderError)
+        : ''
+    const originalEditRequest =
+      artifactInput && typeof artifactInput === 'object'
+        ? asText(artifactInput.originalEditRequest)
+        : ''
     const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
 
     return {
       enabled: true,
       lastPrompt: prompt,
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
-      hasExistingArtifact: Boolean(state.artifact.html),
-      currentArtifactHtml: buildArtifactEditContextMarkup(state.artifact.html),
-      currentArtifactLiveHooks: buildArtifactLiveHookContext(state.artifact.html),
+      hasExistingArtifact: Boolean(baseArtifactMarkup),
+      currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkup),
+      currentArtifactLiveHooks: buildArtifactLiveHookContext(baseArtifactMarkup),
+      failedArtifactHtml: buildArtifactEditContextMarkup(failedArtifactMarkup),
+      runtimeRenderError,
+      originalEditRequest: originalEditRequest || prompt,
       recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
@@ -2036,21 +2217,37 @@ import {
     }
   }
 
-  function applyArtifactMarkup(markup) {
+  function applyArtifactMarkup(markup, options = {}) {
     const normalized = normalizeArtifactMarkup(markup)
     if (!normalized) {
       return false
     }
+    const requestKind = asText(options.requestKind).toLowerCase()
+    if (requestKind === 'edit') {
+      state.artifact.rollbackHtml = normalizeArtifactMarkup(
+        state.artifact.lastStableHtml || state.artifact.html
+      )
+      state.artifact.pendingRequestKind = 'edit'
+    } else if (requestKind === 'build') {
+      state.artifact.rollbackHtml = ''
+      state.artifact.pendingRequestKind = 'build'
+    } else {
+      state.artifact.rollbackHtml = ''
+      state.artifact.pendingRequestKind = ''
+    }
     clearArtifactPostLoadReplays()
     state.artifact.html = normalized
+    state.artifact.instanceId += 1
     state.artifact.frameReady = false
+    state.artifact.renderConfirmed = false
+    state.artifact.renderErrorCount = 0
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
-    const srcDoc = buildArtifactSrcDoc(normalized)
+    const srcDoc = buildArtifactSrcDoc(normalized, { instanceId: state.artifact.instanceId })
     if (!srcDoc) {
       return false
     }
@@ -2063,7 +2260,13 @@ import {
   function clearArtifactMarkup() {
     clearArtifactPostLoadReplays()
     state.artifact.html = ''
+    state.artifact.lastStableHtml = ''
+    state.artifact.rollbackHtml = ''
+    state.artifact.instanceId += 1
     state.artifact.frameReady = false
+    state.artifact.pendingRequestKind = ''
+    state.artifact.renderConfirmed = false
+    state.artifact.renderErrorCount = 0
     state.artifact.lastPayloadKey = ''
     state.artifact.lastDeliveredPayload = null
     state.artifact.pendingPayload = null

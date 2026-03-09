@@ -108,6 +108,34 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     .join('\n')
 }
 
+export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {}) {
+  const artifactType =
+    typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
+  const audienceSize =
+    typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
+  const designGuidelines =
+    typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  const request = typeof editRequest === 'string' ? editRequest.trim() : ''
+  const errorText = typeof runtimeError === 'string' ? runtimeError.trim() : ''
+
+  return [
+    artifactType ? `Current artifact type: ${artifactType}` : '',
+    audienceSize ? `Expected audience size: ${audienceSize}` : '',
+    designGuidelines ? `Current design guidelines: ${designGuidelines}` : '',
+    request ? `Edit request: ${request}` : '',
+    errorText ? `Runtime failure to fix: ${errorText}` : '',
+    'Repair the failed edit against the last stable working artifact.',
+    'This is repair mode for a failed edit, not a full rebuild.',
+    'Apply the requested edit while preserving the existing live poll wiring and working scene structure.',
+    'Do not keep the broken selector logic from the failed edited artifact.',
+    'Do not simply return the unchanged stable artifact unless the request is already satisfied.',
+    'Make the smallest viable change that satisfies the edit request and avoids the runtime error.',
+    'Return the full updated artifact HTML.'
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 export function sanitizeArtifactLayout(value, fallback = ARTIFACT_LAYOUT_HORIZONTAL) {
   const layout = typeof value === 'string' ? value.trim().toLowerCase() : ''
   if (layout === ARTIFACT_LAYOUT_VERTICAL || layout === ARTIFACT_LAYOUT_HORIZONTAL) {
@@ -131,6 +159,14 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
   const hasExistingArtifact = Boolean(artifactContext?.hasExistingArtifact)
   const requestMode =
     typeof artifactContext?.requestMode === 'string' ? artifactContext.requestMode.trim() : ''
+  const runtimeRenderError =
+    typeof artifactContext?.runtimeRenderError === 'string'
+      ? artifactContext.runtimeRenderError.trim()
+      : ''
+  const hasFailedArtifact = Boolean(
+    typeof artifactContext?.failedArtifactHtml === 'string' &&
+      artifactContext.failedArtifactHtml.trim()
+  )
 
   const endpointLines = Object.entries(endpoints)
     .filter(([, value]) => typeof value === 'string' && value.trim())
@@ -151,6 +187,12 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     requestMode === 'edit'
       ? 'Edit mode is active. Apply the latest request as a targeted refinement. Do not redesign the full artifact unless the user explicitly asks for that.'
       : '',
+    requestMode === 'repair'
+      ? 'Repair mode is active. The previous edited artifact failed at runtime. Start from context.artifact.currentArtifactHtml as the last stable working artifact, satisfy the latest edit request, and avoid the reported runtime failure.'
+      : '',
+    requestMode === 'repair' && hasFailedArtifact
+      ? 'If context.artifact.failedArtifactHtml is provided, use it only as a reference for what broke. Do not preserve its broken selector or mutation logic.'
+      : '',
     'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
     'Keep all primary UI fully inside the viewport with safe padding (about 6-10%); no vertical or horizontal clipping.',
     'Treat the 16:9 frame as a hard boundary, not a suggestion.',
@@ -164,6 +206,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     endpointLines.length > 0
       ? `Live poll data endpoints:\n${endpointLines.join('\n')}`
       : '',
+    runtimeRenderError ? `Latest runtime render failure: ${runtimeRenderError}` : '',
     `User request: ${promptText || 'Build a custom artifact-style poll experience around the live data.'}`
   ]
     .filter(Boolean)

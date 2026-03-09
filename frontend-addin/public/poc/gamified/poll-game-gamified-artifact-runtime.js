@@ -2,6 +2,8 @@ const ARTIFACT_POLL_MESSAGE_TYPE = 'prezo-poll-state'
 const ARTIFACT_POLL_EVENT_NAME = 'prezo:poll-update'
 const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
 const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
+const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
+const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -20,14 +22,17 @@ export function normalizeArtifactMarkup(rawValue) {
   return unwrapMarkdownFence(raw)
 }
 
-export function buildArtifactSrcDoc(rawMarkup) {
+export function buildArtifactSrcDoc(rawMarkup, options = {}) {
   const normalizedMarkup = normalizeArtifactMarkup(rawMarkup)
   const fallbackMarkup = '<div class="prezo-artifact-empty">No artifact markup was returned.</div>'
   const content = normalizedMarkup || fallbackMarkup
   const baseDocument = isFullHtmlDocument(content)
     ? content
     : wrapArtifactSnippet(content)
-  return injectBridgeScript(baseDocument)
+  const instanceId = Number.isFinite(Number(options?.instanceId))
+    ? Math.max(0, Math.trunc(Number(options.instanceId)))
+    : 0
+  return injectBridgeScript(baseDocument, { instanceId })
 }
 
 function unwrapMarkdownFence(value) {
@@ -101,26 +106,32 @@ function wrapArtifactSnippet(snippet) {
 </html>`
 }
 
-function injectBridgeScript(htmlDocument) {
+function injectBridgeScript(htmlDocument, options = {}) {
   const source = asText(htmlDocument)
   if (!source) {
     return ''
   }
 
-  const bridgeTag = `<script>${buildBridgeScript()}<\/script>`
+  const bridgeTag = `<script>${buildBridgeScript(options.instanceId)}<\/script>`
   if (/<\/body>/i.test(source)) {
     return source.replace(/<\/body>/i, `${bridgeTag}\n</body>`)
   }
   return `${source}\n${bridgeTag}`
 }
 
-function buildBridgeScript() {
+function buildBridgeScript(instanceId = 0) {
+  const safeInstanceId = Number.isFinite(Number(instanceId))
+    ? Math.max(0, Math.trunc(Number(instanceId)))
+    : 0
   return [
     '(function () {',
     `  var MESSAGE_TYPE = '${ARTIFACT_POLL_MESSAGE_TYPE}'`,
     `  var EVENT_NAME = '${ARTIFACT_POLL_EVENT_NAME}'`,
     `  var READY_MESSAGE_TYPE = '${ARTIFACT_READY_MESSAGE_TYPE}'`,
     `  var SIZE_MESSAGE_TYPE = '${ARTIFACT_SIZE_MESSAGE_TYPE}'`,
+    `  var RENDER_OK_MESSAGE_TYPE = '${ARTIFACT_RENDER_OK_MESSAGE_TYPE}'`,
+    `  var RENDER_ERROR_MESSAGE_TYPE = '${ARTIFACT_RENDER_ERROR_MESSAGE_TYPE}'`,
+    `  var INSTANCE_ID = ${safeInstanceId}`,
     '  var defaultState = {',
     '    poll: { id: "", question: "", title: "", prompt: "", status: "", options: [], totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },',
     '    question: "",',
@@ -137,6 +148,8 @@ function buildBridgeScript() {
     '  var currentState = defaultState',
     '  var renderedState = defaultState',
     '  var hasRenderedState = false',
+    '  var hasReportedRenderSuccess = false',
+    '  var consecutiveRenderFailureCount = 0',
     '  var transitionDurationMs = 320',
     '  var transitionRafId = 0',
     '  var lastReportedHeight = 0',
@@ -417,6 +430,22 @@ function buildBridgeScript() {
     '      return value',
     '    }',
     '  }',
+    '  function postParentMessage(type, extra) {',
+    '    if (!(window.parent && window.parent !== window)) {',
+    '      return',
+    '    }',
+    '    var payload = { type: type, instanceId: INSTANCE_ID }',
+    '    if (isObject(extra)) {',
+    '      for (var key in extra) {',
+    '        if (Object.prototype.hasOwnProperty.call(extra, key)) {',
+    '          payload[key] = extra[key]',
+    '        }',
+    '      }',
+    '    }',
+    '    try {',
+    '      window.parent.postMessage(payload, "*")',
+    '    } catch (error) {}',
+    '  }',
     '  function getRenderErrorText(error) {',
     '    if (!error) {',
     '      return ""',
@@ -483,7 +512,7 @@ function buildBridgeScript() {
     '    lastReportedWidth = nextWidth',
     '    if (window.parent && window.parent !== window) {',
     '      try {',
-    '        window.parent.postMessage({ type: SIZE_MESSAGE_TYPE, width: nextWidth, height: nextHeight }, "*")',
+    '        postParentMessage(SIZE_MESSAGE_TYPE, { width: nextWidth, height: nextHeight })',
     '      } catch (error) {}',
     '    }',
     '  }',
@@ -857,21 +886,32 @@ function buildBridgeScript() {
     '    renderHook = candidate',
     '    try {',
     '      candidate(payload)',
-    '      pendingRenderPayload = null',
-    '      renderRetryCount = 0',
-    '      clearPendingRenderRetry()',
-    '      return true',
+    '      consecutiveRenderFailureCount = 0',
+    '      if (!hasReportedRenderSuccess) {',
+    '        hasReportedRenderSuccess = true',
+    '        postParentMessage(RENDER_OK_MESSAGE_TYPE)',
+    '      }',
+      '      pendingRenderPayload = null',
+      '      renderRetryCount = 0',
+      '      clearPendingRenderRetry()',
+      '      return true',
     '    } catch (error) {',
-    '      if (transitionRafId) {',
-    '        cancelAnimationFrame(transitionRafId)',
-    '        transitionRafId = 0',
+    '      consecutiveRenderFailureCount += 1',
+      '      if (transitionRafId) {',
+      '        cancelAnimationFrame(transitionRafId)',
+      '        transitionRafId = 0',
     '      }',
-    '      if (isRecoverableRenderError(error) && renderRetryCount < 12) {',
-    '        renderRetryCount += 1',
-    '        schedulePendingRenderRetry(payload, Math.min(700, 40 + renderRetryCount * 60))',
-    '      }',
-    '      console.error("[prezo-artifact] prezoRenderPoll failed", error)',
-    '      return false',
+      '      if (isRecoverableRenderError(error) && renderRetryCount < 12) {',
+      '        renderRetryCount += 1',
+      '        schedulePendingRenderRetry(payload, Math.min(700, 40 + renderRetryCount * 60))',
+      '      }',
+    '      postParentMessage(RENDER_ERROR_MESSAGE_TYPE, {',
+    '        message: getRenderErrorText(error),',
+    '        recoverable: isRecoverableRenderError(error),',
+    '        failureCount: consecutiveRenderFailureCount',
+    '      })',
+      '      console.error("[prezo-artifact] prezoRenderPoll failed", error)',
+      '      return false',
     '    }',
     '  }',
     '  function installRenderHookBridge() {',
@@ -964,11 +1004,7 @@ function buildBridgeScript() {
     '    hasReceivedHostState = true',
     '    animateStateTransition(message.payload, false)',
     '  })',
-    '  if (window.parent && window.parent !== window) {',
-    '    try {',
-    '      window.parent.postMessage({ type: READY_MESSAGE_TYPE }, "*")',
-    '    } catch (error) {}',
-    '  }',
+    '  postParentMessage(READY_MESSAGE_TYPE)',
     '  window.addEventListener("resize", function () {',
     '    if (pendingRenderPayload) {',
     '      schedulePendingRenderRetry(pendingRenderPayload, 0)',
