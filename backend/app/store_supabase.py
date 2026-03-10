@@ -27,10 +27,11 @@ from .store import (
 
 
 class SupabaseError(Exception):
-    def __init__(self, status_code: int, detail: str) -> None:
+    def __init__(self, status_code: int, detail: str, code: str | None = None) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.code = code
 
 
 class SupabaseStore:
@@ -63,13 +64,35 @@ class SupabaseStore:
                 headers=headers,
             )
         if response.status_code >= 400:
-            raise SupabaseError(response.status_code, response.text)
+            detail = response.text
+            code: str | None = None
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                message = payload.get("message")
+                details = payload.get("details")
+                detail = (
+                    str(message)
+                    if message not in (None, "")
+                    else str(details)
+                    if details not in (None, "")
+                    else response.text
+                )
+                raw_code = payload.get("code")
+                code = str(raw_code) if raw_code is not None else None
+            raise SupabaseError(response.status_code, detail, code)
         return response
 
     async def _select(
         self, table: str, params: dict[str, str]
     ) -> list[dict[str, Any]]:
         response = await self._request("GET", table, params=params)
+        return response.json()
+
+    async def _rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
+        response = await self._request("POST", f"rpc/{function_name}", json=payload)
         return response.json()
 
     async def _get_session_row(self, session_id: str) -> dict[str, Any]:
@@ -528,125 +551,30 @@ class SupabaseStore:
         option_id: str,
         client_id: str | None,
     ) -> Poll:
-        poll_rows = await self._select(
-            "polls",
-            {"select": "*", "id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
-        )
-        if not poll_rows:
-            raise NotFoundError("poll not found")
-        poll = poll_rows[0]
-        if poll.get("status") != PollStatus.open.value:
-            raise ConflictError("poll is closed")
-
-        option_rows = await self._select(
-            "poll_options",
-            {"select": "*", "id": f"eq.{option_id}", "poll_id": f"eq.{poll_id}"},
-        )
-        if not option_rows:
-            raise NotFoundError("option not found")
-        option = option_rows[0]
-
-        if client_id:
-            if not poll.get("allow_multiple"):
-                existing_votes = await self._select(
-                    "poll_votes",
-                    {
-                        "select": "id, option_id",
-                        "poll_id": f"eq.{poll_id}",
-                        "client_id": f"eq.{client_id}",
-                    },
-                )
-                if existing_votes:
-                    if any(row.get("option_id") == option_id for row in existing_votes):
-                        options = await self._select(
-                            "poll_options",
-                            {
-                                "select": "*",
-                                "poll_id": f"eq.{poll_id}",
-                                "order": "position.asc",
-                            },
-                        )
-                        return self._to_poll(poll, options)
-
-                    await self._request(
-                        "DELETE",
-                        "poll_votes",
-                        params={
-                            "poll_id": f"eq.{poll_id}",
-                            "client_id": f"eq.{client_id}",
-                        },
-                    )
-                    for row in existing_votes:
-                        previous_option_id = row.get("option_id")
-                        if not previous_option_id:
-                            continue
-                        previous_option_rows = await self._select(
-                            "poll_options",
-                            {
-                                "select": "id, votes",
-                                "poll_id": f"eq.{poll_id}",
-                                "id": f"eq.{previous_option_id}",
-                            },
-                        )
-                        if not previous_option_rows:
-                            continue
-                        previous_option = previous_option_rows[0]
-                        updated_prev_votes = max(
-                            0, (previous_option.get("votes") or 0) - 1
-                        )
-                        await self._request(
-                            "PATCH",
-                            "poll_options",
-                            params={"id": f"eq.{previous_option_id}"},
-                            json={"votes": updated_prev_votes},
-                            prefer="return=representation",
-                        )
-            else:
-                existing_option = await self._select(
-                    "poll_votes",
-                    {
-                        "select": "id",
-                        "poll_id": f"eq.{poll_id}",
-                        "client_id": f"eq.{client_id}",
-                        "option_id": f"eq.{option_id}",
-                    },
-                )
-                if existing_option:
-                    options = await self._select(
-                        "poll_options",
-                        {
-                            "select": "*",
-                            "poll_id": f"eq.{poll_id}",
-                            "order": "position.asc",
-                        },
-                    )
-                    return self._to_poll(poll, options)
-
-            await self._request(
-                "POST",
-                "poll_votes",
-                json={
-                    "poll_id": poll_id,
-                    "option_id": option_id,
-                    "client_id": client_id,
+        try:
+            payload = await self._rpc(
+                "vote_poll_atomic",
+                {
+                    "p_session_id": session_id,
+                    "p_poll_id": poll_id,
+                    "p_option_id": option_id,
+                    "p_client_id": client_id,
                 },
-                prefer="return=representation",
             )
+        except SupabaseError as exc:
+            detail = exc.detail.lower()
+            if exc.code == "P0002" or "not found" in detail:
+                raise NotFoundError(exc.detail) from exc
+            if exc.code == "P0001" or "closed" in detail:
+                raise ConflictError(exc.detail) from exc
+            raise
 
-        updated_votes = (option.get("votes") or 0) + 1
-        await self._request(
-            "PATCH",
-            "poll_options",
-            params={"id": f"eq.{option_id}"},
-            json={"votes": updated_votes},
-            prefer="return=representation",
-        )
-
-        options = await self._select(
-            "poll_options",
-            {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},
-        )
-        return self._to_poll(poll, options)
+        if not isinstance(payload, dict):
+            raise SupabaseError(500, "vote_poll_atomic returned an invalid payload")
+        options = payload.get("options")
+        option_rows = options if isinstance(options, list) else []
+        poll_data = {key: value for key, value in payload.items() if key != "options"}
+        return self._to_poll(poll_data, option_rows)
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
         sessions = await self._select(

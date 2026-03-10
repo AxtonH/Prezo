@@ -103,6 +103,175 @@ create table if not exists poll_votes (
   unique (poll_id, client_id, option_id)
 );
 
+create or replace function public.vote_poll_atomic(
+  p_session_id uuid,
+  p_poll_id uuid,
+  p_option_id uuid,
+  p_client_id text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_poll polls%rowtype;
+  v_option poll_options%rowtype;
+  v_client_id text;
+  v_previous_option_ids uuid[];
+  v_inserted_count integer := 0;
+begin
+  v_client_id := nullif(btrim(coalesce(p_client_id, '')), '');
+
+  select *
+  into v_poll
+  from polls
+  where id = p_poll_id and session_id = p_session_id
+  for update;
+
+  if not found then
+    raise exception 'poll not found' using errcode = 'P0002';
+  end if;
+
+  if v_poll.status <> 'open' then
+    raise exception 'poll is closed' using errcode = 'P0001';
+  end if;
+
+  select *
+  into v_option
+  from poll_options
+  where id = p_option_id and poll_id = p_poll_id
+  for update;
+
+  if not found then
+    raise exception 'option not found' using errcode = 'P0002';
+  end if;
+
+  if v_client_id is not null then
+    if not v_poll.allow_multiple then
+      select array_agg(option_id)
+      into v_previous_option_ids
+      from poll_votes
+      where poll_id = p_poll_id and client_id = v_client_id;
+
+      if coalesce(array_length(v_previous_option_ids, 1), 0) > 0 then
+        if p_option_id = any(v_previous_option_ids) then
+          return jsonb_build_object(
+            'id', v_poll.id,
+            'session_id', v_poll.session_id,
+            'question', v_poll.question,
+            'status', v_poll.status,
+            'allow_multiple', v_poll.allow_multiple,
+            'created_at', v_poll.created_at,
+            'options',
+            coalesce(
+              (
+                select jsonb_agg(
+                  jsonb_build_object('id', po.id, 'label', po.label, 'votes', po.votes)
+                  order by po.position asc
+                )
+                from poll_options po
+                where po.poll_id = v_poll.id
+              ),
+              '[]'::jsonb
+            )
+          );
+        end if;
+
+        delete from poll_votes
+        where poll_id = p_poll_id and client_id = v_client_id;
+
+        update poll_options
+        set votes = greatest(0, votes - 1)
+        where poll_id = p_poll_id and id = any(v_previous_option_ids);
+      end if;
+    else
+      if exists(
+        select 1
+        from poll_votes
+        where poll_id = p_poll_id
+          and client_id = v_client_id
+          and option_id = p_option_id
+      ) then
+        return jsonb_build_object(
+          'id', v_poll.id,
+          'session_id', v_poll.session_id,
+          'question', v_poll.question,
+          'status', v_poll.status,
+          'allow_multiple', v_poll.allow_multiple,
+          'created_at', v_poll.created_at,
+          'options',
+          coalesce(
+            (
+              select jsonb_agg(
+                jsonb_build_object('id', po.id, 'label', po.label, 'votes', po.votes)
+                order by po.position asc
+              )
+              from poll_options po
+              where po.poll_id = v_poll.id
+            ),
+            '[]'::jsonb
+          )
+        );
+      end if;
+    end if;
+
+    insert into poll_votes (poll_id, option_id, client_id)
+    values (p_poll_id, p_option_id, v_client_id)
+    on conflict (poll_id, client_id, option_id) do nothing;
+
+    get diagnostics v_inserted_count = row_count;
+    if v_inserted_count = 0 then
+      return jsonb_build_object(
+        'id', v_poll.id,
+        'session_id', v_poll.session_id,
+        'question', v_poll.question,
+        'status', v_poll.status,
+        'allow_multiple', v_poll.allow_multiple,
+        'created_at', v_poll.created_at,
+        'options',
+        coalesce(
+          (
+            select jsonb_agg(
+              jsonb_build_object('id', po.id, 'label', po.label, 'votes', po.votes)
+              order by po.position asc
+            )
+            from poll_options po
+            where po.poll_id = v_poll.id
+          ),
+          '[]'::jsonb
+        )
+      );
+    end if;
+  end if;
+
+  update poll_options
+  set votes = votes + 1
+  where poll_id = p_poll_id and id = p_option_id;
+
+  return jsonb_build_object(
+    'id', v_poll.id,
+    'session_id', v_poll.session_id,
+    'question', v_poll.question,
+    'status', v_poll.status,
+    'allow_multiple', v_poll.allow_multiple,
+    'created_at', v_poll.created_at,
+    'options',
+    coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object('id', po.id, 'label', po.label, 'votes', po.votes)
+          order by po.position asc
+        )
+        from poll_options po
+        where po.poll_id = v_poll.id
+      ),
+      '[]'::jsonb
+    )
+  );
+end;
+$$;
+
 create index if not exists sessions_user_id_idx on sessions (user_id);
 create index if not exists session_hosts_user_id_idx on session_hosts (user_id);
 create index if not exists questions_session_id_idx on questions (session_id);

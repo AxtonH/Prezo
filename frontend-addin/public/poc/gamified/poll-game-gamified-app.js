@@ -58,6 +58,8 @@ import {
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
+  const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
+  const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -94,6 +96,7 @@ import {
     socketStatus: 'connecting',
     reconnectTimer: null,
     pollTimer: null,
+    snapshotRenderTimer: null,
     fetchPromise: null,
     isUnloading: false,
     lastRenderKey: '',
@@ -133,6 +136,7 @@ import {
       lastPayloadKey: '',
       lastDeliveredPayload: null,
       pendingPayload: null,
+      pendingPayloadTimerId: null,
       postLoadReplayTimerIds: [],
       reportedContentWidth: 0,
       reportedContentHeight: 0,
@@ -1440,6 +1444,33 @@ import {
     state.artifact.postLoadReplayTimerIds = []
   }
 
+  function clearPendingArtifactPayloadTimer() {
+    if (!state.artifact.pendingPayloadTimerId) {
+      return
+    }
+    window.clearTimeout(state.artifact.pendingPayloadTimerId)
+    state.artifact.pendingPayloadTimerId = null
+  }
+
+  function schedulePendingArtifactPayloadFlush(options = {}) {
+    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
+      return false
+    }
+    const force = Boolean(options.force)
+    if (force) {
+      clearPendingArtifactPayloadTimer()
+      return flushPendingArtifactPayload({ force: true })
+    }
+    if (state.artifact.pendingPayloadTimerId) {
+      return true
+    }
+    state.artifact.pendingPayloadTimerId = window.setTimeout(() => {
+      state.artifact.pendingPayloadTimerId = null
+      flushPendingArtifactPayload()
+    }, ARTIFACT_STATE_PUSH_BATCH_MS)
+    return true
+  }
+
   function scheduleArtifactPostLoadReplays() {
     clearArtifactPostLoadReplays()
     if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
@@ -1539,6 +1570,7 @@ import {
       state.artifact.pendingPayload = null
       return true
     }
+    clearPendingArtifactPayloadTimer()
     el.artifactFrame.contentWindow.postMessage(
       {
         type: 'prezo-poll-state',
@@ -2232,6 +2264,7 @@ import {
       state.artifact.pendingRequestKind = ''
     }
     clearArtifactPostLoadReplays()
+    clearPendingArtifactPayloadTimer()
     state.artifact.html = normalized
     state.artifact.instanceId += 1
     state.artifact.frameReady = false
@@ -2255,6 +2288,7 @@ import {
 
   function clearArtifactMarkup() {
     clearArtifactPostLoadReplays()
+    clearPendingArtifactPayloadTimer()
     state.artifact.html = ''
     state.artifact.lastStableHtml = ''
     state.artifact.rollbackHtml = ''
@@ -2288,16 +2322,8 @@ import {
     if (!force && payloadKey === state.artifact.lastPayloadKey) {
       return
     }
-    state.artifact.lastPayloadKey = payloadKey
-    state.artifact.lastDeliveredPayload = clone(payload)
-    state.artifact.pendingPayload = null
-    el.artifactFrame.contentWindow.postMessage(
-      {
-        type: 'prezo-poll-state',
-        payload
-      },
-      '*'
-    )
+    state.artifact.pendingPayload = payload
+    schedulePendingArtifactPayloadFlush({ force })
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
@@ -6455,7 +6481,11 @@ import {
         if (snapshot?.session?.code) {
           state.code = normalizeCode(snapshot.session.code) || state.code
         }
-        renderFromSnapshot(forceRender)
+        if (forceRender) {
+          renderFromSnapshot(true)
+        } else {
+          scheduleSnapshotRender()
+        }
         return snapshot
       })
       .catch((error) => {
@@ -6468,6 +6498,16 @@ import {
       })
 
     return state.fetchPromise
+  }
+
+  function scheduleSnapshotRender() {
+    if (state.snapshotRenderTimer) {
+      return
+    }
+    state.snapshotRenderTimer = window.setTimeout(() => {
+      state.snapshotRenderTimer = null
+      renderFromSnapshot(false)
+    }, LIVE_SNAPSHOT_RENDER_BATCH_MS)
   }
 
   function connectSocket() {
@@ -6563,7 +6603,7 @@ import {
       if (state.snapshot?.session?.code) {
         state.code = normalizeCode(state.snapshot.session.code) || state.code
       }
-      renderFromSnapshot(false)
+      scheduleSnapshotRender()
       return
     }
 
@@ -6583,7 +6623,7 @@ import {
     }
 
     if (hasPatch) {
-      renderFromSnapshot(false)
+      scheduleSnapshotRender()
       return
     }
 
@@ -8915,8 +8955,13 @@ import {
       window.clearTimeout(state.reconnectTimer)
       state.reconnectTimer = null
     }
+    if (state.snapshotRenderTimer) {
+      window.clearTimeout(state.snapshotRenderTimer)
+      state.snapshotRenderTimer = null
+    }
     stopArtifactLoaderAnimation()
     clearArtifactPostLoadReplays()
+    clearPendingArtifactPayloadTimer()
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
