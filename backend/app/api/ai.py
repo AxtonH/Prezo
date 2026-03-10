@@ -223,7 +223,8 @@ async def request_anthropic_text(
     max_tokens: int,
     timeout_seconds: float,
 ) -> str:
-    endpoint = f"{ANTHROPIC_API_BASE}/messages"
+    base_url = resolve_anthropic_base_url()
+    endpoint = f"{base_url}/messages"
     body = {
         "model": model,
         "system": system_instruction,
@@ -249,10 +250,19 @@ async def request_anthropic_text(
                 },
                 json=body,
             )
-    except httpx.RequestError as exc:
+    except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to reach Anthropic API.",
+            detail=(
+                f"Unable to reach Anthropic API at {base_url}: "
+                f"{exc.__class__.__name__} after {timeout_seconds:.0f}s."
+            ),
+        ) from exc
+    except httpx.RequestError as exc:
+        detail = str(exc).strip() or exc.__class__.__name__
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unable to reach Anthropic API at {base_url}: {detail}",
         ) from exc
 
     raw_payload: Any = {}
@@ -492,6 +502,11 @@ def extract_anthropic_error(payload: Any) -> str:
 def normalize_anthropic_model_name(value: str | None) -> str:
     text = (value or "").strip()
     return text
+
+
+def resolve_anthropic_base_url() -> str:
+    base_url = (settings.anthropic_base_url or "").strip() or ANTHROPIC_API_BASE
+    return base_url.rstrip("/")
 
 
 def normalize_poll_game_plan(raw_text: str) -> dict[str, Any]:

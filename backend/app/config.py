@@ -76,6 +76,7 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     anthropic_api_key: str | None = None
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_model: str = "claude-opus-4-6"
 
     @property
