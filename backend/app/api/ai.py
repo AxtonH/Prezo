@@ -14,6 +14,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_ARTIFACT_MAX_TOKENS = 12000
+ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
@@ -222,7 +224,7 @@ async def request_anthropic_text(
     temperature: float,
     max_tokens: int,
     timeout_seconds: float,
-) -> str:
+) -> tuple[str, str]:
     base_url = resolve_anthropic_base_url()
     endpoint = f"{base_url}/messages"
     body = {
@@ -276,12 +278,13 @@ async def request_anthropic_text(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
     text = extract_anthropic_text(raw_payload)
+    stop_reason = extract_anthropic_stop_reason(raw_payload)
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Anthropic response did not include text content.",
         )
-    return text
+    return text, stop_reason
 
 
 @router.post("/poll-game-edit-plan", response_model=PollGameEditPlanResponse)
@@ -298,7 +301,7 @@ async def create_poll_game_edit_plan(
     requested_model = normalize_anthropic_model_name(payload.model)
     configured_model = normalize_anthropic_model_name(settings.anthropic_model)
     model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
-    text = await request_anthropic_text(
+    text, _stop_reason = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_SYSTEM_INSTRUCTION,
@@ -347,7 +350,7 @@ async def create_poll_game_artifact_build(
     else:
         temperature = 0.8
         timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
-    text = await request_anthropic_text(
+    text, stop_reason = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
@@ -356,7 +359,7 @@ async def create_poll_game_artifact_build(
             indent=2,
         ),
         temperature=temperature,
-        max_tokens=5200,
+        max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
     )
 
@@ -367,6 +370,11 @@ async def create_poll_game_artifact_build(
             detail="Anthropic response did not include artifact HTML.",
         )
     validation_issues = validate_poll_game_artifact_html(html)
+    if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+        validation_issues.insert(
+            0,
+            "artifact output appears truncated before completion.",
+        )
     if validation_issues:
         repaired_html = await attempt_artifact_repair(
             api_key=api_key,
@@ -407,7 +415,7 @@ async def create_poll_game_artifact_answer(
     requested_model = normalize_anthropic_model_name(payload.model)
     configured_model = normalize_anthropic_model_name(settings.anthropic_model)
     model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
-    text = await request_anthropic_text(
+    text, _stop_reason = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
@@ -441,12 +449,22 @@ async def attempt_artifact_repair(
 ) -> str:
     if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
         return ""
+    has_truncation_issue = any(
+        "truncated" in issue.lower() or "unbalanced <script>" in issue.lower()
+        for issue in validation_issues
+    )
     repair_prompt = "\n".join(
         [
             "Repair this artifact HTML so it passes validation and still satisfies the original request.",
             "Return raw HTML only.",
             f"Original prompt: {original_prompt}",
             f"Validation issues: {'; '.join(validation_issues[:6])}",
+            (
+                "The previous artifact output appears to have been cut off before completion. "
+                "Re-emit a complete artifact with all closing tags, all </script> tags, and syntactically complete inline JavaScript."
+                if has_truncation_issue
+                else ""
+            ),
             "If the validation issue mentions live poll state, preserve or restore the existing live-state hook from context.artifact.currentArtifactHtml / currentArtifactLiveHooks.",
             "Do not drop window.prezoRenderPoll(state), prezo:poll-update listeners, or equivalent host-driven update wiring.",
             "Context JSON:",
@@ -455,13 +473,13 @@ async def attempt_artifact_repair(
             html,
         ]
     )
-    text = await request_anthropic_text(
+    text, _stop_reason = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
         temperature=0.25,
-        max_tokens=5200,
+        max_tokens=ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS,
         timeout_seconds=settings.anthropic_artifact_repair_timeout_seconds,
     )
     repaired = normalize_poll_game_artifact_html(text)
@@ -497,6 +515,13 @@ def extract_anthropic_error(payload: Any) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def extract_anthropic_stop_reason(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    value = payload.get("stop_reason")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def normalize_anthropic_model_name(value: str | None) -> str:
