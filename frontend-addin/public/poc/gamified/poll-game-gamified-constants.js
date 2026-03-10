@@ -7,9 +7,13 @@ export const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
 export const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
 export const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
 export const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
-export const AI_GEMINI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.gemini-model.v1'
-export const AI_GEMINI_DEFAULT_MODEL = 'gemini-3-flash-preview'
-export const AI_GEMINI_LEGACY_MODELS = new Set(['gemini-2.0-flash', 'models/gemini-2.0-flash'])
+export const AI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.ai-model.v1'
+export const AI_DEFAULT_MODEL = 'claude-opus-4-6'
+export const AI_LEGACY_MODELS = new Set([
+  'gemini-2.0-flash',
+  'models/gemini-2.0-flash',
+  'gemini-3-flash-preview'
+])
 
 export const AI_THEME_NUMBER_RANGES = Object.freeze({
   bgImageOpacity: [0, 1],

@@ -75,8 +75,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:5174"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
-    gemini_api_key: str | None = None
-    gemini_model: str = "gemini-3-flash-preview"
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-4-6"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -11,10 +11,9 @@ from pydantic import BaseModel, Field
 from ..config import settings
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-DEFAULT_GEMINI_MODEL = "gemini-3-flash-preview"
-LEGACY_GEMINI_MODELS = {
-    "gemini-2.0-flash",
-}
+DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
+ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
+ANTHROPIC_VERSION = "2023-06-01"
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
@@ -214,7 +213,7 @@ class PollGameArtifactAssistantResponse(BaseModel):
     model: str
 
 
-async def request_gemini_text(
+async def request_anthropic_text(
     *,
     api_key: str,
     model: str,
@@ -222,28 +221,21 @@ async def request_gemini_text(
     prompt_text: str,
     temperature: float,
     top_p: float,
-    max_output_tokens: int,
-    response_mime_type: str,
+    max_tokens: int,
     timeout_seconds: float,
 ) -> str:
-    endpoint = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent"
-    )
+    endpoint = f"{ANTHROPIC_API_BASE}/messages"
     body = {
-        "systemInstruction": {"parts": [{"text": system_instruction}]},
-        "contents": [
+        "model": model,
+        "system": system_instruction,
+        "messages": [
             {
-                "role": "user",
-                "parts": [{"text": prompt_text}],
+                "role": "user", "content": prompt_text
             }
         ],
-        "generationConfig": {
-            "temperature": temperature,
-            "topP": top_p,
-            "maxOutputTokens": max_output_tokens,
-            "responseMimeType": response_mime_type,
-        },
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_tokens": max_tokens,
     }
 
     try:
@@ -254,14 +246,15 @@ async def request_gemini_text(
                 endpoint,
                 headers={
                     "Content-Type": "application/json",
-                    "x-goog-api-key": api_key,
+                    "x-api-key": api_key,
+                    "anthropic-version": ANTHROPIC_VERSION,
                 },
                 json=body,
             )
     except httpx.RequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Unable to reach Gemini API.",
+            detail="Unable to reach Anthropic API.",
         ) from exc
 
     raw_payload: Any = {}
@@ -271,14 +264,14 @@ async def request_gemini_text(
         except ValueError:
             raw_payload = {}
     if response.status_code >= 400:
-        detail = extract_gemini_error(raw_payload) or f"Gemini request failed ({response.status_code})"
+        detail = extract_anthropic_error(raw_payload) or f"Anthropic request failed ({response.status_code})"
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    text = extract_gemini_text(raw_payload)
+    text = extract_anthropic_text(raw_payload)
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini response did not include text content.",
+            detail="Anthropic response did not include text content.",
         )
     return text
 
@@ -287,19 +280,17 @@ async def request_gemini_text(
 async def create_poll_game_edit_plan(
     payload: PollGameEditPlanRequest,
 ) -> PollGameEditPlanResponse:
-    api_key = (settings.gemini_api_key or "").strip()
+    api_key = (settings.anthropic_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
         )
 
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = configured_model or DEFAULT_GEMINI_MODEL
-    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
-        model = requested_model
-    text = await request_gemini_text(
+    requested_model = normalize_anthropic_model_name(payload.model)
+    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
+    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
+    text = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_SYSTEM_INSTRUCTION,
@@ -309,8 +300,7 @@ async def create_poll_game_edit_plan(
         ),
         temperature=0.2,
         top_p=0.9,
-        max_output_tokens=1400,
-        response_mime_type="application/json",
+        max_tokens=1400,
         timeout_seconds=45.0,
     )
     normalized_plan = normalize_poll_game_plan(text)
@@ -325,18 +315,16 @@ async def create_poll_game_edit_plan(
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactBuildResponse:
-    api_key = (settings.gemini_api_key or "").strip()
+    api_key = (settings.anthropic_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
         )
 
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = configured_model or DEFAULT_GEMINI_MODEL
-    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
-        model = requested_model
+    requested_model = normalize_anthropic_model_name(payload.model)
+    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
+    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
     artifact_context = (
         payload.context.get("artifact")
         if isinstance(payload.context.get("artifact"), dict)
@@ -355,7 +343,7 @@ async def create_poll_game_artifact_build(
         temperature = 0.8
         top_p = 0.95
         timeout_seconds = 60.0
-    text = await request_gemini_text(
+    text = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
@@ -365,8 +353,7 @@ async def create_poll_game_artifact_build(
         ),
         temperature=temperature,
         top_p=top_p,
-        max_output_tokens=5200,
-        response_mime_type="text/plain",
+        max_tokens=5200,
         timeout_seconds=timeout_seconds,
     )
 
@@ -374,7 +361,7 @@ async def create_poll_game_artifact_build(
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini response did not include artifact HTML.",
+            detail="Anthropic response did not include artifact HTML.",
         )
     validation_issues = validate_poll_game_artifact_html(html)
     if validation_issues:
@@ -407,19 +394,17 @@ async def create_poll_game_artifact_build(
 async def create_poll_game_artifact_answer(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactAssistantResponse:
-    api_key = (settings.gemini_api_key or "").strip()
+    api_key = (settings.anthropic_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
+            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
         )
 
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = configured_model or DEFAULT_GEMINI_MODEL
-    if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
-        model = requested_model
-    text = await request_gemini_text(
+    requested_model = normalize_anthropic_model_name(payload.model)
+    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
+    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
+    text = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
@@ -429,8 +414,7 @@ async def create_poll_game_artifact_answer(
         ),
         temperature=0.25,
         top_p=0.9,
-        max_output_tokens=900,
-        response_mime_type="text/plain",
+        max_tokens=900,
         timeout_seconds=45.0,
     )
 
@@ -469,37 +453,31 @@ async def attempt_artifact_repair(
             html,
         ]
     )
-    text = await request_gemini_text(
+    text = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
         temperature=0.25,
         top_p=0.9,
-        max_output_tokens=5200,
-        response_mime_type="text/plain",
+        max_tokens=5200,
         timeout_seconds=60.0,
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()
 
 
-def extract_gemini_text(payload: Any) -> str:
+def extract_anthropic_text(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
-    candidates = payload.get("candidates")
-    if not isinstance(candidates, list) or not candidates:
-        return ""
-    first = candidates[0] if isinstance(candidates[0], dict) else {}
-    content = first.get("content") if isinstance(first, dict) else {}
-    if not isinstance(content, dict):
-        return ""
-    parts = content.get("parts")
-    if not isinstance(parts, list):
+    content = payload.get("content")
+    if not isinstance(content, list):
         return ""
     chunks: list[str] = []
-    for part in parts:
+    for part in content:
         if not isinstance(part, dict):
+            continue
+        if part.get("type") != "text":
             continue
         text = part.get("text")
         if isinstance(text, str) and text.strip():
@@ -507,25 +485,21 @@ def extract_gemini_text(payload: Any) -> str:
     return "\n".join(chunks).strip()
 
 
-def extract_gemini_error(payload: Any) -> str:
+def extract_anthropic_error(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
     error = payload.get("error")
     if not isinstance(error, dict):
         return ""
-    for key in ("message", "status"):
+    for key in ("message", "type"):
         value = error.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
 
 
-def normalize_gemini_model_name(value: str | None) -> str:
+def normalize_anthropic_model_name(value: str | None) -> str:
     text = (value or "").strip()
-    if not text:
-        return ""
-    if text.startswith("models/"):
-        return text.removeprefix("models/").strip()
     return text
 
 

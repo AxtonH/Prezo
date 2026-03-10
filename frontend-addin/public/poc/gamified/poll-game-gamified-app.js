@@ -1,9 +1,9 @@
 import {
   AI_BOX_RESIZE_TARGETS,
   AI_CHAT_MAX_MESSAGES,
-  AI_GEMINI_DEFAULT_MODEL,
-  AI_GEMINI_LEGACY_MODELS,
-  AI_GEMINI_MODEL_STORAGE_KEY,
+  AI_DEFAULT_MODEL,
+  AI_LEGACY_MODELS,
+  AI_MODEL_STORAGE_KEY,
   AI_MOVE_TARGETS,
   AI_SCALE_RESIZE_TARGETS,
   AI_TARGET_ALIASES,
@@ -664,7 +664,7 @@ import {
     try {
       localStorage.removeItem('prezo.poll-game-poc.gemini-api-key.v1')
     } catch {}
-    state.ai.model = resolveAiGeminiModel()
+    state.ai.model = resolveAiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
     updateAiComposerState()
@@ -1885,25 +1885,28 @@ import {
     return Math.ceil(numeric / 1000) * 1000
   }
 
-  function resolveAiGeminiModel() {
-    const queryModel = asText(query.get('geminiModel'))
+  function resolveAiModel() {
+    const queryModel =
+      asText(query.get('aiModel')) ||
+      asText(query.get('anthropicModel')) ||
+      asText(query.get('geminiModel'))
     if (queryModel) {
       try {
-        localStorage.setItem(AI_GEMINI_MODEL_STORAGE_KEY, queryModel)
+        localStorage.setItem(AI_MODEL_STORAGE_KEY, queryModel)
       } catch {}
       return queryModel
     }
-    const storedModel = asText(safeStorageGet(AI_GEMINI_MODEL_STORAGE_KEY))
-    if (storedModel && AI_GEMINI_LEGACY_MODELS.has(storedModel)) {
+    const storedModel = asText(safeStorageGet(AI_MODEL_STORAGE_KEY))
+    if (storedModel && AI_LEGACY_MODELS.has(storedModel)) {
       try {
-        localStorage.removeItem(AI_GEMINI_MODEL_STORAGE_KEY)
+        localStorage.removeItem(AI_MODEL_STORAGE_KEY)
       } catch {}
-      return AI_GEMINI_DEFAULT_MODEL
+      return AI_DEFAULT_MODEL
     }
     if (storedModel) {
       return storedModel
     }
-    return AI_GEMINI_DEFAULT_MODEL
+    return AI_DEFAULT_MODEL
   }
 
   function handleAiChatFabClick() {
@@ -2120,7 +2123,7 @@ import {
   }
 
   async function requestAiEditPlan(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-edit-plan`
     const body = {
       prompt,
@@ -2150,7 +2153,7 @@ import {
   }
 
   async function requestAiArtifactBuild(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
     const body = {
       prompt,
@@ -2181,7 +2184,7 @@ import {
   }
 
   async function requestAiArtifactAnswer(prompt, context) {
-    const model = asText(state.ai.model) || AI_GEMINI_DEFAULT_MODEL
+    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
     const body = {
       prompt,
