@@ -55,6 +55,32 @@ ARTIFACT_ESM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "script contains an `export` statement, which is not allowed in artifact output.",
     ),
 )
+ARTIFACT_UNSAFE_DIRECT_DOM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:querySelector|getElementById|getElementsByClassName|getElementsByTagName)\s*\([^)]*\)\s*\.\s*(?:innerText|textContent|innerHTML)\b"
+        ),
+        "script reads or writes text/html directly from a raw DOM query result without a null guard.",
+    ),
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:querySelector|getElementById|getElementsByClassName|getElementsByTagName)\s*\([^)]*\)\s*\.\s*style\b"
+        ),
+        "script mutates style directly on a raw DOM query result without a null guard.",
+    ),
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:querySelector|getElementById|getElementsByClassName|getElementsByTagName)\s*\([^)]*\)\s*\.\s*(?:appendChild|removeChild|replaceChildren|insertBefore|insertAdjacentElement|insertAdjacentHTML|setAttribute|removeAttribute)\s*\("
+        ),
+        "script performs a DOM container mutation directly on a raw DOM query result without a null guard.",
+    ),
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:querySelector|getElementById|getElementsByClassName|getElementsByTagName)\s*\([^)]*\)\s*\.\s*classList\s*\.\s*(?:add|remove|toggle|replace)\s*\("
+        ),
+        "script mutates classList directly on a raw DOM query result without a null guard.",
+    ),
+)
 
 POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
     [
@@ -105,6 +131,9 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- In repair mode, do not simply return the unchanged stable artifact unless the latest request is already satisfied.",
         "- Preserve the current concept, layout, visual metaphor, typography, palette, and motion unless the user explicitly asks to change them.",
         "- For local requests such as title size, spacing, readability, color, motion, or positioning, do not redesign unrelated parts of the artifact.",
+        "- In edit and repair mode, preserve existing container hierarchy, ids, classes, data attributes, and selector targets used by the current artifact unless the user explicitly asks for a structural redesign.",
+        "- Prefer CSS, copy, spacing, animation tuning, and small DOM adjustments over replacing major sections of the artifact.",
+        "- Do not rename, remove, or relocate containers that current render logic depends on unless you also update that logic safely and equivalently.",
         "- If context.artifact.recentEditRequests is present, use it to maintain continuity, but prioritize the latest request over earlier ones.",
         "- Preserve working live-data behavior, stable layout, and successful design decisions from the current artifact unless the user explicitly asks for a broader redesign.",
         "- The edited artifact must still consume host-delivered live poll state and must still define a working window.prezoRenderPoll(state) hook or an equivalent listener using the existing host contract.",
@@ -133,7 +162,8 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
         "- In window.prezoRenderPoll(state), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
-        "- Never write directly to .innerText, .textContent, .innerHTML, .style, or similar properties on the result of querySelector/getElementById without first checking that the element exists.",
+        "- Never read from or write to .innerText, .textContent, .innerHTML, .style, or similar properties on the result of querySelector/getElementById without first checking that the element exists.",
+        "- Never call appendChild, removeChild, replaceChildren, insertBefore, insertAdjacentElement, insertAdjacentHTML, setAttribute, removeAttribute, or classList mutations on a queried element unless the queried element was first stored and null-checked.",
         "- Do not output JSX, TSX, module import/export syntax, or unfinished code.",
         "- Do not require external libraries or network assets unless the user explicitly requests them.",
         "- Do not fetch poll data over HTTP yourself and do not open WebSockets for poll updates.",
@@ -307,6 +337,24 @@ async def create_poll_game_artifact_build(
     model = configured_model or DEFAULT_GEMINI_MODEL
     if requested_model and requested_model not in LEGACY_GEMINI_MODELS:
         model = requested_model
+    artifact_context = (
+        payload.context.get("artifact")
+        if isinstance(payload.context.get("artifact"), dict)
+        else {}
+    )
+    request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
+    if request_mode == "repair":
+        temperature = 0.2
+        top_p = 0.85
+        timeout_seconds = 75.0
+    elif request_mode == "edit":
+        temperature = 0.3
+        top_p = 0.85
+        timeout_seconds = 75.0
+    else:
+        temperature = 0.8
+        top_p = 0.95
+        timeout_seconds = 60.0
     text = await request_gemini_text(
         api_key=api_key,
         model=model,
@@ -315,11 +363,11 @@ async def create_poll_game_artifact_build(
             {"prompt": payload.prompt, "context": payload.context},
             indent=2,
         ),
-        temperature=0.8,
-        top_p=0.95,
+        temperature=temperature,
+        top_p=top_p,
         max_output_tokens=5200,
         response_mime_type="text/plain",
-        timeout_seconds=60.0,
+        timeout_seconds=timeout_seconds,
     )
 
     html = normalize_poll_game_artifact_html(text)
@@ -614,6 +662,9 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
             if pattern.search(script_body):
                 issues.append(message)
         for pattern, message in ARTIFACT_JSX_PATTERNS:
+            if pattern.search(script_body):
+                issues.append(message)
+        for pattern, message in ARTIFACT_UNSAFE_DIRECT_DOM_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
         syntax_issue = validate_inline_script_syntax(script_body)

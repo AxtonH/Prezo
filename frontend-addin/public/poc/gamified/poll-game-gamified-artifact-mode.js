@@ -99,8 +99,10 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'Revise the current artifact instead of starting from scratch.',
     'This is edit mode, not rebuild mode.',
     'Make the smallest viable change that satisfies the latest edit request.',
-    'Preserve the existing live poll wiring, structure, scene concept, layout, and working design decisions unless the edit request explicitly asks for a broader redesign.',
+    'Preserve the existing live poll wiring, DOM structure, scene concept, layout, selector targets, and working design decisions unless the edit request explicitly asks for a broader redesign.',
     'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
+    'Prefer CSS, copy, spacing, animation tuning, and small targeted adjustments over rewriting containers or rebuilding sections.',
+    'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the current render logic may depend on unless you safely update that logic too.',
     'Prefer surgical refinements over reinterpretation.',
     'Return the full updated artifact HTML.'
   ]
@@ -126,8 +128,10 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     errorText ? `Runtime failure to fix: ${errorText}` : '',
     'Repair the failed edit against the last stable working artifact.',
     'This is repair mode for a failed edit, not a full rebuild.',
-    'Apply the requested edit while preserving the existing live poll wiring and working scene structure.',
+    'Apply the requested edit while preserving the existing live poll wiring, selector targets, and working scene structure.',
     'Do not keep the broken selector logic from the failed edited artifact.',
+    'Prefer the smallest viable CSS/text/layout change over structural DOM rewrites.',
+    'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the stable artifact depends on unless you safely update that logic too.',
     'Do not simply return the unchanged stable artifact unless the request is already satisfied.',
     'Make the smallest viable change that satisfies the edit request and avoids the runtime error.',
     'Return the full updated artifact HTML.'
