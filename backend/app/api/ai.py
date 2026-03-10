@@ -220,7 +220,6 @@ async def request_anthropic_text(
     system_instruction: str,
     prompt_text: str,
     temperature: float,
-    top_p: float,
     max_tokens: int,
     timeout_seconds: float,
 ) -> str:
@@ -234,7 +233,6 @@ async def request_anthropic_text(
             }
         ],
         "temperature": temperature,
-        "top_p": top_p,
         "max_tokens": max_tokens,
     }
 
@@ -299,7 +297,6 @@ async def create_poll_game_edit_plan(
             indent=2,
         ),
         temperature=0.2,
-        top_p=0.9,
         max_tokens=1400,
         timeout_seconds=45.0,
     )
@@ -333,15 +330,12 @@ async def create_poll_game_artifact_build(
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     if request_mode == "repair":
         temperature = 0.2
-        top_p = 0.85
         timeout_seconds = 75.0
     elif request_mode == "edit":
         temperature = 0.3
-        top_p = 0.85
         timeout_seconds = 75.0
     else:
         temperature = 0.8
-        top_p = 0.95
         timeout_seconds = 60.0
     text = await request_anthropic_text(
         api_key=api_key,
@@ -352,7 +346,6 @@ async def create_poll_game_artifact_build(
             indent=2,
         ),
         temperature=temperature,
-        top_p=top_p,
         max_tokens=5200,
         timeout_seconds=timeout_seconds,
     )
@@ -413,7 +406,6 @@ async def create_poll_game_artifact_answer(
             indent=2,
         ),
         temperature=0.25,
-        top_p=0.9,
         max_tokens=900,
         timeout_seconds=45.0,
     )
@@ -459,7 +451,6 @@ async def attempt_artifact_repair(
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
         temperature=0.25,
-        top_p=0.9,
         max_tokens=5200,
         timeout_seconds=60.0,
     )
