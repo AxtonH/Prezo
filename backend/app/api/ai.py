@@ -308,7 +308,7 @@ async def create_poll_game_edit_plan(
         ),
         temperature=0.2,
         max_tokens=1400,
-        timeout_seconds=45.0,
+        timeout_seconds=settings.anthropic_plan_timeout_seconds,
     )
     normalized_plan = normalize_poll_game_plan(text)
 
@@ -340,13 +340,13 @@ async def create_poll_game_artifact_build(
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     if request_mode == "repair":
         temperature = 0.2
-        timeout_seconds = 75.0
+        timeout_seconds = settings.anthropic_artifact_repair_timeout_seconds
     elif request_mode == "edit":
         temperature = 0.3
-        timeout_seconds = 75.0
+        timeout_seconds = settings.anthropic_artifact_edit_timeout_seconds
     else:
         temperature = 0.8
-        timeout_seconds = 60.0
+        timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
     text = await request_anthropic_text(
         api_key=api_key,
         model=model,
@@ -417,7 +417,7 @@ async def create_poll_game_artifact_answer(
         ),
         temperature=0.25,
         max_tokens=900,
-        timeout_seconds=45.0,
+        timeout_seconds=settings.anthropic_artifact_answer_timeout_seconds,
     )
 
     answer = (text or "").strip()
@@ -462,7 +462,7 @@ async def attempt_artifact_repair(
         prompt_text=repair_prompt,
         temperature=0.25,
         max_tokens=5200,
-        timeout_seconds=60.0,
+        timeout_seconds=settings.anthropic_artifact_repair_timeout_seconds,
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()

@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_model: str = "claude-opus-4-6"
+    anthropic_plan_timeout_seconds: float = 60.0
+    anthropic_artifact_build_timeout_seconds: float = 180.0
+    anthropic_artifact_edit_timeout_seconds: float = 240.0
+    anthropic_artifact_repair_timeout_seconds: float = 240.0
+    anthropic_artifact_answer_timeout_seconds: float = 90.0
 
     @property
     def cors_origins_list(self) -> list[str]:
