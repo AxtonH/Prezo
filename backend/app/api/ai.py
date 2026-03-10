@@ -187,7 +187,7 @@ POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION = "\n".join(
 
 
 class PollGameEditPlanRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=4000)
+    prompt: str = Field(min_length=1, max_length=12000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
 
@@ -198,7 +198,7 @@ class PollGameEditPlanResponse(BaseModel):
 
 
 class PollGameArtifactBuildRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=4000)
+    prompt: str = Field(min_length=1, max_length=12000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
 

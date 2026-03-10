@@ -1372,8 +1372,7 @@ import {
         },
         context.poll
       )
-      const aiPrompt = buildArtifactAiPrompt(repairPrompt, context.artifact)
-      const buildResult = await requestAiArtifactBuild(aiPrompt, context)
+      const buildResult = await requestAiArtifactBuild(repairPrompt, context)
       const applied = applyArtifactMarkup(buildResult.html, { requestKind: 'edit' })
       if (!applied) {
         const message =
@@ -2167,10 +2166,7 @@ import {
     }, ARTIFACT_BUILD_TIMEOUT_MS)
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
-      const message =
-        asText(payload?.detail) ||
-        asText(payload?.error?.message) ||
-        `Request failed (${response.status})`
+      const message = extractApiErrorMessage(payload, response.status)
       throw new Error(message)
     }
 
@@ -2201,10 +2197,7 @@ import {
     })
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
-      const message =
-        asText(payload?.detail) ||
-        asText(payload?.error?.message) ||
-        `Request failed (${response.status})`
+      const message = extractApiErrorMessage(payload, response.status)
       throw new Error(message)
     }
     const text = asText(payload?.text)
@@ -8814,6 +8807,26 @@ import {
       return error.message
     }
     return 'Unexpected error'
+  }
+
+  function extractApiErrorMessage(payload, status) {
+    const directDetail = asText(payload?.detail)
+    if (directDetail) {
+      return directDetail
+    }
+    if (Array.isArray(payload?.detail) && payload.detail.length > 0) {
+      const first = payload.detail[0]
+      const parts = [
+        asText(first?.msg),
+        Array.isArray(first?.loc) ? first.loc.join('.') : ''
+      ].filter(Boolean)
+      if (parts.length > 0) {
+        return parts.join(' [')
+          .replace(/\[$/, '')
+          .replace(/^(.+?) \[(.+)$/, '$1 [$2]')
+      }
+    }
+    return asText(payload?.error?.message) || `Request failed (${status})`
   }
 
   function readFileAsDataUrl(file) {
