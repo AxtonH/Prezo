@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import httpx
@@ -17,6 +18,17 @@ ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_ARTIFACT_MAX_TOKENS = 12000
 ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
+ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
+ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
+ARTIFACT_REPAIR_MODE_MAX_REPAIR_ATTEMPTS = 1
+ARTIFACT_MIN_CALL_TIMEOUT_SECONDS = 15.0
+ARTIFACT_CONTEXT_DIRECT_CHAR_LIMIT = 24000
+ARTIFACT_CONTEXT_HEAD_CHAR_LIMIT = 9000
+ARTIFACT_CONTEXT_TAIL_CHAR_LIMIT = 4000
+ARTIFACT_CONTEXT_COMBINED_CHAR_LIMIT = 32000
+ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT = 12000
+ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
+ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
@@ -343,6 +355,11 @@ async def create_poll_game_artifact_build(
         else {}
     )
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
+    model_context = prepare_artifact_context_for_model(payload.context, request_mode)
+    deadline = time.monotonic() + max(
+        settings.anthropic_artifact_total_timeout_seconds,
+        ARTIFACT_MIN_CALL_TIMEOUT_SECONDS,
+    )
     if request_mode == "repair":
         temperature = 0.2
         timeout_seconds = settings.anthropic_artifact_repair_timeout_seconds
@@ -352,12 +369,16 @@ async def create_poll_game_artifact_build(
     else:
         temperature = 0.8
         timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
+    timeout_seconds = min(
+        timeout_seconds,
+        ensure_artifact_time_budget_remaining(deadline, "starting artifact generation"),
+    )
     text, stop_reason = await request_anthropic_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=json.dumps(
-            {"prompt": payload.prompt, "context": payload.context},
+            {"prompt": payload.prompt, "context": model_context},
             indent=2,
         ),
         temperature=temperature,
@@ -378,15 +399,20 @@ async def create_poll_game_artifact_build(
             0,
             "artifact output appears truncated before completion.",
         )
+    max_repair_attempts = resolve_artifact_max_repair_attempts(request_mode)
     repair_attempts = 0
-    while validation_issues and repair_attempts < ARTIFACT_MAX_REPAIR_ATTEMPTS:
+    while validation_issues and repair_attempts < max_repair_attempts:
         repaired_html = await attempt_artifact_repair(
             api_key=api_key,
             model=model,
             original_prompt=payload.prompt,
-            context=payload.context,
+            context=model_context,
             html=html,
             validation_issues=validation_issues,
+            timeout_seconds=min(
+                settings.anthropic_artifact_repair_timeout_seconds,
+                ensure_artifact_time_budget_remaining(deadline, "repairing artifact output"),
+            ),
         )
         if not repaired_html:
             break
@@ -455,6 +481,7 @@ async def attempt_artifact_repair(
     context: dict[str, Any],
     html: str,
     validation_issues: list[str],
+    timeout_seconds: float,
 ) -> str:
     if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
         return ""
@@ -489,7 +516,7 @@ async def attempt_artifact_repair(
         prompt_text=repair_prompt,
         temperature=0.25,
         max_tokens=ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS,
-        timeout_seconds=settings.anthropic_artifact_repair_timeout_seconds,
+        timeout_seconds=timeout_seconds,
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()
@@ -736,6 +763,79 @@ def collect_context_artifact_live_hooks(context: dict[str, Any]) -> list[str]:
     )
 
 
+def prepare_artifact_context_for_model(
+    context: dict[str, Any], request_mode: str
+) -> dict[str, Any]:
+    if not isinstance(context, dict):
+        return {}
+    prepared = json.loads(json.dumps(context, ensure_ascii=False))
+    artifact_context = (
+        prepared.get("artifact") if isinstance(prepared.get("artifact"), dict) else None
+    )
+    if not artifact_context:
+        return prepared
+    artifact_context["currentArtifactHtml"] = compress_artifact_markup_for_model(
+        artifact_context.get("currentArtifactHtml")
+        if isinstance(artifact_context.get("currentArtifactHtml"), str)
+        else "",
+        request_mode=request_mode,
+    )
+    artifact_context["failedArtifactHtml"] = compress_artifact_markup_for_model(
+        artifact_context.get("failedArtifactHtml")
+        if isinstance(artifact_context.get("failedArtifactHtml"), str)
+        else "",
+        request_mode=request_mode,
+    )
+    artifact_context["currentArtifactLiveHooks"] = compress_artifact_live_hooks_for_model(
+        artifact_context.get("currentArtifactLiveHooks")
+        if isinstance(artifact_context.get("currentArtifactLiveHooks"), str)
+        else "",
+    )
+    if isinstance(artifact_context.get("recentEditRequests"), list):
+        artifact_context["recentEditRequests"] = [
+            trim_artifact_context_text(str(item), ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT)
+            for item in artifact_context["recentEditRequests"][-ARTIFACT_RECENT_EDIT_REQUEST_LIMIT:]
+            if str(item).strip()
+        ]
+    for key in ("lastPrompt", "originalEditRequest", "runtimeRenderError", "pollTitle"):
+        value = artifact_context.get(key)
+        if isinstance(value, str):
+            artifact_context[key] = trim_artifact_context_text(value, 1200)
+    return prepared
+
+
+def compress_artifact_markup_for_model(markup: str, *, request_mode: str) -> str:
+    normalized = (markup or "").strip()
+    if not normalized:
+        return ""
+    direct_limit = ARTIFACT_CONTEXT_DIRECT_CHAR_LIMIT
+    combined_limit = ARTIFACT_CONTEXT_COMBINED_CHAR_LIMIT
+    if request_mode == "edit":
+        direct_limit = 18000
+        combined_limit = 24000
+    elif request_mode == "repair":
+        direct_limit = 16000
+        combined_limit = 22000
+    if len(normalized) <= direct_limit:
+        return normalized
+    hook_scripts = "\n\n".join(extract_artifact_live_hook_scripts(normalized))
+    head = normalized[:ARTIFACT_CONTEXT_HEAD_CHAR_LIMIT].strip()
+    tail = normalized[-ARTIFACT_CONTEXT_TAIL_CHAR_LIMIT :].strip()
+    combined = "\n\n<!-- artifact-context-cut -->\n\n".join(
+        part for part in (head, hook_scripts, tail) if part
+    )
+    return trim_artifact_context_text(combined, combined_limit)
+
+
+def compress_artifact_live_hooks_for_model(hook_text: str) -> str:
+    normalized = (hook_text or "").strip()
+    if not normalized:
+        return ""
+    extracted = extract_artifact_live_hook_scripts(normalized)
+    joined = "\n\n".join(extracted) if extracted else normalized
+    return trim_artifact_context_text(joined, ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT)
+
+
 def inject_artifact_live_hook_scripts(html: str, hook_scripts: list[str]) -> str:
     normalized = (html or "").strip()
     if not normalized or not hook_scripts:
@@ -772,6 +872,37 @@ def restore_artifact_live_hooks_if_missing(html: str, context: dict[str, Any]) -
     if not hook_scripts:
         return normalized
     return inject_artifact_live_hook_scripts(normalized, hook_scripts)
+
+
+def trim_artifact_context_text(text: str, limit: int) -> str:
+    normalized = (text or "").strip()
+    if not normalized or limit <= 0 or len(normalized) <= limit:
+        return normalized
+    marker = "\n\n<!-- artifact-context-cut -->\n\n"
+    head_chars = max(1, (limit - len(marker)) // 2)
+    tail_chars = max(1, limit - len(marker) - head_chars)
+    return f"{normalized[:head_chars].rstrip()}{marker}{normalized[-tail_chars:].lstrip()}"
+
+
+def resolve_artifact_max_repair_attempts(request_mode: str) -> int:
+    if request_mode == "edit":
+        return ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS
+    if request_mode == "repair":
+        return ARTIFACT_REPAIR_MODE_MAX_REPAIR_ATTEMPTS
+    return min(ARTIFACT_MAX_REPAIR_ATTEMPTS, ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS)
+
+
+def ensure_artifact_time_budget_remaining(deadline: float, stage: str) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining >= ARTIFACT_MIN_CALL_TIMEOUT_SECONDS:
+        return remaining
+    raise HTTPException(
+        status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+        detail=(
+            f"Artifact request exceeded the server time budget while {stage}. "
+            "Try a simpler edit or retry."
+        ),
+    )
 
 
 def validate_inline_script_syntax(script_body: str) -> str:

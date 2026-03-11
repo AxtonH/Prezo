@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     anthropic_artifact_build_timeout_seconds: float = 180.0
     anthropic_artifact_edit_timeout_seconds: float = 240.0
     anthropic_artifact_repair_timeout_seconds: float = 240.0
+    anthropic_artifact_total_timeout_seconds: float = 270.0
     anthropic_artifact_answer_timeout_seconds: float = 90.0
 
     @property
