@@ -17,6 +17,7 @@ ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_ARTIFACT_MAX_TOKENS = 12000
 ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS = 12000
+ANTHROPIC_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
@@ -176,6 +177,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Prefer proportion, grouped units, stacked segments, or bucketed representations over naive one-object-per-vote visuals.",
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
+        "- If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
         "- In window.prezoRenderPoll(state) or the function passed to window.prezoSetPollRenderer(fn), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "- Never read from or write to .innerText, .textContent, .innerHTML, .style, or similar properties on the result of querySelector/getElementById without first checking that the element exists.",
         "- Never call appendChild, removeChild, replaceChildren, insertBefore, insertAdjacentElement, insertAdjacentHTML, setAttribute, removeAttribute, or classList mutations on a queried element unless the queried element was first stored and null-checked.",
@@ -422,6 +424,38 @@ async def create_poll_game_artifact_build(
         html = next_html
         validation_issues = validate_poll_game_artifact_html(html)
         repair_attempts += 1
+    if should_attempt_stable_artifact_recovery(
+        request_mode, validation_issues, payload.context
+    ):
+        recovery_context = build_stable_artifact_recovery_context(
+            payload.context,
+            failed_html=html,
+            validation_issues=validation_issues,
+        )
+        prepared_recovery_context = prepare_artifact_context_for_model(
+            recovery_context, "repair"
+        )
+        recovered_html, recovered_stop_reason = await attempt_artifact_stable_recovery(
+            api_key=api_key,
+            model=model,
+            original_prompt=payload.prompt,
+            context=prepared_recovery_context,
+            validation_issues=validation_issues,
+            timeout_seconds=min(
+                90.0,
+                ensure_artifact_time_budget_remaining(
+                    deadline, "recovering artifact output from the last stable artifact"
+                ),
+            ),
+        )
+        if recovered_html:
+            html = restore_artifact_live_hooks_if_missing(recovered_html, payload.context)
+            validation_issues = validate_poll_game_artifact_html(html)
+            if recovered_stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+                validation_issues.insert(
+                    0,
+                    "artifact output appears truncated before completion.",
+                )
     if validation_issues:
         issue_text = "; ".join(validation_issues[:4])
         raise HTTPException(
@@ -520,6 +554,43 @@ async def attempt_artifact_repair(
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()
+
+
+async def attempt_artifact_stable_recovery(
+    *,
+    api_key: str,
+    model: str,
+    original_prompt: str,
+    context: dict[str, Any],
+    validation_issues: list[str],
+    timeout_seconds: float,
+) -> tuple[str, str]:
+    recovery_prompt = "\n".join(
+        [
+            "The previous artifact edit output was invalid and must be discarded.",
+            f"Original prompt: {original_prompt}",
+            f"Validation issues to avoid: {'; '.join(validation_issues[:6])}",
+            "Reapply the requested change against the stable current artifact in context.artifact.currentArtifactHtml.",
+            "Do not preserve malformed script bodies, unfinished JavaScript expressions, or unbalanced <script> tags from the failed output.",
+            "Return raw HTML only.",
+            "Ensure every <script> tag is closed and every JavaScript expression, parenthesis, block, string, and template is complete.",
+            "If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
+        ]
+    )
+    text, stop_reason = await request_anthropic_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+        prompt_text=json.dumps(
+            {"prompt": recovery_prompt, "context": context},
+            indent=2,
+        ),
+        temperature=0.15,
+        max_tokens=ANTHROPIC_ARTIFACT_RECOVERY_MAX_TOKENS,
+        timeout_seconds=timeout_seconds,
+    )
+    recovered = normalize_poll_game_artifact_html(text)
+    return recovered.strip(), stop_reason
 
 
 def extract_anthropic_text(payload: Any) -> str:
@@ -804,6 +875,34 @@ def prepare_artifact_context_for_model(
     return prepared
 
 
+def build_stable_artifact_recovery_context(
+    context: dict[str, Any], failed_html: str, validation_issues: list[str]
+) -> dict[str, Any]:
+    prepared = json.loads(json.dumps(context, ensure_ascii=False))
+    artifact_context = (
+        prepared.get("artifact") if isinstance(prepared.get("artifact"), dict) else None
+    )
+    if artifact_context is None:
+        artifact_context = {}
+        prepared["artifact"] = artifact_context
+    artifact_context["requestMode"] = "repair"
+    artifact_context["failedArtifactHtml"] = failed_html
+    issue_text = "; ".join(issue.strip() for issue in validation_issues[:4] if issue.strip())
+    existing_runtime_error = (
+        artifact_context.get("runtimeRenderError")
+        if isinstance(artifact_context.get("runtimeRenderError"), str)
+        else ""
+    )
+    combined_runtime_error = ". ".join(
+        part for part in (existing_runtime_error.strip(), issue_text.strip()) if part
+    )
+    artifact_context["runtimeRenderError"] = trim_artifact_context_text(
+        combined_runtime_error,
+        1200,
+    )
+    return prepared
+
+
 def compress_artifact_markup_for_model(markup: str, *, request_mode: str) -> str:
     normalized = (markup or "").strip()
     if not normalized:
@@ -882,6 +981,38 @@ def trim_artifact_context_text(text: str, limit: int) -> str:
     head_chars = max(1, (limit - len(marker)) // 2)
     tail_chars = max(1, limit - len(marker) - head_chars)
     return f"{normalized[:head_chars].rstrip()}{marker}{normalized[-tail_chars:].lstrip()}"
+
+
+def has_artifact_syntax_or_truncation_issue(validation_issues: list[str]) -> bool:
+    if not validation_issues:
+        return False
+    for issue in validation_issues:
+        normalized = issue.strip().lower()
+        if not normalized:
+            continue
+        if "unbalanced <script>" in normalized:
+            return True
+        if "unterminated" in normalized:
+            return True
+        if "mismatched closing" in normalized:
+            return True
+        if "unexpected closing" in normalized:
+            return True
+        if "truncated" in normalized:
+            return True
+    return False
+
+
+def should_attempt_stable_artifact_recovery(
+    request_mode: str, validation_issues: list[str], context: dict[str, Any]
+) -> bool:
+    if request_mode not in {"edit", "repair"}:
+        return False
+    if not has_artifact_syntax_or_truncation_issue(validation_issues):
+        return False
+    artifact_context = context.get("artifact") if isinstance(context.get("artifact"), dict) else {}
+    current_html = artifact_context.get("currentArtifactHtml")
+    return isinstance(current_html, str) and bool(current_html.strip())
 
 
 def resolve_artifact_max_repair_attempts(request_mode: str) -> int:
