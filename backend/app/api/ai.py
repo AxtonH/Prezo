@@ -12,12 +12,11 @@ from pydantic import BaseModel, Field
 from ..config import settings
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-6"
-ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
-ANTHROPIC_VERSION = "2023-06-01"
-ANTHROPIC_ARTIFACT_MAX_TOKENS = 12000
-ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS = 12000
-ANTHROPIC_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
+DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_ARTIFACT_MAX_TOKENS = 12000
+GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
+GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
@@ -235,7 +234,7 @@ class PollGameArtifactAssistantResponse(BaseModel):
     model: str
 
 
-async def request_anthropic_text(
+async def request_gemini_text(
     *,
     api_key: str,
     model: str,
@@ -245,18 +244,31 @@ async def request_anthropic_text(
     max_tokens: int,
     timeout_seconds: float,
 ) -> tuple[str, str]:
-    base_url = resolve_anthropic_base_url()
-    endpoint = f"{base_url}/messages"
+    base_url = resolve_gemini_base_url()
+    endpoint = build_gemini_generate_content_endpoint(base_url, model)
     body = {
-        "model": model,
-        "system": system_instruction,
-        "messages": [
+        "systemInstruction": {
+            "parts": [
+                {
+                    "text": system_instruction,
+                }
+            ]
+        },
+        "contents": [
             {
-                "role": "user", "content": prompt_text
+                "role": "user",
+                "parts": [
+                    {
+                        "text": prompt_text,
+                    }
+                ],
             }
         ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "candidateCount": 1,
+        },
     }
 
     try:
@@ -267,8 +279,7 @@ async def request_anthropic_text(
                 endpoint,
                 headers={
                     "Content-Type": "application/json",
-                    "x-api-key": api_key,
-                    "anthropic-version": ANTHROPIC_VERSION,
+                    "x-goog-api-key": api_key,
                 },
                 json=body,
             )
@@ -276,7 +287,7 @@ async def request_anthropic_text(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                f"Unable to reach Anthropic API at {base_url}: "
+                f"Unable to reach Gemini API at {base_url}: "
                 f"{exc.__class__.__name__} after {timeout_seconds:.0f}s."
             ),
         ) from exc
@@ -284,7 +295,7 @@ async def request_anthropic_text(
         detail = str(exc).strip() or exc.__class__.__name__
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unable to reach Anthropic API at {base_url}: {detail}",
+            detail=f"Unable to reach Gemini API at {base_url}: {detail}",
         ) from exc
 
     raw_payload: Any = {}
@@ -294,15 +305,15 @@ async def request_anthropic_text(
         except ValueError:
             raw_payload = {}
     if response.status_code >= 400:
-        detail = extract_anthropic_error(raw_payload) or f"Anthropic request failed ({response.status_code})"
+        detail = extract_gemini_error(raw_payload) or f"Gemini request failed ({response.status_code})"
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
-    text = extract_anthropic_text(raw_payload)
-    stop_reason = extract_anthropic_stop_reason(raw_payload)
+    text = extract_gemini_text(raw_payload)
+    stop_reason = extract_gemini_stop_reason(raw_payload)
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Anthropic response did not include text content.",
+            detail="Gemini response did not include text content.",
         )
     return text, stop_reason
 
@@ -311,17 +322,17 @@ async def request_anthropic_text(
 async def create_poll_game_edit_plan(
     payload: PollGameEditPlanRequest,
 ) -> PollGameEditPlanResponse:
-    api_key = (settings.anthropic_api_key or "").strip()
+    api_key = (settings.gemini_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_anthropic_model_name(payload.model)
-    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
-    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
-    text, _stop_reason = await request_anthropic_text(
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
+    text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_SYSTEM_INSTRUCTION,
@@ -331,7 +342,7 @@ async def create_poll_game_edit_plan(
         ),
         temperature=0.2,
         max_tokens=1400,
-        timeout_seconds=settings.anthropic_plan_timeout_seconds,
+        timeout_seconds=settings.gemini_plan_timeout_seconds,
     )
     normalized_plan = normalize_poll_game_plan(text)
 
@@ -345,16 +356,16 @@ async def create_poll_game_edit_plan(
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactBuildResponse:
-    api_key = (settings.anthropic_api_key or "").strip()
+    api_key = (settings.gemini_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_anthropic_model_name(payload.model)
-    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
-    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
     artifact_context = (
         payload.context.get("artifact")
         if isinstance(payload.context.get("artifact"), dict)
@@ -363,18 +374,18 @@ async def create_poll_game_artifact_build(
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     model_context = prepare_artifact_context_for_model(payload.context, request_mode)
     deadline = time.monotonic() + max(
-        settings.anthropic_artifact_total_timeout_seconds,
+        settings.gemini_artifact_total_timeout_seconds,
         ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
     )
     if request_mode == "repair":
         temperature = 0.2
-        timeout_seconds = settings.anthropic_artifact_repair_timeout_seconds
+        timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
     elif request_mode == "edit":
         temperature = 0.2
-        timeout_seconds = settings.anthropic_artifact_edit_timeout_seconds
+        timeout_seconds = settings.gemini_artifact_edit_timeout_seconds
     else:
         temperature = 0.8
-        timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
+        timeout_seconds = settings.gemini_artifact_build_timeout_seconds
     timeout_seconds = min(
         timeout_seconds,
         ensure_artifact_time_budget_remaining(
@@ -384,7 +395,7 @@ async def create_poll_game_artifact_build(
             reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
         ),
     )
-    text, stop_reason = await request_anthropic_text(
+    text, stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
@@ -393,7 +404,7 @@ async def create_poll_game_artifact_build(
             indent=2,
         ),
         temperature=temperature,
-        max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
+        max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
     )
 
@@ -402,7 +413,7 @@ async def create_poll_game_artifact_build(
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Anthropic response did not include artifact HTML.",
+            detail="Gemini response did not include artifact HTML.",
         )
     validation_issues = validate_poll_game_artifact_html(html)
     if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
@@ -421,7 +432,7 @@ async def create_poll_game_artifact_build(
             html=html,
             validation_issues=validation_issues,
             timeout_seconds=min(
-                settings.anthropic_artifact_repair_timeout_seconds,
+                settings.gemini_artifact_repair_timeout_seconds,
                 ensure_artifact_time_budget_remaining(
                     deadline,
                     "repairing artifact output",
@@ -489,17 +500,17 @@ async def create_poll_game_artifact_build(
 async def create_poll_game_artifact_answer(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactAssistantResponse:
-    api_key = (settings.anthropic_api_key or "").strip()
+    api_key = (settings.gemini_api_key or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI editor is not configured. Set ANTHROPIC_API_KEY on backend.",
+            detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_anthropic_model_name(payload.model)
-    configured_model = normalize_anthropic_model_name(settings.anthropic_model)
-    model = requested_model or configured_model or DEFAULT_ANTHROPIC_MODEL
-    text, _stop_reason = await request_anthropic_text(
+    requested_model = normalize_gemini_model_name(payload.model)
+    configured_model = normalize_gemini_model_name(settings.gemini_model)
+    model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
+    text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
@@ -509,7 +520,7 @@ async def create_poll_game_artifact_answer(
         ),
         temperature=0.25,
         max_tokens=900,
-        timeout_seconds=settings.anthropic_artifact_answer_timeout_seconds,
+        timeout_seconds=settings.gemini_artifact_answer_timeout_seconds,
     )
 
     answer = (text or "").strip()
@@ -558,13 +569,13 @@ async def attempt_artifact_repair(
             html,
         ]
     )
-    text, _stop_reason = await request_anthropic_text(
+    text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
         prompt_text=repair_prompt,
         temperature=0.25,
-        max_tokens=ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS,
+        max_tokens=GEMINI_ARTIFACT_REPAIR_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
     )
     repaired = normalize_poll_game_artifact_html(text)
@@ -592,7 +603,7 @@ async def attempt_artifact_stable_recovery(
             "If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
         ]
     )
-    text, stop_reason = await request_anthropic_text(
+    text, stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
@@ -601,59 +612,87 @@ async def attempt_artifact_stable_recovery(
             indent=2,
         ),
         temperature=0.15,
-        max_tokens=ANTHROPIC_ARTIFACT_RECOVERY_MAX_TOKENS,
+        max_tokens=GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
     )
     recovered = normalize_poll_game_artifact_html(text)
     return recovered.strip(), stop_reason
 
 
-def extract_anthropic_text(payload: Any) -> str:
+def extract_gemini_text(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
-    content = payload.get("content")
-    if not isinstance(content, list):
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
         return ""
     chunks: list[str] = []
-    for part in content:
-        if not isinstance(part, dict):
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
             continue
-        if part.get("type") != "text":
+        content = candidate.get("content")
+        if not isinstance(content, dict):
             continue
-        text = part.get("text")
-        if isinstance(text, str) and text.strip():
-            chunks.append(text.strip())
+        parts = content.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                chunks.append(text.strip())
+        if chunks:
+            break
     return "\n".join(chunks).strip()
 
 
-def extract_anthropic_error(payload: Any) -> str:
+def extract_gemini_error(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
     error = payload.get("error")
-    if not isinstance(error, dict):
-        return ""
-    for key in ("message", "type"):
-        value = error.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    if isinstance(error, dict):
+        for key in ("message", "status"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    prompt_feedback = payload.get("promptFeedback")
+    if isinstance(prompt_feedback, dict):
+        block_reason = prompt_feedback.get("blockReason")
+        if isinstance(block_reason, str) and block_reason.strip():
+            return block_reason.strip()
     return ""
 
 
-def extract_anthropic_stop_reason(payload: Any) -> str:
+def extract_gemini_stop_reason(payload: Any) -> str:
     if not isinstance(payload, dict):
         return ""
-    value = payload.get("stop_reason")
-    return value.strip() if isinstance(value, str) else ""
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return ""
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        value = candidate.get("finishReason") or candidate.get("finish_reason")
+        if isinstance(value, str) and value.strip():
+            return value.strip().lower()
+    return ""
 
 
-def normalize_anthropic_model_name(value: str | None) -> str:
+def normalize_gemini_model_name(value: str | None) -> str:
     text = (value or "").strip()
+    if text.startswith("models/"):
+        return text[len("models/") :].strip()
     return text
 
 
-def resolve_anthropic_base_url() -> str:
-    base_url = (settings.anthropic_base_url or "").strip() or ANTHROPIC_API_BASE
+def resolve_gemini_base_url() -> str:
+    base_url = (settings.gemini_base_url or "").strip() or GEMINI_API_BASE
     return base_url.rstrip("/")
+
+
+def build_gemini_generate_content_endpoint(base_url: str, model: str) -> str:
+    normalized_model = normalize_gemini_model_name(model) or DEFAULT_GEMINI_MODEL
+    return f"{base_url}/models/{normalized_model}:generateContent"
 
 
 def normalize_poll_game_plan(raw_text: str) -> dict[str, Any]:

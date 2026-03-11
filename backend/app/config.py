@@ -75,15 +75,15 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:5174"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
-    anthropic_api_key: str | None = None
-    anthropic_base_url: str = "https://api.anthropic.com/v1"
-    anthropic_model: str = "claude-opus-4-6"
-    anthropic_plan_timeout_seconds: float = 60.0
-    anthropic_artifact_build_timeout_seconds: float = 180.0
-    anthropic_artifact_edit_timeout_seconds: float = 240.0
-    anthropic_artifact_repair_timeout_seconds: float = 240.0
-    anthropic_artifact_total_timeout_seconds: float = 270.0
-    anthropic_artifact_answer_timeout_seconds: float = 90.0
+    gemini_api_key: str | None = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_model: str = "gemini-3.1-pro-preview"
+    gemini_plan_timeout_seconds: float = 60.0
+    gemini_artifact_build_timeout_seconds: float = 180.0
+    gemini_artifact_edit_timeout_seconds: float = 240.0
+    gemini_artifact_repair_timeout_seconds: float = 240.0
+    gemini_artifact_total_timeout_seconds: float = 270.0
+    gemini_artifact_answer_timeout_seconds: float = 90.0
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -9,8 +9,10 @@ export const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
 export const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
 export const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
 export const AI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.ai-model.v1'
-export const AI_DEFAULT_MODEL = 'claude-opus-4-6'
+export const AI_DEFAULT_MODEL = 'gemini-3.1-pro-preview'
 export const AI_LEGACY_MODELS = new Set([
+  'claude-opus-4-6',
+  'models/claude-opus-4-6',
   'gemini-2.0-flash',
   'models/gemini-2.0-flash',
   'gemini-3-flash-preview'
