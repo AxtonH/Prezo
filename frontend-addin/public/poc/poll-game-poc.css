@@ -518,6 +518,15 @@ body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   cursor: pointer;
 }
 
+.ribbon-group .file-btn {
+  flex-direction: row;
+  gap: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .ribbon-group label {
   display: flex;
   flex-direction: column;
