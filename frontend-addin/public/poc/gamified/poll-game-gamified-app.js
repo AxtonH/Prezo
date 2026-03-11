@@ -1939,8 +1939,7 @@ import {
   function resolveAiModel() {
     const queryModel =
       asText(query.get('aiModel')) ||
-      asText(query.get('geminiModel')) ||
-      asText(query.get('anthropicModel'))
+      asText(query.get('geminiModel'))
     if (queryModel) {
       try {
         localStorage.setItem(AI_MODEL_STORAGE_KEY, queryModel)
