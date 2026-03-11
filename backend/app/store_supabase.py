@@ -14,6 +14,8 @@ from .models import (
     QnaMode,
     Question,
     QuestionStatus,
+    SavedArtifact,
+    SavedTheme,
     Session,
     SessionSnapshot,
     SessionStatus,
@@ -153,6 +155,14 @@ class SupabaseStore:
 
     def _to_prompt(self, data: dict[str, Any]) -> QnaPrompt:
         return QnaPrompt(**data)
+
+    def _to_saved_theme(self, data: dict[str, Any]) -> SavedTheme:
+        payload = {key: value for key, value in data.items() if key != "user_id"}
+        return SavedTheme(**payload)
+
+    def _to_saved_artifact(self, data: dict[str, Any]) -> SavedArtifact:
+        payload = {key: value for key, value in data.items() if key != "user_id"}
+        return SavedArtifact(**payload)
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         for _ in range(6):
@@ -621,6 +631,95 @@ class SupabaseStore:
             polls=poll_models,
             prompts=prompt_models,
         )
+
+    async def list_saved_themes(self, user_id: str) -> list[SavedTheme]:
+        rows = await self._select(
+            "saved_poll_game_themes",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "order": "updated_at.desc",
+            },
+        )
+        return [self._to_saved_theme(row) for row in rows]
+
+    async def save_saved_theme(
+        self, user_id: str, name: str, theme: dict[str, Any]
+    ) -> SavedTheme:
+        response = await self._request(
+            "POST",
+            "saved_poll_game_themes",
+            params={"on_conflict": "user_id,name"},
+            json={"user_id": user_id, "name": name, "theme": theme},
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise SupabaseError(500, "failed to save theme")
+        return self._to_saved_theme(data[0])
+
+    async def delete_saved_theme(self, user_id: str, name: str) -> SavedTheme:
+        response = await self._request(
+            "DELETE",
+            "saved_poll_game_themes",
+            params={"user_id": f"eq.{user_id}", "name": f"eq.{name}"},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("saved theme not found")
+        return self._to_saved_theme(data[0])
+
+    async def list_saved_artifacts(self, user_id: str) -> list[SavedArtifact]:
+        rows = await self._select(
+            "saved_poll_game_artifacts",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "order": "updated_at.desc",
+            },
+        )
+        return [self._to_saved_artifact(row) for row in rows]
+
+    async def save_saved_artifact(
+        self,
+        user_id: str,
+        name: str,
+        html: str,
+        last_prompt: str | None,
+        last_answers: dict[str, Any],
+        theme_snapshot: dict[str, Any] | None,
+    ) -> SavedArtifact:
+        response = await self._request(
+            "POST",
+            "saved_poll_game_artifacts",
+            params={"on_conflict": "user_id,name"},
+            json={
+                "user_id": user_id,
+                "name": name,
+                "html": html,
+                "last_prompt": last_prompt,
+                "last_answers": last_answers,
+                "theme_snapshot": theme_snapshot,
+            },
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise SupabaseError(500, "failed to save artifact")
+        return self._to_saved_artifact(data[0])
+
+    async def delete_saved_artifact(self, user_id: str, name: str) -> SavedArtifact:
+        response = await self._request(
+            "DELETE",
+            "saved_poll_game_artifacts",
+            params={"user_id": f"eq.{user_id}", "name": f"eq.{name}"},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("saved artifact not found")
+        return self._to_saved_artifact(data[0])
 
     async def record_event(self, session_id: str, event: object) -> None:
         return None

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import ai, polls, qna_prompts, questions, sessions
+from .api import ai, library, polls, qna_prompts, questions, sessions
 from .config import settings
 from .deps import manager, store
 from .models import Event, SessionSnapshot
@@ -26,6 +26,7 @@ app.include_router(questions.router)
 app.include_router(polls.router)
 app.include_router(qna_prompts.router)
 app.include_router(ai.router)
+app.include_router(library.router)
 
 
 @app.get("/health")

@@ -117,6 +117,36 @@ class SessionSnapshot(BaseModel):
     prompts: list[QnaPrompt]
 
 
+class SavedTheme(BaseModel):
+    id: str
+    name: str
+    theme: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class SavedThemeUpsert(BaseModel):
+    theme: dict[str, Any]
+
+
+class SavedArtifact(BaseModel):
+    id: str
+    name: str
+    html: str
+    last_prompt: str | None = None
+    last_answers: dict[str, Any] = Field(default_factory=dict)
+    theme_snapshot: dict[str, Any] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SavedArtifactUpsert(BaseModel):
+    html: str = Field(min_length=1)
+    last_prompt: str | None = Field(default=None, max_length=4000)
+    last_answers: dict[str, Any] = Field(default_factory=dict)
+    theme_snapshot: dict[str, Any] | None = None
+
+
 class QnaConfigUpdate(BaseModel):
     mode: QnaMode
     prompt: str | None = Field(default=None, max_length=200)

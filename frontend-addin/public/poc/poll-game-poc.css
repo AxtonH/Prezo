@@ -327,16 +327,23 @@ body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   padding: 8px 14px 8px;
 }
 
-.ribbon-group.themes-group .row {
+.ribbon-group.themes-group .row,
+.ribbon-group.artifact-library-group .row {
   gap: 8px;
 }
 
-.ribbon-group.themes-group .row + .row {
+.ribbon-group.themes-group .row + .row,
+.ribbon-group.artifact-library-group .row + .row {
   margin-top: 8px;
 }
 
-.ribbon-group.themes-group .note {
+.ribbon-group.themes-group .note,
+.ribbon-group.artifact-library-group .note {
   margin-top: 8px;
+}
+
+.ribbon-group.artifact-library-group {
+  padding: 8px 14px 8px;
 }
 
 .ribbon-group.group-wide {

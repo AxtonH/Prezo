@@ -2,6 +2,7 @@ export const DEFAULT_API_BASE = 'https://prezo-backend-production.up.railway.app
 export const DEFAULT_POLL_SELECTOR = 'latest/open'
 export const THEME_LIBRARY_KEY = 'prezo.poll-game-poc.themes.v1'
 export const THEME_DRAFT_KEY = 'prezo.poll-game-poc.theme-draft.v1'
+export const ARTIFACT_LIBRARY_KEY = 'prezo.poll-game-poc.artifacts.v1'
 export const RIBBON_TAB_KEY = 'prezo.poll-game-poc.ribbon-tab.v1'
 export const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
 export const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'

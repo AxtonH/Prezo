@@ -10,6 +10,7 @@ import {
   AI_THEME_ALLOWED_KEYS,
   AI_THEME_COLOR_KEYS,
   AI_THEME_NUMBER_RANGES,
+  ARTIFACT_LIBRARY_KEY,
   DEFAULT_API_BASE,
   DEFAULT_POLL_SELECTOR,
   DRAG_START_THRESHOLD_PX,
@@ -191,6 +192,12 @@ import {
     importTheme: must('import-theme'),
     resetTheme: must('reset-theme'),
     themeFeedback: must('theme-feedback'),
+    artifactName: must('artifact-name'),
+    artifactSelect: must('artifact-select'),
+    saveArtifact: must('save-artifact'),
+    loadArtifact: must('load-artifact'),
+    deleteArtifact: must('delete-artifact'),
+    artifactFeedback: must('artifact-feedback'),
     textEditFeedback: must('text-edit-feedback'),
     aiChatShell: must('ai-chat-shell'),
     aiChatFab: must('ai-chat-fab'),
@@ -392,6 +399,7 @@ import {
   )
 
   let themeLibrary = loadThemeLibrary()
+  let artifactLibrary = loadArtifactLibrary()
   let currentTheme = loadInitialTheme(themeLibrary)
   const dragState = {
     enabled: false,
@@ -437,8 +445,10 @@ import {
     applyTheme(currentTheme)
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
+    refreshArtifactSelect(artifactLibrary.activeName)
     renderInitialState()
     initializeHistoryState()
+    void hydrateSavedLibraries()
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
   }
@@ -644,6 +654,9 @@ import {
     el.exportTheme.addEventListener('click', exportCurrentTheme)
     el.importTheme.addEventListener('change', importThemeFromFile)
     el.resetTheme.addEventListener('click', resetThemeDraft)
+    el.saveArtifact.addEventListener('click', saveArtifactToLibrary)
+    el.loadArtifact.addEventListener('click', loadArtifactFromSelect)
+    el.deleteArtifact.addEventListener('click', deleteArtifactFromSelect)
     if (el.resetPositions) {
       el.resetPositions.addEventListener('click', openResetPositionsModal)
     }
@@ -7316,6 +7329,205 @@ import {
     return response.json()
   }
 
+  function getSupabaseAccessToken() {
+    try {
+      if (!window.localStorage) {
+        return null
+      }
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index)
+        if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) {
+          continue
+        }
+        const raw = localStorage.getItem(key)
+        if (!raw) {
+          continue
+        }
+        try {
+          const data = JSON.parse(raw)
+          const token =
+            data && (data.access_token || (data.currentSession && data.currentSession.access_token))
+          if (token) {
+            return token
+          }
+        } catch {
+          // Ignore malformed auth storage entries.
+        }
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  async function fetchAuthedJson(path, options = {}) {
+    const token = getSupabaseAccessToken()
+    if (!token) {
+      throw new Error('Sign in through Prezo Host to sync saved items.')
+    }
+    const headers = new Headers(options.headers || {})
+    headers.set('Authorization', `Bearer ${token}`)
+    if (options.body && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+    let response
+    try {
+      response = await fetch(`${state.apiBase}${path}`, {
+        ...options,
+        headers
+      })
+    } catch (error) {
+      const message = errorToMessage(error)
+      throw new Error(`Unable to reach API base ${state.apiBase}: ${message}`)
+    }
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const detail =
+        typeof payload?.detail === 'string' ? payload.detail : `Request failed (${response.status})`
+      throw new Error(`${detail} [API ${state.apiBase}]`)
+    }
+    return payload
+  }
+
+  async function hydrateSavedLibraries() {
+    if (!getSupabaseAccessToken()) {
+      return
+    }
+    try {
+      const [remoteThemes, remoteArtifacts] = await Promise.all([
+        fetchAuthedJson('/library/poll-game/themes'),
+        fetchAuthedJson('/library/poll-game/artifacts')
+      ])
+      mergeRemoteThemeLibrary(remoteThemes)
+      mergeRemoteArtifactLibrary(remoteArtifacts)
+    } catch (error) {
+      console.warn('Failed to hydrate saved theme/artifact libraries', error)
+    }
+  }
+
+  function mergeRemoteThemeLibrary(records) {
+    if (!Array.isArray(records)) {
+      return
+    }
+    for (const record of records) {
+      const name = normalizeThemeName(record?.name)
+      if (!name || !record || typeof record.theme !== 'object' || !record.theme) {
+        continue
+      }
+      themeLibrary.themes[name] = sanitizeTheme(record.theme)
+    }
+    saveThemeLibrary(themeLibrary)
+    refreshThemeSelect(themeLibrary.activeName)
+  }
+
+  function mergeRemoteArtifactLibrary(records) {
+    if (!Array.isArray(records)) {
+      return
+    }
+    for (const record of records) {
+      const name = normalizeThemeName(record?.name)
+      const normalizedRecord = sanitizeSavedArtifactRecord(record)
+      if (!name || !normalizedRecord) {
+        continue
+      }
+      artifactLibrary.artifacts[name] = normalizedRecord
+    }
+    saveArtifactLibrary(artifactLibrary)
+    refreshArtifactSelect(artifactLibrary.activeName)
+  }
+
+  async function persistThemeToAccount(name, theme) {
+    try {
+      await fetchAuthedJson(`/library/poll-game/themes/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ theme })
+      })
+      return {
+        type: 'success',
+        message: `Theme "${name}" saved. Synced to your account.`
+      }
+    } catch (error) {
+      return buildLibrarySyncFallback(
+        `Theme "${name}" saved locally.`,
+        errorToMessage(error)
+      )
+    }
+  }
+
+  async function deleteThemeFromAccount(name) {
+    try {
+      await fetchAuthedJson(`/library/poll-game/themes/${encodeURIComponent(name)}`, {
+        method: 'DELETE'
+      })
+      return {
+        type: 'success',
+        message: `Theme "${name}" deleted.`
+      }
+    } catch (error) {
+      return buildLibrarySyncFallback(
+        `Theme "${name}" deleted locally.`,
+        errorToMessage(error)
+      )
+    }
+  }
+
+  async function persistArtifactToAccount(name, artifactRecord) {
+    try {
+      await fetchAuthedJson(`/library/poll-game/artifacts/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          html: artifactRecord.html,
+          last_prompt: artifactRecord.lastPrompt || null,
+          last_answers: artifactRecord.lastAnswers || {},
+          theme_snapshot: artifactRecord.themeSnapshot || null
+        })
+      })
+      return {
+        type: 'success',
+        message: `Artifact "${name}" saved. Synced to your account.`
+      }
+    } catch (error) {
+      return buildLibrarySyncFallback(
+        `Artifact "${name}" saved locally.`,
+        errorToMessage(error)
+      )
+    }
+  }
+
+  async function deleteArtifactFromAccount(name) {
+    try {
+      await fetchAuthedJson(`/library/poll-game/artifacts/${encodeURIComponent(name)}`, {
+        method: 'DELETE'
+      })
+      return {
+        type: 'success',
+        message: `Artifact "${name}" deleted.`
+      }
+    } catch (error) {
+      return buildLibrarySyncFallback(
+        `Artifact "${name}" deleted locally.`,
+        errorToMessage(error)
+      )
+    }
+  }
+
+  function buildLibrarySyncFallback(localMessage, errorMessage) {
+    if (
+      errorMessage === 'Sign in through Prezo Host to sync saved items.' ||
+      errorMessage.includes('Auth required') ||
+      errorMessage.includes('Invalid auth token')
+    ) {
+      return {
+        type: 'success',
+        message: `${localMessage} Sign in to sync across devices.`
+      }
+    }
+    return {
+      type: 'error',
+      message: `${localMessage} Sync failed: ${errorMessage}`
+    }
+  }
+
   function bindImageUpload(inputId, themeKey, successText) {
     const input = document.getElementById(inputId)
     if (!input) {
@@ -7339,7 +7551,7 @@ import {
     })
   }
 
-  function saveTheme() {
+  async function saveTheme() {
     const name = normalizeThemeName(el.themeName.value)
     if (!name) {
       showThemeFeedback('Theme name is required.', 'error')
@@ -7351,7 +7563,8 @@ import {
     saveThemeDraft(currentTheme)
     refreshThemeSelect(name)
     el.themeName.value = name
-    showThemeFeedback(`Theme "${name}" saved.`, 'success')
+    const syncResult = await persistThemeToAccount(name, currentTheme)
+    showThemeFeedback(syncResult.message || `Theme "${name}" saved.`, syncResult.type)
   }
 
   function loadThemeFromSelect() {
@@ -7374,7 +7587,7 @@ import {
     showThemeFeedback(`Theme "${name}" loaded.`, 'success')
   }
 
-  function deleteThemeFromSelect() {
+  async function deleteThemeFromSelect() {
     const name = asText(el.themeSelect.value)
     if (!name || !themeLibrary.themes[name]) {
       showThemeFeedback('Nothing selected to delete.', 'error')
@@ -7386,7 +7599,87 @@ import {
     }
     saveThemeLibrary(themeLibrary)
     refreshThemeSelect(themeLibrary.activeName)
-    showThemeFeedback(`Theme "${name}" deleted.`, 'success')
+    const syncResult = await deleteThemeFromAccount(name)
+    showThemeFeedback(syncResult.message || `Theme "${name}" deleted.`, syncResult.type)
+  }
+
+  async function saveArtifactToLibrary() {
+    const name = normalizeThemeName(el.artifactName.value)
+    if (!name) {
+      showArtifactFeedback('Artifact name is required.', 'error')
+      return
+    }
+    const artifactRecord = buildSavedArtifactRecord()
+    if (!artifactRecord) {
+      showArtifactFeedback('Generate an artifact before saving it.', 'error')
+      return
+    }
+    artifactLibrary.artifacts[name] = artifactRecord
+    artifactLibrary.activeName = name
+    saveArtifactLibrary(artifactLibrary)
+    refreshArtifactSelect(name)
+    el.artifactName.value = name
+    const syncResult = await persistArtifactToAccount(name, artifactRecord)
+    showArtifactFeedback(syncResult.message || `Artifact "${name}" saved.`, syncResult.type)
+  }
+
+  function loadArtifactFromSelect() {
+    const name = asText(el.artifactSelect.value)
+    const artifactRecord = name ? artifactLibrary.artifacts[name] : null
+    if (!name || !artifactRecord) {
+      showArtifactFeedback('Select a saved artifact first.', 'error')
+      return
+    }
+    const nextTheme = sanitizeTheme({
+      ...(artifactRecord.themeSnapshot || currentTheme),
+      visualMode: ARTIFACT_VISUAL_MODE
+    })
+    currentTheme = nextTheme
+    artifactLibrary.activeName = name
+    saveArtifactLibrary(artifactLibrary)
+    saveThemeDraft(currentTheme)
+    applyTheme(currentTheme)
+    syncThemeControls()
+    state.artifact.lastPrompt = asText(artifactRecord.lastPrompt)
+    state.artifact.lastAnswers = cloneArtifactConversationAnswers(artifactRecord.lastAnswers)
+    state.artifact.conversationAnswers = cloneArtifactConversationAnswers(
+      artifactRecord.lastAnswers
+    )
+    state.artifact.conversationStepIndex = ARTIFACT_CONVERSATION_STEPS.length
+    state.artifact.editHistory = []
+    state.artifact.activeEditRequest = ''
+    state.artifact.autoRepairInFlight = false
+    state.artifact.repairAttemptCount = 0
+    state.artifact.lastRuntimeError = ''
+    const applied = applyArtifactMarkup(artifactRecord.html, { requestKind: 'build' })
+    syncArtifactConversationUi()
+    el.artifactName.value = name
+    if (state.snapshot) {
+      renderFromSnapshot(true)
+    } else if (applied) {
+      showArtifactStageFrame()
+    }
+    recordHistoryCheckpoint('Load artifact')
+    showArtifactFeedback(
+      applied ? `Artifact "${name}" loaded.` : `Artifact "${name}" could not be loaded.`,
+      applied ? 'success' : 'error'
+    )
+  }
+
+  async function deleteArtifactFromSelect() {
+    const name = asText(el.artifactSelect.value)
+    if (!name || !artifactLibrary.artifacts[name]) {
+      showArtifactFeedback('Nothing selected to delete.', 'error')
+      return
+    }
+    delete artifactLibrary.artifacts[name]
+    if (artifactLibrary.activeName === name) {
+      artifactLibrary.activeName = null
+    }
+    saveArtifactLibrary(artifactLibrary)
+    refreshArtifactSelect(artifactLibrary.activeName)
+    const syncResult = await deleteArtifactFromAccount(name)
+    showArtifactFeedback(syncResult.message || `Artifact "${name}" deleted.`, syncResult.type)
   }
 
   function exportCurrentTheme() {
@@ -7430,11 +7723,15 @@ import {
       saveThemeLibrary(themeLibrary)
       refreshThemeSelect(importedName)
       el.themeName.value = importedName
+      const syncResult = await persistThemeToAccount(importedName, currentTheme)
       if (state.snapshot) {
         renderFromSnapshot(true)
       }
       recordHistoryCheckpoint('Import theme')
-      showThemeFeedback(`Theme "${importedName}" imported.`, 'success')
+      showThemeFeedback(
+        syncResult.message || `Theme "${importedName}" imported.`,
+        syncResult.type
+      )
     } catch {
       showThemeFeedback('Invalid theme file.', 'error')
     } finally {
@@ -8003,6 +8300,49 @@ import {
     }
   }
 
+  function buildSavedArtifactRecord() {
+    const html = normalizeArtifactMarkup(state.artifact.html)
+    if (!html) {
+      return null
+    }
+    return sanitizeSavedArtifactRecord({
+      html,
+      lastPrompt: state.artifact.lastPrompt,
+      lastAnswers: state.artifact.lastAnswers,
+      themeSnapshot: {
+        ...clone(currentTheme),
+        visualMode: ARTIFACT_VISUAL_MODE
+      }
+    })
+  }
+
+  function refreshArtifactSelect(selectedName) {
+    const names = Object.keys(artifactLibrary.artifacts).sort((a, b) => a.localeCompare(b))
+    el.artifactSelect.innerHTML = ''
+
+    if (names.length === 0) {
+      const option = document.createElement('option')
+      option.value = ''
+      option.textContent = 'No saved artifacts'
+      el.artifactSelect.appendChild(option)
+      return
+    }
+
+    for (const name of names) {
+      const option = document.createElement('option')
+      option.value = name
+      option.textContent = name
+      el.artifactSelect.appendChild(option)
+    }
+
+    const preferred =
+      selectedName && artifactLibrary.artifacts[selectedName] ? selectedName : names[0]
+    el.artifactSelect.value = preferred
+    if (!el.artifactName.value) {
+      el.artifactName.value = preferred
+    }
+  }
+
   function loadInitialTheme(library) {
     const draft = loadThemeDraft()
     if (library.activeName && library.themes[library.activeName]) {
@@ -8080,6 +8420,35 @@ import {
     } catch {}
   }
 
+  function loadArtifactLibrary() {
+    const parsed = safeJsonParse(safeStorageGet(ARTIFACT_LIBRARY_KEY))
+    if (!parsed || typeof parsed !== 'object') {
+      return { artifacts: {}, activeName: null }
+    }
+    const incomingArtifacts =
+      parsed.artifacts && typeof parsed.artifacts === 'object' ? parsed.artifacts : {}
+    const artifacts = {}
+    for (const [name, artifact] of Object.entries(incomingArtifacts)) {
+      const normalizedName = normalizeThemeName(name)
+      const normalizedArtifact = sanitizeSavedArtifactRecord(artifact)
+      if (!normalizedName || !normalizedArtifact) {
+        continue
+      }
+      artifacts[normalizedName] = normalizedArtifact
+    }
+    const activeName =
+      typeof parsed.activeName === 'string' && artifacts[parsed.activeName]
+        ? parsed.activeName
+        : null
+    return { artifacts, activeName }
+  }
+
+  function saveArtifactLibrary(library) {
+    try {
+      localStorage.setItem(ARTIFACT_LIBRARY_KEY, JSON.stringify(library))
+    } catch {}
+  }
+
   function loadThemeDraft() {
     const parsed = safeJsonParse(safeStorageGet(THEME_DRAFT_KEY))
     if (!parsed || typeof parsed !== 'object') {
@@ -8098,17 +8467,58 @@ import {
     } catch {}
   }
 
+  function sanitizeSavedArtifactRecord(value) {
+    if (!value || typeof value !== 'object') {
+      return null
+    }
+    const html = normalizeArtifactMarkup(asText(value.html))
+    if (!html) {
+      return null
+    }
+    const lastPrompt = asText(value.lastPrompt ?? value.last_prompt)
+    const lastAnswersInput =
+      value.lastAnswers && typeof value.lastAnswers === 'object'
+        ? value.lastAnswers
+        : value.last_answers && typeof value.last_answers === 'object'
+          ? value.last_answers
+          : createEmptyArtifactAnswers()
+    const themeSnapshotInput =
+      value.themeSnapshot && typeof value.themeSnapshot === 'object'
+        ? value.themeSnapshot
+        : value.theme_snapshot && typeof value.theme_snapshot === 'object'
+          ? value.theme_snapshot
+          : null
+    return {
+      html,
+      lastPrompt,
+      lastAnswers: cloneArtifactConversationAnswers(lastAnswersInput),
+      themeSnapshot: themeSnapshotInput
+        ? sanitizeTheme({ ...themeSnapshotInput, visualMode: ARTIFACT_VISUAL_MODE })
+        : null
+    }
+  }
+
   function showThemeFeedback(text, type) {
     el.themeFeedback.textContent = text
+    el.themeFeedback.style.color = feedbackColor(type)
+  }
+
+  function showArtifactFeedback(text, type) {
+    el.artifactFeedback.textContent = text
+    el.artifactFeedback.style.color = feedbackColor(type)
+  }
+
+  function feedbackColor(type) {
     if (type === 'success') {
-      el.themeFeedback.style.color = '#216e43'
-      return
+      return '#216e43'
     }
     if (type === 'error') {
-      el.themeFeedback.style.color = '#b53a4e'
-      return
+      return '#b53a4e'
     }
-    el.themeFeedback.style.color = '#5f7ea3'
+    if (type === 'warning') {
+      return '#b54708'
+    }
+    return '#5f7ea3'
   }
 
   function showTextEditFeedback(text, type) {

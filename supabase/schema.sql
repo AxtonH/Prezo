@@ -27,6 +27,14 @@ begin
   end if;
 end $$;
 
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
 create table if not exists sessions (
   id uuid primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -50,6 +58,55 @@ create table if not exists session_hosts (
   created_at timestamptz not null default now(),
   primary key (session_id, user_id)
 );
+
+create table if not exists saved_poll_game_themes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  theme jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+create table if not exists saved_poll_game_artifacts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  html text not null,
+  last_prompt text,
+  last_answers jsonb not null default '{}'::jsonb,
+  theme_snapshot jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'saved_poll_game_themes_set_updated_at'
+  ) then
+    create trigger saved_poll_game_themes_set_updated_at
+      before update on public.saved_poll_game_themes
+      for each row execute function public.set_updated_at();
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'saved_poll_game_artifacts_set_updated_at'
+  ) then
+    create trigger saved_poll_game_artifacts_set_updated_at
+      before update on public.saved_poll_game_artifacts
+      for each row execute function public.set_updated_at();
+  end if;
+end $$;
 
 create table if not exists qna_prompts (
   id uuid primary key,
@@ -274,6 +331,10 @@ $$;
 
 create index if not exists sessions_user_id_idx on sessions (user_id);
 create index if not exists session_hosts_user_id_idx on session_hosts (user_id);
+create index if not exists saved_poll_game_themes_user_id_idx on saved_poll_game_themes (user_id);
+create index if not exists saved_poll_game_themes_updated_at_idx on saved_poll_game_themes (updated_at desc);
+create index if not exists saved_poll_game_artifacts_user_id_idx on saved_poll_game_artifacts (user_id);
+create index if not exists saved_poll_game_artifacts_updated_at_idx on saved_poll_game_artifacts (updated_at desc);
 create index if not exists questions_session_id_idx on questions (session_id);
 create index if not exists questions_prompt_id_idx on questions (prompt_id);
 create index if not exists qna_prompts_session_id_idx on qna_prompts (session_id);

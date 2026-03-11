@@ -4,8 +4,10 @@ import asyncio
 import secrets
 import uuid
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from .models import (
     Event,
@@ -17,6 +19,8 @@ from .models import (
     QnaMode,
     Question,
     QuestionStatus,
+    SavedArtifact,
+    SavedTheme,
     Session,
     SessionSnapshot,
     SessionStatus,
@@ -98,6 +102,29 @@ class QnaPromptData:
     created_at: datetime
 
 
+@dataclass(slots=True)
+class SavedThemeData:
+    id: str
+    user_id: str
+    name: str
+    theme: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class SavedArtifactData:
+    id: str
+    user_id: str
+    name: str
+    html: str
+    last_prompt: str | None
+    last_answers: dict[str, Any]
+    theme_snapshot: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class InMemoryStore:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -113,6 +140,8 @@ class InMemoryStore:
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
         self._events_by_session: dict[str, list[Event]] = defaultdict(list)
         self._session_hosts: dict[str, set[str]] = defaultdict(set)
+        self._saved_themes_by_user: dict[str, dict[str, SavedThemeData]] = defaultdict(dict)
+        self._saved_artifacts_by_user: dict[str, dict[str, SavedArtifactData]] = defaultdict(dict)
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         async with self._lock:
@@ -423,6 +452,86 @@ class InMemoryStore:
                 prompts=prompts,
             )
 
+    async def list_saved_themes(self, user_id: str) -> list[SavedTheme]:
+        async with self._lock:
+            themes = list(self._saved_themes_by_user.get(user_id, {}).values())
+            themes.sort(key=lambda item: item.updated_at, reverse=True)
+            return [self._to_saved_theme(item) for item in themes]
+
+    async def save_saved_theme(
+        self, user_id: str, name: str, theme: dict[str, Any]
+    ) -> SavedTheme:
+        async with self._lock:
+            existing = self._saved_themes_by_user[user_id].get(name)
+            now = utc_now()
+            if existing:
+                existing.theme = clone_dict(theme)
+                existing.updated_at = now
+                return self._to_saved_theme(existing)
+            created = SavedThemeData(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                name=name,
+                theme=clone_dict(theme),
+                created_at=now,
+                updated_at=now,
+            )
+            self._saved_themes_by_user[user_id][name] = created
+            return self._to_saved_theme(created)
+
+    async def delete_saved_theme(self, user_id: str, name: str) -> SavedTheme:
+        async with self._lock:
+            existing = self._saved_themes_by_user.get(user_id, {}).pop(name, None)
+            if not existing:
+                raise NotFoundError("saved theme not found")
+            return self._to_saved_theme(existing)
+
+    async def list_saved_artifacts(self, user_id: str) -> list[SavedArtifact]:
+        async with self._lock:
+            artifacts = list(self._saved_artifacts_by_user.get(user_id, {}).values())
+            artifacts.sort(key=lambda item: item.updated_at, reverse=True)
+            return [self._to_saved_artifact(item) for item in artifacts]
+
+    async def save_saved_artifact(
+        self,
+        user_id: str,
+        name: str,
+        html: str,
+        last_prompt: str | None,
+        last_answers: dict[str, Any],
+        theme_snapshot: dict[str, Any] | None,
+    ) -> SavedArtifact:
+        async with self._lock:
+            existing = self._saved_artifacts_by_user[user_id].get(name)
+            now = utc_now()
+            if existing:
+                existing.html = html
+                existing.last_prompt = last_prompt
+                existing.last_answers = clone_dict(last_answers)
+                existing.theme_snapshot = clone_optional_dict(theme_snapshot)
+                existing.updated_at = now
+                return self._to_saved_artifact(existing)
+            created = SavedArtifactData(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                name=name,
+                html=html,
+                last_prompt=last_prompt,
+                last_answers=clone_dict(last_answers),
+                theme_snapshot=clone_optional_dict(theme_snapshot),
+                created_at=now,
+                updated_at=now,
+            )
+            self._saved_artifacts_by_user[user_id][name] = created
+            return self._to_saved_artifact(created)
+
+    async def delete_saved_artifact(self, user_id: str, name: str) -> SavedArtifact:
+        async with self._lock:
+            existing = self._saved_artifacts_by_user.get(user_id, {}).pop(name, None)
+            if not existing:
+                raise NotFoundError("saved artifact not found")
+            return self._to_saved_artifact(existing)
+
     async def record_event(self, session_id: str, event: Event) -> None:
         async with self._lock:
             self._events_by_session[session_id].append(event)
@@ -522,3 +631,34 @@ class InMemoryStore:
             allow_multiple=data.allow_multiple,
             created_at=data.created_at,
         )
+
+    def _to_saved_theme(self, data: SavedThemeData) -> SavedTheme:
+        return SavedTheme(
+            id=data.id,
+            name=data.name,
+            theme=clone_dict(data.theme),
+            created_at=data.created_at,
+            updated_at=data.updated_at,
+        )
+
+    def _to_saved_artifact(self, data: SavedArtifactData) -> SavedArtifact:
+        return SavedArtifact(
+            id=data.id,
+            name=data.name,
+            html=data.html,
+            last_prompt=data.last_prompt,
+            last_answers=clone_dict(data.last_answers),
+            theme_snapshot=clone_optional_dict(data.theme_snapshot),
+            created_at=data.created_at,
+            updated_at=data.updated_at,
+        )
+
+
+def clone_dict(value: dict[str, Any]) -> dict[str, Any]:
+    return deepcopy(value)
+
+
+def clone_optional_dict(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return clone_dict(value)
