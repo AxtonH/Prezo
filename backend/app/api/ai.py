@@ -22,7 +22,11 @@ ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
 ARTIFACT_REPAIR_MODE_MAX_REPAIR_ATTEMPTS = 1
-ARTIFACT_MIN_CALL_TIMEOUT_SECONDS = 15.0
+ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS = 45.0
+ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS = 45.0
+ARTIFACT_EDIT_FOLLOWUP_RESERVE_SECONDS = 60.0
+ARTIFACT_BUILD_FOLLOWUP_RESERVE_SECONDS = 45.0
+ARTIFACT_REPAIR_FOLLOWUP_RESERVE_SECONDS = 45.0
 ARTIFACT_CONTEXT_DIRECT_CHAR_LIMIT = 24000
 ARTIFACT_CONTEXT_HEAD_CHAR_LIMIT = 9000
 ARTIFACT_CONTEXT_TAIL_CHAR_LIMIT = 4000
@@ -360,7 +364,7 @@ async def create_poll_game_artifact_build(
     model_context = prepare_artifact_context_for_model(payload.context, request_mode)
     deadline = time.monotonic() + max(
         settings.anthropic_artifact_total_timeout_seconds,
-        ARTIFACT_MIN_CALL_TIMEOUT_SECONDS,
+        ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
     )
     if request_mode == "repair":
         temperature = 0.2
@@ -373,7 +377,12 @@ async def create_poll_game_artifact_build(
         timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
     timeout_seconds = min(
         timeout_seconds,
-        ensure_artifact_time_budget_remaining(deadline, "starting artifact generation"),
+        ensure_artifact_time_budget_remaining(
+            deadline,
+            "starting artifact generation",
+            minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
+            reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
+        ),
     )
     text, stop_reason = await request_anthropic_text(
         api_key=api_key,
@@ -413,7 +422,11 @@ async def create_poll_game_artifact_build(
             validation_issues=validation_issues,
             timeout_seconds=min(
                 settings.anthropic_artifact_repair_timeout_seconds,
-                ensure_artifact_time_budget_remaining(deadline, "repairing artifact output"),
+                ensure_artifact_time_budget_remaining(
+                    deadline,
+                    "repairing artifact output",
+                    minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
+                ),
             ),
         )
         if not repaired_html:
@@ -444,7 +457,9 @@ async def create_poll_game_artifact_build(
             timeout_seconds=min(
                 90.0,
                 ensure_artifact_time_budget_remaining(
-                    deadline, "recovering artifact output from the last stable artifact"
+                    deadline,
+                    "recovering artifact output from the last stable artifact",
+                    minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
                 ),
             ),
         )
@@ -1023,10 +1038,25 @@ def resolve_artifact_max_repair_attempts(request_mode: str) -> int:
     return min(ARTIFACT_MAX_REPAIR_ATTEMPTS, ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS)
 
 
-def ensure_artifact_time_budget_remaining(deadline: float, stage: str) -> float:
+def resolve_artifact_followup_reserve_seconds(request_mode: str) -> float:
+    if request_mode == "edit":
+        return ARTIFACT_EDIT_FOLLOWUP_RESERVE_SECONDS
+    if request_mode == "repair":
+        return ARTIFACT_REPAIR_FOLLOWUP_RESERVE_SECONDS
+    return ARTIFACT_BUILD_FOLLOWUP_RESERVE_SECONDS
+
+
+def ensure_artifact_time_budget_remaining(
+    deadline: float,
+    stage: str,
+    *,
+    minimum_seconds: float,
+    reserve_seconds: float = 0.0,
+) -> float:
     remaining = deadline - time.monotonic()
-    if remaining >= ARTIFACT_MIN_CALL_TIMEOUT_SECONDS:
-        return remaining
+    available = remaining - max(0.0, reserve_seconds)
+    if available >= minimum_seconds:
+        return available
     raise HTTPException(
         status_code=status.HTTP_504_GATEWAY_TIMEOUT,
         detail=(
