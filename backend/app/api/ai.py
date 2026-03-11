@@ -16,7 +16,7 @@ ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_ARTIFACT_MAX_TOKENS = 12000
 ANTHROPIC_ARTIFACT_REPAIR_MAX_TOKENS = 12000
-ARTIFACT_MAX_REPAIR_ATTEMPTS = 1
+ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
@@ -27,6 +27,7 @@ ARTIFACT_HTML_SHAPE_RE = re.compile(
     re.IGNORECASE,
 )
 ARTIFACT_LIVE_STATE_TOKENS = (
+    "prezoSetPollRenderer",
     "prezoRenderPoll",
     "prezo:poll-update",
     "prezoGetPollState",
@@ -123,7 +124,8 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         '- Host posts message: { "type":"prezo-poll-state", "payload": state }',
         "- State shape: state.poll.question, state.poll.options[], state.totalVotes, state.meta.",
         "- If available, use state.meta.expectedMaxVotes, state.meta.recommendedVisibleUnits, state.meta.recommendedVotesPerUnit, and state.meta.avoidOneToOneVoteObjects when designing scalable vote visuals.",
-        "- Define window.prezoRenderPoll(state) to render and update the artifact when live data changes.",
+        "- Prefer registering your renderer with window.prezoSetPollRenderer(fn) when available. You may also define window.prezoRenderPoll(state).",
+        "- Do not implement your own window message listener or websocket logic for poll updates unless the user explicitly asks.",
         "- If context.artifact.currentArtifactHtml is present, treat it as the current artifact to revise and return a full updated HTML artifact, not a diff.",
         "- If context.artifact.currentArtifactLiveHooks is present, preserve that live update wiring unless the user explicitly asks to replace it with an equivalent working implementation.",
         "- If context.artifact.requestMode == 'edit', treat the latest user request as a targeted refinement of the current artifact.",
@@ -137,7 +139,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Do not rename, remove, or relocate containers that current render logic depends on unless you also update that logic safely and equivalently.",
         "- If context.artifact.recentEditRequests is present, use it to maintain continuity, but prioritize the latest request over earlier ones.",
         "- Preserve working live-data behavior, stable layout, and successful design decisions from the current artifact unless the user explicitly asks for a broader redesign.",
-        "- The edited artifact must still consume host-delivered live poll state and must still define a working window.prezoRenderPoll(state) hook or an equivalent listener using the existing host contract.",
+        "- The edited artifact must still consume host-delivered live poll state and must still call window.prezoSetPollRenderer(fn), define window.prezoRenderPoll(state), or use an equivalent runtime-approved render registration hook from the existing host contract.",
         "Update requirements:",
         "- Poll changes must animate smoothly (about 200ms-500ms easing) with no flicker.",
         "- Do not rebuild or re-mount the full scene on each update.",
@@ -162,7 +164,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Prefer proportion, grouped units, stacked segments, or bucketed representations over naive one-object-per-vote visuals.",
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
-        "- In window.prezoRenderPoll(state), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
+        "- In window.prezoRenderPoll(state) or the function passed to window.prezoSetPollRenderer(fn), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "- Never read from or write to .innerText, .textContent, .innerHTML, .style, or similar properties on the result of querySelector/getElementById without first checking that the element exists.",
         "- Never call appendChild, removeChild, replaceChildren, insertBefore, insertAdjacentElement, insertAdjacentHTML, setAttribute, removeAttribute, or classList mutations on a queried element unless the queried element was first stored and null-checked.",
         "- Do not output JSX, TSX, module import/export syntax, or unfinished code.",
@@ -345,7 +347,7 @@ async def create_poll_game_artifact_build(
         temperature = 0.2
         timeout_seconds = settings.anthropic_artifact_repair_timeout_seconds
     elif request_mode == "edit":
-        temperature = 0.3
+        temperature = 0.2
         timeout_seconds = settings.anthropic_artifact_edit_timeout_seconds
     else:
         temperature = 0.8
@@ -364,6 +366,7 @@ async def create_poll_game_artifact_build(
     )
 
     html = normalize_poll_game_artifact_html(text)
+    html = restore_artifact_live_hooks_if_missing(html, payload.context)
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -375,7 +378,8 @@ async def create_poll_game_artifact_build(
             0,
             "artifact output appears truncated before completion.",
         )
-    if validation_issues:
+    repair_attempts = 0
+    while validation_issues and repair_attempts < ARTIFACT_MAX_REPAIR_ATTEMPTS:
         repaired_html = await attempt_artifact_repair(
             api_key=api_key,
             model=model,
@@ -384,9 +388,14 @@ async def create_poll_game_artifact_build(
             html=html,
             validation_issues=validation_issues,
         )
-        if repaired_html:
-            html = repaired_html
-            validation_issues = validate_poll_game_artifact_html(html)
+        if not repaired_html:
+            break
+        next_html = restore_artifact_live_hooks_if_missing(repaired_html, payload.context)
+        if next_html.strip() == html.strip():
+            break
+        html = next_html
+        validation_issues = validate_poll_game_artifact_html(html)
+        repair_attempts += 1
     if validation_issues:
         issue_text = "; ".join(validation_issues[:4])
         raise HTTPException(
@@ -466,7 +475,7 @@ async def attempt_artifact_repair(
                 else ""
             ),
             "If the validation issue mentions live poll state, preserve or restore the existing live-state hook from context.artifact.currentArtifactHtml / currentArtifactLiveHooks.",
-            "Do not drop window.prezoRenderPoll(state), prezo:poll-update listeners, or equivalent host-driven update wiring.",
+            "Do not drop window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), prezo:poll-update listeners, or equivalent host-driven update wiring.",
             "Context JSON:",
             json.dumps(context, indent=2),
             "Current artifact HTML:",
@@ -652,7 +661,7 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         issues.append("artifact output still contains markdown fences.")
     if not ARTIFACT_HTML_SHAPE_RE.search(text):
         issues.append("artifact output does not look like HTML.")
-    if not any(token in text for token in ARTIFACT_LIVE_STATE_TOKENS):
+    if not contains_artifact_live_state_token(text):
         issues.append("artifact output does not appear to consume live poll state.")
     open_script_count = len(ARTIFACT_SCRIPT_OPEN_RE.findall(text))
     close_script_count = len(ARTIFACT_SCRIPT_CLOSE_RE.findall(text))
@@ -685,6 +694,84 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def contains_artifact_live_state_token(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized:
+        return False
+    return any(token in normalized for token in ARTIFACT_LIVE_STATE_TOKENS)
+
+
+def extract_artifact_live_hook_scripts(text: str) -> list[str]:
+    normalized = (text or "").strip()
+    if not normalized:
+        return []
+    hooks: list[str] = []
+    seen: set[str] = set()
+    for script_match in ARTIFACT_SCRIPT_RE.finditer(normalized):
+        script_text = script_match.group(0).strip()
+        if not script_text or not contains_artifact_live_state_token(script_text):
+            continue
+        if script_text in seen:
+            continue
+        seen.add(script_text)
+        hooks.append(script_text)
+    return hooks
+
+
+def collect_context_artifact_live_hooks(context: dict[str, Any]) -> list[str]:
+    artifact_context = context.get("artifact") if isinstance(context.get("artifact"), dict) else {}
+    if not artifact_context:
+        return []
+    current_html = artifact_context.get("currentArtifactHtml")
+    current_hooks = artifact_context.get("currentArtifactLiveHooks")
+    hooks = extract_artifact_live_hook_scripts(
+        current_html if isinstance(current_html, str) else ""
+    )
+    if hooks:
+        return hooks
+    return extract_artifact_live_hook_scripts(
+        current_hooks if isinstance(current_hooks, str) else ""
+    )
+
+
+def inject_artifact_live_hook_scripts(html: str, hook_scripts: list[str]) -> str:
+    normalized = (html or "").strip()
+    if not normalized or not hook_scripts:
+        return normalized
+    injection = "\n\n".join(
+        script_text for script_text in hook_scripts if script_text.strip()
+    ).strip()
+    if not injection:
+        return normalized
+    if re.search(r"</body>", normalized, re.IGNORECASE):
+        return re.sub(
+            r"</body>",
+            f"{injection}\n</body>",
+            normalized,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    if re.search(r"</html>", normalized, re.IGNORECASE):
+        return re.sub(
+            r"</html>",
+            f"{injection}\n</html>",
+            normalized,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return f"{normalized}\n{injection}"
+
+
+def restore_artifact_live_hooks_if_missing(html: str, context: dict[str, Any]) -> str:
+    normalized = (html or "").strip()
+    if not normalized or contains_artifact_live_state_token(normalized):
+        return normalized
+    hook_scripts = collect_context_artifact_live_hooks(context)
+    if not hook_scripts:
+        return normalized
+    return inject_artifact_live_hook_scripts(normalized, hook_scripts)
 
 
 def validate_inline_script_syntax(script_body: str) -> str:

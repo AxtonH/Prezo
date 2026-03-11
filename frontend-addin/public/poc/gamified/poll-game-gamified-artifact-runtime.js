@@ -4,6 +4,7 @@ const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
 const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
 const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
 const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
+const ARTIFACT_SET_RENDERER_NAME = 'prezoSetPollRenderer'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -113,6 +114,9 @@ function injectBridgeScript(htmlDocument, options = {}) {
   }
 
   const bridgeTag = `<script>${buildBridgeScript(options.instanceId)}<\/script>`
+  if (/<head\b[^>]*>/i.test(source)) {
+    return source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${bridgeTag}`)
+  }
   if (/<\/body>/i.test(source)) {
     return source.replace(/<\/body>/i, `${bridgeTag}\n</body>`)
   }
@@ -131,6 +135,7 @@ function buildBridgeScript(instanceId = 0) {
     `  var SIZE_MESSAGE_TYPE = '${ARTIFACT_SIZE_MESSAGE_TYPE}'`,
     `  var RENDER_OK_MESSAGE_TYPE = '${ARTIFACT_RENDER_OK_MESSAGE_TYPE}'`,
     `  var RENDER_ERROR_MESSAGE_TYPE = '${ARTIFACT_RENDER_ERROR_MESSAGE_TYPE}'`,
+    `  var SET_RENDERER_NAME = '${ARTIFACT_SET_RENDERER_NAME}'`,
     `  var INSTANCE_ID = ${safeInstanceId}`,
     '  var defaultState = {',
     '    poll: { id: "", question: "", title: "", prompt: "", status: "", options: [], totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },',
@@ -464,6 +469,13 @@ function buildBridgeScript(instanceId = 0) {
     '      clearTimeout(renderRetryTimerId)',
     '      renderRetryTimerId = 0',
     '    }',
+    '  }',
+    '  function setRenderer(nextRenderer) {',
+    '    renderHook = typeof nextRenderer === "function" ? nextRenderer : null',
+    '    if (renderHook && hasRenderedState) {',
+    '      schedulePendingRenderRetry(clone(currentState), 0)',
+    '    }',
+    '    return renderHook',
     '  }',
     '  function schedulePendingRenderRetry(payload, delayMs) {',
     '    pendingRenderPayload = clone(normalizeState(payload || currentState))',
@@ -993,6 +1005,9 @@ function buildBridgeScript(instanceId = 0) {
     '    } catch (error) {}',
     '  }',
     '  installRenderHookBridge()',
+    '  window[SET_RENDERER_NAME] = function (nextRenderer) {',
+    '    return setRenderer(nextRenderer)',
+    '  }',
     '  window.prezoGetPollState = function () {',
     '    return clone(currentState)',
     '  }',

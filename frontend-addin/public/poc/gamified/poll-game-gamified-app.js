@@ -1794,6 +1794,11 @@ import {
       runtimeRenderError,
       originalEditRequest: originalEditRequest || prompt,
       recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
+      runtimeApi: {
+        setRenderer: 'window.prezoSetPollRenderer(fn)',
+        renderHook: 'window.prezoRenderPoll(state)',
+        getState: 'window.prezoGetPollState()'
+      },
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
@@ -1829,6 +1834,7 @@ import {
       .map((match) => asText(match?.[0]))
       .filter(
         (scriptText) =>
+          scriptText.includes('prezoSetPollRenderer') ||
           scriptText.includes('prezoRenderPoll') ||
           scriptText.includes('prezo:poll-update') ||
           scriptText.includes('__PREZO_POLL_STATE') ||
@@ -1851,6 +1857,7 @@ import {
       .map((match) => asText(match?.[0]).trim())
       .filter(
         (scriptText) =>
+          scriptText.includes('prezoSetPollRenderer') ||
           scriptText.includes('prezoRenderPoll') ||
           scriptText.includes('prezo:poll-update') ||
           scriptText.includes('__PREZO_POLL_STATE') ||
@@ -1859,8 +1866,7 @@ import {
     if (hookScripts.length === 0) {
       return ''
     }
-    const joined = hookScripts.join('\n\n')
-    return joined.length > 20000 ? `${joined.slice(0, 20000)}...` : joined
+    return hookScripts.join('\n\n')
   }
 
   function buildArtifactRecentEditRequests(history) {
