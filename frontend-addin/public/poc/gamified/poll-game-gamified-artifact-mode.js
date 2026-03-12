@@ -204,6 +204,12 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Use state.poll.question, state.poll.options, state.totalVotes, state.meta, and window.prezoGetPollState() when needed.',
     'Do not fetch live poll data yourself. Do not open WebSockets, EventSource connections, or additional network requests for poll state.',
     'Treat host-delivered state updates as the only live data source.',
+    'Build around a stable scene root and persistent option nodes keyed by option id.',
+    'On poll updates, never clear and rebuild the whole scene, never blank the stage, and never use hard resets, flicker, hide-then-show, or blackout transitions as the normal update path.',
+    'Never use document.body.innerHTML, document.documentElement.innerHTML, root.innerHTML, replaceChildren, or replaceWith as your poll-update strategy.',
+    'Animate in place with CSS transitions, Web Animations API, or requestAnimationFrame; keep existing cars, bars, rows, and labels mounted and move them smoothly from prior state.',
+    'If option ordering changes, reconcile existing nodes by option id instead of destroying and recreating the full list.',
+    'Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.',
     hasExistingArtifact
       ? 'If context.artifact.currentArtifactHtml is provided, treat it as the current artifact to revise and return a full updated version rather than a brand-new unrelated concept.'
       : '',

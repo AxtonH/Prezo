@@ -130,6 +130,24 @@ ARTIFACT_FULL_SCENE_RESET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         "script rewrites the root document structure through querySelector(body/html), which is not allowed for artifact output.",
     ),
+    (
+        re.compile(
+            r"\b(?:root|appRoot|sceneRoot|artifactRoot|stageRoot|mountNode|rootNode|scene|stage|container)\s*\.\s*innerHTML\s*="
+        ),
+        "script resets the main scene/root content, which causes hard resets, flicker, or blank artifacts.",
+    ),
+    (
+        re.compile(
+            r"\b(?:root|appRoot|sceneRoot|artifactRoot|stageRoot|mountNode|rootNode|scene|stage|container)\s*\.\s*(?:replaceChildren|replaceWith)\s*\("
+        ),
+        "script replaces the main scene/root structure, which is not allowed for smooth artifact updates.",
+    ),
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:getElementById|querySelector)\s*\(\s*['\"]#?(?:artifact-root|app|root|scene|stage|mount)['\"]\s*\)\s*\.\s*(?:innerHTML|replaceChildren|replaceWith)\b"
+        ),
+        "script rewrites a likely scene root node directly, which causes hard resets or flicker.",
+    ),
 )
 
 POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
@@ -198,7 +216,11 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "Update requirements:",
         "- Poll changes must animate smoothly (about 200ms-500ms easing) with no flicker.",
         "- Do not rebuild or re-mount the full scene on each update.",
+        "- Never blank the stage between updates and never use hide-then-show, fade-to-black, blackout overlays, or other hard reset transitions unless the user explicitly asks for that effect.",
+        "- Build around a stable scene root and persistent option nodes keyed by option id.",
         "- Reconcile by option id and update only changed elements when possible.",
+        "- Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.",
+        "- If the scene contains moving objects such as cars, runners, avatars, or tokens, keep the same DOM nodes mounted and animate them forward from prior state instead of destroying and recreating them.",
         "Design guidance:",
         "- Prioritize user prompt intent over default templates.",
         "- Assume base poll chrome can be replaced by your artifact scene composition.",
