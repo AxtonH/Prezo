@@ -39,6 +39,15 @@ ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
+ARTIFACT_MARKDOWN_FENCE_BLOCK_RE = re.compile(
+    r"```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```", re.IGNORECASE
+)
+ARTIFACT_MARKDOWN_FENCE_FULL_RE = re.compile(
+    r"^\s*```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```\s*$", re.IGNORECASE
+)
+ARTIFACT_MARKDOWN_FENCE_LINE_RE = re.compile(
+    r"^\s*```(?:[a-z0-9_-]+)?\s*$", re.IGNORECASE | re.MULTILINE
+)
 ARTIFACT_SCRIPT_OPEN_RE = re.compile(r"<script\b", re.IGNORECASE)
 ARTIFACT_SCRIPT_CLOSE_RE = re.compile(r"</script>", re.IGNORECASE)
 ARTIFACT_HTML_SHAPE_RE = re.compile(
@@ -1041,15 +1050,51 @@ def normalize_poll_game_artifact_html(raw_text: str) -> str:
     if not text:
         return ""
 
-    direct = try_parse_json(text)
-    if isinstance(direct, dict):
-        html_field = direct.get("html")
-        if isinstance(html_field, str) and html_field.strip():
-            text = html_field.strip()
+    for _ in range(3):
+        changed = False
+        direct = try_parse_json(text)
+        if isinstance(direct, dict):
+            html_field = direct.get("html")
+            if isinstance(html_field, str) and html_field.strip():
+                next_text = html_field.strip()
+                if next_text != text:
+                    text = next_text
+                    changed = True
+                    continue
 
-    fenced = re.search(r"```(?:[a-z0-9_-]+)?\s*([\s\S]*?)```", text, re.IGNORECASE)
-    if fenced and fenced.group(1):
-        text = fenced.group(1).strip()
+        full_fence = ARTIFACT_MARKDOWN_FENCE_FULL_RE.match(text)
+        if full_fence and full_fence.group(1):
+            next_text = full_fence.group(1).strip()
+            if next_text != text:
+                text = next_text
+                changed = True
+                continue
+
+        fenced_blocks = [
+            match.group(1).strip()
+            for match in ARTIFACT_MARKDOWN_FENCE_BLOCK_RE.finditer(text)
+            if match.group(1) and match.group(1).strip()
+        ]
+        html_fenced_block = next(
+            (
+                block
+                for block in fenced_blocks
+                if ARTIFACT_HTML_SHAPE_RE.search(block)
+            ),
+            "",
+        )
+        if html_fenced_block and html_fenced_block != text:
+            text = html_fenced_block
+            changed = True
+            continue
+
+        if not changed:
+            break
+
+    if "```" in text:
+        stripped_fence_lines = ARTIFACT_MARKDOWN_FENCE_LINE_RE.sub("", text).strip()
+        if stripped_fence_lines and ARTIFACT_HTML_SHAPE_RE.search(stripped_fence_lines):
+            text = stripped_fence_lines
 
     return text.strip()
 

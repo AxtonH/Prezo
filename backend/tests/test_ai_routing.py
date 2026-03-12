@@ -221,6 +221,26 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Call budget was 74s", detail)
         self.assertIn("server budget remaining at call start was 74s", detail)
 
+    def test_normalize_poll_game_artifact_html_extracts_html_from_prose_and_fences(self) -> None:
+        raw_text = (
+            "Here is the updated artifact HTML.\n\n"
+            "```html\n"
+            f"{VALID_ARTIFACT_HTML}\n"
+            "```\n\n"
+            "This preserves the live renderer."
+        )
+
+        normalized = ai_api.normalize_poll_game_artifact_html(raw_text)
+
+        self.assertEqual(normalized, VALID_ARTIFACT_HTML.strip())
+
+    def test_normalize_poll_game_artifact_html_unwraps_json_html_field_with_fences(self) -> None:
+        raw_text = json.dumps({"html": f"```html\n{VALID_ARTIFACT_HTML}\n```"})
+
+        normalized = ai_api.normalize_poll_game_artifact_html(raw_text)
+
+        self.assertEqual(normalized, VALID_ARTIFACT_HTML.strip())
+
 
 if __name__ == "__main__":
     unittest.main()
