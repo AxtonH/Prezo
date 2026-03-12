@@ -53,6 +53,34 @@ VALID_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+PATCHABLE_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <style>
+      #track-bg {
+        background: linear-gradient(180deg, #0b1020 0%, #1a2240 100%);
+      }
+      .car {
+        fill: #ff4d4f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="artifact-root">
+      <svg class="car" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>
+    </div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.setAttribute("data-question", state && state.poll ? state.poll.question || "" : "");
+      });
+    </script>
+  </body>
+</html>"""
+
 FULL_SCENE_RESET_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -304,6 +332,81 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "script resets the main scene/root content, which causes hard resets, flicker, or blank artifacts.",
             issues,
         )
+
+    def test_should_attempt_artifact_patch_edit_skips_broad_redesign_requests(self) -> None:
+        should_patch = ai_api.should_attempt_artifact_patch_edit(
+            "edit",
+            {
+                "currentArtifactHtml": PATCHABLE_ARTIFACT_HTML,
+                "originalEditRequest": "Redesign the whole artifact from scratch with a new concept.",
+            },
+            "Redesign the whole artifact from scratch with a new concept.",
+        )
+
+        self.assertFalse(should_patch)
+
+    def test_apply_artifact_patch_plan_can_update_css_property(self) -> None:
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Updated the background.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": "#track-bg",
+                        "property": "background",
+                        "value": "linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(issues, [])
+        self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", patched_html)
+        self.assertIn(".car", patched_html)
+
+    async def test_local_edit_prefers_patch_flow_before_full_regeneration(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Updated the background to daytime.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": "#track-bg",
+                                "property": "background",
+                                "value": "linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)",
+                            }
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Make the background daytime.",
+                    "currentArtifactHtml": PATCHABLE_ARTIFACT_HTML,
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertEqual(response.assistantMessage, "Updated the background to daytime.")
+        self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", response.html)
+        self.assertIn(".car", response.html)
 
     def test_build_artifact_repair_prompt_is_concrete_about_contract_and_pitfalls(self) -> None:
         prompt = ai_api.build_artifact_repair_prompt(

@@ -82,6 +82,16 @@ export function buildArtifactConversationPrompt(answers = {}) {
     .join('\n')
 }
 
+function isBackgroundAtmosphereEditRequest(value) {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!text) {
+    return false
+  }
+  return /(background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b)/.test(
+    text
+  )
+}
+
 export function buildArtifactEditPrompt(editRequest, answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
@@ -90,6 +100,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
   const designGuidelines =
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
+  const backgroundEdit = isBackgroundAtmosphereEditRequest(request)
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
@@ -103,8 +114,12 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'Preserve the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers, unless the edit request explicitly asks to replace it with an equivalent working approach.',
     'Do not add your own window message listener or websocket logic for poll updates.',
     'Preserve the existing DOM structure, scene concept, layout, selector targets, and working design decisions unless the edit request explicitly asks for a broader redesign.',
+    'Preserve detailed SVG or illustration markup, decorative assets, cars, characters, icons, labels, and non-targeted motion logic unless the edit request explicitly asks to change them.',
     'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
     'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
+    backgroundEdit
+      ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
+      : '',
     'Prefer CSS, copy, spacing, animation tuning, and small targeted adjustments over rewriting containers or rebuilding sections.',
     'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
     'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
@@ -128,6 +143,7 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
   const errorText = typeof runtimeError === 'string' ? runtimeError.trim() : ''
+  const backgroundEdit = isBackgroundAtmosphereEditRequest(request)
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
@@ -141,9 +157,13 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     'Apply the requested edit while preserving the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers.',
     'Do not add your own window message listener or websocket logic for poll updates.',
     'Preserve selector targets and the working scene structure.',
+    'Preserve detailed SVG or illustration markup, decorative assets, cars, characters, icons, labels, and non-targeted motion logic unless the edit request explicitly asks to change them.',
     'Do not keep the broken selector logic from the failed edited artifact.',
     'Prefer the smallest viable CSS/text/layout change over structural DOM rewrites.',
     'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
+    backgroundEdit
+      ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
+      : '',
     'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
     'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
     'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
@@ -184,10 +204,16 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     typeof artifactContext?.runtimeRenderError === 'string'
       ? artifactContext.runtimeRenderError.trim()
       : ''
+  const originalEditRequest =
+    typeof artifactContext?.originalEditRequest === 'string'
+      ? artifactContext.originalEditRequest.trim()
+      : ''
   const hasFailedArtifact = Boolean(
     typeof artifactContext?.failedArtifactHtml === 'string' &&
       artifactContext.failedArtifactHtml.trim()
   )
+  const isEditLike = requestMode === 'edit' || requestMode === 'repair'
+  const backgroundEdit = isBackgroundAtmosphereEditRequest(originalEditRequest || promptText)
 
   const endpointLines = Object.entries(endpoints)
     .filter(([, value]) => typeof value === 'string' && value.trim())
@@ -195,9 +221,15 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
 
   return [
     'Artifact mode is active.',
-    'Generate a full creative artifact experience with complete control over layout, visuals, and motion.',
-    'Do not constrain output to existing poll game shape/label templates.',
-    'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
+    isEditLike
+      ? 'Artifact edit mode is active. Revise the existing artifact conservatively instead of inventing a new one.'
+      : 'Generate a full creative artifact experience with complete control over layout, visuals, and motion.',
+    isEditLike
+      ? 'Preserve the existing concept, composition, foreground art, detailed SVG or illustration markup, typography, palette, motion style, and live poll behavior unless the user explicitly asks to change them.'
+      : 'Do not constrain output to existing poll game shape/label templates.',
+    isEditLike
+      ? 'Treat context.artifact.originalEditRequest as the source of truth for what should change. Keep unrelated parts of the artifact as close to the current version as possible.'
+      : 'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
     'Output should be raw HTML that can render from live poll state updates.',
     'Prefer calling window.prezoSetPollRenderer(function (state) { ... }) to register your renderer.',
     'You may also define window.prezoRenderPoll(state), but do not rebuild host messaging yourself.',
@@ -210,6 +242,12 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Animate in place with CSS transitions, Web Animations API, or requestAnimationFrame; keep existing cars, bars, rows, and labels mounted and move them smoothly from prior state.',
     'If option ordering changes, reconcile existing nodes by option id instead of destroying and recreating the full list.',
     'Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.',
+    isEditLike
+      ? 'Prefer minimal diffs. Preserve most of the existing HTML, CSS, and JavaScript byte-for-byte where possible, especially non-targeted SVG and artwork.'
+      : '',
+    backgroundEdit
+      ? 'This is a background/time-of-day/lighting style request. Modify only the background, sky, ambient lighting, backdrop layers, and closely related color tokens. Do not redesign cars, characters, icons, labels, vote chips, or other foreground gameplay visuals unless explicitly requested.'
+      : '',
     hasExistingArtifact
       ? 'If context.artifact.currentArtifactHtml is provided, treat it as the current artifact to revise and return a full updated version rather than a brand-new unrelated concept.'
       : '',

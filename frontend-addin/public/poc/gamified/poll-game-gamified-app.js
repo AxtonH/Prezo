@@ -1702,7 +1702,8 @@ import {
     const prompt = buildArtifactEditPrompt(normalizedRequest, state.artifact.lastAnswers)
     await submitArtifactPrompt(prompt, {
       conversationAnswers: state.artifact.lastAnswers,
-      requestKind: 'edit'
+      requestKind: 'edit',
+      originalEditRequest: normalizedRequest
     })
   }
 
@@ -1750,6 +1751,7 @@ import {
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
         : state.artifact.lastAnswers
+    const originalEditRequest = asText(options.originalEditRequest)
     state.artifact.busy = true
     syncArtifactComposerBusyState()
     state.artifact.lastPrompt = prompt
@@ -1773,7 +1775,8 @@ import {
         {
           prompt,
           answers: state.artifact.lastAnswers,
-          mode: requestKind
+          mode: requestKind,
+          originalEditRequest
         },
         context.poll
       )
