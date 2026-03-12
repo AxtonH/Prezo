@@ -305,6 +305,42 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             issues,
         )
 
+    def test_build_artifact_repair_prompt_is_concrete_about_contract_and_pitfalls(self) -> None:
+        prompt = ai_api.build_artifact_repair_prompt(
+            original_prompt="Make the cars move smoothly when votes change.",
+            context={"artifact": {"requestMode": "edit"}},
+            html=INVALID_ARTIFACT_HTML,
+            validation_issues=[
+                "artifact output appears truncated before completion.",
+                "artifact output has unbalanced <script> tags.",
+                "script has an unterminated block or object literal.",
+            ],
+        )
+
+        self.assertIn("Artifact repair task", prompt)
+        self.assertIn("Required output contract", prompt)
+        self.assertIn("Pitfalls to avoid", prompt)
+        self.assertIn("Return exactly one complete HTML document.", prompt)
+        self.assertIn("If a script block is malformed, truncated, or hard to salvage, rewrite the entire affected script block cleanly", prompt)
+        self.assertIn("Do not return a blank stage, near-solid black screen, or hidden content.", prompt)
+
+    def test_build_artifact_stable_recovery_prompt_is_concrete_about_baseline_and_pitfalls(self) -> None:
+        prompt = ai_api.build_artifact_stable_recovery_prompt(
+            original_prompt="Stop the flicker and keep the cars moving smoothly.",
+            context={"artifact": {"requestMode": "repair", "currentArtifactHtml": VALID_ARTIFACT_HTML}},
+            validation_issues=[
+                "artifact output has unbalanced <script> tags.",
+                "script has an unterminated block or object literal.",
+            ],
+        )
+
+        self.assertIn("Artifact stable recovery task", prompt)
+        self.assertIn("Use the stable current artifact as the baseline.", prompt)
+        self.assertIn("Required output contract", prompt)
+        self.assertIn("Pitfalls to avoid", prompt)
+        self.assertIn("Return exactly one complete HTML document.", prompt)
+        self.assertIn("Do not preserve malformed script bodies", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

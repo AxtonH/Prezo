@@ -801,32 +801,11 @@ async def attempt_artifact_repair(
 ) -> str:
     if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
         return ""
-    has_truncation_issue = any(
-        "truncated" in issue.lower() or "unbalanced <script>" in issue.lower()
-        for issue in validation_issues
-    )
-    repair_prompt = "\n".join(
-        [
-            "Repair this artifact HTML so it passes validation and still satisfies the original request.",
-            "Return raw HTML only.",
-            f"Original prompt: {original_prompt}",
-            f"Validation issues: {'; '.join(validation_issues[:6])}",
-            (
-                "The previous artifact output appears to have been cut off before completion. "
-                "Re-emit a complete artifact with all closing tags, all </script> tags, and syntactically complete inline JavaScript."
-                if has_truncation_issue
-                else ""
-            ),
-            "If the validation issue mentions live poll state, preserve or restore the existing live-state hook from context.artifact.currentArtifactHtml / currentArtifactLiveHooks.",
-            "Do not drop window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), prezo:poll-update listeners, or equivalent host-driven update wiring.",
-            "Do not rewrite the full document/body/root structure or use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your repair strategy.",
-            "Keep existing nodes mounted during updates and preserve the stable artifact structure whenever possible.",
-            "Return a usable artifact on first render: visible scene, readable labels, and no near-empty full-screen dark overlay.",
-            "Context JSON:",
-            json.dumps(context, indent=2),
-            "Current artifact HTML:",
-            html,
-        ]
+    repair_prompt = build_artifact_repair_prompt(
+        original_prompt=original_prompt,
+        context=context,
+        html=html,
+        validation_issues=validation_issues,
     )
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
@@ -853,20 +832,10 @@ async def attempt_artifact_stable_recovery(
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
 ) -> tuple[str, str]:
-    recovery_prompt = "\n".join(
-        [
-            "The previous artifact edit output was invalid and must be discarded.",
-            f"Original prompt: {original_prompt}",
-            f"Validation issues to avoid: {'; '.join(validation_issues[:6])}",
-            "Reapply the requested change against the stable current artifact in context.artifact.currentArtifactHtml.",
-            "Do not preserve malformed script bodies, unfinished JavaScript expressions, or unbalanced <script> tags from the failed output.",
-            "Do not rewrite the full document/body/root structure or use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your recovery strategy.",
-            "Keep existing nodes mounted during updates and preserve the stable artifact structure whenever possible.",
-            "Return a usable artifact on first render: visible scene, readable labels, and no near-empty full-screen dark overlay.",
-            "Return raw HTML only.",
-            "Ensure every <script> tag is closed and every JavaScript expression, parenthesis, block, string, and template is complete.",
-            "If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
-        ]
+    recovery_prompt = build_artifact_stable_recovery_prompt(
+        original_prompt=original_prompt,
+        context=context,
+        validation_issues=validation_issues,
     )
     text, stop_reason = await request_gemini_text(
         api_key=api_key,
@@ -884,6 +853,114 @@ async def attempt_artifact_stable_recovery(
     )
     recovered = normalize_poll_game_artifact_html(text)
     return recovered.strip(), stop_reason
+
+
+def build_artifact_repair_prompt(
+    *,
+    original_prompt: str,
+    context: dict[str, Any],
+    html: str,
+    validation_issues: list[str],
+) -> str:
+    has_truncation_issue = any(
+        "truncated" in issue.lower() or "unbalanced <script>" in issue.lower()
+        for issue in validation_issues
+    )
+    issue_text = "; ".join(issue.strip() for issue in validation_issues[:6] if issue.strip())
+    return "\n".join(
+        [
+            "Artifact repair task",
+            "You are repairing a broken HTML poll artifact that failed validation.",
+            "Your job is to return one complete replacement artifact that is valid, usable, and still satisfies the original request.",
+            "",
+            "Repair objective",
+            f"- Original prompt: {original_prompt}",
+            f"- Validation issues: {issue_text}",
+            "- Preserve the intended concept, layout, and live poll behavior unless one of them is the direct cause of the failure.",
+            "- Prioritize correctness and usability over decorative complexity. A simpler working artifact is better than a flashy broken one.",
+            "",
+            "Required output contract",
+            "- Return raw HTML only.",
+            "- Return exactly one complete HTML document.",
+            "- Do not return markdown fences, JSON, prose, comments outside HTML, or explanation.",
+            "- Close every tag, especially every <script> tag.",
+            "- Inline JavaScript must be syntactically complete with closed blocks, parentheses, strings, template literals, and object literals.",
+            "- Preserve or restore the live poll contract: window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), or equivalent approved host wiring.",
+            "- The artifact must render visible usable content on first load.",
+            "",
+            "Repair strategy",
+            "- If a script block is malformed, truncated, or hard to salvage, rewrite the entire affected script block cleanly instead of trying to patch a fragment.",
+            "- Keep the existing scene root and stable mounted nodes whenever possible.",
+            "- Update text, classes, transforms, styles, and child nodes conservatively instead of rebuilding the whole scene.",
+            "- If a previous change introduced complexity that is causing breakage, simplify that section while preserving the main visual idea.",
+            (
+                "- The failed output appears truncated. Re-emit a complete artifact with all closing tags, all </script> tags, and fully complete JavaScript."
+                if has_truncation_issue
+                else ""
+            ),
+            "",
+            "Pitfalls to avoid",
+            "- Do not drop the live poll renderer registration.",
+            "- Do not output partial HTML.",
+            "- Do not leave unfinished object literals, arrays, function bodies, or conditionals.",
+            "- Do not emit the literal text </script> inside inline JavaScript. Use <\\/script> instead if needed.",
+            "- Do not rewrite the full document/body/root structure with document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or equivalent hard resets.",
+            "- Do not return a blank stage, near-solid black screen, or hidden content.",
+            "",
+            "Context JSON:",
+            json.dumps(context, indent=2),
+            "",
+            "Broken artifact HTML to repair:",
+            html,
+        ]
+    )
+
+
+def build_artifact_stable_recovery_prompt(
+    *,
+    original_prompt: str,
+    context: dict[str, Any],
+    validation_issues: list[str],
+) -> str:
+    issue_text = "; ".join(issue.strip() for issue in validation_issues[:6] if issue.strip())
+    return "\n".join(
+        [
+            "Artifact stable recovery task",
+            "The previous edited artifact output is invalid and must be discarded.",
+            "Reapply the requested change against the last stable current artifact from context.artifact.currentArtifactHtml.",
+            "Return one complete replacement artifact that is valid, usable, and still satisfies the original request.",
+            "",
+            "Recovery objective",
+            f"- Original prompt: {original_prompt}",
+            f"- Validation issues to avoid: {issue_text}",
+            "- Use the stable current artifact as the baseline.",
+            "- Do not preserve malformed code, truncated code, or unfinished script bodies from the failed output.",
+            "- Prioritize a safe working result over ambitious redesign.",
+            "",
+            "Required output contract",
+            "- Return raw HTML only.",
+            "- Return exactly one complete HTML document.",
+            "- Preserve the live poll contract and renderer registration.",
+            "- Ensure every <script> tag is closed and every JavaScript block, object, array, string, template literal, and expression is complete.",
+            "- The artifact must render visible usable content on first load.",
+            "",
+            "Recovery strategy",
+            "- Reapply the requested change conservatively to the stable artifact.",
+            "- Keep the existing scene root, option nodes, and mounted structure whenever possible.",
+            "- If the requested change caused instability, implement the smallest robust version of that change instead of repeating the failed approach.",
+            "- If a broken script cannot be trusted, replace the entire affected script block with a clean complete version.",
+            "",
+            "Pitfalls to avoid",
+            "- Do not output markdown fences, JSON, or explanation.",
+            "- Do not preserve malformed script bodies, unfinished JavaScript expressions, or unbalanced <script> tags from the failed output.",
+            "- Do not emit the literal text </script> inside inline JavaScript. Use <\\/script> instead if needed.",
+            "- Do not rewrite the full document/body/root structure or use hard reset strategies such as document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith.",
+            "- Do not return a blank stage, near-solid black screen, or hidden content.",
+            "",
+            "Prepared context JSON:",
+            json.dumps(context, indent=2),
+        ]
+    )
 
 
 def extract_gemini_text(payload: Any) -> str:
