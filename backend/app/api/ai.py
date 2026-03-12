@@ -12,10 +12,14 @@ from pydantic import BaseModel, Field
 from ..config import settings
 
 router = APIRouter(prefix="/ai", tags=["ai"])
-DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-opus-4.6"
+DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-sonnet-4-6"
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
-DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_PLAN_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_ARTIFACT_EDIT_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_ARTIFACT_REPAIR_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL = "gemini-2.5-flash-lite"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_ARTIFACT_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
@@ -521,9 +525,7 @@ async def create_poll_game_edit_plan(
             detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
+    model = resolve_gemini_plan_model()
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
@@ -604,12 +606,11 @@ async def create_poll_game_artifact_build(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
             )
-        requested_model = normalize_gemini_model_name(payload.model)
-        configured_model = normalize_gemini_model_name(settings.gemini_model)
-        model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
+        model = resolve_gemini_artifact_edit_model()
         if request_mode == "repair":
             temperature = 0.2
             request_stage = "artifact repair generation"
+            model = resolve_gemini_artifact_repair_model()
             configured_timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
         else:
             temperature = 0.2
@@ -663,7 +664,7 @@ async def create_poll_game_artifact_build(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
             )
-        repair_model = normalize_gemini_model_name(settings.gemini_model) or DEFAULT_GEMINI_MODEL
+        repair_model = resolve_gemini_artifact_repair_model()
         remaining_budget_seconds = max(0.0, deadline - time.monotonic())
         repair_timeout_seconds = min(
             settings.gemini_artifact_repair_timeout_seconds,
@@ -701,7 +702,7 @@ async def create_poll_game_artifact_build(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
             )
-        repair_model = normalize_gemini_model_name(settings.gemini_model) or DEFAULT_GEMINI_MODEL
+        repair_model = resolve_gemini_artifact_repair_model()
         recovery_context = build_stable_artifact_recovery_context(
             payload.context,
             failed_html=html,
@@ -762,9 +763,7 @@ async def create_poll_game_artifact_answer(
             detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
-    requested_model = normalize_gemini_model_name(payload.model)
-    configured_model = normalize_gemini_model_name(settings.gemini_model)
-    model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
+    model = resolve_gemini_artifact_answer_model()
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
@@ -1003,6 +1002,39 @@ def normalize_gemini_model_name(value: str | None) -> str:
 def resolve_gemini_base_url() -> str:
     base_url = (settings.gemini_base_url or "").strip() or GEMINI_API_BASE
     return base_url.rstrip("/")
+
+
+def resolve_gemini_plan_model() -> str:
+    return (
+        normalize_gemini_model_name(settings.gemini_plan_model)
+        or normalize_gemini_model_name(settings.gemini_model)
+        or DEFAULT_GEMINI_PLAN_MODEL
+    )
+
+
+def resolve_gemini_artifact_edit_model() -> str:
+    return (
+        normalize_gemini_model_name(settings.gemini_artifact_edit_model)
+        or normalize_gemini_model_name(settings.gemini_model)
+        or DEFAULT_GEMINI_ARTIFACT_EDIT_MODEL
+    )
+
+
+def resolve_gemini_artifact_repair_model() -> str:
+    return (
+        normalize_gemini_model_name(settings.gemini_artifact_repair_model)
+        or normalize_gemini_model_name(settings.gemini_artifact_edit_model)
+        or normalize_gemini_model_name(settings.gemini_model)
+        or DEFAULT_GEMINI_ARTIFACT_REPAIR_MODEL
+    )
+
+
+def resolve_gemini_artifact_answer_model() -> str:
+    return (
+        normalize_gemini_model_name(settings.gemini_artifact_answer_model)
+        or normalize_gemini_model_name(settings.gemini_model)
+        or DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL
+    )
 
 
 def build_gemini_generate_content_endpoint(base_url: str, model: str) -> str:

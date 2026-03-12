@@ -102,6 +102,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "gemini_api_key": ai_api.settings.gemini_api_key,
             "gemini_base_url": ai_api.settings.gemini_base_url,
             "gemini_model": ai_api.settings.gemini_model,
+            "gemini_plan_model": ai_api.settings.gemini_plan_model,
+            "gemini_artifact_edit_model": ai_api.settings.gemini_artifact_edit_model,
+            "gemini_artifact_repair_model": ai_api.settings.gemini_artifact_repair_model,
+            "gemini_artifact_answer_model": ai_api.settings.gemini_artifact_answer_model,
             "gemini_plan_timeout_seconds": ai_api.settings.gemini_plan_timeout_seconds,
             "gemini_artifact_build_timeout_seconds": ai_api.settings.gemini_artifact_build_timeout_seconds,
             "gemini_artifact_edit_timeout_seconds": ai_api.settings.gemini_artifact_edit_timeout_seconds,
@@ -110,10 +114,14 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "gemini_artifact_answer_timeout_seconds": ai_api.settings.gemini_artifact_answer_timeout_seconds,
         }
         ai_api.settings.anthropic_api_key = "anthropic-test-key"
-        ai_api.settings.anthropic_artifact_build_model = "claude-opus-4.6"
+        ai_api.settings.anthropic_artifact_build_model = "claude-sonnet-4-6"
         ai_api.settings.anthropic_artifact_build_timeout_seconds = 180.0
         ai_api.settings.gemini_api_key = "gemini-test-key"
-        ai_api.settings.gemini_model = "gemini-3.1-pro-preview"
+        ai_api.settings.gemini_model = "gemini-2.5-flash"
+        ai_api.settings.gemini_plan_model = "gemini-2.5-flash"
+        ai_api.settings.gemini_artifact_edit_model = "gemini-2.5-flash"
+        ai_api.settings.gemini_artifact_repair_model = "gemini-2.5-flash"
+        ai_api.settings.gemini_artifact_answer_model = "gemini-2.5-flash-lite"
         ai_api.settings.gemini_plan_timeout_seconds = 60.0
         ai_api.settings.gemini_artifact_build_timeout_seconds = 180.0
         ai_api.settings.gemini_artifact_edit_timeout_seconds = 240.0
@@ -143,12 +151,12 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(response.model, "claude-opus-4.6")
+        self.assertEqual(response.model, "claude-sonnet-4-6")
         self.assertEqual(anthropic_mock.await_count, 1)
         self.assertEqual(gemini_mock.await_count, 0)
-        self.assertEqual(anthropic_mock.await_args.kwargs["model"], "claude-opus-4.6")
+        self.assertEqual(anthropic_mock.await_args.kwargs["model"], "claude-sonnet-4-6")
 
-    async def test_edit_request_uses_gemini_only(self) -> None:
+    async def test_edit_request_uses_artifact_edit_model_and_ignores_payload_model(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
         payload = self.build_payload("edit", model="gemini-3.1-pro-preview")
@@ -157,11 +165,12 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(response.model, "gemini-3.1-pro-preview")
+        self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
-    async def test_repair_request_uses_gemini_only(self) -> None:
+    async def test_repair_request_uses_artifact_repair_model(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
         payload = self.build_payload("repair", model="gemini-3.1-pro-preview")
@@ -170,32 +179,43 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(response.model, "gemini-3.1-pro-preview")
+        self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
-    async def test_artifact_answer_uses_gemini(self) -> None:
+    async def test_artifact_answer_uses_flash_lite_and_ignores_payload_model(self) -> None:
         gemini_mock = AsyncMock(return_value=("It animates live vote changes.", "stop"))
-        payload = ai_api.PollGameArtifactBuildRequest(prompt="How does this work?", context={}, model=None)
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="How does this work?",
+            context={},
+            model="gemini-3.1-pro-preview",
+        )
         with patch.object(ai_api, "request_gemini_text", gemini_mock):
             response = await ai_api.create_poll_game_artifact_answer(payload)
 
-        self.assertEqual(response.model, "gemini-3.1-pro-preview")
+        self.assertEqual(response.model, "gemini-2.5-flash-lite")
         self.assertEqual(response.text, "It animates live vote changes.")
         self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash-lite")
 
-    async def test_edit_plan_uses_gemini(self) -> None:
+    async def test_edit_plan_uses_flash_and_ignores_payload_model(self) -> None:
         gemini_mock = AsyncMock(
             return_value=(json.dumps({"assistantMessage": "ok", "actions": []}), "stop")
         )
-        payload = ai_api.PollGameEditPlanRequest(prompt="Make the title smaller.", context={}, model=None)
+        payload = ai_api.PollGameEditPlanRequest(
+            prompt="Make the title smaller.",
+            context={},
+            model="gemini-3.1-pro-preview",
+        )
         with patch.object(ai_api, "request_gemini_text", gemini_mock):
             response = await ai_api.create_poll_game_edit_plan(payload)
 
         parsed = json.loads(response.text)
-        self.assertEqual(response.model, "gemini-3.1-pro-preview")
+        self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertEqual(parsed["assistantMessage"], "ok")
         self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
     async def test_invalid_claude_build_triggers_gemini_repair(self) -> None:
         anthropic_mock = AsyncMock(return_value=(INVALID_ARTIFACT_HTML, "end_turn"))
@@ -208,7 +228,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(anthropic_mock.await_count, 1)
         self.assertGreaterEqual(gemini_mock.await_count, 1)
-        self.assertEqual(response.model, "gemini-3.1-pro-preview")
+        self.assertEqual(response.model, "gemini-2.5-flash")
 
     async def test_claude_build_failure_does_not_fallback_to_gemini(self) -> None:
         anthropic_mock = AsyncMock(
