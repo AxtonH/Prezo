@@ -206,6 +206,21 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exc_info.exception.status_code, 503)
         self.assertIn("ANTHROPIC_API_KEY", str(exc_info.exception.detail))
 
+    def test_provider_timeout_detail_includes_stage_and_budget(self) -> None:
+        detail = ai_api.build_provider_timeout_detail(
+            "Gemini",
+            "https://generativelanguage.googleapis.com/v1beta",
+            exception_name="ReadTimeout",
+            timeout_seconds=74.0,
+            request_stage="artifact validation repair",
+            remaining_budget_seconds=74.0,
+        )
+
+        self.assertIn("during artifact validation repair", detail)
+        self.assertIn("ReadTimeout after 74s", detail)
+        self.assertIn("Call budget was 74s", detail)
+        self.assertIn("server budget remaining at call start was 74s", detail)
+
 
 if __name__ == "__main__":
     unittest.main()

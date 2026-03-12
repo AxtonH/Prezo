@@ -237,6 +237,39 @@ class PollGameArtifactAssistantResponse(BaseModel):
     model: str
 
 
+def build_provider_timeout_detail(
+    provider_name: str,
+    base_url: str,
+    *,
+    exception_name: str,
+    timeout_seconds: float,
+    request_stage: str = "",
+    remaining_budget_seconds: float | None = None,
+) -> str:
+    stage_text = f" during {request_stage}" if request_stage else ""
+    detail = (
+        f"Unable to reach {provider_name} API at {base_url}{stage_text}: "
+        f"{exception_name} after {timeout_seconds:.0f}s."
+    )
+    if remaining_budget_seconds is not None:
+        detail = (
+            f"{detail} Call budget was {timeout_seconds:.0f}s; "
+            f"server budget remaining at call start was {max(0.0, remaining_budget_seconds):.0f}s."
+        )
+    return detail
+
+
+def build_provider_request_error_detail(
+    provider_name: str,
+    base_url: str,
+    detail: str,
+    *,
+    request_stage: str = "",
+) -> str:
+    stage_text = f" during {request_stage}" if request_stage else ""
+    return f"Unable to reach {provider_name} API at {base_url}{stage_text}: {detail}"
+
+
 async def request_anthropic_text(
     *,
     api_key: str,
@@ -246,6 +279,8 @@ async def request_anthropic_text(
     temperature: float,
     max_tokens: int,
     timeout_seconds: float,
+    request_stage: str = "",
+    remaining_budget_seconds: float | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_anthropic_base_url()
     endpoint = f"{base_url}/messages"
@@ -279,16 +314,25 @@ async def request_anthropic_text(
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Unable to reach Anthropic API at {base_url}: "
-                f"{exc.__class__.__name__} after {timeout_seconds:.0f}s."
+            detail=build_provider_timeout_detail(
+                "Anthropic",
+                base_url,
+                exception_name=exc.__class__.__name__,
+                timeout_seconds=timeout_seconds,
+                request_stage=request_stage,
+                remaining_budget_seconds=remaining_budget_seconds,
             ),
         ) from exc
     except httpx.RequestError as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unable to reach Anthropic API at {base_url}: {detail}",
+            detail=build_provider_request_error_detail(
+                "Anthropic",
+                base_url,
+                detail,
+                request_stage=request_stage,
+            ),
         ) from exc
 
     raw_payload: Any = {}
@@ -322,6 +366,8 @@ async def request_gemini_text(
     temperature: float,
     max_tokens: int,
     timeout_seconds: float,
+    request_stage: str = "",
+    remaining_budget_seconds: float | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_gemini_base_url()
     endpoint = build_gemini_generate_content_endpoint(base_url, model)
@@ -365,16 +411,25 @@ async def request_gemini_text(
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                f"Unable to reach Gemini API at {base_url}: "
-                f"{exc.__class__.__name__} after {timeout_seconds:.0f}s."
+            detail=build_provider_timeout_detail(
+                "Gemini",
+                base_url,
+                exception_name=exc.__class__.__name__,
+                timeout_seconds=timeout_seconds,
+                request_stage=request_stage,
+                remaining_budget_seconds=remaining_budget_seconds,
             ),
         ) from exc
     except httpx.RequestError as exc:
         detail = str(exc).strip() or exc.__class__.__name__
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unable to reach Gemini API at {base_url}: {detail}",
+            detail=build_provider_request_error_detail(
+                "Gemini",
+                base_url,
+                detail,
+                request_stage=request_stage,
+            ),
         ) from exc
 
     raw_payload: Any = {}
@@ -422,6 +477,7 @@ async def create_poll_game_edit_plan(
         temperature=0.2,
         max_tokens=1400,
         timeout_seconds=settings.gemini_plan_timeout_seconds,
+        request_stage="poll game edit plan",
     )
     normalized_plan = normalize_poll_game_plan(text)
 
@@ -453,13 +509,22 @@ async def create_poll_game_artifact_build(
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Artifact build is not configured. Set ANTHROPIC_API_KEY on backend.",
-            )
+        )
         model = (
             normalize_anthropic_model_name(settings.anthropic_artifact_build_model)
             or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL
         )
         temperature = 0.8
-        timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        timeout_seconds = min(
+            settings.anthropic_artifact_build_timeout_seconds,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "starting artifact generation",
+                minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
+                reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
+            ),
+        )
         request_text, stop_reason = await request_anthropic_text(
             api_key=build_api_key,
             model=model,
@@ -470,15 +535,9 @@ async def create_poll_game_artifact_build(
             ),
             temperature=temperature,
             max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
-            timeout_seconds=min(
-                timeout_seconds,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "starting artifact generation",
-                    minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
-                    reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
-                ),
-            ),
+            timeout_seconds=timeout_seconds,
+            request_stage="artifact initial build",
+            remaining_budget_seconds=remaining_budget_seconds,
         )
     else:
         build_api_key = (settings.gemini_api_key or "").strip()
@@ -492,10 +551,22 @@ async def create_poll_game_artifact_build(
         model = requested_model or configured_model or DEFAULT_GEMINI_MODEL
         if request_mode == "repair":
             temperature = 0.2
-            timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
+            request_stage = "artifact repair generation"
+            configured_timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
         else:
             temperature = 0.2
-            timeout_seconds = settings.gemini_artifact_edit_timeout_seconds
+            request_stage = "artifact edit generation"
+            configured_timeout_seconds = settings.gemini_artifact_edit_timeout_seconds
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        timeout_seconds = min(
+            configured_timeout_seconds,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "starting artifact generation",
+                minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
+                reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
+            ),
+        )
         request_text, stop_reason = await request_gemini_text(
             api_key=build_api_key,
             model=model,
@@ -506,15 +577,9 @@ async def create_poll_game_artifact_build(
             ),
             temperature=temperature,
             max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
-            timeout_seconds=min(
-                timeout_seconds,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "starting artifact generation",
-                    minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
-                    reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
-                ),
-            ),
+            timeout_seconds=timeout_seconds,
+            request_stage=request_stage,
+            remaining_budget_seconds=remaining_budget_seconds,
         )
 
     html = normalize_poll_game_artifact_html(request_text)
@@ -541,6 +606,15 @@ async def create_poll_game_artifact_build(
                 detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
             )
         repair_model = normalize_gemini_model_name(settings.gemini_model) or DEFAULT_GEMINI_MODEL
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        repair_timeout_seconds = min(
+            settings.gemini_artifact_repair_timeout_seconds,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "repairing artifact output",
+                minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
+            ),
+        )
         repaired_html = await attempt_artifact_repair(
             api_key=repair_api_key,
             model=repair_model,
@@ -548,14 +622,8 @@ async def create_poll_game_artifact_build(
             context=model_context,
             html=html,
             validation_issues=validation_issues,
-            timeout_seconds=min(
-                settings.gemini_artifact_repair_timeout_seconds,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "repairing artifact output",
-                    minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
-                ),
-            ),
+            timeout_seconds=repair_timeout_seconds,
+            remaining_budget_seconds=remaining_budget_seconds,
         )
         if not repaired_html:
             break
@@ -584,20 +652,23 @@ async def create_poll_game_artifact_build(
         prepared_recovery_context = prepare_artifact_context_for_model(
             recovery_context, "repair"
         )
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        recovery_timeout_seconds = min(
+            90.0,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "recovering artifact output from the last stable artifact",
+                minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
+            ),
+        )
         recovered_html, recovered_stop_reason = await attempt_artifact_stable_recovery(
             api_key=repair_api_key,
             model=repair_model,
             original_prompt=payload.prompt,
             context=prepared_recovery_context,
             validation_issues=validation_issues,
-            timeout_seconds=min(
-                90.0,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "recovering artifact output from the last stable artifact",
-                    minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
-                ),
-            ),
+            timeout_seconds=recovery_timeout_seconds,
+            remaining_budget_seconds=remaining_budget_seconds,
         )
         if recovered_html:
             html = restore_artifact_live_hooks_if_missing(recovered_html, payload.context)
@@ -647,6 +718,7 @@ async def create_poll_game_artifact_answer(
         temperature=0.25,
         max_tokens=900,
         timeout_seconds=settings.gemini_artifact_answer_timeout_seconds,
+        request_stage="artifact question answer",
     )
 
     answer = (text or "").strip()
@@ -668,6 +740,7 @@ async def attempt_artifact_repair(
     html: str,
     validation_issues: list[str],
     timeout_seconds: float,
+    remaining_budget_seconds: float | None = None,
 ) -> str:
     if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
         return ""
@@ -703,6 +776,8 @@ async def attempt_artifact_repair(
         temperature=0.25,
         max_tokens=GEMINI_ARTIFACT_REPAIR_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
+        request_stage="artifact validation repair",
+        remaining_budget_seconds=remaining_budget_seconds,
     )
     repaired = normalize_poll_game_artifact_html(text)
     return repaired.strip()
@@ -716,6 +791,7 @@ async def attempt_artifact_stable_recovery(
     context: dict[str, Any],
     validation_issues: list[str],
     timeout_seconds: float,
+    remaining_budget_seconds: float | None = None,
 ) -> tuple[str, str]:
     recovery_prompt = "\n".join(
         [
@@ -740,6 +816,8 @@ async def attempt_artifact_stable_recovery(
         temperature=0.15,
         max_tokens=GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS,
         timeout_seconds=timeout_seconds,
+        request_stage="artifact stable recovery",
+        remaining_budget_seconds=remaining_budget_seconds,
     )
     recovered = normalize_poll_game_artifact_html(text)
     return recovered.strip(), stop_reason
