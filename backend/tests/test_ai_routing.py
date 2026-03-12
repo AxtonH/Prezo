@@ -53,6 +53,18 @@ VALID_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+FULL_SCENE_RESET_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        document.body.innerHTML = '<div id="artifact-root"></div>';
+      });
+    </script>
+  </body>
+</html>"""
+
 INVALID_ARTIFACT_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -240,6 +252,14 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         normalized = ai_api.normalize_poll_game_artifact_html(raw_text)
 
         self.assertEqual(normalized, VALID_ARTIFACT_HTML.strip())
+
+    def test_validate_poll_game_artifact_html_rejects_full_scene_reset_code(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(FULL_SCENE_RESET_HTML)
+
+        self.assertIn(
+            "script resets the full document/body content, which causes blank or flickering artifacts.",
+            issues,
+        )
 
 
 if __name__ == "__main__":

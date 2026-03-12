@@ -111,6 +111,26 @@ ARTIFACT_UNSAFE_DIRECT_DOM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "script mutates classList directly on a raw DOM query result without a null guard.",
     ),
 )
+ARTIFACT_FULL_SCENE_RESET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:body|documentElement)\s*\.\s*(?:innerHTML|textContent)\s*="
+        ),
+        "script resets the full document/body content, which causes blank or flickering artifacts.",
+    ),
+    (
+        re.compile(
+            r"\b(?:document\.)?(?:body|documentElement)\s*\.\s*(?:replaceChildren|replaceWith|appendChild|insertAdjacentHTML|insertAdjacentElement)\s*\("
+        ),
+        "script replaces the full document/body structure, which is not allowed for artifact output.",
+    ),
+    (
+        re.compile(
+            r"\bdocument\s*\.\s*querySelector\s*\(\s*['\"](?:body|html)['\"]\s*\)\s*\.\s*(?:innerHTML|textContent|replaceChildren|replaceWith|appendChild|insertAdjacentHTML|insertAdjacentElement)\b"
+        ),
+        "script rewrites the root document structure through querySelector(body/html), which is not allowed for artifact output.",
+    ),
+)
 
 POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
     [
@@ -160,14 +180,21 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- If context.artifact.requestMode == 'repair', treat context.artifact.currentArtifactHtml as the last stable working artifact, treat context.artifact.failedArtifactHtml as the broken prior attempt, and satisfy the latest edit request while avoiding context.artifact.runtimeRenderError.",
         "- In edit mode, make the smallest viable change that satisfies the latest request.",
         "- In repair mode, do not simply return the unchanged stable artifact unless the latest request is already satisfied.",
+        "- In edit and repair mode, treat the current artifact as a working codebase. Patch it conservatively instead of reimagining it.",
         "- Preserve the current concept, layout, visual metaphor, typography, palette, and motion unless the user explicitly asks to change them.",
         "- For local requests such as title size, spacing, readability, color, motion, or positioning, do not redesign unrelated parts of the artifact.",
         "- In edit and repair mode, preserve existing container hierarchy, ids, classes, data attributes, and selector targets used by the current artifact unless the user explicitly asks for a structural redesign.",
+        "- Do not rewrite the full document, <body>, primary scene root, or option row structure unless the user explicitly asks for a structural redesign.",
         "- Prefer CSS, copy, spacing, animation tuning, and small DOM adjustments over replacing major sections of the artifact.",
         "- Do not rename, remove, or relocate containers that current render logic depends on unless you also update that logic safely and equivalently.",
+        "- Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or equivalent full-scene reset operations as your live-update strategy.",
+        "- Keep existing nodes mounted during live updates. Prefer updating text, classes, transforms, CSS variables, and inline styles in place whenever possible.",
+        "- If the user asks to reduce flicker, stop resets, or improve animation continuity, preserve the current DOM tree and animate existing option elements forward with transform/transition updates keyed by option id.",
         "- If context.artifact.recentEditRequests is present, use it to maintain continuity, but prioritize the latest request over earlier ones.",
         "- Preserve working live-data behavior, stable layout, and successful design decisions from the current artifact unless the user explicitly asks for a broader redesign.",
         "- The edited artifact must still consume host-delivered live poll state and must still call window.prezoSetPollRenderer(fn), define window.prezoRenderPoll(state), or use an equivalent runtime-approved render registration hook from the existing host contract.",
+        "- The returned artifact must remain immediately usable after first render: visible poll scene, readable labels, and no empty, hidden, or near-solid full-screen overlay obscuring the content unless the user explicitly asks for that.",
+        "- If you are unsure, keep more of the stable artifact and make a smaller targeted change.",
         "Update requirements:",
         "- Poll changes must animate smoothly (about 200ms-500ms easing) with no flicker.",
         "- Do not rebuild or re-mount the full scene on each update.",
@@ -771,6 +798,9 @@ async def attempt_artifact_repair(
             ),
             "If the validation issue mentions live poll state, preserve or restore the existing live-state hook from context.artifact.currentArtifactHtml / currentArtifactLiveHooks.",
             "Do not drop window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), prezo:poll-update listeners, or equivalent host-driven update wiring.",
+            "Do not rewrite the full document/body/root structure or use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your repair strategy.",
+            "Keep existing nodes mounted during updates and preserve the stable artifact structure whenever possible.",
+            "Return a usable artifact on first render: visible scene, readable labels, and no near-empty full-screen dark overlay.",
             "Context JSON:",
             json.dumps(context, indent=2),
             "Current artifact HTML:",
@@ -809,6 +839,9 @@ async def attempt_artifact_stable_recovery(
             f"Validation issues to avoid: {'; '.join(validation_issues[:6])}",
             "Reapply the requested change against the stable current artifact in context.artifact.currentArtifactHtml.",
             "Do not preserve malformed script bodies, unfinished JavaScript expressions, or unbalanced <script> tags from the failed output.",
+            "Do not rewrite the full document/body/root structure or use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your recovery strategy.",
+            "Keep existing nodes mounted during updates and preserve the stable artifact structure whenever possible.",
+            "Return a usable artifact on first render: visible scene, readable labels, and no near-empty full-screen dark overlay.",
             "Return raw HTML only.",
             "Ensure every <script> tag is closed and every JavaScript expression, parenthesis, block, string, and template is complete.",
             "If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
@@ -1127,6 +1160,9 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
             if pattern.search(script_body):
                 issues.append(message)
         for pattern, message in ARTIFACT_UNSAFE_DIRECT_DOM_PATTERNS:
+            if pattern.search(script_body):
+                issues.append(message)
+        for pattern, message in ARTIFACT_FULL_SCENE_RESET_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
         syntax_issue = validate_inline_script_syntax(script_body)

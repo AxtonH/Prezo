@@ -61,6 +61,7 @@ import {
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
   const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
+  const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -139,6 +140,7 @@ import {
       pendingPayload: null,
       pendingPayloadTimerId: null,
       postLoadReplayTimerIds: [],
+      renderWatchdogTimerId: null,
       reportedContentWidth: 0,
       reportedContentHeight: 0,
       frameHeight: 520,
@@ -1240,6 +1242,7 @@ import {
     state.artifact.renderErrorCount = 0
     state.artifact.lastPayloadKey = ''
     setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
+    scheduleArtifactRenderWatchdog()
     if (flushPendingArtifactPayload({ force: true })) {
       scheduleArtifactPostLoadReplays()
       return
@@ -1281,6 +1284,10 @@ import {
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
+      if (shouldRejectArtifactRenderHealth(message?.renderHealth)) {
+        restoreArtifactAfterFailedEdit(buildArtifactRenderHealthErrorMessage(message?.renderHealth))
+        return
+      }
       confirmArtifactRenderSuccess()
       return
     }
@@ -1290,6 +1297,7 @@ import {
   }
 
   function confirmArtifactRenderSuccess() {
+    clearArtifactRenderWatchdog()
     state.artifact.renderConfirmed = true
     state.artifact.renderErrorCount = 0
     if (state.artifact.html) {
@@ -1314,6 +1322,7 @@ import {
   }
 
   function restoreArtifactAfterFailedEdit(errorMessage) {
+    clearArtifactRenderWatchdog()
     const failedArtifactHtml = normalizeArtifactMarkup(state.artifact.html)
     const rollbackHtml = normalizeArtifactMarkup(
       state.artifact.rollbackHtml || state.artifact.lastStableHtml
@@ -1455,6 +1464,64 @@ import {
       window.clearTimeout(timerIds[index])
     }
     state.artifact.postLoadReplayTimerIds = []
+  }
+
+  function clearArtifactRenderWatchdog() {
+    if (!state.artifact.renderWatchdogTimerId) {
+      return
+    }
+    window.clearTimeout(state.artifact.renderWatchdogTimerId)
+    state.artifact.renderWatchdogTimerId = null
+  }
+
+  function scheduleArtifactRenderWatchdog() {
+    clearArtifactRenderWatchdog()
+    if (
+      currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
+      state.artifact.pendingRequestKind !== 'edit' ||
+      !state.artifact.rollbackHtml
+    ) {
+      return
+    }
+    state.artifact.renderWatchdogTimerId = window.setTimeout(() => {
+      state.artifact.renderWatchdogTimerId = null
+      if (
+        currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
+        state.artifact.pendingRequestKind !== 'edit' ||
+        state.artifact.renderConfirmed
+      ) {
+        return
+      }
+      restoreArtifactAfterFailedEdit(
+        'The updated artifact never confirmed a successful render after the edit.'
+      )
+    }, ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS)
+  }
+
+  function shouldRejectArtifactRenderHealth(renderHealth) {
+    if (
+      currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
+      state.artifact.pendingRequestKind !== 'edit' ||
+      state.artifact.renderConfirmed ||
+      !state.artifact.rollbackHtml ||
+      !renderHealth ||
+      typeof renderHealth !== 'object'
+    ) {
+      return false
+    }
+    return Boolean(renderHealth.likelyBlank)
+  }
+
+  function buildArtifactRenderHealthErrorMessage(renderHealth) {
+    const visibleElementCount = Math.max(0, toInt(renderHealth?.visibleElementCount))
+    const mediaCount = Math.max(0, toInt(renderHealth?.mediaCount))
+    const textLength = Math.max(0, toInt(renderHealth?.textLength))
+    const darkCoverCount = Math.max(0, toInt(renderHealth?.largeDarkCoverCount))
+    return (
+      'The updated artifact rendered a near-empty dark frame instead of the expected scene. ' +
+      `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
+      `Text length: ${textLength}. Dark full-frame layers: ${darkCoverCount}.`
+    )
   }
 
   function clearPendingArtifactPayloadTimer() {
@@ -2268,6 +2335,7 @@ import {
     if (!normalized) {
       return false
     }
+    clearArtifactRenderWatchdog()
     const requestKind = asText(options.requestKind).toLowerCase()
     if (requestKind === 'edit') {
       state.artifact.rollbackHtml = normalizeArtifactMarkup(
@@ -2305,6 +2373,7 @@ import {
   }
 
   function clearArtifactMarkup() {
+    clearArtifactRenderWatchdog()
     clearArtifactPostLoadReplays()
     clearPendingArtifactPayloadTimer()
     state.artifact.html = ''

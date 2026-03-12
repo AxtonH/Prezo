@@ -99,12 +99,19 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'Revise the current artifact instead of starting from scratch.',
     'This is edit mode, not rebuild mode.',
     'Make the smallest viable change that satisfies the latest edit request.',
+    'Treat the current artifact as a working codebase. Patch it conservatively instead of reimagining it.',
     'Preserve the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers, unless the edit request explicitly asks to replace it with an equivalent working approach.',
     'Do not add your own window message listener or websocket logic for poll updates.',
     'Preserve the existing DOM structure, scene concept, layout, selector targets, and working design decisions unless the edit request explicitly asks for a broader redesign.',
+    'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
     'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
     'Prefer CSS, copy, spacing, animation tuning, and small targeted adjustments over rewriting containers or rebuilding sections.',
+    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
+    'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
+    'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the current render logic may depend on unless you safely update that logic too.',
+    'The result must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    'If you are unsure, keep more of the stable artifact and make a smaller change.',
     'Prefer surgical refinements over reinterpretation.',
     'Return the full updated artifact HTML.'
   ]
@@ -130,13 +137,19 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     errorText ? `Runtime failure to fix: ${errorText}` : '',
     'Repair the failed edit against the last stable working artifact.',
     'This is repair mode for a failed edit, not a full rebuild.',
+    'Treat the stable artifact as a working codebase. Patch it conservatively instead of reimagining it.',
     'Apply the requested edit while preserving the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers.',
     'Do not add your own window message listener or websocket logic for poll updates.',
     'Preserve selector targets and the working scene structure.',
     'Do not keep the broken selector logic from the failed edited artifact.',
     'Prefer the smallest viable CSS/text/layout change over structural DOM rewrites.',
+    'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
+    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
+    'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
+    'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the stable artifact depends on unless you safely update that logic too.',
     'Do not simply return the unchanged stable artifact unless the request is already satisfied.',
+    'The repaired artifact must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
     'Make the smallest viable change that satisfies the edit request and avoids the runtime error.',
     'Return the full updated artifact HTML.'
   ]
@@ -197,11 +210,23 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     requestMode === 'edit'
       ? 'Edit mode is active. Apply the latest request as a targeted refinement. Do not redesign the full artifact unless the user explicitly asks for that.'
       : '',
+    requestMode === 'edit'
+      ? 'In edit mode, preserve the current document/body/root structure and keep existing nodes mounted during live updates. Prefer transforms, style updates, and text changes over rebuilding sections.'
+      : '',
     requestMode === 'repair'
       ? 'Repair mode is active. The previous edited artifact failed at runtime. Start from context.artifact.currentArtifactHtml as the last stable working artifact, satisfy the latest edit request, and avoid the reported runtime failure.'
       : '',
+    requestMode === 'repair'
+      ? 'In repair mode, preserve the current document/body/root structure and keep existing nodes mounted during live updates. Prefer transforms, style updates, and text changes over rebuilding sections.'
+      : '',
     requestMode === 'repair' && hasFailedArtifact
       ? 'If context.artifact.failedArtifactHtml is provided, use it only as a reference for what broke. Do not preserve its broken selector or mutation logic.'
+      : '',
+    hasExistingArtifact
+      ? 'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your live-update strategy.'
+      : '',
+    hasExistingArtifact
+      ? 'The returned artifact must stay usable immediately after load: visible poll scene, readable labels, and no near-empty full-screen overlay obscuring the content.'
       : '',
     'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
     'Keep all primary UI fully inside the viewport with safe padding (about 6-10%); no vertical or horizontal clipping.',
