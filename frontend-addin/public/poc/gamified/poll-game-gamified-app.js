@@ -1858,6 +1858,7 @@ import {
       lastPrompt: prompt,
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
       hasExistingArtifact: Boolean(baseArtifactMarkup),
+      currentArtifactFullHtml: asText(baseArtifactMarkup).trim(),
       currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkup),
       currentArtifactLiveHooks: buildArtifactLiveHookContext(baseArtifactMarkup),
       failedArtifactHtml: buildArtifactEditContextMarkup(failedArtifactMarkup),
