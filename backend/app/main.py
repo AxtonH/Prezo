@@ -72,17 +72,7 @@ async def session_socket(websocket: WebSocket, session_id: str) -> None:
             await websocket.receive_text()
     except NotFoundError:
         await websocket.close(code=1008)
-    except SupabaseError as exc:
-        logger.warning(
-            "Closing session websocket for %s after Supabase failure: %s",
-            session_id,
-            exc.detail,
-        )
-        await websocket.close(code=1013)
     except WebSocketDisconnect:
         pass
-    except Exception:
-        logger.exception("Unhandled websocket error for session %s", session_id)
-        await websocket.close(code=1011)
     finally:
         await manager.disconnect(session_id, websocket)
