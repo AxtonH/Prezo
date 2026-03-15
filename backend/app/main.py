@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logging
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .api import ai, library, polls, qna_prompts, questions, sessions
 from .config import settings
 from .deps import manager, store
 from .models import Event, SessionSnapshot
 from .store import NotFoundError
+from .store_supabase import SupabaseError
+
+logger = logging.getLogger("prezo.api")
 
 app = FastAPI(title=settings.app_name)
 
@@ -27,6 +33,15 @@ app.include_router(polls.router)
 app.include_router(qna_prompts.router)
 app.include_router(ai.router)
 app.include_router(library.router)
+
+
+@app.exception_handler(SupabaseError)
+async def handle_supabase_error(
+    _request: Request, exc: SupabaseError
+) -> JSONResponse:
+    logger.warning("Supabase-backed request failed: %s", exc.detail)
+    status_code = exc.status_code if 400 <= exc.status_code <= 599 else 502
+    return JSONResponse(status_code=status_code, content={"detail": exc.detail})
 
 
 @app.get("/health")

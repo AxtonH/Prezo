@@ -6557,6 +6557,9 @@ import {
   function startSnapshotPolling() {
     stopSnapshotPolling()
     state.pollTimer = window.setInterval(() => {
+      if (state.socketStatus === 'connected') {
+        return
+      }
       void refreshSnapshot(false)
     }, 6000)
   }

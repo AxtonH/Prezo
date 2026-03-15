@@ -655,6 +655,11 @@ async def create_poll_game_artifact_build(
         settings.gemini_artifact_total_timeout_seconds,
         ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
     )
+    patch_only_edit = should_require_safe_patch_only_edit(
+        request_mode,
+        artifact_context,
+        original_edit_request,
+    )
     patch_failure_reasons: list[str] = []
     if should_attempt_artifact_patch_edit(
         request_mode,
@@ -701,6 +706,16 @@ async def create_poll_game_artifact_build(
                 patch_failure_reasons.extend(patch_issues)
             except HTTPException:
                 patch_failure_reasons.append("the patch edit request failed before a safe patch could be applied")
+
+    if patch_only_edit:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=build_safe_patch_only_edit_failure_detail(
+                original_edit_request=original_edit_request,
+                artifact_context=artifact_context,
+                patch_failure_reasons=patch_failure_reasons,
+            ),
+        )
 
     if is_initial_build:
         build_api_key = (settings.anthropic_api_key or "").strip()
@@ -1345,6 +1360,16 @@ def get_artifact_patch_source_html(artifact_context: dict[str, Any]) -> str:
 
 
 
+def should_require_safe_patch_only_edit(
+    request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
+) -> bool:
+    if request_mode not in {"edit", "repair"}:
+        return False
+    if is_broad_artifact_edit_request(original_edit_request):
+        return False
+    return bool(get_artifact_patch_source_html(artifact_context))
+
+
 def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
@@ -1364,6 +1389,44 @@ def should_attempt_artifact_patch_edit(
         return False
     return True
 
+
+def build_safe_patch_only_edit_failure_detail(
+    *,
+    original_edit_request: str,
+    artifact_context: dict[str, Any],
+    patch_failure_reasons: list[str] | None = None,
+) -> str:
+    reasons = [
+        reason.strip()
+        for reason in (patch_failure_reasons or [])
+        if reason and reason.strip()
+    ]
+    current_html = get_artifact_patch_source_html(artifact_context)
+    if not current_html:
+        reasons.append("the current artifact html is unavailable")
+    elif "<!-- artifact-context-cut -->" in current_html:
+        reasons.append("the available artifact html is truncated")
+    elif len(current_html) > ARTIFACT_PATCH_HTML_CHAR_LIMIT:
+        reasons.append("the artifact is too large for safe targeted patching")
+
+    suffix = ""
+    if reasons:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for reason in reasons:
+            if reason in seen:
+                continue
+            seen.add(reason)
+            deduped.append(reason)
+        suffix = f" Reason: {'; '.join(deduped[:3])}."
+
+    request_text = (original_edit_request or "").strip() or "the requested update"
+    return (
+        "Targeted artifact update was blocked because it could not be applied safely with patch mode, "
+        "and full-document regeneration is disabled for local edits and repairs to avoid breaking the artifact. "
+        f"Requested update: {request_text}.{suffix} "
+        "Try a simpler targeted request, regenerate the artifact, or explicitly ask for a broader redesign."
+    )
 
 
 def build_artifact_patch_edit_prompt(
