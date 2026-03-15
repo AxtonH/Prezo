@@ -24,7 +24,7 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_ARTIFACT_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
-GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 4096
+GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 2200
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
@@ -655,6 +655,11 @@ async def create_poll_game_artifact_build(
         settings.gemini_artifact_total_timeout_seconds,
         ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
     )
+    patch_only_edit = should_require_safe_patch_only_edit(
+        request_mode,
+        artifact_context,
+        original_edit_request,
+    )
     patch_failure_reasons: list[str] = []
     if should_attempt_artifact_patch_edit(
         request_mode,
@@ -700,7 +705,19 @@ async def create_poll_game_artifact_build(
                     patch_failure_reasons.extend(patch_validation_issues)
                 patch_failure_reasons.extend(patch_issues)
             except HTTPException:
+                if patch_only_edit:
+                    raise
                 patch_failure_reasons.append("the patch edit request failed before a safe patch could be applied")
+
+    if patch_only_edit:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=build_safe_patch_only_edit_failure_detail(
+                original_edit_request=original_edit_request,
+                artifact_context=artifact_context,
+                patch_failure_reasons=patch_failure_reasons,
+            ),
+        )
 
     if is_initial_build:
         build_api_key = (settings.anthropic_api_key or "").strip()
@@ -1344,6 +1361,15 @@ def get_artifact_patch_source_html(artifact_context: dict[str, Any]) -> str:
     return ""
 
 
+def should_require_safe_patch_only_edit(
+    request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
+) -> bool:
+    if request_mode not in {"edit", "repair"}:
+        return False
+    if is_broad_artifact_edit_request(original_edit_request):
+        return False
+    return bool(get_artifact_patch_source_html(artifact_context))
+
 
 def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
@@ -1364,6 +1390,40 @@ def should_attempt_artifact_patch_edit(
         return False
     return True
 
+
+def build_safe_patch_only_edit_failure_detail(
+    *,
+    original_edit_request: str,
+    artifact_context: dict[str, Any],
+    patch_failure_reasons: list[str] | None = None,
+) -> str:
+    reasons = [reason.strip() for reason in (patch_failure_reasons or []) if reason and reason.strip()]
+    current_html = get_artifact_patch_source_html(artifact_context)
+    if not current_html:
+        reasons.append("the current artifact html is unavailable")
+    elif "<!-- artifact-context-cut -->" in current_html:
+        reasons.append("the available artifact html is truncated")
+    elif len(current_html) > ARTIFACT_PATCH_HTML_CHAR_LIMIT:
+        reasons.append("the artifact is too large for safe targeted patching")
+
+    suffix = ""
+    if reasons:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for reason in reasons:
+            if reason in seen:
+                continue
+            seen.add(reason)
+            deduped.append(reason)
+        suffix = f" Reason: {'; '.join(deduped[:3])}."
+
+    request_text = (original_edit_request or "").strip() or "the requested update"
+    return (
+        "Targeted artifact update was blocked because it could not be applied safely with patch mode, "
+        "and full-document regeneration is disabled for local edits and repairs to avoid breaking the artifact. "
+        f"Requested update: {request_text}.{suffix} "
+        "Try a simpler targeted request, regenerate the artifact, or explicitly ask for a broader redesign."
+    )
 
 
 def build_artifact_patch_edit_prompt(
@@ -1585,36 +1645,18 @@ def set_css_property_in_artifact_html(
     return html, False
 
 
-def _find_css_rule_body(css_text: str, selector: str) -> tuple[int, int] | None:
-    """Find the body span of a CSS rule matching *selector*, handling nested braces."""
-    escaped = re.escape(selector)
-    selector_re = re.compile(rf"{escaped}\s*\{{", re.IGNORECASE)
-    for m in selector_re.finditer(css_text):
-        body_start = m.end()
-        depth = 1
-        pos = body_start
-        while pos < len(css_text) and depth > 0:
-            ch = css_text[pos]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-            pos += 1
-        if depth == 0:
-            body_end = pos - 1  # points at the closing '}'
-            return body_start, body_end
-    return None
-
-
 def set_css_property_in_css(
     css_text: str, selector: str, property_name: str, value: str
 ) -> tuple[str, bool]:
-    span = _find_css_rule_body(css_text, selector)
-    if span is None:
+    selector_re = re.compile(
+        rf"(?P<prefix>{re.escape(selector)}\s*\{{)(?P<body>[^{{}}]*)(?P<suffix>\}})",
+        re.IGNORECASE,
+    )
+    match = selector_re.search(css_text)
+    if not match:
         return css_text, False
 
-    body_start, body_end = span
-    body = css_text[body_start:body_end]
+    body = match.group("body")
     property_re = re.compile(
         rf"(?P<prefix>\b{re.escape(property_name)}\s*:\s*)(?P<value>[^;}}]+)",
         re.IGNORECASE,
@@ -1637,7 +1679,7 @@ def set_css_property_in_css(
             updated_body = f"\n{indent}{property_name}: {value};\n"
 
     return (
-        f"{css_text[:body_start]}{updated_body}{css_text[body_end:]}",
+        f"{css_text[:match.start('body')]}{updated_body}{css_text[match.end('body'):]}",
         True,
     )
 
