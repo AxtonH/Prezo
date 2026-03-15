@@ -24,7 +24,7 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_ARTIFACT_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
-GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 2200
+GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 4000
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
@@ -69,6 +69,14 @@ ARTIFACT_HTML_SHAPE_RE = re.compile(
 )
 ARTIFACT_BROAD_EDIT_REQUEST_RE = re.compile(
     r"\b(?:redesign|rebuild|start over|from scratch|new concept|completely different|totally different|overhaul|reimagine|replace the scene|brand new)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE = re.compile(
+    r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|color|colour|gradient|opacity|shadow|glow|border|radius|font|typography|title|headline|question|label|badge|text|padding|margin|spacing|size|bigger|smaller|larger)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE = re.compile(
+    r"\b(?:image|photo|picture|texture|asset|logo|svg|illustration|replace|swap|convert|turn into|add|remove|insert|delete|layout|rearrange|reposition|restructure|scene element|track image)\b",
     re.IGNORECASE,
 )
 ARTIFACT_LIVE_STATE_TOKENS = (
@@ -295,6 +303,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         '- { "type":"set_css_property", "selector": string, "property": string, "value": string }',
         '- { "type":"replace_once", "find": string, "replace": string }',
         '- { "type":"replace_all", "find": string, "replace": string }',
+        '- { "type":"replace_between", "start": string, "end": string, "content": string }',
         '- { "type":"insert_before", "anchor": string, "content": string }',
         '- { "type":"insert_after", "anchor": string, "content": string }',
         '- { "type":"remove_once", "find": string }',
@@ -304,7 +313,8 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "- For local visual edits such as background, time-of-day, lighting, or atmosphere, modify only background/backdrop/ambient layers and closely related color tokens.",
         "- Do not redesign cars, avatars, icons, labels, vote chips, foreground gameplay visuals, or unrelated decorative detail unless the user explicitly asks.",
         "- Prefer set_css_property for color, lighting, spacing, and timing tweaks.",
-        "- For find/anchor fields, copy exact substrings from the current artifact HTML.",
+        "- For find/anchor/start/end fields, copy exact substrings from the current artifact HTML.",
+        "- Use replace_between when a small structural local change needs to swap the content inside a stable container without rewriting unrelated markup.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- If patch mode is not suitable, return an empty edits array and explain that in assistantMessage.",
     ]
@@ -326,6 +336,7 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
                             "set_css_property",
                             "replace_once",
                             "replace_all",
+                            "replace_between",
                             "insert_before",
                             "insert_after",
                             "remove_once",
@@ -336,6 +347,8 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
                     "value": {"type": "string"},
                     "find": {"type": "string"},
                     "replace": {"type": "string"},
+                    "start": {"type": "string"},
+                    "end": {"type": "string"},
                     "anchor": {"type": "string"},
                     "content": {"type": "string"},
                 },
@@ -1353,6 +1366,26 @@ def is_broad_artifact_edit_request(request_text: str) -> bool:
     return bool(ARTIFACT_BROAD_EDIT_REQUEST_RE.search(normalized))
 
 
+def is_patch_only_artifact_edit_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    if ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE.search(normalized):
+        return False
+    return bool(ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE.search(normalized))
+
+
+def classify_artifact_edit_request_scope(request_text: str) -> str:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return "unknown"
+    if is_broad_artifact_edit_request(normalized):
+        return "broad"
+    if is_patch_only_artifact_edit_request(normalized):
+        return "patch_only"
+    return "structural_local"
+
+
 def get_artifact_patch_source_html(artifact_context: dict[str, Any]) -> str:
     for key in ("currentArtifactFullHtml", "currentArtifactHtml"):
         value = artifact_context.get(key)
@@ -1366,7 +1399,7 @@ def should_require_safe_patch_only_edit(
 ) -> bool:
     if request_mode not in {"edit", "repair"}:
         return False
-    if is_broad_artifact_edit_request(original_edit_request):
+    if classify_artifact_edit_request_scope(original_edit_request) != "patch_only":
         return False
     return bool(get_artifact_patch_source_html(artifact_context))
 
@@ -1386,7 +1419,7 @@ def should_attempt_artifact_patch_edit(
         return False
     if not (original_edit_request or "").strip():
         return False
-    if is_broad_artifact_edit_request(original_edit_request):
+    if classify_artifact_edit_request_scope(original_edit_request) == "broad":
         return False
     return True
 
@@ -1473,7 +1506,8 @@ def build_artifact_patch_edit_prompt(
             ),
             "Use the fewest edits possible.",
             "Prefer set_css_property for local visual changes.",
-            "If you need replace_once/replace_all/insert_before/insert_after/remove_once, use exact substrings copied from the current artifact HTML.",
+            "If you need replace_once/replace_all/replace_between/insert_before/insert_after/remove_once, use exact substrings copied from the current artifact HTML.",
+            "Use replace_between when the request needs a small structural local change inside an existing stable container or style block.",
             "Do not rename or remove live poll hooks, ids, classes, or data attributes relied on by the existing artifact.",
             "If patch mode is not suitable for this request, return an empty edits array.",
             "Current artifact HTML:",
@@ -1544,13 +1578,20 @@ def apply_artifact_patch_plan(html: str, plan: dict[str, Any]) -> tuple[str, lis
             )
             if not changed:
                 issues.append(
-                    f"patch edit #{index + 1} could not find CSS selector `{selector.strip()}`."
+                    f"patch edit #{index + 1} could not apply CSS selector `{selector.strip()}`."
                 )
                 break
             working = next_html
             continue
 
-        if edit_type in {"replace_once", "replace_all", "insert_before", "insert_after", "remove_once"}:
+        if edit_type in {
+            "replace_once",
+            "replace_all",
+            "replace_between",
+            "insert_before",
+            "insert_after",
+            "remove_once",
+        }:
             next_html, issue = apply_string_artifact_patch_edit(working, edit_type, edit)
             if issue:
                 issues.append(f"patch edit #{index + 1} {issue}")
@@ -1595,6 +1636,25 @@ def apply_string_artifact_patch_edit(
             return working, "could not find the requested exact replacement target."
         return working.replace(find, replace), ""
 
+    if edit_type == "replace_between":
+        start = edit.get("start")
+        end = edit.get("end")
+        content = edit.get("content")
+        if not isinstance(start, str) or not start:
+            return working, "is missing a non-empty `start` string."
+        if not isinstance(end, str) or not end:
+            return working, "is missing a non-empty `end` string."
+        if not isinstance(content, str):
+            return working, "is missing a `content` string."
+        start_pos = working.find(start)
+        if start_pos < 0:
+            return working, "could not find the requested replace_between start anchor."
+        content_start = start_pos + len(start)
+        end_pos = working.find(end, content_start)
+        if end_pos < 0:
+            return working, "could not find the requested replace_between end anchor."
+        return f"{working[:content_start]}{content}{working[end_pos:]}", ""
+
     if edit_type == "insert_before":
         anchor = edit.get("anchor")
         content = edit.get("content")
@@ -1632,56 +1692,132 @@ def apply_string_artifact_patch_edit(
     return working, f"used unsupported type `{edit_type}`."
 
 
+def find_matching_delimiter(
+    text: str, opening_index: int, opening_char: str, closing_char: str
+) -> int:
+    if opening_index < 0 or opening_index >= len(text):
+        return -1
+    depth = 0
+    mode = "code"
+    index = opening_index
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if mode == "block_comment":
+            if char == "*" and next_char == "/":
+                mode = "code"
+                index += 2
+                continue
+            index += 1
+            continue
+        if mode == "single_quote":
+            if char == "\\":
+                index += 2
+                continue
+            if char == "'":
+                mode = "code"
+            index += 1
+            continue
+        if mode == "double_quote":
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                mode = "code"
+            index += 1
+            continue
+
+        if char == "/" and next_char == "*":
+            mode = "block_comment"
+            index += 2
+            continue
+        if char == "'":
+            mode = "single_quote"
+            index += 1
+            continue
+        if char == '"':
+            mode = "double_quote"
+            index += 1
+            continue
+        if char == opening_char:
+            depth += 1
+        elif char == closing_char:
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return -1
+
+
 def set_css_property_in_artifact_html(
     html: str, selector: str, property_name: str, value: str
 ) -> tuple[str, bool]:
+    remembered_no_change = False
     for match in ARTIFACT_STYLE_TAG_RE.finditer(html):
         style_body = match.group("body")
-        updated_body, changed = set_css_property_in_css(style_body, selector, property_name, value)
-        if not changed:
+        updated_body, changed, match_status = set_css_property_in_css(
+            style_body, selector, property_name, value
+        )
+        if match_status == "not_found":
+            continue
+        if match_status == "no_change":
+            remembered_no_change = True
             continue
         body_start, body_end = match.span("body")
         return f"{html[:body_start]}{updated_body}{html[body_end:]}", True
+    if remembered_no_change:
+        return html, False
     return html, False
 
 
 def set_css_property_in_css(
     css_text: str, selector: str, property_name: str, value: str
-) -> tuple[str, bool]:
-    selector_re = re.compile(
-        rf"(?P<prefix>{re.escape(selector)}\s*\{{)(?P<body>[^{{}}]*)(?P<suffix>\}})",
-        re.IGNORECASE,
-    )
-    match = selector_re.search(css_text)
-    if not match:
-        return css_text, False
+) -> tuple[str, bool, str]:
+    selector_re = re.compile(rf"{re.escape(selector)}\s*\{{", re.IGNORECASE)
+    saw_no_change = False
+    for match in selector_re.finditer(css_text):
+        brace_start = match.end() - 1
+        brace_end = find_matching_delimiter(css_text, brace_start, "{", "}")
+        if brace_end < 0:
+            continue
 
-    body = match.group("body")
-    property_re = re.compile(
-        rf"(?P<prefix>\b{re.escape(property_name)}\s*:\s*)(?P<value>[^;}}]+)",
-        re.IGNORECASE,
-    )
-    if property_re.search(body):
-        updated_body = property_re.sub(
-            lambda property_match: f"{property_match.group('prefix')}{value}",
-            body,
-            count=1,
+        body_start = brace_start + 1
+        body_end = brace_end
+        body = css_text[body_start:body_end]
+        property_re = re.compile(
+            rf"(?P<prefix>\b{re.escape(property_name)}\s*:\s*)(?P<value>[^;}}]+)",
+            re.IGNORECASE,
         )
-    else:
-        trimmed = body.rstrip()
-        if trimmed and not trimmed.endswith(";"):
-            trimmed = f"{trimmed};"
-        indent_match = re.search(r"\n([ \t]+)\S", body)
-        indent = indent_match.group(1) if indent_match else "  "
-        if trimmed:
-            updated_body = f"{trimmed}\n{indent}{property_name}: {value};\n"
+        property_match = property_re.search(body)
+        if property_match:
+            if property_match.group("value").strip() == value.strip():
+                saw_no_change = True
+                continue
+            updated_body = property_re.sub(
+                lambda property_match: f"{property_match.group('prefix')}{value}",
+                body,
+                count=1,
+            )
         else:
-            updated_body = f"\n{indent}{property_name}: {value};\n"
+            trimmed = body.rstrip()
+            if trimmed and not trimmed.endswith(";"):
+                trimmed = f"{trimmed};"
+            indent_match = re.search(r"\n([ \t]+)\S", body)
+            indent = indent_match.group(1) if indent_match else "  "
+            if trimmed:
+                updated_body = f"{trimmed}\n{indent}{property_name}: {value};\n"
+            else:
+                updated_body = f"\n{indent}{property_name}: {value};\n"
 
-    return (
-        f"{css_text[:match.start('body')]}{updated_body}{css_text[match.end('body'):]}",
-        True,
-    )
+        return (
+            f"{css_text[:body_start]}{updated_body}{css_text[body_end:]}",
+            True,
+            "changed",
+        )
+
+    if saw_no_change:
+        return css_text, False, "no_change"
+    return css_text, False, "not_found"
 
 
 def normalize_poll_game_plan(raw_text: str) -> dict[str, Any]:
@@ -1927,12 +2063,12 @@ def prepare_artifact_context_for_model(
     )
     if not artifact_context:
         return prepared
+    current_artifact_markup = get_artifact_patch_source_html(artifact_context)
     artifact_context["currentArtifactHtml"] = compress_artifact_markup_for_model(
-        artifact_context.get("currentArtifactHtml")
-        if isinstance(artifact_context.get("currentArtifactHtml"), str)
-        else "",
+        current_artifact_markup,
         request_mode=request_mode,
     )
+    artifact_context.pop("currentArtifactFullHtml", None)
     artifact_context["failedArtifactHtml"] = compress_artifact_markup_for_model(
         artifact_context.get("failedArtifactHtml")
         if isinstance(artifact_context.get("failedArtifactHtml"), str)

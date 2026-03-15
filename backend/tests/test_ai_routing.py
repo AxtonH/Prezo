@@ -365,6 +365,61 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", patched_html)
         self.assertIn(".car", patched_html)
 
+    def test_apply_artifact_patch_plan_can_replace_between_anchors(self) -> None:
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            "<div id='root'><span>Old</span></div>",
+            {
+                "assistantMessage": "Updated the label.",
+                "edits": [
+                    {
+                        "type": "replace_between",
+                        "start": "<span>",
+                        "end": "</span>",
+                        "content": "New",
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(issues, [])
+        self.assertEqual(patched_html, "<div id='root'><span>New</span></div>")
+
+    def test_set_css_property_in_css_can_update_rule_inside_media_block(self) -> None:
+        css_text = """
+@media (min-width: 600px) {
+  #track-bg {
+    background: linear-gradient(180deg, #0b1020 0%, #1a2240 100%);
+  }
+}
+"""
+
+        updated_css, changed, status = ai_api.set_css_property_in_css(
+            css_text,
+            "#track-bg",
+            "background",
+            "linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)",
+        )
+
+        self.assertTrue(changed)
+        self.assertEqual(status, "changed")
+        self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", updated_css)
+
+    def test_prepare_artifact_context_for_model_prefers_full_html(self) -> None:
+        prepared = ai_api.prepare_artifact_context_for_model(
+            {
+                "artifact": {
+                    "requestMode": "edit",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            "edit",
+        )
+
+        artifact_context = prepared["artifact"]
+        self.assertIn("#track-bg", artifact_context["currentArtifactHtml"])
+        self.assertNotIn("currentArtifactFullHtml", artifact_context)
+
     async def test_local_edit_prefers_patch_flow_before_full_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(
@@ -444,6 +499,46 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Targeted artifact update was blocked", str(exc_info.exception.detail))
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
+
+    async def test_structural_local_edit_patch_failure_can_fallback_to_full_regeneration(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            side_effect=[
+                (
+                    json.dumps(
+                        {
+                            "assistantMessage": "Patch mode is not suitable for this structural update.",
+                            "edits": [],
+                        }
+                    ),
+                    "stop",
+                ),
+                (VALID_ARTIFACT_HTML, "stop"),
+            ]
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Make the track an image of a city in Dubai.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertEqual(gemini_mock.await_args_list[0].kwargs["request_stage"], "artifact patch edit")
+        self.assertEqual(gemini_mock.await_args_list[1].kwargs["request_stage"], "artifact edit generation")
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertEqual(response.html, VALID_ARTIFACT_HTML.strip())
 
     async def test_local_edit_with_truncated_artifact_html_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
