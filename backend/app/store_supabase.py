@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("prezo.supabase")
 
 from .models import (
     Poll,
@@ -60,13 +64,28 @@ class SupabaseStore:
         headers = dict(self._headers)
         if prefer:
             headers["Prefer"] = prefer
-        response = await self._client.request(
-            method,
-            f"{self._base_url}/{path}",
-            params=params,
-            json=json,
-            headers=headers,
-        )
+        url = f"{self._base_url}/{path}"
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = await self._client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=headers,
+                )
+                break
+            except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Supabase connect failed (attempt %d/3): %s %s – %s",
+                    attempt + 1, method, url, exc,
+                )
+                if attempt < 2:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+        else:
+            raise last_exc  # type: ignore[misc]
         if response.status_code >= 400:
             detail = response.text
             code: str | None = None
