@@ -1378,6 +1378,8 @@ def is_patch_only_artifact_edit_request(request_text: str) -> bool:
     normalized = (request_text or "").strip()
     if not normalized:
         return False
+    if is_background_image_asset_edit_request(normalized):
+        return True
     if ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE.search(normalized):
         return False
     return bool(ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE.search(normalized))
@@ -1459,6 +1461,12 @@ def build_safe_patch_only_edit_failure_detail(
         suffix = f" Reason: {'; '.join(deduped[:3])}."
 
     request_text = (original_edit_request or "").strip() or "the requested update"
+    if artifact_edit_request_requires_external_asset_url(request_text):
+        return (
+            f"Targeted artifact update was blocked because `{request_text}` needs a direct image URL, "
+            "and the editor will not invent or guess external asset URLs. "
+            "Provide the exact image URL and ask to replace only the background image while keeping the cars and layout unchanged."
+        )
     return (
         "Targeted artifact update was blocked because it could not be applied safely with patch mode, "
         "and full-document regeneration is disabled for local edits and repairs to avoid breaking the artifact. "
@@ -1721,6 +1729,19 @@ def artifact_edit_request_requires_external_asset_url(request: str) -> bool:
             lowered,
         )
     )
+
+
+def is_background_image_asset_edit_request(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    if not lowered:
+        return False
+    has_background_target = bool(
+        re.search(r"\b(?:background|backdrop|sky|scene|track)\b", lowered)
+    )
+    has_image_target = bool(
+        re.search(r"\b(?:image|photo|picture|texture)\b", lowered)
+    )
+    return has_background_target and has_image_target
 
 
 def find_matching_delimiter(
