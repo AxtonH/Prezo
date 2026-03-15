@@ -206,10 +206,10 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [session?.id, session?.code])
 
   useEffect(() => {
-    if (!session?.id || socketStatus === 'connected') {
+    if (!session?.id) {
       return
     }
-    const refreshSnapshot = () => {
+    const interval = window.setInterval(() => {
       void api
         .getSnapshot(session.id)
         .then((snapshot) => {
@@ -219,16 +219,12 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           setPrompts(snapshot.prompts ?? [])
         })
         .catch(() => {})
-    }
-    refreshSnapshot()
-    const interval = window.setInterval(() => {
-      refreshSnapshot()
-    }, 10000)
+    }, 2500)
 
     return () => {
       window.clearInterval(interval)
     }
-  }, [session?.id, socketStatus])
+  }, [session?.id])
 
   useEffect(() => {
     if (!session) {

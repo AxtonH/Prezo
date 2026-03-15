@@ -65,58 +65,27 @@ class SupabaseStore:
         if prefer:
             headers["Prefer"] = prefer
         url = f"{self._base_url}/{path}"
-        normalized_method = method.upper()
-        max_attempts = 3 if normalized_method == "GET" else 1
         last_exc: Exception | None = None
-        for attempt in range(max_attempts):
+        for attempt in range(3):
             try:
                 response = await self._client.request(
-                    normalized_method,
+                    method,
                     url,
                     params=params,
                     json=json,
                     headers=headers,
                 )
                 break
-            except (
-                httpx.ConnectTimeout,
-                httpx.ConnectError,
-                httpx.ReadTimeout,
-                httpx.ReadError,
-                httpx.PoolTimeout,
-                httpx.RemoteProtocolError,
-            ) as exc:
+            except (httpx.ConnectTimeout, httpx.ConnectError) as exc:
                 last_exc = exc
                 logger.warning(
-                    "Supabase request transport failed (attempt %d/%d): %s %s – %s",
-                    attempt + 1,
-                    max_attempts,
-                    normalized_method,
-                    url,
-                    exc,
+                    "Supabase connect failed (attempt %d/3): %s %s – %s",
+                    attempt + 1, method, url, exc,
                 )
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(0.5 * (attempt + 1))
-            except httpx.RequestError as exc:
-                last_exc = exc
-                logger.warning(
-                    "Supabase request failed (attempt %d/%d): %s %s – %s",
-                    attempt + 1,
-                    max_attempts,
-                    normalized_method,
-                    url,
-                    exc,
-                )
-                if attempt < max_attempts - 1:
+                if attempt < 2:
                     await asyncio.sleep(0.5 * (attempt + 1))
         else:
-            detail = (
-                f"Supabase request failed for {normalized_method} {url}: "
-                f"{last_exc.__class__.__name__}: {last_exc}"
-                if last_exc
-                else f"Supabase request failed for {normalized_method} {url}"
-            )
-            raise SupabaseError(503, detail, "supabase_unavailable")
+            raise last_exc  # type: ignore[misc]
         if response.status_code >= 400:
             detail = response.text
             code: str | None = None
