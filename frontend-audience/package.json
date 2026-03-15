@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "start": "node scripts/serve-dist.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
