@@ -310,6 +310,44 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
     ]
 )
 
+POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "assistantMessage": {"type": "string"},
+        "edits": {
+            "type": "array",
+            "maxItems": ARTIFACT_PATCH_MAX_EDITS,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "set_css_property",
+                            "replace_once",
+                            "replace_all",
+                            "insert_before",
+                            "insert_after",
+                            "remove_once",
+                        ],
+                    },
+                    "selector": {"type": "string"},
+                    "property": {"type": "string"},
+                    "value": {"type": "string"},
+                    "find": {"type": "string"},
+                    "replace": {"type": "string"},
+                    "anchor": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["type"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["assistantMessage", "edits"],
+    "additionalProperties": False,
+}
+
 
 class PollGameEditPlanRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=12000)
@@ -470,6 +508,9 @@ async def request_gemini_text(
     timeout_seconds: float,
     request_stage: str = "",
     remaining_budget_seconds: float | None = None,
+    response_mime_type: str | None = None,
+    response_json_schema: dict[str, Any] | None = None,
+    thinking_budget: int | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_gemini_base_url()
     endpoint = build_gemini_generate_content_endpoint(base_url, model)
@@ -497,6 +538,13 @@ async def request_gemini_text(
             "candidateCount": 1,
         },
     }
+    generation_config = body["generationConfig"]
+    if response_mime_type:
+        generation_config["responseMimeType"] = response_mime_type
+    if response_json_schema:
+        generation_config["responseJsonSchema"] = response_json_schema
+    if thinking_budget is not None:
+        generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
     try:
         async with httpx.AsyncClient(
@@ -621,11 +669,7 @@ async def create_poll_game_artifact_build(
         patch_api_key = (settings.gemini_api_key or "").strip()
         if patch_api_key:
             patch_model = resolve_gemini_artifact_edit_model()
-            current_html = (
-                artifact_context.get("currentArtifactHtml").strip()
-                if isinstance(artifact_context.get("currentArtifactHtml"), str)
-                else ""
-            )
+            current_html = get_artifact_patch_source_html(artifact_context)
             try:
                 remaining_budget_seconds = max(0.0, deadline - time.monotonic())
                 patch_timeout_seconds = min(
@@ -658,6 +702,7 @@ async def create_poll_game_artifact_build(
                             assistantMessage=patch_assistant_message
                             or "Artifact updated with a targeted patch.",
                         )
+                    patch_failure_reasons.extend(patch_validation_issues)
                 patch_failure_reasons.extend(patch_issues)
             except HTTPException:
                 if patch_only_edit:
@@ -924,6 +969,9 @@ async def attempt_artifact_patch_edit(
         timeout_seconds=timeout_seconds,
         request_stage="artifact patch edit",
         remaining_budget_seconds=remaining_budget_seconds,
+        response_mime_type="application/json",
+        response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
+        thinking_budget=0,
     )
     plan = normalize_artifact_patch_plan(text)
     patched_html, issues = apply_artifact_patch_plan(current_html, plan)
@@ -1316,7 +1364,7 @@ def get_artifact_patch_source_html(artifact_context: dict[str, Any]) -> str:
 def should_require_safe_patch_only_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
-    if request_mode != "edit":
+    if request_mode not in {"edit", "repair"}:
         return False
     if is_broad_artifact_edit_request(original_edit_request):
         return False
@@ -1326,7 +1374,7 @@ def should_require_safe_patch_only_edit(
 def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
-    if request_mode != "edit":
+    if request_mode not in {"edit", "repair"}:
         return False
     current_html = get_artifact_patch_source_html(artifact_context)
     if not current_html:
@@ -1369,11 +1417,11 @@ def build_safe_patch_only_edit_failure_detail(
             deduped.append(reason)
         suffix = f" Reason: {'; '.join(deduped[:3])}."
 
-    request_text = (original_edit_request or "").strip() or "the requested edit"
+    request_text = (original_edit_request or "").strip() or "the requested update"
     return (
-        "Targeted artifact edit was blocked because it could not be applied safely with patch mode, "
-        "and full-document regeneration is disabled for local edits to avoid breaking the artifact. "
-        f"Requested edit: {request_text}.{suffix} "
+        "Targeted artifact update was blocked because it could not be applied safely with patch mode, "
+        "and full-document regeneration is disabled for local edits and repairs to avoid breaking the artifact. "
+        f"Requested update: {request_text}.{suffix} "
         "Try a simpler targeted request, regenerate the artifact, or explicitly ask for a broader redesign."
     )
 

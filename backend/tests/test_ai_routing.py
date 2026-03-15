@@ -391,7 +391,8 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "artifact": {
                     "requestMode": "edit",
                     "originalEditRequest": "Make the background daytime.",
-                    "currentArtifactHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                 }
             },
             model="gemini-3.1-pro-preview",
@@ -427,7 +428,8 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "artifact": {
                     "requestMode": "edit",
                     "originalEditRequest": "Make the background daytime.",
-                    "currentArtifactHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                 }
             },
             model="gemini-3.1-pro-preview",
@@ -439,7 +441,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                 await ai_api.create_poll_game_artifact_build(payload)
 
         self.assertEqual(exc_info.exception.status_code, 409)
-        self.assertIn("Targeted artifact edit was blocked", str(exc_info.exception.detail))
+        self.assertIn("Targeted artifact update was blocked", str(exc_info.exception.detail))
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
 
@@ -467,6 +469,88 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("could not be applied safely with patch mode", str(exc_info.exception.detail))
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 0)
+
+    async def test_local_repair_prefers_patch_flow_before_full_regeneration(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Adjusted the background safely on the stable artifact.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": "#track-bg",
+                                "property": "background",
+                                "value": "linear-gradient(180deg, #cfe8ff 0%, #f9f3b0 100%)",
+                            }
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Repair the failed edit.",
+            context={
+                "artifact": {
+                    "requestMode": "repair",
+                    "originalEditRequest": "Make the background daytime.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                    "failedArtifactHtml": INVALID_ARTIFACT_HTML,
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn("Adjusted the background safely", response.assistantMessage)
+        self.assertIn("linear-gradient(180deg, #cfe8ff 0%, #f9f3b0 100%)", response.html)
+        self.assertIn(".car", response.html)
+
+    async def test_local_repair_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Patch mode is not suitable.",
+                        "edits": [],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Repair the failed edit.",
+            context={
+                "artifact": {
+                    "requestMode": "repair",
+                    "originalEditRequest": "Make the background daytime.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                    "failedArtifactHtml": INVALID_ARTIFACT_HTML,
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            with self.assertRaises(ai_api.HTTPException) as exc_info:
+                await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(exc_info.exception.status_code, 409)
+        self.assertIn("could not be applied safely with patch mode", str(exc_info.exception.detail))
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
 
     def test_build_artifact_repair_prompt_is_concrete_about_contract_and_pitfalls(self) -> None:
         prompt = ai_api.build_artifact_repair_prompt(
