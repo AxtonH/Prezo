@@ -316,6 +316,8 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "- For find/anchor/start/end fields, copy exact substrings from the current artifact HTML.",
         "- Use replace_between when a small structural local change needs to swap the content inside a stable container without rewriting unrelated markup.",
         "- Do not output a full rewritten artifact in JSON fields.",
+        "- Never invent, guess, or fabricate third-party asset URLs.",
+        "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL, return an empty edits array and explain that a direct asset URL is required.",
         "- If patch mode is not suitable, return an empty edits array and explain that in assistantMessage.",
     ]
 )
@@ -967,6 +969,12 @@ async def attempt_artifact_patch_edit(
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
 ) -> tuple[str, str, list[str]]:
+    if artifact_edit_request_requires_external_asset_url(original_edit_request):
+        return (
+            "",
+            "This edit needs a direct image URL. Provide the exact Dubai image URL and the editor can swap only the background image without redesigning the scene.",
+            ["the requested edit needs a direct external image URL."],
+        )
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1490,6 +1498,9 @@ def build_artifact_patch_edit_prompt(
             re.IGNORECASE,
         )
     )
+    requires_external_asset_url = artifact_edit_request_requires_external_asset_url(
+        original_edit_request
+    )
     return "\n".join(
         [
             "Artifact patch edit task",
@@ -1502,6 +1513,11 @@ def build_artifact_patch_edit_prompt(
             (
                 "This is a background/time-of-day/lighting request. Modify only background, sky, ambient, backdrop, and closely related color/lighting styles. Do not change cars, foreground gameplay visuals, labels, icons, or decorative detail."
                 if is_background_edit
+                else ""
+            ),
+            (
+                "This request appears to need a new external image or asset URL. If the user did not provide a direct URL, do not guess one. Return an empty edits array and explain that a direct image URL is required."
+                if requires_external_asset_url
                 else ""
             ),
             "Use the fewest edits possible.",
@@ -1690,6 +1706,21 @@ def apply_string_artifact_patch_edit(
         return working.replace(find, "", 1), ""
 
     return working, f"used unsupported type `{edit_type}`."
+
+
+def artifact_edit_request_requires_external_asset_url(request: str) -> bool:
+    text = (request or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if re.search(r"\bhttps?://\S+", text, re.IGNORECASE) or "data:image/" in lowered:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:background image|image of|photo of|picture of|texture of|logo of|use an image|use a photo|use a picture|replace .* image|swap .* image|background .* image)\b",
+            lowered,
+        )
+    )
 
 
 def find_matching_delimiter(

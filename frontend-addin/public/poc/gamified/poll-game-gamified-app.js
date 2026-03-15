@@ -1960,6 +1960,12 @@ import {
     if (!text) {
       return false
     }
+    const looksLikeEditRequest = /\b(?:change|make|update|edit|set|use|swap|replace|turn|move|resize|add|remove|background|backdrop|image|photo|picture|logo|asset|color|layout|spacing|animation|font)\b/.test(
+      text
+    )
+    if (looksLikeEditRequest && /^(can|could|would|should|please)\b/.test(text)) {
+      return false
+    }
     if (text.endsWith('?')) {
       return true
     }
