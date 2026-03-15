@@ -6,13 +6,17 @@ create table if not exists profiles (
 );
 
 create or replace function public.handle_new_user()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
   insert into public.profiles (id, email)
   values (new.id, new.email);
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
 do $$
 begin
@@ -28,12 +32,15 @@ begin
 end $$;
 
 create or replace function public.set_updated_at()
-returns trigger as $$
+returns trigger
+language plpgsql
+set search_path = public
+as $$
 begin
   new.updated_at = now();
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 create table if not exists sessions (
   id uuid primary key,
@@ -341,3 +348,137 @@ create index if not exists qna_prompts_session_id_idx on qna_prompts (session_id
 create index if not exists polls_session_id_idx on polls (session_id);
 create index if not exists poll_options_poll_id_idx on poll_options (poll_id);
 create index if not exists poll_votes_poll_client_idx on poll_votes (poll_id, client_id);
+
+alter table public.profiles enable row level security;
+alter table public.sessions enable row level security;
+alter table public.session_hosts enable row level security;
+alter table public.saved_poll_game_themes enable row level security;
+alter table public.saved_poll_game_artifacts enable row level security;
+alter table public.qna_prompts enable row level security;
+alter table public.questions enable row level security;
+alter table public.question_votes enable row level security;
+alter table public.polls enable row level security;
+alter table public.poll_options enable row level security;
+alter table public.poll_votes enable row level security;
+
+drop policy if exists profiles_select_own on public.profiles;
+create policy profiles_select_own
+  on public.profiles
+  for select
+  to authenticated
+  using ((select auth.uid()) = id);
+
+drop policy if exists profiles_update_own on public.profiles;
+create policy profiles_update_own
+  on public.profiles
+  for update
+  to authenticated
+  using ((select auth.uid()) = id)
+  with check ((select auth.uid()) = id);
+
+drop policy if exists sessions_select_own on public.sessions;
+create policy sessions_select_own
+  on public.sessions
+  for select
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists sessions_insert_own on public.sessions;
+create policy sessions_insert_own
+  on public.sessions
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists sessions_update_own on public.sessions;
+create policy sessions_update_own
+  on public.sessions
+  for update
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists sessions_delete_own on public.sessions;
+create policy sessions_delete_own
+  on public.sessions
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists session_hosts_select_related on public.session_hosts;
+create policy session_hosts_select_related
+  on public.session_hosts
+  for select
+  to authenticated
+  using (
+    (select auth.uid()) = user_id
+    or exists (
+      select 1
+      from public.sessions s
+      where s.id = session_id
+        and s.user_id = (select auth.uid())
+    )
+  );
+
+drop policy if exists saved_poll_game_themes_select_own on public.saved_poll_game_themes;
+create policy saved_poll_game_themes_select_own
+  on public.saved_poll_game_themes
+  for select
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_themes_insert_own on public.saved_poll_game_themes;
+create policy saved_poll_game_themes_insert_own
+  on public.saved_poll_game_themes
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_themes_update_own on public.saved_poll_game_themes;
+create policy saved_poll_game_themes_update_own
+  on public.saved_poll_game_themes
+  for update
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_themes_delete_own on public.saved_poll_game_themes;
+create policy saved_poll_game_themes_delete_own
+  on public.saved_poll_game_themes
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifacts_select_own on public.saved_poll_game_artifacts;
+create policy saved_poll_game_artifacts_select_own
+  on public.saved_poll_game_artifacts
+  for select
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifacts_insert_own on public.saved_poll_game_artifacts;
+create policy saved_poll_game_artifacts_insert_own
+  on public.saved_poll_game_artifacts
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifacts_update_own on public.saved_poll_game_artifacts;
+create policy saved_poll_game_artifacts_update_own
+  on public.saved_poll_game_artifacts
+  for update
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifacts_delete_own on public.saved_poll_game_artifacts;
+create policy saved_poll_game_artifacts_delete_own
+  on public.saved_poll_game_artifacts
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+revoke all on function public.vote_poll_atomic(uuid, uuid, uuid, text) from public;
+revoke all on function public.vote_poll_atomic(uuid, uuid, uuid, text) from anon;
+revoke all on function public.vote_poll_atomic(uuid, uuid, uuid, text) from authenticated;
+grant execute on function public.vote_poll_atomic(uuid, uuid, uuid, text) to service_role;
