@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 import uuid
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("prezo.supabase")
+SNAPSHOT_CACHE_TTL_SECONDS = 1.0
+SNAPSHOT_STALE_MAX_SECONDS = 30.0
 
 from .models import (
     Poll,
@@ -44,6 +51,11 @@ class SupabaseStore:
             "Authorization": f"Bearer {service_role_key}",
             "Content-Type": "application/json",
         }
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=15.0),
+        )
+        self._snapshot_cache: dict[str, tuple[float, SessionSnapshot]] = {}
+        self._snapshot_inflight: dict[str, asyncio.Task[SessionSnapshot]] = {}
 
     async def _request(
         self,
@@ -57,14 +69,59 @@ class SupabaseStore:
         headers = dict(self._headers)
         if prefer:
             headers["Prefer"] = prefer
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.request(
-                method,
-                f"{self._base_url}/{path}",
-                params=params,
-                json=json,
-                headers=headers,
+        url = f"{self._base_url}/{path}"
+        normalized_method = method.upper()
+        max_attempts = 3 if normalized_method == "GET" else 1
+        last_exc: Exception | None = None
+        for attempt in range(max_attempts):
+            try:
+                response = await self._client.request(
+                    normalized_method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=headers,
+                )
+                break
+            except (
+                httpx.ConnectTimeout,
+                httpx.ConnectError,
+                httpx.ReadTimeout,
+                httpx.ReadError,
+                httpx.PoolTimeout,
+                httpx.RemoteProtocolError,
+            ) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Supabase request transport failed (attempt %d/%d): %s %s – %s",
+                    attempt + 1,
+                    max_attempts,
+                    normalized_method,
+                    url,
+                    exc,
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+            except httpx.RequestError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Supabase request failed (attempt %d/%d): %s %s – %s",
+                    attempt + 1,
+                    max_attempts,
+                    normalized_method,
+                    url,
+                    exc,
+                )
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+        else:
+            detail = (
+                f"Supabase request failed for {normalized_method} {url}: "
+                f"{last_exc.__class__.__name__}: {last_exc}"
+                if last_exc
+                else f"Supabase request failed for {normalized_method} {url}"
             )
+            raise SupabaseError(503, detail, "supabase_unavailable")
         if response.status_code >= 400:
             detail = response.text
             code: str | None = None
@@ -96,6 +153,77 @@ class SupabaseStore:
     async def _rpc(self, function_name: str, payload: dict[str, Any]) -> Any:
         response = await self._request("POST", f"rpc/{function_name}", json=payload)
         return response.json()
+
+    def _invalidate_session_snapshot(self, session_id: str) -> None:
+        self._snapshot_cache.pop(session_id, None)
+
+    def _get_cached_snapshot_copy(
+        self, session_id: str, now: float, max_age_seconds: float
+    ) -> SessionSnapshot | None:
+        cached = self._snapshot_cache.get(session_id)
+        if not cached:
+            return None
+        cached_at, snapshot = cached
+        if now - cached_at > max_age_seconds:
+            return None
+        return snapshot.model_copy(deep=True)
+
+    def _get_stale_snapshot_copy(self, session_id: str) -> SessionSnapshot | None:
+        stale_snapshot = self._get_cached_snapshot_copy(
+            session_id, time.monotonic(), SNAPSHOT_STALE_MAX_SECONDS
+        )
+        if stale_snapshot:
+            logger.warning(
+                "Serving stale snapshot for session %s after Supabase request failure",
+                session_id,
+            )
+        return stale_snapshot
+
+    async def _load_snapshot(self, session_id: str) -> SessionSnapshot:
+        sessions = await self._select(
+            "sessions", {"select": "*", "id": f"eq.{session_id}"}
+        )
+        if not sessions:
+            raise NotFoundError("session not found")
+        session = self._to_session(sessions[0])
+
+        questions = await self._select(
+            "questions",
+            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
+        )
+        prompts = await self._select(
+            "qna_prompts",
+            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
+        )
+        polls = await self._select(
+            "polls",
+            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
+        )
+        poll_ids = [poll["id"] for poll in polls]
+        options: list[dict[str, Any]] = []
+        if poll_ids:
+            in_list = ",".join(f'"{poll_id}"' for poll_id in poll_ids)
+            options = await self._select(
+                "poll_options",
+                {"select": "*", "poll_id": f"in.({in_list})", "order": "position.asc"},
+            )
+        options_by_poll: dict[str, list[dict[str, Any]]] = {}
+        for option in options:
+            options_by_poll.setdefault(option["poll_id"], []).append(option)
+
+        poll_models = [
+            self._to_poll(poll, options_by_poll.get(poll["id"], []))
+            for poll in polls
+        ]
+        question_models = [self._to_question(item) for item in questions]
+        prompt_models = [self._to_prompt(item) for item in prompts]
+
+        return SessionSnapshot(
+            session=session,
+            questions=question_models,
+            polls=poll_models,
+            prompts=prompt_models,
+        )
 
     async def _get_session_row(self, session_id: str) -> dict[str, Any]:
         rows = await self._select("sessions", {"select": "*", "id": f"eq.{session_id}"})
@@ -267,6 +395,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_session(data[0], user_id)
 
     async def join_session_as_host(self, code: str, user_id: str) -> Session:
@@ -304,6 +433,7 @@ class SupabaseStore:
                 raise
 
         updated = await self._get_session_row(session_id)
+        self._invalidate_session_snapshot(session_id)
         return self._to_session(updated, user_id)
 
     async def set_host_join_access(
@@ -320,6 +450,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_session(data[0], user_id)
 
     async def create_question(
@@ -358,6 +489,7 @@ class SupabaseStore:
             "POST", "questions", json=payload, prefer="return=representation"
         )
         data = response.json()
+        self._invalidate_session_snapshot(session_id)
         return self._to_question(data[0])
 
     async def set_qna_status(
@@ -374,6 +506,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_session(data[0], user_id)
 
     async def set_qna_config(
@@ -394,6 +527,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("session not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_session(data[0], user_id)
 
     async def create_qna_prompt(
@@ -411,6 +545,7 @@ class SupabaseStore:
             "POST", "qna_prompts", json=payload, prefer="return=representation"
         )
         data = response.json()
+        self._invalidate_session_snapshot(session_id)
         return self._to_prompt(data[0])
 
     async def set_qna_prompt_status(
@@ -431,6 +566,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("prompt not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_prompt(data[0])
 
     async def set_question_status(
@@ -451,6 +587,7 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise NotFoundError("question not found")
+        self._invalidate_session_snapshot(session_id)
         return self._to_question(data[0])
 
     async def vote_question(
@@ -495,6 +632,7 @@ class SupabaseStore:
             prefer="return=representation",
         )
         data = response.json()
+        self._invalidate_session_snapshot(session_id)
         return self._to_question(data[0])
 
     async def create_poll(
@@ -532,6 +670,7 @@ class SupabaseStore:
             "POST", "poll_options", json=option_payload, prefer="return=representation"
         )
         options_data = options_response.json()
+        self._invalidate_session_snapshot(session_id)
         return self._to_poll(poll_data, options_data)
 
     async def set_poll_status(
@@ -552,6 +691,7 @@ class SupabaseStore:
             "poll_options",
             {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},
         )
+        self._invalidate_session_snapshot(session_id)
         return self._to_poll(data[0], options)
 
     async def vote_poll(
@@ -584,53 +724,43 @@ class SupabaseStore:
         options = payload.get("options")
         option_rows = options if isinstance(options, list) else []
         poll_data = {key: value for key, value in payload.items() if key != "options"}
+        self._invalidate_session_snapshot(session_id)
         return self._to_poll(poll_data, option_rows)
 
     async def snapshot(self, session_id: str) -> SessionSnapshot:
-        sessions = await self._select(
-            "sessions", {"select": "*", "id": f"eq.{session_id}"}
+        now = time.monotonic()
+        cached_snapshot = self._get_cached_snapshot_copy(
+            session_id, now, SNAPSHOT_CACHE_TTL_SECONDS
         )
-        if not sessions:
-            raise NotFoundError("session not found")
-        session = self._to_session(sessions[0])
+        if cached_snapshot:
+            return cached_snapshot
 
-        questions = await self._select(
-            "questions",
-            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
-        )
-        prompts = await self._select(
-            "qna_prompts",
-            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
-        )
-        polls = await self._select(
-            "polls",
-            {"select": "*", "session_id": f"eq.{session_id}", "order": "created_at.desc"},
-        )
-        poll_ids = [poll["id"] for poll in polls]
-        options: list[dict[str, Any]] = []
-        if poll_ids:
-            in_list = ",".join(f'"{poll_id}"' for poll_id in poll_ids)
-            options = await self._select(
-                "poll_options",
-                {"select": "*", "poll_id": f"in.({in_list})", "order": "position.asc"},
-            )
-        options_by_poll: dict[str, list[dict[str, Any]]] = {}
-        for option in options:
-            options_by_poll.setdefault(option["poll_id"], []).append(option)
+        inflight = self._snapshot_inflight.get(session_id)
+        if inflight:
+            try:
+                snapshot = await inflight
+            except SupabaseError:
+                stale_snapshot = self._get_stale_snapshot_copy(session_id)
+                if stale_snapshot:
+                    return stale_snapshot
+                raise
+            return snapshot.model_copy(deep=True)
 
-        poll_models = [
-            self._to_poll(poll, options_by_poll.get(poll["id"], []))
-            for poll in polls
-        ]
-        question_models = [self._to_question(item) for item in questions]
-        prompt_models = [self._to_prompt(item) for item in prompts]
+        task = asyncio.create_task(self._load_snapshot(session_id))
+        self._snapshot_inflight[session_id] = task
+        try:
+            snapshot = await task
+        except SupabaseError:
+            stale_snapshot = self._get_stale_snapshot_copy(session_id)
+            if stale_snapshot:
+                return stale_snapshot
+            raise
+        finally:
+            if self._snapshot_inflight.get(session_id) is task:
+                self._snapshot_inflight.pop(session_id, None)
 
-        return SessionSnapshot(
-            session=session,
-            questions=question_models,
-            polls=poll_models,
-            prompts=prompt_models,
-        )
+        self._snapshot_cache[session_id] = (time.monotonic(), snapshot)
+        return snapshot.model_copy(deep=True)
 
     async def list_saved_themes(self, user_id: str) -> list[SavedTheme]:
         rows = await self._select(
