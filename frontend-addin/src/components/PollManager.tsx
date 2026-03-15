@@ -163,12 +163,9 @@ export function PollManager({
                                   <span className="poll-option-label">{option.label}</span>
                                   <span className="muted">{percentage}%</span>
                                 </div>
-                                <progress
-                                  className="poll-option-track"
-                                  value={percentage}
-                                  max={100}
-                                  aria-hidden="true"
-                                />
+                                <div className="poll-option-track">
+                                  <span style={{ width: `${percentage}%` }}></span>
+                                </div>
                               </div>
                             )
                           })}
