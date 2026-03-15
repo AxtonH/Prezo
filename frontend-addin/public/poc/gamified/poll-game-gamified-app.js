@@ -1770,6 +1770,7 @@ import {
     }
 
     try {
+      const previousHtml = state.artifact.html || ''
       const context = buildAiEditorContext()
       context.artifact = buildArtifactContext(
         {
@@ -1795,6 +1796,15 @@ import {
             'Artifact edit failed because the AI returned empty markup.'
           )
         }
+      } else if (
+        requestKind === 'edit' &&
+        previousHtml &&
+        normalizeArtifactMarkup(buildResult.html) === normalizeArtifactMarkup(previousHtml)
+      ) {
+        const noopMessage =
+          'Edit produced no visible changes. Try rephrasing or ask for a broader redesign.'
+        setArtifactComposerStatus(noopMessage, 'error')
+        appendArtifactEditMessage('assistant', noopMessage)
       } else {
         renderFromSnapshot(true)
         showArtifactStageFrame()
