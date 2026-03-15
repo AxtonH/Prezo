@@ -91,6 +91,22 @@ class SupabaseStoreTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exc_info.exception.status_code, 503)
         self.assertEqual(exc_info.exception.code, "supabase_unavailable")
 
+    async def test_transport_circuit_breaker_fails_fast_after_repeated_failures(self) -> None:
+        request_mock = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        self.store._client.request = request_mock
+
+        with self.assertRaises(SupabaseError):
+            await self.store._request("GET", "sessions")
+
+        first_attempt_count = request_mock.await_count
+
+        with self.assertRaises(SupabaseError) as exc_info:
+            await self.store._request("GET", "sessions")
+
+        self.assertEqual(request_mock.await_count, first_attempt_count)
+        self.assertEqual(exc_info.exception.status_code, 503)
+        self.assertEqual(exc_info.exception.code, "supabase_unavailable")
+
     async def test_snapshot_coalesces_concurrent_loads(self) -> None:
         snapshot = build_snapshot()
 

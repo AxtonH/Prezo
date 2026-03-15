@@ -65,6 +65,9 @@ import {
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
+  const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
+  const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
+  const SNAPSHOT_POLL_DISCONNECTED_MS = 15000
 
   const query = new URLSearchParams(window.location.search)
 
@@ -97,6 +100,7 @@ import {
     socket: null,
     socketStatus: 'connecting',
     reconnectTimer: null,
+    reconnectDelayMs: SOCKET_RECONNECT_INITIAL_DELAY_MS,
     pollTimer: null,
     snapshotRenderTimer: null,
     fetchPromise: null,
@@ -6551,7 +6555,7 @@ import {
         return
       }
       void refreshSnapshot(false)
-    }, 6000)
+    }, SNAPSHOT_POLL_DISCONNECTED_MS)
   }
 
   function stopSnapshotPolling() {
@@ -6629,6 +6633,7 @@ import {
         return
       }
       state.socketStatus = 'connected'
+      state.reconnectDelayMs = SOCKET_RECONNECT_INITIAL_DELAY_MS
       updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
     })
 
@@ -6662,11 +6667,15 @@ import {
     if (state.reconnectTimer || state.isUnloading) {
       return
     }
+    const delay = Math.min(
+      Number.isFinite(state.reconnectDelayMs) ? state.reconnectDelayMs : SOCKET_RECONNECT_INITIAL_DELAY_MS,
+      SOCKET_RECONNECT_MAX_DELAY_MS
+    )
     state.reconnectTimer = window.setTimeout(() => {
       state.reconnectTimer = null
       connectSocket()
-      void refreshSnapshot(false)
-    }, 2800)
+    }, delay)
+    state.reconnectDelayMs = Math.min(delay * 2, SOCKET_RECONNECT_MAX_DELAY_MS)
   }
 
   function disconnectSocket() {

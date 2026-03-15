@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger("prezo.supabase")
 SNAPSHOT_CACHE_TTL_SECONDS = 1.0
 SNAPSHOT_STALE_MAX_SECONDS = 30.0
+SUPABASE_TRANSPORT_BACKOFF_SECONDS = 15.0
 
 from .models import (
     Poll,
@@ -56,6 +57,8 @@ class SupabaseStore:
         )
         self._snapshot_cache: dict[str, tuple[float, SessionSnapshot]] = {}
         self._snapshot_inflight: dict[str, asyncio.Task[SessionSnapshot]] = {}
+        self._transport_unavailable_until = 0.0
+        self._transport_failure_detail = ""
 
     async def _request(
         self,
@@ -71,6 +74,12 @@ class SupabaseStore:
             headers["Prefer"] = prefer
         url = f"{self._base_url}/{path}"
         normalized_method = method.upper()
+        now = time.monotonic()
+        if now < self._transport_unavailable_until:
+            detail = self._transport_failure_detail or (
+                "Supabase is temporarily unreachable after repeated transport failures."
+            )
+            raise SupabaseError(503, detail, "supabase_unavailable")
         max_attempts = 3 if normalized_method == "GET" else 1
         last_exc: Exception | None = None
         for attempt in range(max_attempts):
@@ -82,6 +91,8 @@ class SupabaseStore:
                     json=json,
                     headers=headers,
                 )
+                self._transport_unavailable_until = 0.0
+                self._transport_failure_detail = ""
                 break
             except (
                 httpx.ConnectTimeout,
@@ -121,6 +132,10 @@ class SupabaseStore:
                 if last_exc
                 else f"Supabase request failed for {normalized_method} {url}"
             )
+            self._transport_unavailable_until = (
+                time.monotonic() + SUPABASE_TRANSPORT_BACKOFF_SECONDS
+            )
+            self._transport_failure_detail = detail
             raise SupabaseError(503, detail, "supabase_unavailable")
         if response.status_code >= 400:
             detail = response.text
