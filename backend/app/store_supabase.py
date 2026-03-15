@@ -44,9 +44,6 @@ class SupabaseStore:
             "Authorization": f"Bearer {service_role_key}",
             "Content-Type": "application/json",
         }
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=15.0),
-        )
 
     async def _request(
         self,
@@ -60,13 +57,14 @@ class SupabaseStore:
         headers = dict(self._headers)
         if prefer:
             headers["Prefer"] = prefer
-        response = await self._client.request(
-            method,
-            f"{self._base_url}/{path}",
-            params=params,
-            json=json,
-            headers=headers,
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.request(
+                method,
+                f"{self._base_url}/{path}",
+                params=params,
+                json=json,
+                headers=headers,
+            )
         if response.status_code >= 400:
             detail = response.text
             code: str | None = None
