@@ -56,24 +56,24 @@ body {
   background: linear-gradient(140deg, var(--bg-a), var(--bg-b));
 }
 
-body.ribbon-hidden {
+body.ribbon-hidden:not(.editor-docked) {
   display: grid;
   place-items: center;
   overflow: auto;
 }
 
-body.ribbon-hidden .wrap {
+body.ribbon-hidden:not(.editor-docked) .wrap {
   margin: 0;
 }
 
-body.ribbon-collapsed:not(.ribbon-hidden) {
+body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) {
   display: grid;
   place-items: center;
   padding-top: var(--ribbon-compact-height);
   overflow: auto;
 }
 
-body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
+body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) .wrap {
   margin: 0;
 }
 
