@@ -1887,18 +1887,44 @@ h1 {
 }
 
 body.editor-docked {
-  display: block;
-  place-items: initial;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--editor-sidebar-width);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "ribbon sidebar"
+    "content sidebar";
+  column-gap: 20px;
+  row-gap: 12px;
+  align-items: start;
+  place-items: normal;
+  padding: 0 20px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.editor-docked .settings-ribbon {
+  position: sticky;
+  top: 0;
+  left: auto;
+  right: auto;
+  width: auto;
+  grid-area: ribbon;
+  z-index: 30;
 }
 
 body.editor-docked .ai-chat-shell {
+  position: sticky;
   top: 0;
   left: auto;
-  right: 0;
-  bottom: 0;
+  right: auto;
+  bottom: auto;
+  grid-area: sidebar;
+  align-self: start;
+  justify-self: stretch;
   width: var(--editor-sidebar-width);
-  max-width: none;
-  max-height: none;
+  max-width: var(--editor-sidebar-width);
+  height: calc(100vh - 20px);
+  max-height: calc(100vh - 20px);
   align-items: stretch;
   gap: 0;
   padding: 16px 14px 14px;
@@ -1945,13 +1971,14 @@ body.editor-docked .ai-chat-messages {
 }
 
 body.editor-docked .settings-minimized {
-  right: calc(var(--editor-dock-reserve) + 10px);
+  right: calc(var(--editor-sidebar-width) + 18px);
 }
 
 body.editor-docked .wrap {
-  margin-top: calc(var(--ribbon-offset) + 12px);
-  margin-left: 20px;
-  margin-right: auto;
+  grid-area: content;
+  width: min(var(--wrap-width-limit), 100%);
+  margin: 0;
+  max-width: none;
 }
 
 .ai-chat-fab {
@@ -2240,14 +2267,20 @@ body.editor-docked .wrap {
   }
 
   body.editor-docked {
+    display: block;
     --editor-dock-reserve: 0px;
     --editor-sidebar-width: 0px;
     --editor-dock-shift: 0px;
     --wrap-width-limit: 1100px;
+    padding: 0;
   }
 
   body.editor-docked .settings-ribbon {
+    position: fixed;
+    top: 0;
+    left: 0;
     right: 0;
+    width: auto;
   }
 
   body.editor-docked .settings-minimized {
@@ -2400,13 +2433,19 @@ body.editor-docked .wrap {
   }
 
   body.editor-docked .ai-chat-shell {
+    position: fixed;
     top: auto;
     left: 6px;
     right: 6px;
     bottom: 18px;
+    grid-area: auto;
+    align-self: auto;
+    justify-self: auto;
     width: auto;
     height: auto;
+    max-height: none;
     padding: 0;
+    border-left: 0;
     border-right: 0;
     background: transparent;
     -webkit-backdrop-filter: none;
