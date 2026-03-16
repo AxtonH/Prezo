@@ -384,6 +384,45 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(issues, [])
         self.assertEqual(patched_html, "<div id='root'><span>New</span></div>")
 
+    def test_extract_artifact_background_selector_candidates_prefers_real_selectors(self) -> None:
+        selectors = ai_api.extract_artifact_background_selector_candidates(
+            PATCHABLE_ARTIFACT_HTML
+        )
+
+        self.assertIn("#track-bg", selectors)
+        self.assertNotIn("#city-bg", selectors)
+
+    def test_build_artifact_patch_edit_prompt_lists_exact_background_targets(self) -> None:
+        prompt = ai_api.build_artifact_patch_edit_prompt(
+            original_edit_request="Edit the background so it is a city.",
+            context={"artifact": {"artifactType": "car race"}},
+            current_html=PATCHABLE_ARTIFACT_HTML,
+        )
+
+        self.assertIn("Available exact background selectors", prompt)
+        self.assertIn("#track-bg", prompt)
+        self.assertIn("Do not invent selectors", prompt)
+        self.assertIn("Keep it CSS-only", prompt)
+
+    def test_rewrite_artifact_patch_plan_remaps_invented_city_selector(self) -> None:
+        rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
+            plan={
+                "assistantMessage": "Updated the city background.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": "#city-bg",
+                        "property": "background",
+                        "value": "linear-gradient(180deg, #0f2742 0%, #7a5c3d 100%)",
+                    }
+                ],
+            },
+            current_html=PATCHABLE_ARTIFACT_HTML,
+            original_edit_request="Edit the background so it is a city.",
+        )
+
+        self.assertEqual(rewritten["edits"][0]["selector"], "#track-bg")
+
     def test_set_css_property_in_css_can_update_rule_inside_media_block(self) -> None:
         css_text = """
 @media (min-width: 600px) {
@@ -500,22 +539,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
 
-    async def test_structural_local_edit_patch_failure_can_fallback_to_full_regeneration(self) -> None:
+    async def test_background_image_request_without_url_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
-        gemini_mock = AsyncMock(
-            side_effect=[
-                (
-                    json.dumps(
-                        {
-                            "assistantMessage": "Patch mode is not suitable for this structural update.",
-                            "edits": [],
-                        }
-                    ),
-                    "stop",
-                ),
-                (VALID_ARTIFACT_HTML, "stop"),
-            ]
-        )
+        gemini_mock = AsyncMock()
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -531,14 +557,56 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
             ai_api, "request_gemini_text", gemini_mock
         ):
+            with self.assertRaises(ai_api.HTTPException) as exc_info:
+                await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(exc_info.exception.status_code, 409)
+        self.assertIn("needs a direct image URL", str(exc_info.exception.detail))
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 0)
+
+    async def test_local_city_background_edit_can_remap_invented_selector(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Adjusted the background toward a city look.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": "#city-bg",
+                                "property": "background",
+                                "value": "linear-gradient(180deg, #17324d 0%, #4e5966 48%, #e0b36c 100%)",
+                            }
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Edit the background so its a city.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
         self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 2)
-        self.assertEqual(gemini_mock.await_args_list[0].kwargs["request_stage"], "artifact patch edit")
-        self.assertEqual(gemini_mock.await_args_list[1].kwargs["request_stage"], "artifact edit generation")
+        self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertEqual(response.html, VALID_ARTIFACT_HTML.strip())
+        self.assertIn("#17324d", response.html)
+        self.assertIn(".car", response.html)
 
     async def test_local_edit_with_truncated_artifact_html_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()

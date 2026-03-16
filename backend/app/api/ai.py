@@ -994,7 +994,11 @@ async def attempt_artifact_patch_edit(
         response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
         thinking_budget=0,
     )
-    plan = normalize_artifact_patch_plan(text)
+    plan = rewrite_artifact_patch_plan_for_current_html(
+        plan=normalize_artifact_patch_plan(text),
+        current_html=current_html,
+        original_edit_request=original_edit_request,
+    )
     patched_html, issues = apply_artifact_patch_plan(current_html, plan)
     if issues:
         return "", plan.get("assistantMessage", ""), issues
@@ -1499,16 +1503,15 @@ def build_artifact_patch_edit_prompt(
         if isinstance(artifact_context.get("pollTitle"), str)
         else ""
     )
-    is_background_edit = bool(
-        re.search(
-            r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b)\b",
-            original_edit_request,
-            re.IGNORECASE,
-        )
-    )
+    is_background_edit = is_background_visual_edit_request(original_edit_request)
+    is_city_background_edit = is_city_background_edit_request(original_edit_request)
     requires_external_asset_url = artifact_edit_request_requires_external_asset_url(
         original_edit_request
     )
+    background_selector_candidates = extract_artifact_background_selector_candidates(
+        current_html
+    )
+    background_style_snippets = extract_artifact_background_style_snippets(current_html)
     return "\n".join(
         [
             "Artifact patch edit task",
@@ -1524,14 +1527,37 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "This is a city/urban background request without a direct image URL. Keep it CSS-only: use the existing background layer to suggest a cityscape, skyline, urban lighting, haze, or architecture silhouette. Do not swap in a random photo, do not use a blank white fill, and do not touch the cars."
+                if is_city_background_edit and not requires_external_asset_url
+                else ""
+            ),
+            (
                 "This request appears to need a new external image or asset URL. If the user did not provide a direct URL, do not guess one. Return an empty edits array and explain that a direct image URL is required."
                 if requires_external_asset_url
+                else ""
+            ),
+            (
+                "Available exact background selectors in the current artifact: "
+                + ", ".join(background_selector_candidates)
+                if background_selector_candidates
+                else ""
+            ),
+            (
+                "For background edits, if you use set_css_property, the selector must match one of the available exact background selectors above. Do not invent selectors."
+                if background_selector_candidates
+                else ""
+            ),
+            (
+                "Relevant current background CSS snippets:\n"
+                + "\n\n".join(background_style_snippets)
+                if background_style_snippets
                 else ""
             ),
             "Use the fewest edits possible.",
             "Prefer set_css_property for local visual changes.",
             "If you need replace_once/replace_all/replace_between/insert_before/insert_after/remove_once, use exact substrings copied from the current artifact HTML.",
             "Use replace_between when the request needs a small structural local change inside an existing stable container or style block.",
+            "If a background edit cannot be expressed with an existing exact selector, use replace_between or replace_once on an exact current CSS snippet instead of inventing a selector.",
             "Do not rename or remove live poll hooks, ids, classes, or data attributes relied on by the existing artifact.",
             "If patch mode is not suitable for this request, return an empty edits array.",
             "Current artifact HTML:",
@@ -1742,6 +1768,177 @@ def is_background_image_asset_edit_request(request: str) -> bool:
         re.search(r"\b(?:image|photo|picture|texture)\b", lowered)
     )
     return has_background_target and has_image_target
+
+
+def is_background_visual_edit_request(request: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b|city|urban|skyline|downtown|buildings?)\b",
+            request or "",
+            re.IGNORECASE,
+        )
+    )
+
+
+def is_city_background_edit_request(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    if not lowered:
+        return False
+    return bool(
+        re.search(r"\b(?:city|urban|skyline|downtown|buildings?|skyscraper)\b", lowered)
+    ) and bool(re.search(r"\b(?:background|backdrop|sky|scene|track)\b", lowered))
+
+
+def is_background_like_selector(selector: str) -> bool:
+    lowered = (selector or "").strip().lower()
+    if not lowered:
+        return False
+    if lowered in {"body", "html"}:
+        return True
+    return bool(
+        re.search(
+            r"(?:#|\.|^)(?:[a-z0-9_-]*?(?:bg|background|backdrop|sky|city|scene|track)[a-z0-9_-]*)",
+            lowered,
+        )
+    )
+
+
+def score_background_selector_candidate(requested_selector: str, candidate: str) -> tuple[int, int, int]:
+    requested_tokens = set(re.findall(r"[a-z]+", (requested_selector or "").lower()))
+    candidate_tokens = set(re.findall(r"[a-z]+", (candidate or "").lower()))
+    overlap = len(requested_tokens & candidate_tokens)
+    specificity = 2 if candidate.startswith("#") else 1 if candidate.startswith(".") else 0
+    priority_tokens = ("background", "backdrop", "sky", "city", "scene", "track", "bg")
+    priority = 0
+    lowered_candidate = candidate.lower()
+    for index, token in enumerate(priority_tokens):
+        if token in lowered_candidate:
+            priority = len(priority_tokens) - index
+            break
+    return (overlap, priority, specificity)
+
+
+def choose_background_selector_candidate(
+    requested_selector: str, candidates: list[str]
+) -> str:
+    normalized = (requested_selector or "").strip()
+    if not normalized or not candidates:
+        return ""
+    if normalized in candidates:
+        return normalized
+    ranked = sorted(
+        candidates,
+        key=lambda candidate: score_background_selector_candidate(normalized, candidate),
+        reverse=True,
+    )
+    return ranked[0] if ranked else ""
+
+
+def rewrite_artifact_patch_plan_for_current_html(
+    *,
+    plan: dict[str, Any],
+    current_html: str,
+    original_edit_request: str,
+) -> dict[str, Any]:
+    assistant_message = (
+        plan.get("assistantMessage") if isinstance(plan.get("assistantMessage"), str) else ""
+    )
+    edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
+    rewritten: list[dict[str, Any]] = []
+    if not is_background_visual_edit_request(original_edit_request):
+        return {"assistantMessage": assistant_message, "edits": edits}
+
+    background_candidates = extract_artifact_background_selector_candidates(current_html)
+    for raw_edit in edits:
+        if not isinstance(raw_edit, dict):
+            continue
+        edit = dict(raw_edit)
+        edit_type = str(edit.get("type") or "").strip().lower()
+        if edit_type != "set_css_property":
+            rewritten.append(edit)
+            continue
+        selector = str(edit.get("selector") or "").strip()
+        if selector and selector not in background_candidates and is_background_like_selector(selector):
+            replacement = choose_background_selector_candidate(selector, background_candidates)
+            if replacement:
+                edit["selector"] = replacement
+        rewritten.append(edit)
+    return {"assistantMessage": assistant_message, "edits": rewritten}
+
+
+def extract_artifact_background_selector_candidates(html: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def remember(selector: str) -> None:
+        normalized = selector.strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    for selector in ("body", "html", "#scene", "#track-bg", "#background", "#backdrop"):
+        if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(selector)}(?![A-Za-z0-9_-])", html):
+            remember(selector)
+
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = style_match.group("body") or ""
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                lowered = normalized.lower()
+                if (
+                    normalized in {"body", "html"}
+                    or re.search(r"(?:#|\.)(?:[A-Za-z0-9_-]*?(?:bg|background|backdrop|sky|city|scene|track)[A-Za-z0-9_-]*)", lowered)
+                    or any(token in lowered for token in (" body", " html", "#scene", "#track-bg", "#background", "#backdrop"))
+                ):
+                    remember(normalized)
+
+    for match in re.finditer(r'id\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        raw_id = match.group(1).strip()
+        if raw_id and re.search(r"(bg|background|backdrop|sky|city|scene|track)", raw_id, re.IGNORECASE):
+            remember(f"#{raw_id}")
+
+    for match in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        for raw_class in match.group(1).split():
+            if raw_class and re.search(r"(bg|background|backdrop|sky|city|scene|track)", raw_class, re.IGNORECASE):
+                remember(f".{raw_class}")
+
+    return candidates[:12]
+
+
+def extract_artifact_background_style_snippets(html: str) -> list[str]:
+    snippets: list[str] = []
+    seen: set[str] = set()
+    candidates = extract_artifact_background_selector_candidates(html)
+    style_bodies = [match.group("body") or "" for match in ARTIFACT_STYLE_TAG_RE.finditer(html)]
+    for style_body in style_bodies:
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                if normalized not in candidates:
+                    continue
+                selector_re = re.compile(rf"{re.escape(normalized)}\s*\{{", re.IGNORECASE)
+                match = selector_re.search(style_body)
+                if not match:
+                    continue
+                brace_start = match.end() - 1
+                brace_end = find_matching_delimiter(style_body, brace_start, "{", "}")
+                if brace_end < 0:
+                    continue
+                snippet = style_body[match.start(): brace_end + 1].strip()
+                if snippet and snippet not in seen:
+                    seen.add(snippet)
+                    snippets.append(snippet)
+                    if len(snippets) >= 4:
+                        return snippets
+    return snippets
 
 
 def find_matching_delimiter(
