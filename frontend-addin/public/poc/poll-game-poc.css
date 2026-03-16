@@ -1914,15 +1914,15 @@ body.editor-docked .settings-ribbon {
 
 body.editor-docked .ai-chat-shell {
   position: fixed;
-  top: calc(var(--ribbon-offset) + 12px);
+  top: 0;
   left: auto;
-  right: 16px;
-  bottom: 16px;
+  right: 0;
+  bottom: 0;
   width: var(--editor-sidebar-width);
-  max-width: min(420px, calc(100vw - 32px));
+  max-width: none;
   min-width: 320px;
-  height: auto;
-  max-height: calc(100vh - var(--ribbon-offset) - 28px);
+  height: 100vh;
+  max-height: 100vh;
   align-items: stretch;
   gap: 0;
   padding: 16px 14px 14px;
