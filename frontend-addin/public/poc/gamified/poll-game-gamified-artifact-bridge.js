@@ -125,10 +125,42 @@ export function createPollGameArtifactBridge({
     }
   }
 
+  function readStageLayoutSize() {
+    const computedStyle = windowObj.getComputedStyle(stageEl)
+    const rect = stageEl.getBoundingClientRect()
+    const layoutWidthCandidates = [
+      stageEl.clientWidth,
+      stageEl.offsetWidth,
+      Number.parseFloat(computedStyle.width),
+      rect.width
+    ]
+    const layoutWidth = layoutWidthCandidates.find(
+      (value) => Number.isFinite(value) && value > 0
+    )
+    if (!Number.isFinite(layoutWidth) || layoutWidth <= 0) {
+      return { width: 0, height: 0 }
+    }
+    const inferredHeight = layoutWidth / stageAspectRatio
+    const layoutHeightCandidates = [
+      stageEl.clientHeight,
+      stageEl.offsetHeight,
+      Number.parseFloat(computedStyle.height),
+      inferredHeight,
+      rect.height
+    ]
+    const layoutHeight = layoutHeightCandidates.find(
+      (value) => Number.isFinite(value) && value > 0
+    )
+    return {
+      width: layoutWidth,
+      height: Number.isFinite(layoutHeight) && layoutHeight > 0 ? layoutHeight : inferredHeight
+    }
+  }
+
   function setFrameHeight(value, options = {}) {
     const force = Boolean(options.force)
-    const stageRect = stageEl.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
+    const stageSize = readStageLayoutSize()
+    const stageWidth = stageSize.width
     const aspectHeight =
       stageWidth > 0 ? Math.round((stageWidth / stageAspectRatio) * 1000) / 1000 : Number.NaN
     const fallback = clamp(value, 200, 6000, artifactState.frameHeight || 520)
@@ -155,9 +187,9 @@ export function createPollGameArtifactBridge({
   }
 
   function applyFrameFit() {
-    const stageRect = stageEl.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
-    const stageHeight = Number.isFinite(stageRect.height) ? stageRect.height : 0
+    const stageSize = readStageLayoutSize()
+    const stageWidth = stageSize.width
+    const stageHeight = stageSize.height
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
@@ -186,9 +218,9 @@ export function createPollGameArtifactBridge({
   }
 
   function updateReportedContentSize(widthValue, heightValue) {
-    const stageRect = stageEl.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
-    const stageHeight = Number.isFinite(stageRect.height) ? stageRect.height : 0
+    const stageSize = readStageLayoutSize()
+    const stageWidth = stageSize.width
+    const stageHeight = stageSize.height
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
