@@ -88,7 +88,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
 
 body.editor-docked.ribbon-hidden .wrap,
 body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
-  margin-left: 20px;
+  margin-left: calc(var(--editor-dock-reserve) + 20px);
   margin-right: auto;
 }
 
@@ -130,7 +130,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   box-shadow: 0 7px 18px rgba(74, 108, 148, 0.12);
-  transition: right 190ms ease;
+  transition: left 190ms ease, right 190ms ease;
 }
 
 .settings-ribbon.hidden {
@@ -1909,14 +1909,15 @@ body.editor-docked {
 }
 
 body.editor-docked .settings-ribbon {
-  right: var(--editor-dock-reserve);
+  left: var(--editor-dock-reserve);
+  right: 0;
 }
 
 body.editor-docked .ai-chat-shell {
   position: fixed;
   top: 0;
-  left: auto;
-  right: 0;
+  left: 0;
+  right: auto;
   bottom: 0;
   width: var(--editor-sidebar-width);
   max-width: none;
@@ -1926,12 +1927,13 @@ body.editor-docked .ai-chat-shell {
   align-items: stretch;
   gap: 0;
   padding: 16px 14px 14px;
-  border-left: 1px solid rgba(145, 179, 217, 0.5);
+  border-left: 0;
+  border-right: 1px solid rgba(145, 179, 217, 0.5);
   background:
     linear-gradient(180deg, rgba(248, 252, 255, 0.98), rgba(237, 246, 255, 0.98));
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  box-shadow: -12px 0 28px rgba(49, 79, 116, 0.16);
+  box-shadow: 12px 0 28px rgba(49, 79, 116, 0.16);
   overflow: hidden;
 }
 
@@ -1969,13 +1971,14 @@ body.editor-docked .ai-chat-messages {
 }
 
 body.editor-docked .settings-minimized {
-  right: calc(var(--editor-sidebar-width) + 18px);
+  left: calc(var(--editor-sidebar-width) + 18px);
+  right: auto;
 }
 
 body.editor-docked .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - 40px));
   margin-top: calc(var(--ribbon-offset) + 12px);
-  margin-left: 20px;
+  margin-left: calc(var(--editor-dock-reserve) + 20px);
   margin-right: auto;
   max-width: none;
 }
@@ -2275,10 +2278,12 @@ body.editor-docked .wrap {
   }
 
   body.editor-docked .settings-ribbon {
+    left: 0;
     right: 0;
   }
 
   body.editor-docked .settings-minimized {
+    left: auto;
     right: 6px;
   }
 

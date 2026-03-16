@@ -69,7 +69,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
   const ARTIFACT_LAYOUT_REFIT_DELAY_MS = 220
-  const EDITOR_DOCK_GAP_PX = 28
+  const EDITOR_DOCK_GAP_PX = 0
   const EDITOR_DOCK_SIDE_PADDING_PX = 48
   const EDITOR_DOCK_BREAKPOINT_PX = 900
   const ARTIFACT_LOADER_SIZE_PX = 120
