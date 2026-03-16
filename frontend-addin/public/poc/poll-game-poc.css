@@ -1,5 +1,5 @@
 :root {
-  --font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-family: "Inter", "Segoe UI", "Trebuchet MS", sans-serif;
   --bg-a: #f4f8ff;
   --bg-b: #dff0ff;
   --panel-color: #ffffff;
@@ -1464,7 +1464,7 @@ h1 {
   font-size: 12px;
   line-height: 1.42;
   resize: vertical;
-  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  font-family: "Inter", "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
 .artifact-prompt-input:focus-visible {
@@ -2236,7 +2236,7 @@ body.editor-docked .wrap {
   padding: 8px;
   font-size: 12px;
   line-height: 1.42;
-  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  font-family: "Inter", "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
 .ai-chat-input:focus-visible {

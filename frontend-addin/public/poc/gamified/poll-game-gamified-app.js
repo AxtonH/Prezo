@@ -373,7 +373,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     optionScales: {},
     optionAnchors: {},
     deletedObjects: {},
-    fontFamily: '"Segoe UI", "Trebuchet MS", sans-serif'
+    fontFamily: '"Inter", "Segoe UI", "Trebuchet MS", sans-serif'
   })
 
   const themeControls = [

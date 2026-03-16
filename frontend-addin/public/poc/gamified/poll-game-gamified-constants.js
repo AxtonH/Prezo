@@ -222,6 +222,7 @@ export const TEXT_FONT_FAMILIES = [
   'Garamond',
   'Georgia',
   'Impact',
+  'Inter',
   'Lucida Sans Unicode',
   'Palatino Linotype',
   'Segoe UI',
