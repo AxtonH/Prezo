@@ -175,7 +175,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     library: {
       status: 'pending',
       detail: ''
-    }
+    },
+    presentMode: false
   }
 
   const el = {
@@ -203,6 +204,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     historyUndo: must('history-undo'),
     historyRedo: must('history-redo'),
     deleteSelectedObject: must('delete-selected-object'),
+    presentModeToggle: must('present-mode-toggle'),
     resetPositions: document.getElementById('reset-positions'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
@@ -545,6 +547,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     setupRichTextEditor()
     setupAiChat()
     setupArtifactMode()
+    setupPresentMode()
     setupHistoryControls()
     setupDeleteControls()
     setupDragInteractions()
@@ -618,6 +621,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       if (isResetPositionsModalOpen()) {
         event.preventDefault()
         closeResetPositionsModal()
+        return
+      }
+      if (state.presentMode) {
+        event.preventDefault()
+        setPresentMode(false)
         return
       }
       if (ribbonState.hidden) {
@@ -792,7 +800,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function handleCanvasPointerDown(event) {
-    if (ribbonState.hidden || dragState.active) {
+    if (state.presentMode || ribbonState.hidden || dragState.active) {
       return
     }
     if (event.target instanceof Element && event.target.closest('#selection-toolbar')) {
@@ -974,11 +982,57 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
+  function setupPresentMode() {
+    syncPresentModeUi()
+    el.presentModeToggle.addEventListener('click', handlePresentModeToggleClick)
+  }
+
+  function handlePresentModeToggleClick() {
+    setPresentMode(!state.presentMode)
+  }
+
+  function syncPresentModeUi() {
+    document.body.classList.toggle('present-mode', state.presentMode)
+    el.presentModeToggle.classList.toggle('is-active', state.presentMode)
+    el.presentModeToggle.setAttribute('aria-pressed', state.presentMode ? 'true' : 'false')
+    el.presentModeToggle.setAttribute(
+      'aria-label',
+      state.presentMode ? 'Exit present mode' : 'Enter present mode'
+    )
+    el.presentModeToggle.setAttribute(
+      'title',
+      state.presentMode ? 'Exit present mode' : 'Enter present mode'
+    )
+    el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
+  }
+
+  function setPresentMode(enabled) {
+    const nextValue = Boolean(enabled)
+    if (state.presentMode === nextValue) {
+      return
+    }
+    state.presentMode = nextValue
+    const activeRichTextHost = getActiveRichTextHost()
+    if (state.presentMode && activeRichTextHost && typeof activeRichTextHost.blur === 'function') {
+      activeRichTextHost.blur()
+      state.activeTextHost = null
+      clearCachedRichTextSelection()
+    }
+    hideSelectionToolbar()
+    clearActiveResizeTarget()
+    syncPresentModeUi()
+    syncEditorDockingState()
+    scheduleArtifactLayoutRefit()
+  }
+
   function syncEditorDockingState() {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-    const hasDockedAiEditor = !isArtifactMode && state.ai.open
+    const hasDockedAiEditor = !state.presentMode && !isArtifactMode && state.ai.open
     const hasDockedArtifactEditor =
-      isArtifactMode && Boolean(state.artifact.html) && state.artifact.floatingOpen
+      !state.presentMode &&
+      isArtifactMode &&
+      Boolean(state.artifact.html) &&
+      state.artifact.floatingOpen
     document.body.classList.toggle('editor-docked', hasDockedAiEditor || hasDockedArtifactEditor)
     document.body.classList.toggle('ai-editor-docked', hasDockedAiEditor)
     document.body.classList.toggle('artifact-editor-docked', hasDockedArtifactEditor)
@@ -9349,6 +9403,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
     el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
+    el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)

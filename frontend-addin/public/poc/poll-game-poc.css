@@ -970,6 +970,52 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 190ms ease, margin 190ms ease, width 190ms ease;
 }
 
+.present-mode-toggle {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(136, 174, 218, 0.82);
+  border-radius: 999px;
+  background: rgba(244, 250, 255, 0.76);
+  color: #1c3f6a;
+  font-family: var(--font-family);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 22px rgba(49, 79, 116, 0.16);
+  transition:
+    transform 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.present-mode-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(82, 143, 221, 0.92);
+  background: rgba(231, 242, 255, 0.9);
+}
+
+.present-mode-toggle:focus-visible {
+  outline: 2px solid rgba(88, 146, 216, 0.82);
+  outline-offset: 2px;
+}
+
+.present-mode-toggle.is-active {
+  background: rgba(60, 132, 247, 0.88);
+  border-color: rgba(60, 132, 247, 0.94);
+  color: #fff;
+}
+
 .custom-asset {
   position: absolute;
   top: 50%;
@@ -2122,6 +2168,53 @@ body.editor-docked .wrap {
   max-width: none;
 }
 
+body.present-mode {
+  display: block;
+  place-items: initial;
+  padding-top: 0;
+  overflow: hidden;
+}
+
+body.present-mode .settings-ribbon,
+body.present-mode .settings-minimized,
+body.present-mode .settings-backdrop,
+body.present-mode .selection-toolbar,
+body.present-mode .ai-chat-shell {
+  display: none !important;
+}
+
+body.present-mode .panel-bg-drag,
+body.present-mode .panel-drag-handle,
+body.present-mode .resize-selection {
+  display: none !important;
+}
+
+body.present-mode .wrap {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  padding: 12px;
+  border-radius: 18px;
+  transform: none;
+  z-index: 35;
+  overflow: auto;
+}
+
+body.present-mode .artifact-stage {
+  margin-top: 0;
+}
+
+body.present-mode .present-mode-toggle {
+  left: 16px;
+  bottom: 16px;
+}
+
 .ai-chat-fab {
   display: inline-flex;
   align-items: center;
@@ -2501,6 +2594,20 @@ body.editor-docked .wrap {
     width: min(1160px, 95vw);
     padding: 18px 18px 22px;
     border-radius: 16px;
+  }
+
+  body.present-mode .wrap {
+    top: 8px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  body.present-mode .present-mode-toggle {
+    left: 12px;
+    bottom: 12px;
   }
 
   .head {
