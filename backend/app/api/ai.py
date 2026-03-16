@@ -382,6 +382,9 @@ POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_SYSTEM_INSTRUCTION = "\n".join(
         "- Do not invent external image URLs.",
         "- Use composition types that can be rendered safely with CSS only.",
         "- Choose colors with meaningful contrast. Avoid blank, washed-out, or near-white-only palettes unless the user explicitly asks for a pale/minimal white look.",
+        "- For skyline requests, use real structural controls, not just colors: layerCount, buildingCount, heightVariance, windowDensity, spireFrequency, and roofVariation.",
+        "- If the user asks for more detail, richer buildings, visible windows, rooflines, antennas, or spires, increase those structural controls instead of only changing colors.",
+        "- Do not claim features like windows, spires, antennas, or multi-layer depth in assistantMessage unless the treatment values will actually render them.",
         "- If the prompt implies a skyline, city, or urban scene, prefer `skyline`.",
         "- If the prompt implies mountains or peaks, prefer `mountains`.",
         "- If the prompt implies desert, dunes, or sand, prefer `dunes`.",
@@ -419,6 +422,12 @@ POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_JSON_SCHEMA: dict[str, Any] = {
                 "lightColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
                 "horizonHeightPct": {"type": "integer", "minimum": 18, "maximum": 78},
                 "detailDensity": {"type": "integer", "minimum": 10, "maximum": 90},
+                "layerCount": {"type": "integer", "minimum": 2, "maximum": 4},
+                "buildingCount": {"type": "integer", "minimum": 8, "maximum": 32},
+                "heightVariance": {"type": "integer", "minimum": 10, "maximum": 95},
+                "windowDensity": {"type": "integer", "minimum": 0, "maximum": 100},
+                "spireFrequency": {"type": "integer", "minimum": 0, "maximum": 100},
+                "roofVariation": {"type": "integer", "minimum": 0, "maximum": 100},
                 "targetSelector": {"type": "string"},
             },
             "required": [
@@ -434,6 +443,12 @@ POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_JSON_SCHEMA: dict[str, Any] = {
                 "lightColor",
                 "horizonHeightPct",
                 "detailDensity",
+                "layerCount",
+                "buildingCount",
+                "heightVariance",
+                "windowDensity",
+                "spireFrequency",
+                "roofVariation",
             ],
             "additionalProperties": False,
         },
@@ -1210,10 +1225,12 @@ async def attempt_artifact_background_treatment_edit(
             original_edit_request=original_edit_request,
         )
         if not issues:
+            applied_config = parse_artifact_background_treatment_config(treated_html)
             return (
                 treated_html,
-                plan.get("assistantMessage", "").strip()
-                or "Applied a deterministic background treatment that preserves the existing cars and layout.",
+                build_applied_background_treatment_assistant_message(
+                    applied_config or fallback_treatment, original_edit_request
+                ),
                 [],
             )
         return "", plan.get("assistantMessage", ""), [
@@ -1226,7 +1243,15 @@ async def attempt_artifact_background_treatment_edit(
     )
     if issues:
         return "", plan.get("assistantMessage", ""), issues
-    return treated_html, plan.get("assistantMessage", ""), []
+    applied_config = parse_artifact_background_treatment_config(treated_html)
+    return (
+        treated_html,
+        build_applied_background_treatment_assistant_message(
+            applied_config or normalize_background_treatment(treatment, original_edit_request),
+            original_edit_request,
+        ),
+        [],
+    )
 
 
 async def attempt_artifact_repair(
@@ -1926,36 +1951,58 @@ def build_artifact_background_treatment_prompt(
     background_style_snippets = extract_artifact_background_style_snippets(current_html)
     return "\n".join(
         [
-            "Artifact background treatment task",
-            "Translate the user's request into a structured background-only treatment for the current artifact.",
+            "<task>",
+            "Translate the user request into a structured background-only treatment for the current artifact.",
             "Do not modify cars, labels, gameplay elements, or live hooks.",
-            f"Original user edit request: {original_edit_request}",
-            f"Current artifact type: {artifact_type}" if artifact_type else "",
-            f"Current design guidelines: {design_guidelines}" if design_guidelines else "",
-            f"Live poll title: {poll_title}" if poll_title else "",
+            "</task>",
+            "<request>",
+            original_edit_request,
+            "</request>",
+            f"<artifact_type>{artifact_type}</artifact_type>" if artifact_type else "",
             (
-                "Available exact background selectors in the current artifact: "
+                f"<design_guidelines>{design_guidelines}</design_guidelines>"
+                if design_guidelines
+                else ""
+            ),
+            f"<poll_title>{poll_title}</poll_title>" if poll_title else "",
+            (
+                "<exact_background_selectors>"
                 + ", ".join(background_selector_candidates)
+                + "</exact_background_selectors>"
                 if background_selector_candidates
                 else ""
             ),
             (
-                "Available exact scene-root selectors in the current artifact: "
+                "<exact_scene_root_selectors>"
                 + ", ".join(scene_root_selector_candidates)
+                + "</exact_scene_root_selectors>"
                 if scene_root_selector_candidates
                 else ""
             ),
             (
-                "Current background CSS snippets:\n"
+                "<current_background_css>\n"
                 + "\n\n".join(background_style_snippets)
+                + "\n</current_background_css>"
                 if background_style_snippets
                 else ""
             ),
+            "<quality_bar>",
             "Prefer a meaningful visual composition over a weak color wash.",
             "Never return a pale blank background unless the user explicitly asks for a minimal white background.",
             "Choose a composition that fits the request and can be rendered with CSS only.",
             "Use targetSelector only when one of the exact background selectors above is an obvious fit. Otherwise leave it empty and the backend will choose.",
             "If no dedicated background selector is available, the backend may target a stable scene-root selector instead. Do not invent your own selector names.",
+            "For skyline or city requests, use structural controls, not just colors.",
+            "If the request asks for more detail, richer buildings, or better skyline detail, return at least layerCount 3, buildingCount 18, heightVariance 45, windowDensity 25, and roofVariation 25.",
+            "If the request mentions windows, increase windowDensity to 45 or higher.",
+            "If the request mentions spires or antennas, increase spireFrequency to 35 or higher and roofVariation to 45 or higher.",
+            "</quality_bar>",
+            "<example name=\"detailed_skyline\">",
+            '{"assistantMessage":"Apply a night skyline with three depth layers and visible windows.","treatment":{"composition":"skyline","timeOfDay":"night","intensity":"dramatic","topColor":"#173A5C","midColor":"#476C8F","bottomColor":"#D39A63","silhouetteColor":"#122033","accentColor":"#F0B36F","hazeColor":"#6E88A3","lightColor":"#FFE1A0","horizonHeightPct":44,"detailDensity":78,"layerCount":4,"buildingCount":24,"heightVariance":70,"windowDensity":58,"spireFrequency":36,"roofVariation":54,"targetSelector":""}}',
+            "</example>",
+            "<example name=\"sunset_gradient\">",
+            '{"assistantMessage":"Apply a layered sunset atmosphere.","treatment":{"composition":"abstract","timeOfDay":"sunset","intensity":"balanced","topColor":"#2E4E78","midColor":"#D87862","bottomColor":"#F0B06C","silhouetteColor":"#394C5E","accentColor":"#FFD08A","hazeColor":"#E7B38F","lightColor":"#FFE1A6","horizonHeightPct":40,"detailDensity":48,"layerCount":2,"buildingCount":10,"heightVariance":22,"windowDensity":0,"spireFrequency":0,"roofVariation":0,"targetSelector":""}}',
+            "</example>",
         ]
     )
 
@@ -2525,6 +2572,158 @@ def background_request_explicitly_allows_pale_palette(request: str) -> bool:
     )
 
 
+def background_request_wants_extra_detail(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    return bool(
+        re.search(
+            r"\b(?:detailed?|detail|richer|more detail|more detailed|intricate|complex|layered|depth|textured?|refined|more interesting)\b",
+            lowered,
+        )
+    )
+
+
+def background_request_mentions_windows(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    return bool(re.search(r"\b(?:window|windows|lit windows?|glowing windows?)\b", lowered))
+
+
+def background_request_mentions_spires(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    return bool(re.search(r"\b(?:spire|spires|antenna|antennas|crown|crowns|roofline|rooflines)\b", lowered))
+
+
+def background_request_mentions_depth_layers(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    return bool(
+        re.search(
+            r"\b(?:foreground|midground|background layers?|multiple layers?|depth layers?|parallax)\b",
+            lowered,
+        )
+    )
+
+
+def clamp_int(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, int(value)))
+
+
+def normalize_background_structure_controls(
+    *,
+    composition: str,
+    treatment: dict[str, Any],
+    original_edit_request: str,
+) -> dict[str, int]:
+    defaults_by_composition = {
+        "skyline": {
+            "detailDensity": 58,
+            "layerCount": 3,
+            "buildingCount": 18,
+            "heightVariance": 52,
+            "windowDensity": 28,
+            "spireFrequency": 16,
+            "roofVariation": 34,
+        },
+        "mountains": {
+            "detailDensity": 54,
+            "layerCount": 3,
+            "buildingCount": 12,
+            "heightVariance": 72,
+            "windowDensity": 0,
+            "spireFrequency": 0,
+            "roofVariation": 0,
+        },
+        "dunes": {
+            "detailDensity": 50,
+            "layerCount": 3,
+            "buildingCount": 10,
+            "heightVariance": 46,
+            "windowDensity": 0,
+            "spireFrequency": 0,
+            "roofVariation": 0,
+        },
+        "clouds": {
+            "detailDensity": 46,
+            "layerCount": 3,
+            "buildingCount": 10,
+            "heightVariance": 32,
+            "windowDensity": 0,
+            "spireFrequency": 0,
+            "roofVariation": 0,
+        },
+        "abstract": {
+            "detailDensity": 48,
+            "layerCount": 2,
+            "buildingCount": 10,
+            "heightVariance": 28,
+            "windowDensity": 0,
+            "spireFrequency": 0,
+            "roofVariation": 0,
+        },
+    }
+    defaults = dict(
+        defaults_by_composition.get(composition, defaults_by_composition["abstract"])
+    )
+    if background_request_wants_extra_detail(original_edit_request):
+        defaults["detailDensity"] = max(defaults["detailDensity"], 72)
+        if composition == "skyline":
+            defaults["layerCount"] = max(defaults["layerCount"], 4)
+            defaults["buildingCount"] = max(defaults["buildingCount"], 24)
+            defaults["heightVariance"] = max(defaults["heightVariance"], 66)
+            defaults["windowDensity"] = max(defaults["windowDensity"], 42)
+            defaults["spireFrequency"] = max(defaults["spireFrequency"], 22)
+            defaults["roofVariation"] = max(defaults["roofVariation"], 46)
+    if composition == "skyline" and background_request_mentions_windows(original_edit_request):
+        defaults["detailDensity"] = max(defaults["detailDensity"], 78)
+        defaults["windowDensity"] = max(defaults["windowDensity"], 58)
+    if composition == "skyline" and background_request_mentions_spires(original_edit_request):
+        defaults["detailDensity"] = max(defaults["detailDensity"], 78)
+        defaults["spireFrequency"] = max(defaults["spireFrequency"], 42)
+        defaults["roofVariation"] = max(defaults["roofVariation"], 58)
+    if composition == "skyline" and background_request_mentions_depth_layers(original_edit_request):
+        defaults["layerCount"] = max(defaults["layerCount"], 4)
+        defaults["detailDensity"] = max(defaults["detailDensity"], 74)
+
+    bounds = {
+        "detailDensity": (10, 90),
+        "layerCount": (2, 4),
+        "buildingCount": (8, 32),
+        "heightVariance": (10, 95),
+        "windowDensity": (0, 100),
+        "spireFrequency": (0, 100),
+        "roofVariation": (0, 100),
+    }
+    normalized: dict[str, int] = {}
+    for key, (minimum, maximum) in bounds.items():
+        raw_value = treatment.get(key)
+        if isinstance(raw_value, int):
+            normalized[key] = clamp_int(raw_value, minimum, maximum)
+        else:
+            normalized[key] = clamp_int(defaults[key], minimum, maximum)
+
+    if composition != "skyline":
+        normalized["windowDensity"] = 0
+        normalized["spireFrequency"] = 0
+        normalized["roofVariation"] = 0
+
+    if composition == "skyline" and background_request_wants_extra_detail(
+        original_edit_request
+    ):
+        normalized["layerCount"] = max(normalized["layerCount"], 3)
+        normalized["buildingCount"] = max(normalized["buildingCount"], 18)
+        normalized["heightVariance"] = max(normalized["heightVariance"], 48)
+        normalized["windowDensity"] = max(normalized["windowDensity"], 26)
+        normalized["roofVariation"] = max(normalized["roofVariation"], 28)
+    if composition == "skyline" and background_request_mentions_windows(
+        original_edit_request
+    ):
+        normalized["windowDensity"] = max(normalized["windowDensity"], 48)
+    if composition == "skyline" and background_request_mentions_spires(
+        original_edit_request
+    ):
+        normalized["spireFrequency"] = max(normalized["spireFrequency"], 34)
+        normalized["roofVariation"] = max(normalized["roofVariation"], 46)
+    return normalized
+
+
 def default_background_palette(time_of_day: str) -> dict[str, str]:
     palettes = {
         "day": {
@@ -2667,11 +2866,15 @@ def normalize_background_treatment(
         palette["hazeColor"] = blend_hex_colors(palette["hazeColor"], "#FFFFFF", 0.18)
 
     horizon_height = treatment.get("horizonHeightPct")
-    detail_density = treatment.get("detailDensity")
     target_selector = (
         treatment.get("targetSelector").strip()
         if isinstance(treatment.get("targetSelector"), str)
         else ""
+    )
+    structure = normalize_background_structure_controls(
+        composition=composition,
+        treatment=treatment,
+        original_edit_request=original_edit_request,
     )
     return {
         "composition": composition,
@@ -2681,10 +2884,8 @@ def normalize_background_treatment(
         "horizonHeightPct": int(horizon_height)
         if isinstance(horizon_height, int)
         else 42,
-        "detailDensity": int(detail_density)
-        if isinstance(detail_density, int)
-        else 55,
         **palette,
+        **structure,
     }
 
 
@@ -2705,6 +2906,12 @@ def extract_artifact_background_treatment_config_text(html: str) -> str:
     if not match:
         return ""
     return (match.group("body") or "").strip()
+
+
+def parse_artifact_background_treatment_config(html: str) -> dict[str, Any]:
+    text = extract_artifact_background_treatment_config_text(html)
+    parsed = try_parse_json(text) if text else None
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def upsert_artifact_background_treatment_config(
@@ -2917,6 +3124,88 @@ def apply_background_treatment_to_artifact_html(
     return (working, issues) if issues else (working, [])
 
 
+def describe_background_time_of_day(time_of_day: str) -> str:
+    mapping = {
+        "day": "daytime",
+        "golden-hour": "golden-hour",
+        "sunset": "sunset",
+        "night": "nighttime",
+        "stormy": "stormy",
+    }
+    return mapping.get((time_of_day or "").strip().lower(), "daytime")
+
+
+def build_applied_background_treatment_assistant_message(
+    treatment_config: dict[str, Any], original_edit_request: str
+) -> str:
+    composition = str(treatment_config.get("composition") or "abstract").strip().lower()
+    time_of_day = describe_background_time_of_day(
+        str(treatment_config.get("timeOfDay") or "day").strip().lower()
+    )
+    intensity = str(treatment_config.get("intensity") or "balanced").strip().lower()
+    intensity_text = {
+        "soft": "soft",
+        "balanced": "layered",
+        "dramatic": "dramatic",
+    }.get(intensity, "layered")
+    if composition == "skyline":
+        layer_count = clamp_int(int(treatment_config.get("layerCount") or 3), 2, 4)
+        building_count = clamp_int(
+            int(treatment_config.get("buildingCount") or 18), 8, 32
+        )
+        height_variance = clamp_int(
+            int(treatment_config.get("heightVariance") or 52), 10, 95
+        )
+        window_density = clamp_int(
+            int(treatment_config.get("windowDensity") or 0), 0, 100
+        )
+        spire_frequency = clamp_int(
+            int(treatment_config.get("spireFrequency") or 0), 0, 100
+        )
+        roof_variation = clamp_int(
+            int(treatment_config.get("roofVariation") or 0), 0, 100
+        )
+        features = [f"{layer_count} skyline layers"]
+        if building_count >= 24:
+            features.append("dense varied buildings")
+        elif building_count >= 16:
+            features.append("multiple varied buildings")
+        else:
+            features.append("varied building silhouettes")
+        if height_variance >= 42:
+            features.append("noticeable height variation")
+        if window_density >= 22:
+            features.append("visible window grids")
+        if roof_variation >= 28:
+            features.append("varied rooflines")
+        if spire_frequency >= 24:
+            features.append("spires and antenna accents")
+        return (
+            f"Applied a {intensity_text} {time_of_day} skyline background with "
+            + ", ".join(features)
+            + ", while keeping the cars and layout unchanged."
+        )
+    if composition == "mountains":
+        return (
+            f"Applied a {intensity_text} {time_of_day} mountain background with layered peaks "
+            "while keeping the cars and layout unchanged."
+        )
+    if composition == "dunes":
+        return (
+            f"Applied a {intensity_text} {time_of_day} dune background with layered sand shapes "
+            "while keeping the cars and layout unchanged."
+        )
+    if composition == "clouds":
+        return (
+            f"Applied a {intensity_text} {time_of_day} cloud background with layered haze "
+            "while keeping the cars and layout unchanged."
+        )
+    return (
+        f"Applied a {intensity_text} {time_of_day} atmospheric background treatment "
+        "while keeping the cars and layout unchanged."
+    )
+
+
 def extract_background_edit_signature(html: str) -> str:
     candidates = extract_artifact_background_selector_candidates(html)
     snippets = extract_artifact_background_style_snippets(html)
@@ -2962,6 +3251,27 @@ def validate_background_edit_result(
         luminances = [color_luminance(color) for color in colors[:8]]
         if max(luminances) - min(luminances) < 0.1 and sum(luminances) / len(luminances) > 0.74:
             return ["background edit appears visually washed out or too close to blank."]
+    config = parse_artifact_background_treatment_config(edited_html)
+    if (
+        str(config.get("composition") or "").strip().lower() == "skyline"
+        and background_request_wants_extra_detail(original_edit_request)
+    ):
+        if int(config.get("layerCount") or 0) < 3:
+            return ["background edit still lacks skyline depth layers."]
+        if int(config.get("buildingCount") or 0) < 16:
+            return ["background edit still lacks skyline density."]
+        if int(config.get("heightVariance") or 0) < 40:
+            return ["background edit still lacks skyline height variation."]
+        if int(config.get("windowDensity") or 0) < 18:
+            return ["background edit still lacks visible window detail."]
+        if int(config.get("roofVariation") or 0) < 20:
+            return ["background edit still lacks varied roofline detail."]
+    if (
+        str(config.get("composition") or "").strip().lower() == "skyline"
+        and background_request_mentions_spires(original_edit_request)
+        and int(config.get("spireFrequency") or 0) < 22
+    ):
+        return ["background edit still lacks the requested spire or antenna detail."]
     return []
 
 

@@ -640,6 +640,106 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("washed out", issues[0])
 
+    def test_normalize_background_treatment_boosts_detailed_skyline_requests(self) -> None:
+        normalized = ai_api.normalize_background_treatment(
+            {},
+            "Make the Dubai skyline more detailed with visible windows and spires.",
+        )
+
+        self.assertEqual(normalized["composition"], "skyline")
+        self.assertGreaterEqual(normalized["detailDensity"], 78)
+        self.assertGreaterEqual(normalized["layerCount"], 4)
+        self.assertGreaterEqual(normalized["buildingCount"], 24)
+        self.assertGreaterEqual(normalized["windowDensity"], 48)
+        self.assertGreaterEqual(normalized["spireFrequency"], 34)
+        self.assertGreaterEqual(normalized["roofVariation"], 46)
+
+    def test_validate_background_edit_result_rejects_under_detailed_skyline_request(self) -> None:
+        edited_html = ai_api.upsert_artifact_background_treatment_config(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "composition": "skyline",
+                "timeOfDay": "night",
+                "intensity": "dramatic",
+                "topColor": "#0B1F33",
+                "midColor": "#21405B",
+                "bottomColor": "#4A6A86",
+                "silhouetteColor": "#121A28",
+                "accentColor": "#F2B36D",
+                "hazeColor": "#6E88A3",
+                "lightColor": "#FFE2A8",
+                "horizonHeightPct": 44,
+                "detailDensity": 42,
+                "layerCount": 2,
+                "buildingCount": 10,
+                "heightVariance": 20,
+                "windowDensity": 0,
+                "spireFrequency": 0,
+                "roofVariation": 0,
+                "runtimeMode": "overlay",
+            },
+        )
+
+        issues = ai_api.validate_background_edit_result(
+            original_html=PATCHABLE_ARTIFACT_HTML,
+            edited_html=edited_html,
+            original_edit_request="Make the skyline much more detailed with lit windows and spires.",
+        )
+
+        self.assertTrue(issues)
+        self.assertIn("lacks skyline depth layers", issues[0])
+
+    async def test_background_treatment_uses_truthful_applied_message(self) -> None:
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "I added glowing windows and antennas everywhere.",
+                        "treatment": {
+                            "composition": "skyline",
+                            "timeOfDay": "night",
+                            "intensity": "dramatic",
+                            "topColor": "#0B1F33",
+                            "midColor": "#21405B",
+                            "bottomColor": "#4A6A86",
+                            "silhouetteColor": "#121A28",
+                            "accentColor": "#F2B36D",
+                            "hazeColor": "#6E88A3",
+                            "lightColor": "#FFE2A8",
+                            "horizonHeightPct": 44,
+                            "detailDensity": 58,
+                            "layerCount": 3,
+                            "buildingCount": 18,
+                            "heightVariance": 52,
+                            "windowDensity": 0,
+                            "spireFrequency": 0,
+                            "roofVariation": 18,
+                            "targetSelector": "",
+                        },
+                    }
+                ),
+                "stop",
+            )
+        )
+
+        with patch.object(ai_api, "request_gemini_text", gemini_mock):
+            patched_html, assistant_message, issues = (
+                await ai_api.attempt_artifact_background_treatment_edit(
+                    api_key="test-key",
+                    model="gemini-2.5-flash",
+                    original_edit_request="Make the background a nighttime skyline.",
+                    context={"artifact": {"artifactType": "car poll"}},
+                    current_html=PATCHABLE_ARTIFACT_HTML,
+                    timeout_seconds=5.0,
+                )
+            )
+
+        self.assertEqual(issues, [])
+        self.assertIn('id="prezo-background-treatment-data"', patched_html)
+        self.assertIn("skyline background", assistant_message)
+        self.assertNotIn("glowing windows", assistant_message.lower())
+        self.assertNotIn("antenna", assistant_message.lower())
+
     def test_set_css_property_in_css_can_update_rule_inside_media_block(self) -> None:
         css_text = """
 @media (min-width: 600px) {
