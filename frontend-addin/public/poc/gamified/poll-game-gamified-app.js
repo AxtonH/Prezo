@@ -69,6 +69,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
   const ARTIFACT_LAYOUT_REFIT_DELAY_MS = 220
+  const EDITOR_DOCK_GAP_PX = 28
+  const EDITOR_DOCK_SIDE_PADDING_PX = 48
+  const EDITOR_DOCK_BREAKPOINT_PX = 900
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -515,6 +518,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     rafId: 0,
     timerIds: []
   }
+  const editorDockLayoutState = {
+    rafId: 0,
+    timerIds: []
+  }
   const historyState = {
     initialized: false,
     applying: false,
@@ -642,6 +649,80 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       window.clearTimeout(timerId)
     }
     artifactLayoutRefitState.timerIds = []
+  }
+
+  function clearEditorDockLayoutSchedule() {
+    if (editorDockLayoutState.rafId) {
+      window.cancelAnimationFrame(editorDockLayoutState.rafId)
+      editorDockLayoutState.rafId = 0
+    }
+    if (!editorDockLayoutState.timerIds.length) {
+      return
+    }
+    for (const timerId of editorDockLayoutState.timerIds) {
+      window.clearTimeout(timerId)
+    }
+    editorDockLayoutState.timerIds = []
+  }
+
+  function applyEditorDockLayout() {
+    const rootStyle = document.documentElement.style
+    const isDocked = document.body.classList.contains('editor-docked')
+    if (!isDocked || window.innerWidth <= EDITOR_DOCK_BREAKPOINT_PX) {
+      rootStyle.setProperty('--editor-dock-reserve', '0px')
+      rootStyle.setProperty('--editor-dock-shift', '0px')
+      rootStyle.setProperty('--wrap-width-limit', '1100px')
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+        scheduleArtifactLayoutRefit({ includeSettledPass: false })
+      }
+      return
+    }
+    const shellRect = el.aiChatShell.getBoundingClientRect()
+    const fallbackShellWidth = Math.min(420, Math.max(280, window.innerWidth - 40))
+    const shellWidth =
+      Number.isFinite(shellRect.width) && shellRect.width > 0 ? shellRect.width : fallbackShellWidth
+    const reserve = Math.round(shellWidth + EDITOR_DOCK_GAP_PX)
+    const widthLimit = Math.max(
+      320,
+      Math.min(1100, Math.round(window.innerWidth - reserve - EDITOR_DOCK_SIDE_PADDING_PX))
+    )
+    const shift = Math.round(reserve * -0.5)
+    rootStyle.setProperty('--editor-dock-reserve', `${reserve}px`)
+    rootStyle.setProperty('--editor-dock-shift', `${shift}px`)
+    rootStyle.setProperty('--wrap-width-limit', `${widthLimit}px`)
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      scheduleArtifactLayoutRefit({ includeSettledPass: false })
+    }
+  }
+
+  function scheduleEditorDockLayoutRefresh(options = {}) {
+    const includeSettledPass = options.includeSettledPass !== false
+    clearEditorDockLayoutSchedule()
+    editorDockLayoutState.rafId = window.requestAnimationFrame(() => {
+      editorDockLayoutState.rafId = 0
+      applyEditorDockLayout()
+    })
+    if (!includeSettledPass) {
+      return
+    }
+    const timerId = window.setTimeout(() => {
+      editorDockLayoutState.timerIds = editorDockLayoutState.timerIds.filter(
+        (activeId) => activeId !== timerId
+      )
+      applyEditorDockLayout()
+    }, ARTIFACT_LAYOUT_REFIT_DELAY_MS)
+    editorDockLayoutState.timerIds.push(timerId)
+  }
+
+  function handleEditorDockViewportResize() {
+    scheduleEditorDockLayoutRefresh()
+  }
+
+  function handleEditorDockShellTransitionEnd(event) {
+    if (event.target !== el.aiChatShell) {
+      return
+    }
+    scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
   function scheduleArtifactLayoutRefit(options = {}) {
@@ -850,6 +931,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.aiChatCollapse.addEventListener('click', handleAiChatCollapseClick)
     el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
+    el.aiChatShell.addEventListener('transitionend', handleEditorDockShellTransitionEnd)
+    window.addEventListener('resize', handleEditorDockViewportResize)
     for (const quickAction of el.aiQuickActions) {
       quickAction.addEventListener('click', handleAiQuickActionClick)
     }
@@ -859,6 +942,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       'AI editor is ready. Ask for design or text changes and I will apply them directly.'
     )
     updateAiChatStatus('Ready for edits.', 'success')
+    scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
   function syncEditorDockingState() {
@@ -869,6 +953,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     document.body.classList.toggle('editor-docked', hasDockedAiEditor || hasDockedArtifactEditor)
     document.body.classList.toggle('ai-editor-docked', hasDockedAiEditor)
     document.body.classList.toggle('artifact-editor-docked', hasDockedArtifactEditor)
+    scheduleEditorDockLayoutRefresh()
   }
 
   function setupArtifactMode() {
@@ -9221,6 +9306,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     hideSelectionToolbar()
     clearCachedRichTextSelection()
     clearArtifactLayoutRefitSchedule()
+    clearEditorDockLayoutSchedule()
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
     state.activeInlineStyleNode = null
@@ -9236,12 +9322,14 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
+    el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
+    window.removeEventListener('resize', handleEditorDockViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)

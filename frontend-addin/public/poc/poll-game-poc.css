@@ -28,10 +28,9 @@
   --canvas-scale: 0.85;
   --wrap-offset-x: 0px;
   --wrap-offset-y: 0px;
-  --editor-dock-width: 0px;
-  --editor-dock-gap: 0px;
-  --editor-dock-reserve: calc(var(--editor-dock-width) + var(--editor-dock-gap));
+  --editor-dock-reserve: 0px;
   --editor-dock-shift: 0px;
+  --wrap-width-limit: 1100px;
   --panel-offset-x: 0px;
   --panel-offset-y: 0px;
   --panel-scale-x: 1;
@@ -933,7 +932,7 @@ body.ribbon-advanced .advanced-control.note {
 
 .wrap {
   position: relative;
-  width: clamp(320px, calc(92vw - var(--editor-dock-reserve)), 1100px);
+  width: min(var(--wrap-width-limit), 92vw);
   margin: calc(var(--ribbon-offset) + 12px) auto 0;
   padding: 24px 28px 30px;
   border: 0;
@@ -1885,16 +1884,13 @@ h1 {
 }
 
 body.editor-docked {
-  --editor-dock-width: min(420px, calc(100vw - 40px));
-  --editor-dock-gap: 28px;
-  --editor-dock-shift: calc(var(--editor-dock-reserve) * -0.5);
 }
 
 body.editor-docked .ai-chat-shell {
   top: calc(var(--ribbon-offset) + 18px);
   right: 18px;
   bottom: auto;
-  width: var(--editor-dock-width);
+  width: min(420px, calc(100vw - 36px));
   max-width: calc(100vw - 36px);
   max-height: calc(100vh - var(--ribbon-offset) - 36px);
   align-items: stretch;
@@ -2193,9 +2189,9 @@ body.editor-docked .artifact-composer.is-floating {
   }
 
   body.editor-docked {
-    --editor-dock-width: 0px;
-    --editor-dock-gap: 0px;
+    --editor-dock-reserve: 0px;
     --editor-dock-shift: 0px;
+    --wrap-width-limit: 1100px;
   }
 
   .ribbon-strip {
