@@ -47,6 +47,7 @@ ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
 ARTIFACT_PATCH_MAX_EDITS = 8
+ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID = "prezo-background-treatment-data"
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
 )
@@ -73,7 +74,7 @@ ARTIFACT_BROAD_EDIT_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE = re.compile(
-    r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|color|colour|gradient|opacity|shadow|glow|border|radius|font|typography|title|headline|question|label|badge|text|padding|margin|spacing|size|bigger|smaller|larger)\b",
+    r"\b(?:background|backdrop|sky|track|road|ground|terrain|landscape|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|color|colour|gradient|opacity|shadow|glow|border|radius|font|typography|title|headline|question|label|badge|text|padding|margin|spacing|size|bigger|smaller|larger)\b",
     re.IGNORECASE,
 )
 ARTIFACT_FEEDBACK_FOLLOWUP_RE = re.compile(
@@ -1140,7 +1141,22 @@ async def attempt_artifact_background_treatment_edit(
     plan = normalize_artifact_background_treatment_plan(text)
     treatment = plan.get("treatment") if isinstance(plan.get("treatment"), dict) else {}
     if not treatment:
-        return "", plan.get("assistantMessage", ""), ["background treatment planner returned no usable treatment."]
+        fallback_treatment = normalize_background_treatment({}, original_edit_request)
+        treated_html, issues = apply_background_treatment_to_artifact_html(
+            current_html=current_html,
+            treatment=fallback_treatment,
+            original_edit_request=original_edit_request,
+        )
+        if not issues:
+            return (
+                treated_html,
+                plan.get("assistantMessage", "").strip()
+                or "Applied a deterministic background treatment that preserves the existing cars and layout.",
+                [],
+            )
+        return "", plan.get("assistantMessage", ""), [
+            "background treatment planner returned no usable treatment."
+        ] + issues
     treated_html, issues = apply_background_treatment_to_artifact_html(
         current_html=current_html,
         treatment=treatment,
@@ -2066,7 +2082,7 @@ def is_background_image_asset_edit_request(request: str) -> bool:
 def is_background_visual_edit_request(request: str) -> bool:
     return bool(
         re.search(
-            r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|buildings?)\b",
+            r"\b(?:background|backdrop|sky|track|road|ground|terrain|landscape|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|buildings?)\b",
             request or "",
             re.IGNORECASE,
         )
@@ -2564,6 +2580,53 @@ def normalize_background_treatment(
     }
 
 
+def serialize_artifact_background_treatment_config(
+    treatment_config: dict[str, Any],
+) -> str:
+    return json.dumps(treatment_config, separators=(",", ":"), ensure_ascii=True).replace(
+        "</", "<\\/"
+    )
+
+
+def extract_artifact_background_treatment_config_text(html: str) -> str:
+    pattern = re.compile(
+        rf"<script\b[^>]*\bid\s*=\s*['\"]{re.escape(ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID)}['\"][^>]*>(?P<body>[\s\S]*?)</script>",
+        re.IGNORECASE,
+    )
+    match = pattern.search(html or "")
+    if not match:
+        return ""
+    return (match.group("body") or "").strip()
+
+
+def upsert_artifact_background_treatment_config(
+    html: str, treatment_config: dict[str, Any]
+) -> str:
+    script_tag = (
+        f'<script id="{ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID}" type="application/json">'
+        f"{serialize_artifact_background_treatment_config(treatment_config)}</script>"
+    )
+    pattern = re.compile(
+        rf"<script\b[^>]*\bid\s*=\s*['\"]{re.escape(ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID)}['\"][^>]*>[\s\S]*?</script>",
+        re.IGNORECASE,
+    )
+    if pattern.search(html or ""):
+        return pattern.sub(script_tag, html, count=1)
+    if re.search(r"</head>", html, re.IGNORECASE):
+        return re.sub(r"</head>", f"{script_tag}\n</head>", html, count=1, flags=re.IGNORECASE)
+    if re.search(r"<body\b[^>]*>", html, re.IGNORECASE):
+        return re.sub(
+            r"<body\b[^>]*>",
+            lambda match: f"{match.group(0)}\n{script_tag}",
+            html,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    if re.search(r"</body>", html, re.IGNORECASE):
+        return re.sub(r"</body>", f"{script_tag}\n</body>", html, count=1, flags=re.IGNORECASE)
+    return f"{script_tag}\n{html}"
+
+
 def build_background_base_gradient(treatment: dict[str, Any]) -> str:
     return (
         "linear-gradient(180deg, "
@@ -2717,100 +2780,27 @@ def apply_background_treatment_to_artifact_html(
 ) -> tuple[str, list[str]]:
     normalized = normalize_background_treatment(treatment, original_edit_request)
     requested_selector = normalized.get("targetSelector") or "#background"
-    target_selector = choose_artifact_background_treatment_target_selector(
+    chosen_target_selector = choose_artifact_background_treatment_target_selector(
         current_html,
         requested_selector,
     )
-    if not target_selector:
-        return "", ["no suitable background selector was found in the current artifact html."]
-
-    working = current_html
     scene_root_candidates = [
         candidate
         for candidate in extract_artifact_scene_root_selector_candidates(current_html)
         if candidate not in {"body", "html"}
     ]
     scene_root_selector = choose_scene_root_selector_candidate(scene_root_candidates)
-    use_generated_background_layer = not is_explicit_background_layer_selector(target_selector)
-
-    if use_generated_background_layer:
-        working, generated_selector = ensure_generated_background_layer_in_artifact_html(working)
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            "html, body",
-            "width: 100%;\nmin-height: 100%;\nbackground: transparent !important;",
-        )
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            "body",
-            "position: relative;\nmargin: 0;\nbackground: transparent !important;\noverflow: hidden;\nisolation: isolate;",
-        )
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            generated_selector,
-            "\n".join(
-                [
-                    "position: fixed;",
-                    "inset: 0;",
-                    "pointer-events: none;",
-                    "z-index: 0;",
-                    f"background: {build_background_base_gradient(normalized)};",
-                ]
-            ),
-        )
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            f"{generated_selector}::before",
-            build_background_composition_rule(normalized),
-        )
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            f"{generated_selector}::after",
-            build_background_atmosphere_rule(normalized),
-        )
-        lift_selector = scene_root_selector or target_selector
-        if lift_selector and lift_selector not in {"body", "html"}:
-            for property_name, value in (
-                ("position", "relative"),
-                ("z-index", "1"),
-                ("background", "transparent !important"),
-            ):
-                working = ensure_css_property_in_artifact_html(
-                    working,
-                    lift_selector,
-                    property_name,
-                    value,
-                )
-    else:
-        for property_name, value in (
-            ("position", "relative"),
-            ("overflow", "hidden"),
-            ("isolation", "isolate"),
-            ("background", build_background_base_gradient(normalized)),
-        ):
-            working = ensure_css_property_in_artifact_html(
-                working,
-                target_selector,
-                property_name,
-                value,
-            )
-
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            f"{target_selector}::before",
-            build_background_composition_rule(normalized),
-        )
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            f"{target_selector}::after",
-            build_background_atmosphere_rule(normalized),
-        )
-    if target_selector not in {"body", "html"} and not use_generated_background_layer:
-        working = upsert_css_rule_in_artifact_html(
-            working,
-            f"{target_selector} > *",
-            "position: relative;\nz-index: 1;",
-        )
+    treatment_config = {
+        **normalized,
+        "targetSelector": chosen_target_selector or "",
+        "sceneRootSelector": scene_root_selector or "",
+        "allowPalePalette": background_request_explicitly_allows_pale_palette(
+            original_edit_request
+        ),
+        "requestText": (original_edit_request or "").strip(),
+        "runtimeMode": "overlay",
+    }
+    working = upsert_artifact_background_treatment_config(current_html, treatment_config)
     issues = validate_background_edit_result(
         original_html=current_html,
         edited_html=working,
@@ -2823,6 +2813,7 @@ def extract_background_edit_signature(html: str) -> str:
     candidates = extract_artifact_background_selector_candidates(html)
     snippets = extract_artifact_background_style_snippets(html)
     pseudo_snippets: list[str] = []
+    treatment_config = extract_artifact_background_treatment_config_text(html)
     for candidate in candidates:
         for pseudo in ("::before", "::after"):
             selector = f"{candidate}{pseudo}"
@@ -2838,7 +2829,10 @@ def extract_background_edit_signature(html: str) -> str:
                     continue
                 pseudo_snippets.append(style_body[match.start(): brace_end + 1].strip())
                 break
-    return "\n".join(snippets + pseudo_snippets)
+    parts = snippets + pseudo_snippets
+    if treatment_config:
+        parts.append(treatment_config)
+    return "\n".join(parts)
 
 
 def validate_background_edit_result(

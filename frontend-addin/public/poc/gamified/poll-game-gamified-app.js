@@ -1525,10 +1525,17 @@ import {
     ) {
       return false
     }
+    const paleAllowed = artifactEditAllowsPaleBackground(state.artifact.activeEditRequest)
+    const requiresVisibleBackground =
+      isArtifactBackgroundEditRequest(state.artifact.activeEditRequest) && !paleAllowed
+    const runtimeBackgroundVisibleCount = Math.max(
+      0,
+      toInt(renderHealth?.runtimeBackgroundVisibleCount)
+    )
     return (
       Boolean(renderHealth.likelyBlank) ||
-      (Boolean(renderHealth.likelyWashedOut) &&
-        !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest))
+      (requiresVisibleBackground && runtimeBackgroundVisibleCount === 0) ||
+      (Boolean(renderHealth.likelyWashedOut) && !paleAllowed)
     )
   }
 
@@ -1546,6 +1553,21 @@ import {
     const textLength = Math.max(0, toInt(renderHealth?.textLength))
     const darkCoverCount = Math.max(0, toInt(renderHealth?.largeDarkCoverCount))
     const paleCoverCount = Math.max(0, toInt(renderHealth?.largePaleCoverCount))
+    const runtimeBackgroundVisibleCount = Math.max(
+      0,
+      toInt(renderHealth?.runtimeBackgroundVisibleCount)
+    )
+    if (
+      isArtifactBackgroundEditRequest(state.artifact.activeEditRequest) &&
+      !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest) &&
+      runtimeBackgroundVisibleCount === 0
+    ) {
+      return (
+        'The updated artifact did not attach a visible background treatment to the rendered scene. ' +
+        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
+        `Text length: ${textLength}. Visible runtime background layers: ${runtimeBackgroundVisibleCount}.`
+      )
+    }
     if (Boolean(renderHealth?.likelyWashedOut)) {
       return (
         'The updated artifact rendered a washed-out light frame instead of a meaningful scene. ' +
@@ -2000,7 +2022,7 @@ import {
     if (!text) {
       return false
     }
-    return /\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)\b/.test(
+    return /\b(?:background|backdrop|sky|track|road|ground|terrain|landscape|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)\b/.test(
       text
     )
   }

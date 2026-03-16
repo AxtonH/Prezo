@@ -429,6 +429,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#artifact-root", selectors)
         self.assertIn(".scene-shell", selectors)
 
+    def test_is_background_visual_edit_request_treats_track_as_background(self) -> None:
+        self.assertTrue(ai_api.is_background_visual_edit_request("Edit the track so it feels like a cityscape."))
+
     def test_extract_artifact_original_edit_request_resolves_background_feedback(self) -> None:
         resolved = ai_api.extract_artifact_original_edit_request(
             {
@@ -508,8 +511,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(issues, [])
-        self.assertIn("#track-bg::before", patched_html)
-        self.assertIn("#track-bg::after", patched_html)
+        self.assertIn('id="prezo-background-treatment-data"', patched_html)
+        self.assertIn('"composition":"mountains"', patched_html)
+        self.assertIn('"timeOfDay":"sunset"', patched_html)
         self.assertIn(".car", patched_html)
 
     def test_apply_background_treatment_can_fallback_to_scene_root(self) -> None:
@@ -533,12 +537,35 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(issues, [])
-        self.assertIn('data-prezo-generated-background-layer="true"', patched_html)
-        self.assertIn("[data-prezo-generated-background-layer]::before", patched_html)
-        self.assertIn("[data-prezo-generated-background-layer]::after", patched_html)
+        self.assertIn('id="prezo-background-treatment-data"', patched_html)
+        self.assertIn('"sceneRootSelector":"#artifact-root"', patched_html)
         self.assertIn(".car", patched_html)
         self.assertIn("#artifact-root", patched_html)
-        self.assertIn("background: transparent !important;", patched_html)
+
+    def test_extract_background_edit_signature_includes_runtime_treatment_config(self) -> None:
+        patched_html, issues = ai_api.apply_background_treatment_to_artifact_html(
+            current_html=PATCHABLE_ARTIFACT_HTML,
+            treatment={
+                "composition": "skyline",
+                "timeOfDay": "night",
+                "intensity": "dramatic",
+                "topColor": "#0B1F33",
+                "midColor": "#21405B",
+                "bottomColor": "#4A6A86",
+                "silhouetteColor": "#121A28",
+                "accentColor": "#F2B36D",
+                "hazeColor": "#6E88A3",
+                "lightColor": "#FFE2A8",
+                "horizonHeightPct": 44,
+                "detailDensity": 62,
+            },
+            original_edit_request="Make the background a cityscape at night.",
+        )
+
+        self.assertEqual(issues, [])
+        signature = ai_api.extract_background_edit_signature(patched_html)
+        self.assertIn('"composition":"skyline"', signature)
+        self.assertIn('"runtimeMode":"overlay"', signature)
 
     def test_validate_background_edit_result_rejects_washed_out_signature(self) -> None:
         washed_out_html = PATCHABLE_ARTIFACT_HTML.replace(
@@ -750,32 +777,16 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "artifact background treatment",
         )
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertIn("#track-bg::before", response.html)
-        self.assertIn("#track-bg::after", response.html)
+        self.assertIn('id="prezo-background-treatment-data"', response.html)
+        self.assertIn('"composition":"skyline"', response.html)
         self.assertIn(".car", response.html)
 
-    async def test_background_treatment_failure_can_fallback_to_generic_patch(self) -> None:
+    async def test_background_treatment_failure_uses_deterministic_runtime_treatment(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(
             side_effect=[
                 (
                     json.dumps({"assistantMessage": "No usable structured treatment.", "treatment": {}}),
-                    "stop",
-                ),
-                (
-                    json.dumps(
-                        {
-                            "assistantMessage": "Adjusted the background directly.",
-                            "edits": [
-                                {
-                                    "type": "set_css_property",
-                                    "selector": "#track-bg",
-                                    "property": "background",
-                                    "value": "linear-gradient(180deg, #305070 0%, #F0B37E 100%)",
-                                }
-                            ],
-                        }
-                    ),
                     "stop",
                 ),
             ]
@@ -798,16 +809,13 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
         self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(
             gemini_mock.await_args_list[0].kwargs["request_stage"],
             "artifact background treatment",
         )
-        self.assertEqual(
-            gemini_mock.await_args_list[1].kwargs["request_stage"],
-            "artifact patch edit",
-        )
-        self.assertIn("#305070", response.html)
+        self.assertIn('id="prezo-background-treatment-data"', response.html)
+        self.assertIn('"runtimeMode":"overlay"', response.html)
 
     async def test_local_edit_with_truncated_artifact_html_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()

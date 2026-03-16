@@ -87,7 +87,7 @@ function isBackgroundAtmosphereEditRequest(value) {
   if (!text) {
     return false
   }
-  return /(background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)/.test(
+  return /(background|backdrop|sky|track|road|ground|terrain|landscape|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)/.test(
     text
   )
 }
