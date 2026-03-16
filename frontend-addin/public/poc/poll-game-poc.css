@@ -92,6 +92,10 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   margin-right: auto;
 }
 
+body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
+  margin-top: calc(var(--ribbon-offset) + 24px);
+}
+
 .bg-image,
 .bg-overlay,
 .grid-bg {
