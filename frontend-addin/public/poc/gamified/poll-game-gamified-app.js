@@ -678,10 +678,28 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       }
       return
     }
+    const activeDockPanel =
+      currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.artifact.floatingOpen
+        ? el.artifactComposer
+        : state.ai.open
+          ? el.aiChatPanel
+          : null
+    const activePanelRect = activeDockPanel ? activeDockPanel.getBoundingClientRect() : null
     const shellRect = el.aiChatShell.getBoundingClientRect()
-    const fallbackShellWidth = Math.min(420, Math.max(280, window.innerWidth - 40))
-    const shellWidth =
-      Number.isFinite(shellRect.width) && shellRect.width > 0 ? shellRect.width : fallbackShellWidth
+    const fallbackShellWidth = Math.min(420, Math.max(320, window.innerWidth - 64))
+    const measuredPanelWidth =
+      activePanelRect && Number.isFinite(activePanelRect.width) && activePanelRect.width > 0
+        ? activePanelRect.width
+        : 0
+    const measuredShellWidth =
+      Number.isFinite(shellRect.width) && shellRect.width > 0 ? shellRect.width : 0
+    const shellWidth = Math.round(
+      clamp(
+        measuredPanelWidth || measuredShellWidth || fallbackShellWidth,
+        320,
+        Math.max(320, Math.min(460, window.innerWidth - 64))
+      )
+    )
     const reserve = Math.round(shellWidth + EDITOR_DOCK_GAP_PX)
     const widthLimit = Math.max(
       320,

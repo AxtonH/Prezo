@@ -842,6 +842,10 @@ body.ribbon-advanced .advanced-control.note {
   background: rgba(233, 244, 255, 0.98);
 }
 
+.workspace-shell {
+  position: relative;
+}
+
 .selection-toolbar {
   position: fixed;
   top: 0;
@@ -1887,29 +1891,24 @@ h1 {
 }
 
 body.editor-docked {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--editor-sidebar-width);
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas:
-    "ribbon sidebar"
-    "content sidebar";
-  column-gap: 20px;
-  row-gap: 12px;
-  align-items: start;
-  place-items: normal;
-  padding: 0 20px 20px;
+  display: block;
+  place-items: initial;
   overflow-x: hidden;
   overflow-y: auto;
 }
 
 body.editor-docked .settings-ribbon {
-  position: sticky;
-  top: 0;
-  left: auto;
-  right: auto;
-  width: auto;
-  grid-area: ribbon;
-  z-index: 30;
+  right: var(--editor-dock-reserve);
+}
+
+body.editor-docked .workspace-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--editor-sidebar-width);
+  grid-template-areas: "content sidebar";
+  column-gap: 20px;
+  align-items: start;
+  width: 100%;
+  padding: calc(var(--ribbon-offset) + 12px) 20px 20px;
 }
 
 body.editor-docked .ai-chat-shell {
@@ -1921,10 +1920,11 @@ body.editor-docked .ai-chat-shell {
   grid-area: sidebar;
   align-self: start;
   justify-self: stretch;
-  width: var(--editor-sidebar-width);
-  max-width: var(--editor-sidebar-width);
-  height: calc(100vh - 20px);
-  max-height: calc(100vh - 20px);
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: calc(100vh - var(--ribbon-offset) - 24px);
+  max-height: calc(100vh - var(--ribbon-offset) - 24px);
   align-items: stretch;
   gap: 0;
   padding: 16px 14px 14px;
@@ -2276,15 +2276,16 @@ body.editor-docked .wrap {
   }
 
   body.editor-docked .settings-ribbon {
-    position: fixed;
-    top: 0;
-    left: 0;
     right: 0;
-    width: auto;
   }
 
   body.editor-docked .settings-minimized {
     right: 6px;
+  }
+
+  body.editor-docked .workspace-shell {
+    display: block;
+    padding: 0;
   }
 
   body.editor-docked .wrap {
