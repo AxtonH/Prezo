@@ -972,6 +972,7 @@ body.ribbon-advanced .advanced-control.note {
 
 .present-mode-toggle {
   position: absolute;
+  left: auto;
   right: 18px;
   bottom: 18px;
   z-index: 9;
@@ -2241,6 +2242,7 @@ body.present-mode .artifact-stage {
 }
 
 body.present-mode .present-mode-toggle {
+  left: auto;
   right: 16px;
   bottom: 16px;
 }
@@ -2636,6 +2638,7 @@ body.present-mode .present-mode-toggle {
   }
 
   body.present-mode .present-mode-toggle {
+    left: auto;
     right: 12px;
     bottom: 12px;
   }
