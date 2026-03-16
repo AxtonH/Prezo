@@ -147,6 +147,11 @@ class SavedArtifactUpsert(BaseModel):
     theme_snapshot: dict[str, Any] | None = None
 
 
+class LibrarySyncToken(BaseModel):
+    token: str
+    expires_at: datetime
+
+
 class QnaConfigUpdate(BaseModel):
     mode: QnaMode
     prompt: str | None = Field(default=None, max_length=200)

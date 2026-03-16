@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:5174"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    library_sync_secret: str | None = None
+    library_sync_ttl_seconds: int = 604800
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_artifact_build_model: str = "claude-sonnet-4-6"

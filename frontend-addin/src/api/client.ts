@@ -9,7 +9,7 @@ import type {
   SessionStatus
 } from './types'
 
-const API_BASE_URL =
+export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.toString() ?? 'http://localhost:8000'
 
 const jsonHeaders = {
@@ -46,6 +46,10 @@ async function request<T>(
 }
 
 export const api = {
+  createLibrarySyncToken: () =>
+    request<{ token: string; expires_at: string }>('/library/poll-game/sync-token', {
+      method: 'POST'
+    }, true),
   createSession: (title?: string) =>
     request<Session>('/sessions', {
       method: 'POST',
@@ -151,5 +155,3 @@ export const api = {
       body: JSON.stringify({ option_id: optionId, client_id: clientId ?? null })
     })
 }
-
-export { API_BASE_URL }

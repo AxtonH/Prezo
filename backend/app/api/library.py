@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..auth import AuthUser, get_current_user
+from ..auth import AuthUser, get_current_user, get_library_user, issue_library_sync_token
 from ..deps import get_store
 from ..models import (
+    LibrarySyncToken,
     SavedArtifact,
     SavedArtifactUpsert,
     SavedTheme,
@@ -27,7 +28,7 @@ def normalize_library_name(value: str) -> str:
 @router.get("/themes", response_model=list[SavedTheme])
 async def list_saved_themes(
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> list[SavedTheme]:
     return await store.list_saved_themes(user.id)
 
@@ -37,7 +38,7 @@ async def save_saved_theme(
     name: str,
     payload: SavedThemeUpsert,
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> SavedTheme:
     normalized_name = normalize_library_name(name)
     return await store.save_saved_theme(user.id, normalized_name, payload.theme)
@@ -47,7 +48,7 @@ async def save_saved_theme(
 async def delete_saved_theme(
     name: str,
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> SavedTheme:
     normalized_name = normalize_library_name(name)
     try:
@@ -59,7 +60,7 @@ async def delete_saved_theme(
 @router.get("/artifacts", response_model=list[SavedArtifact])
 async def list_saved_artifacts(
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> list[SavedArtifact]:
     return await store.list_saved_artifacts(user.id)
 
@@ -69,7 +70,7 @@ async def save_saved_artifact(
     name: str,
     payload: SavedArtifactUpsert,
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> SavedArtifact:
     normalized_name = normalize_library_name(name)
     html = payload.html.strip()
@@ -91,10 +92,18 @@ async def save_saved_artifact(
 async def delete_saved_artifact(
     name: str,
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> SavedArtifact:
     normalized_name = normalize_library_name(name)
     try:
         return await store.delete_saved_artifact(user.id, normalized_name)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/sync-token", response_model=LibrarySyncToken)
+async def create_library_sync_token(
+    user: AuthUser = Depends(get_current_user),
+) -> LibrarySyncToken:
+    token, expires_at = issue_library_sync_token(user)
+    return LibrarySyncToken(token=token, expires_at=expires_at)

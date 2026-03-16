@@ -15,6 +15,7 @@ import {
   DEFAULT_POLL_SELECTOR,
   DRAG_START_THRESHOLD_PX,
   HISTORY_LIMIT,
+  LIBRARY_SYNC_TOKEN_KEY,
   MIN_RESIZE_HANDLE_SIZE_PX,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
@@ -54,6 +55,7 @@ import {
   const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
   const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
   const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
+  const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
@@ -161,6 +163,9 @@ import {
       activePrompt: '',
       messageSeq: 0,
       model: ''
+    },
+    library: {
+      hydratedToken: ''
     }
   }
 
@@ -407,6 +412,7 @@ import {
 
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
+  let injectedLibrarySync = loadInjectedLibrarySync()
   let currentTheme = loadInitialTheme(themeLibrary)
   const dragState = {
     enabled: false,
@@ -458,6 +464,7 @@ import {
     void hydrateSavedLibraries()
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
+    window.addEventListener('message', handleLibrarySyncMessage)
   }
 
   function setupSettingsPanel() {
@@ -7606,8 +7613,87 @@ import {
     return null
   }
 
+  function loadInjectedLibrarySync() {
+    try {
+      if (!window.sessionStorage) {
+        return null
+      }
+      const raw = sessionStorage.getItem(LIBRARY_SYNC_TOKEN_KEY)
+      if (!raw) {
+        return null
+      }
+      const parsed = JSON.parse(raw)
+      const token = asText(parsed?.token)
+      const expiresAt = asText(parsed?.expiresAt)
+      if (!token || !expiresAt) {
+        return null
+      }
+      const expiresAtMs = Date.parse(expiresAt)
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+        return null
+      }
+      return {
+        token,
+        expiresAt,
+        apiBaseUrl: asText(parsed?.apiBaseUrl)
+      }
+    } catch {
+      return null
+    }
+  }
+
+  function persistInjectedLibrarySync(payload) {
+    const token = asText(payload?.token)
+    const expiresAt = asText(payload?.expiresAt)
+    if (!token || !expiresAt) {
+      return
+    }
+    const expiresAtMs = Date.parse(expiresAt)
+    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+      return
+    }
+    injectedLibrarySync = {
+      token,
+      expiresAt,
+      apiBaseUrl: asText(payload?.apiBaseUrl)
+    }
+    try {
+      if (window.sessionStorage) {
+        sessionStorage.setItem(LIBRARY_SYNC_TOKEN_KEY, JSON.stringify(injectedLibrarySync))
+      }
+    } catch {
+      // Ignore storage failures for injected library sync tokens.
+    }
+  }
+
+  function getLibraryAccessToken() {
+    if (injectedLibrarySync?.token) {
+      const expiresAtMs = Date.parse(injectedLibrarySync.expiresAt)
+      if (Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
+        return injectedLibrarySync.token
+      }
+    }
+    return getSupabaseAccessToken()
+  }
+
+  function handleLibrarySyncMessage(event) {
+    const message = event?.data
+    if (!message || typeof message !== 'object' || message.type !== LIBRARY_SYNC_MESSAGE_TYPE) {
+      return
+    }
+    if (event.origin && event.origin !== window.location.origin) {
+      return
+    }
+    persistInjectedLibrarySync(message)
+    const injectedApiBase = normalizeApiBase(message.apiBaseUrl)
+    if (injectedApiBase) {
+      state.apiBase = injectedApiBase
+    }
+    void hydrateSavedLibraries({ force: true })
+  }
+
   async function fetchAuthedJson(path, options = {}) {
-    const token = getSupabaseAccessToken()
+    const token = getLibraryAccessToken()
     if (!token) {
       throw new Error('Sign in through Prezo Host to sync saved items.')
     }
@@ -7635,8 +7721,12 @@ import {
     return payload
   }
 
-  async function hydrateSavedLibraries() {
-    if (!getSupabaseAccessToken()) {
+  async function hydrateSavedLibraries({ force = false } = {}) {
+    const token = getLibraryAccessToken()
+    if (!token) {
+      return
+    }
+    if (!force && state.library.hydratedToken === token) {
       return
     }
     try {
@@ -7646,6 +7736,7 @@ import {
       ])
       mergeRemoteThemeLibrary(remoteThemes)
       mergeRemoteArtifactLibrary(remoteArtifacts)
+      state.library.hydratedToken = token
     } catch (error) {
       console.warn('Failed to hydrate saved theme/artifact libraries', error)
     }
@@ -7764,8 +7855,8 @@ import {
       errorMessage.includes('Invalid auth token')
     ) {
       return {
-        type: 'success',
-        message: `${localMessage} Sign in to sync across devices.`
+        type: 'warning',
+        message: `${localMessage} Saved only in this surface. Open Prezo Host to sync with your account.`
       }
     }
     return {
@@ -9575,6 +9666,7 @@ import {
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', handleArtifactViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
+    window.removeEventListener('message', handleLibrarySyncMessage)
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }

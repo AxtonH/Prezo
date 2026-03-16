@@ -15,6 +15,7 @@ import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
 import { SessionSetup } from './components/SessionSetup'
 import { useSessionSocket } from './hooks/useSessionSocket'
+import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { writeSessionBinding } from './office/sessionBinding'
 import {
   setDiscussionWidgetBinding,
@@ -85,6 +86,38 @@ export default function App() {
       data.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+
+    const syncLibraryBridge = async () => {
+      if (!authSession?.access_token) {
+        await clearLibrarySyncBridge()
+        return
+      }
+      try {
+        const syncToken = await api.createLibrarySyncToken()
+        if (!active) {
+          return
+        }
+        await writeLibrarySyncBridge({
+          token: syncToken.token,
+          expiresAt: syncToken.expires_at
+        })
+      } catch (error) {
+        if (!active) {
+          return
+        }
+        console.warn('Failed to refresh Prezo library sync bridge', error)
+      }
+    }
+
+    void syncLibraryBridge()
+
+    return () => {
+      active = false
+    }
+  }, [authSession?.access_token])
 
   const handleLogout = () => {
     void signOut()

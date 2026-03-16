@@ -192,6 +192,8 @@
     <script>
       ;(() => {
         const PREZO_NAMESPACE = "https://prezo.app/session-binding"
+        const PREZO_LIBRARY_SYNC_NAMESPACE = "https://prezo.app/library-sync"
+        const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
         const params = new URLSearchParams(window.location.search)
         const pollId = params.get("pollId")
 
@@ -203,6 +205,7 @@
         const connectBtn = document.getElementById("connect-btn")
         const frame = document.getElementById("game-frame")
         const overlay = document.getElementById("overlay")
+        let librarySyncState = null
 
         const setStatus = (value) => {
           statusEl.textContent = value
@@ -227,6 +230,29 @@
             return {
               sessionId,
               code: readNode("code"),
+              apiBaseUrl: readNode("apiBaseUrl")
+            }
+          } catch {
+            return null
+          }
+        }
+
+        const parseLibrarySyncXml = (xml) => {
+          try {
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(xml, "application/xml")
+            const readNode = (name) =>
+              doc.getElementsByTagNameNS(PREZO_LIBRARY_SYNC_NAMESPACE, name)[0]?.textContent ||
+              doc.getElementsByTagName(name)[0]?.textContent ||
+              ""
+            const token = readNode("token")
+            const expiresAt = readNode("expiresAt")
+            if (!token || !expiresAt) {
+              return null
+            }
+            return {
+              token,
+              expiresAt,
               apiBaseUrl: readNode("apiBaseUrl")
             }
           } catch {
@@ -273,6 +299,46 @@
           }
         }
 
+        const readLibrarySyncFromDocument = async () => {
+          try {
+            const parts = await getPartsByNamespace(PREZO_LIBRARY_SYNC_NAMESPACE)
+            if (!parts || parts.length === 0) {
+              return null
+            }
+            const xml = await getXml(parts[0])
+            const parsed = parseLibrarySyncXml(xml)
+            if (!parsed) {
+              return null
+            }
+            const expiresAtMs = Date.parse(parsed.expiresAt)
+            if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+              return null
+            }
+            return parsed
+          } catch {
+            return null
+          }
+        }
+
+        const postLibrarySyncToFrame = () => {
+          if (!librarySyncState?.token || !frame.contentWindow) {
+            return
+          }
+          try {
+            frame.contentWindow.postMessage(
+              {
+                type: PREZO_LIBRARY_SYNC_MESSAGE,
+                token: librarySyncState.token,
+                expiresAt: librarySyncState.expiresAt,
+                apiBaseUrl: librarySyncState.apiBaseUrl || apiBaseInput.value.trim() || ""
+              },
+              window.location.origin
+            )
+          } catch {
+            // ignore cross-frame sync failures
+          }
+        }
+
         const applyConfig = ({ sessionId, code, apiBaseUrl }) => {
           if (sessionId) {
             sessionIdInput.value = sessionId
@@ -285,7 +351,8 @@
           }
         }
 
-        const connect = () => {
+        const connect = async () => {
+          librarySyncState = await readLibrarySyncFromDocument()
           const sessionId = sessionIdInput.value.trim()
           const code = sessionCodeInput.value.trim().toUpperCase()
           const apiBase = apiBaseInput.value.trim()
@@ -320,11 +387,12 @@
 
         const init = async () => {
           setStatus("loading")
+          librarySyncState = await readLibrarySyncFromDocument()
           const binding = await readBindingFromDocument()
           if (binding) {
             applyConfig(binding)
             setMeta("Session binding found in presentation. Loading game surface...")
-            connect()
+            await connect()
             return
           }
 
@@ -337,7 +405,7 @@
               code: queryCode,
               apiBaseUrl: queryApiBase
             })
-            connect()
+            await connect()
             return
           }
 
@@ -345,16 +413,21 @@
           setMeta("No document binding found. Enter session details below.")
         }
 
-        connectBtn.addEventListener("click", connect)
+        connectBtn.addEventListener("click", () => {
+          void connect()
+        })
         sessionIdInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
-            connect()
+            void connect()
           }
         })
         sessionCodeInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
-            connect()
+            void connect()
           }
+        })
+        frame.addEventListener("load", () => {
+          postLibrarySyncToFrame()
         })
 
         if (window.Office?.onReady) {
