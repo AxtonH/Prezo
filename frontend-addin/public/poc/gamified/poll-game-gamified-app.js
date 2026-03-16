@@ -861,6 +861,16 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     updateAiChatStatus('Ready for edits.', 'success')
   }
 
+  function syncEditorDockingState() {
+    const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
+    const hasDockedAiEditor = !isArtifactMode && state.ai.open
+    const hasDockedArtifactEditor =
+      isArtifactMode && Boolean(state.artifact.html) && state.artifact.floatingOpen
+    document.body.classList.toggle('editor-docked', hasDockedAiEditor || hasDockedArtifactEditor)
+    document.body.classList.toggle('ai-editor-docked', hasDockedAiEditor)
+    document.body.classList.toggle('artifact-editor-docked', hasDockedArtifactEditor)
+  }
+
   function setupArtifactMode() {
     syncArtifactComposerVisibility()
     resetArtifactConversation({ preserveInput: false })
@@ -906,6 +916,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       'aria-expanded',
       shouldFloatComposer && state.artifact.floatingOpen ? 'true' : 'false'
     )
+    syncEditorDockingState()
     syncArtifactStageVisibility(isArtifactMode)
     if (isArtifactMode) {
       syncArtifactConversationUi()
@@ -2151,6 +2162,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       el.aiChatPanel.classList.add('hidden')
       el.aiChatFab.classList.add('hidden')
       el.aiChatShell.classList.remove('is-open', 'is-collapsed')
+      syncEditorDockingState()
       if (persist) {
         try {
           localStorage.setItem(AI_CHAT_OPEN_KEY, state.ai.open ? '1' : '0')
@@ -2163,10 +2175,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.aiChatShell.classList.toggle('is-open', state.ai.open)
     el.aiChatShell.classList.toggle('is-collapsed', !state.ai.open)
     el.aiChatFab.setAttribute('aria-expanded', state.ai.open ? 'true' : 'false')
+    syncEditorDockingState()
     if (persist) {
       try {
         localStorage.setItem(AI_CHAT_OPEN_KEY, state.ai.open ? '1' : '0')
-      } catch {}
+        } catch {}
     }
     if (state.ai.open) {
       window.setTimeout(() => {
