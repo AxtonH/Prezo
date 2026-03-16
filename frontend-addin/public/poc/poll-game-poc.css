@@ -2246,6 +2246,44 @@ body.present-mode-fullscreen .wrap {
   border-radius: 0;
 }
 
+body.present-mode-artifact .wrap,
+body.present-mode-artifact.present-mode-fullscreen .wrap {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
+  max-width: none;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+body.present-mode-artifact .artifact-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #000;
+}
+
+body.present-mode-artifact .artifact-stage-loader,
+body.present-mode-artifact .artifact-stage-placeholder {
+  border-radius: 0;
+}
+
+body.present-mode-artifact .present-mode-toggle {
+  display: none;
+}
+
 body.present-mode .artifact-stage {
   margin-top: 0;
 }

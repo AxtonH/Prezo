@@ -1048,9 +1048,18 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
   }
 
+  function isArtifactPresentModeActive() {
+    return (
+      state.presentMode &&
+      currentTheme.visualMode === ARTIFACT_VISUAL_MODE &&
+      state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
+    )
+  }
+
   function syncPresentModeUi() {
     document.body.classList.toggle('present-mode', state.presentMode)
     document.body.classList.toggle('present-mode-fullscreen', state.presentModeUsingFullscreen)
+    document.body.classList.toggle('present-mode-artifact', isArtifactPresentModeActive())
     el.presentModeToggle.classList.toggle('is-active', state.presentMode)
     el.presentModeToggle.setAttribute('aria-pressed', state.presentMode ? 'true' : 'false')
     el.presentModeToggle.setAttribute(
@@ -1195,6 +1204,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const shouldShowStage =
       isArtifactMode && state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
     el.artifactStage.classList.toggle('hidden', !shouldShowStage)
+    syncPresentModeUi()
     el.options.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.pollHead.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.footer.classList.toggle('hidden-by-artifact', isArtifactMode)
