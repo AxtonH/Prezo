@@ -203,7 +203,7 @@ export function createPollGameLibrarySyncManager({
 
   function setStatusSuccessIfNeeded(force = false) {
     const source = getLibraryAuthSource()
-    if (!force && hydratedToken && (source === 'presentation' || source === 'browser')) {
+    if ((force || hydratedToken) && (source === 'presentation' || source === 'browser')) {
       setStatus(
         'success',
         'Account sync active',
