@@ -975,7 +975,7 @@ body.ribbon-advanced .advanced-control.note {
   left: 18px;
   bottom: 18px;
   z-index: 9;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 38px;
@@ -983,13 +983,12 @@ body.ribbon-advanced .advanced-control.note {
   padding: 0;
   border: 1px solid rgba(136, 174, 218, 0.82);
   border-radius: 999px;
-  background: rgba(244, 250, 255, 0.25);
-  color: #1c3f6a;
-  font-family: var(--font-family);
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 1;
+  background: rgba(244, 250, 255, 0.15);
+  color: transparent;
+  font-size: 0;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 22px rgba(49, 79, 116, 0.16);
@@ -1000,10 +999,29 @@ body.ribbon-advanced .advanced-control.note {
     color 140ms ease;
 }
 
+.present-mode-toggle::before,
+.present-mode-toggle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(28, 63, 106, 0.88);
+  transform: translate(-50%, -50%);
+  transition: transform 140ms ease, background 140ms ease, opacity 140ms ease;
+}
+
+.present-mode-toggle::after {
+  width: 2px;
+  height: 14px;
+}
+
 .present-mode-toggle:hover {
   transform: translateY(-1px);
   border-color: rgba(82, 143, 221, 0.92);
-  background: rgba(231, 242, 255, 0.34);
+  background: rgba(231, 242, 255, 0.22);
 }
 
 .present-mode-toggle:focus-visible {
@@ -1012,9 +1030,25 @@ body.ribbon-advanced .advanced-control.note {
 }
 
 .present-mode-toggle.is-active {
-  background: rgba(60, 132, 247, 0.28);
+  background: rgba(60, 132, 247, 0.18);
   border-color: rgba(60, 132, 247, 0.58);
-  color: #fff;
+}
+
+.present-mode-toggle.is-active::before,
+.present-mode-toggle.is-active::after {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.present-mode-toggle.is-active::before {
+  width: 14px;
+  height: 2px;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.present-mode-toggle.is-active::after {
+  width: 14px;
+  height: 2px;
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .custom-asset {
