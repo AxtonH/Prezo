@@ -1724,7 +1724,8 @@ import {
     if (!normalizedRequest) {
       return
     }
-    state.artifact.activeEditRequest = normalizedRequest
+    const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
+    state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
     state.artifact.autoRepairInFlight = false
     state.artifact.repairAttemptCount = 0
     state.artifact.lastRuntimeError = ''
@@ -1735,11 +1736,14 @@ import {
       await submitArtifactQuestionRequest(normalizedRequest)
       return
     }
-    const prompt = buildArtifactEditPrompt(normalizedRequest, state.artifact.lastAnswers)
+    const prompt = buildArtifactEditPrompt(
+      resolvedRequest || normalizedRequest,
+      state.artifact.lastAnswers
+    )
     await submitArtifactPrompt(prompt, {
       conversationAnswers: state.artifact.lastAnswers,
       requestKind: 'edit',
-      originalEditRequest: normalizedRequest
+      originalEditRequest: resolvedRequest || normalizedRequest
     })
   }
 
@@ -1989,6 +1993,74 @@ import {
       .slice(-6)
       .map((entry) => asText(entry.text).trim())
       .filter(Boolean)
+  }
+
+  function isArtifactBackgroundEditRequest(value) {
+    const text = asText(value).trim().toLowerCase()
+    if (!text) {
+      return false
+    }
+    return /\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)\b/.test(
+      text
+    )
+  }
+
+  function isArtifactFeedbackFollowupRequest(value) {
+    const text = asText(value).trim().toLowerCase()
+    if (!text) {
+      return false
+    }
+    return /\b(?:nothing changed|no change|still white|still blank|still the same|didn't work|didnt work|not a city|not a skyline|isn't a city|isnt a city|too white|too blank|can't see|cant see|background didn't change|background didnt change)\b/.test(
+      text
+    )
+  }
+
+  function findPreviousArtifactTargetedRequest(history, currentRequest) {
+    if (!Array.isArray(history)) {
+      return ''
+    }
+    const normalizedCurrent = asText(currentRequest).trim()
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const entry = history[index]
+      if (!entry || typeof entry !== 'object' || asText(entry.tone) !== 'user') {
+        continue
+      }
+      const text = asText(entry.text).trim()
+      if (!text || text === normalizedCurrent || isArtifactFeedbackFollowupRequest(text)) {
+        continue
+      }
+      return text
+    }
+    return ''
+  }
+
+  function resolveArtifactEditRequest(request) {
+    const normalized = asText(request).trim()
+    if (!normalized || !isArtifactFeedbackFollowupRequest(normalized)) {
+      return normalized
+    }
+    const previousRequest = findPreviousArtifactTargetedRequest(
+      state.artifact.editHistory,
+      normalized
+    )
+    if (!previousRequest) {
+      return normalized
+    }
+    if (isArtifactBackgroundEditRequest(previousRequest)) {
+      return [
+        'Retry the previous background-only edit more strongly.',
+        `Previous request: ${previousRequest}.`,
+        `User feedback on the last attempt: ${normalized}.`,
+        'Keep cars, labels, layout, vote visuals, and foreground gameplay art unchanged.',
+        'The background change must be clearly visible across the full scene and must not result in a pale, blank, or nearly white background.'
+      ].join(' ')
+    }
+    return [
+      'Retry the previous targeted edit more faithfully.',
+      `Previous request: ${previousRequest}.`,
+      `User feedback on the last attempt: ${normalized}.`,
+      'Keep unrelated visuals unchanged.'
+    ].join(' ')
   }
 
   function isArtifactQuestionRequest(value) {

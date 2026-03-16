@@ -429,6 +429,21 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#artifact-root", selectors)
         self.assertIn(".scene-shell", selectors)
 
+    def test_extract_artifact_original_edit_request_resolves_background_feedback(self) -> None:
+        resolved = ai_api.extract_artifact_original_edit_request(
+            {
+                "originalEditRequest": "nothing changed",
+                "recentEditRequests": [
+                    "Change the background to a city skyline.",
+                    "still white",
+                ],
+            }
+        )
+
+        self.assertIn("Retry the previous background-only edit", resolved)
+        self.assertIn("Change the background to a city skyline.", resolved)
+        self.assertIn("nothing changed", resolved)
+
     def test_build_artifact_patch_edit_prompt_lists_exact_background_targets(self) -> None:
         prompt = ai_api.build_artifact_patch_edit_prompt(
             original_edit_request="Edit the background so it is a city.",
@@ -518,13 +533,12 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(issues, [])
-        self.assertTrue(
-            "#artifact-root::before" in patched_html or ".scene-shell::before" in patched_html
-        )
-        self.assertTrue(
-            "#artifact-root::after" in patched_html or ".scene-shell::after" in patched_html
-        )
+        self.assertIn('data-prezo-generated-background-layer="true"', patched_html)
+        self.assertIn("[data-prezo-generated-background-layer]::before", patched_html)
+        self.assertIn("[data-prezo-generated-background-layer]::after", patched_html)
         self.assertIn(".car", patched_html)
+        self.assertIn("#artifact-root", patched_html)
+        self.assertIn("background: transparent !important;", patched_html)
 
     def test_validate_background_edit_result_rejects_washed_out_signature(self) -> None:
         washed_out_html = PATCHABLE_ARTIFACT_HTML.replace(

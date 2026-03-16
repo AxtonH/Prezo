@@ -76,6 +76,10 @@ ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE = re.compile(
     r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|color|colour|gradient|opacity|shadow|glow|border|radius|font|typography|title|headline|question|label|badge|text|padding|margin|spacing|size|bigger|smaller|larger)\b",
     re.IGNORECASE,
 )
+ARTIFACT_FEEDBACK_FOLLOWUP_RE = re.compile(
+    r"\b(?:nothing changed|no change|still white|still blank|still the same|didn['’]?t work|didnt work|not a city|not a skyline|isn['’]?t a city|isnt a city|too white|too blank|can['’]?t see|cant see|background didn['’]?t change|background didnt change)\b",
+    re.IGNORECASE,
+)
 ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE = re.compile(
     r"\b(?:image|photo|picture|texture|asset|logo|svg|illustration|replace|swap|convert|turn into|add|remove|insert|delete|layout|rearrange|reposition|restructure|scene element|track image)\b",
     re.IGNORECASE,
@@ -1508,9 +1512,52 @@ def extract_artifact_original_edit_request(
     artifact_context: dict[str, Any], fallback_prompt: str = ""
 ) -> str:
     value = artifact_context.get("originalEditRequest")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return (fallback_prompt or "").strip()
+    request = value.strip() if isinstance(value, str) and value.strip() else (fallback_prompt or "").strip()
+    return resolve_artifact_edit_request_feedback(artifact_context, request)
+
+
+def is_artifact_feedback_followup_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    return bool(ARTIFACT_FEEDBACK_FOLLOWUP_RE.search(normalized))
+
+
+def resolve_artifact_edit_request_feedback(
+    artifact_context: dict[str, Any], request_text: str
+) -> str:
+    normalized = (request_text or "").strip()
+    if not normalized or not is_artifact_feedback_followup_request(normalized):
+        return normalized
+    recent_requests = (
+        artifact_context.get("recentEditRequests")
+        if isinstance(artifact_context.get("recentEditRequests"), list)
+        else []
+    )
+    for item in reversed(recent_requests):
+        prior_request = item.strip() if isinstance(item, str) else ""
+        if (
+            not prior_request
+            or prior_request == normalized
+            or is_artifact_feedback_followup_request(prior_request)
+        ):
+            continue
+        if is_background_visual_edit_request(prior_request):
+            return (
+                "Retry the previous background-only edit and make the result clearly visible. "
+                f"Previous request: {prior_request}. "
+                f"User feedback on the last attempt: {normalized}. "
+                "Keep the cars, labels, layout, vote visuals, and foreground gameplay art unchanged. "
+                "Apply a visibly different background treatment across the full scene. "
+                "Do not leave the result pale, blank, nearly white, or barely changed."
+            )
+        return (
+            "Retry the previous targeted edit more faithfully. "
+            f"Previous request: {prior_request}. "
+            f"User feedback on the last attempt: {normalized}. "
+            "Keep unrelated parts of the artifact unchanged."
+        )
+    return normalized
 
 
 def is_broad_artifact_edit_request(request_text: str) -> bool:
@@ -2051,6 +2098,17 @@ def is_background_like_selector(selector: str) -> bool:
     )
 
 
+def is_explicit_background_layer_selector(selector: str) -> bool:
+    lowered = (selector or "").strip().lower()
+    if not lowered:
+        return False
+    if "data-prezo-background-layer" in lowered or "data-prezo-generated-background-layer" in lowered:
+        return True
+    return bool(
+        re.search(r"(?:bg|background|backdrop|sky|track)", lowered)
+    )
+
+
 def extract_artifact_scene_root_selector_candidates(html: str) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
@@ -2225,6 +2283,26 @@ def choose_artifact_background_treatment_target_selector(
         requested_selector,
         extract_artifact_background_selector_candidates(current_html),
     )
+
+
+def ensure_generated_background_layer_in_artifact_html(html: str) -> tuple[str, str]:
+    selector = "[data-prezo-generated-background-layer]"
+    if re.search(r"data-prezo-generated-background-layer\b", html, re.IGNORECASE):
+        return html, selector
+    layer_markup = (
+        '\n<div data-prezo-background-layer="true" '
+        'data-prezo-generated-background-layer="true" '
+        'aria-hidden="true"></div>'
+    )
+    body_open = re.search(r"<body\b[^>]*>", html, re.IGNORECASE)
+    if body_open:
+        insert_at = body_open.end()
+        return f"{html[:insert_at]}{layer_markup}{html[insert_at:]}", selector
+    html_open = re.search(r"<html\b[^>]*>", html, re.IGNORECASE)
+    if html_open:
+        insert_at = html_open.end()
+        return f"{html[:insert_at]}<body>{layer_markup}</body>{html[insert_at:]}", selector
+    return f"<body>{layer_markup}{html}</body>", selector
 
 
 def score_background_selector_candidate(requested_selector: str, candidate: str) -> tuple[int, int, int]:
@@ -2647,30 +2725,87 @@ def apply_background_treatment_to_artifact_html(
         return "", ["no suitable background selector was found in the current artifact html."]
 
     working = current_html
-    for property_name, value in (
-        ("position", "relative"),
-        ("overflow", "hidden"),
-        ("isolation", "isolate"),
-        ("background", build_background_base_gradient(normalized)),
-    ):
-        working = ensure_css_property_in_artifact_html(
-            working,
-            target_selector,
-            property_name,
-            value,
-        )
+    scene_root_candidates = [
+        candidate
+        for candidate in extract_artifact_scene_root_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    scene_root_selector = choose_scene_root_selector_candidate(scene_root_candidates)
+    use_generated_background_layer = not is_explicit_background_layer_selector(target_selector)
 
-    working = upsert_css_rule_in_artifact_html(
-        working,
-        f"{target_selector}::before",
-        build_background_composition_rule(normalized),
-    )
-    working = upsert_css_rule_in_artifact_html(
-        working,
-        f"{target_selector}::after",
-        build_background_atmosphere_rule(normalized),
-    )
-    if target_selector not in {"body", "html"}:
+    if use_generated_background_layer:
+        working, generated_selector = ensure_generated_background_layer_in_artifact_html(working)
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            "html, body",
+            "width: 100%;\nmin-height: 100%;\nbackground: transparent !important;",
+        )
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            "body",
+            "position: relative;\nmargin: 0;\nbackground: transparent !important;\noverflow: hidden;\nisolation: isolate;",
+        )
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            generated_selector,
+            "\n".join(
+                [
+                    "position: fixed;",
+                    "inset: 0;",
+                    "pointer-events: none;",
+                    "z-index: 0;",
+                    f"background: {build_background_base_gradient(normalized)};",
+                ]
+            ),
+        )
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            f"{generated_selector}::before",
+            build_background_composition_rule(normalized),
+        )
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            f"{generated_selector}::after",
+            build_background_atmosphere_rule(normalized),
+        )
+        lift_selector = scene_root_selector or target_selector
+        if lift_selector and lift_selector not in {"body", "html"}:
+            for property_name, value in (
+                ("position", "relative"),
+                ("z-index", "1"),
+                ("background", "transparent !important"),
+            ):
+                working = ensure_css_property_in_artifact_html(
+                    working,
+                    lift_selector,
+                    property_name,
+                    value,
+                )
+    else:
+        for property_name, value in (
+            ("position", "relative"),
+            ("overflow", "hidden"),
+            ("isolation", "isolate"),
+            ("background", build_background_base_gradient(normalized)),
+        ):
+            working = ensure_css_property_in_artifact_html(
+                working,
+                target_selector,
+                property_name,
+                value,
+            )
+
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            f"{target_selector}::before",
+            build_background_composition_rule(normalized),
+        )
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            f"{target_selector}::after",
+            build_background_atmosphere_rule(normalized),
+        )
+    if target_selector not in {"body", "html"} and not use_generated_background_layer:
         working = upsert_css_rule_in_artifact_html(
             working,
             f"{target_selector} > *",
