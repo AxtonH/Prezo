@@ -669,6 +669,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const rootStyle = document.documentElement.style
     const isDocked = document.body.classList.contains('editor-docked')
     if (!isDocked || window.innerWidth <= EDITOR_DOCK_BREAKPOINT_PX) {
+      rootStyle.setProperty('--editor-sidebar-width', '0px')
       rootStyle.setProperty('--editor-dock-reserve', '0px')
       rootStyle.setProperty('--editor-dock-shift', '0px')
       rootStyle.setProperty('--wrap-width-limit', '1100px')
@@ -686,7 +687,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       320,
       Math.min(1100, Math.round(window.innerWidth - reserve - EDITOR_DOCK_SIDE_PADDING_PX))
     )
-    const shift = Math.round(reserve * -0.5)
+    const shift = 0
+    rootStyle.setProperty('--editor-sidebar-width', `${Math.round(shellWidth)}px`)
     rootStyle.setProperty('--editor-dock-reserve', `${reserve}px`)
     rootStyle.setProperty('--editor-dock-shift', `${shift}px`)
     rootStyle.setProperty('--wrap-width-limit', `${widthLimit}px`)
