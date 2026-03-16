@@ -2237,6 +2237,15 @@ body.present-mode .wrap {
   overflow: auto;
 }
 
+body.present-mode-fullscreen .wrap {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px;
+  border-radius: 0;
+}
+
 body.present-mode .artifact-stage {
   margin-top: 0;
 }

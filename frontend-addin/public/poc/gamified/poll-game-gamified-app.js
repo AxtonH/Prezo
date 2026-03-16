@@ -176,7 +176,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       status: 'pending',
       detail: ''
     },
-    presentMode: false
+    presentMode: false,
+    presentModeUsingFullscreen: false
   }
 
   const el = {
@@ -989,6 +990,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     syncPresentModeUi()
     el.presentModeToggle.addEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.addEventListener('click', handlePresentModeToggleClick)
+    document.addEventListener('fullscreenchange', handlePresentModeFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
   }
 
   function handlePresentModeTogglePointerDown(event) {
@@ -996,11 +999,58 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function handlePresentModeToggleClick() {
-    setPresentMode(!state.presentMode)
+    void setPresentMode(!state.presentMode)
+  }
+
+  function getPresentModeFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null
+  }
+
+  async function requestPresentModeFullscreen() {
+    const target = document.documentElement
+    if (typeof target.requestFullscreen === 'function') {
+      try {
+        await target.requestFullscreen({ navigationUI: 'hide' })
+      } catch (error) {
+        if (!(error instanceof TypeError)) {
+          throw error
+        }
+        await target.requestFullscreen()
+      }
+      return true
+    }
+    if (typeof target.webkitRequestFullscreen === 'function') {
+      target.webkitRequestFullscreen()
+      return true
+    }
+    return false
+  }
+
+  async function exitPresentModeFullscreen() {
+    if (typeof document.exitFullscreen === 'function') {
+      await document.exitFullscreen()
+      return true
+    }
+    if (typeof document.webkitExitFullscreen === 'function') {
+      document.webkitExitFullscreen()
+      return true
+    }
+    return false
+  }
+
+  function handlePresentModeFullscreenChange() {
+    const isFullscreen = Boolean(getPresentModeFullscreenElement())
+    state.presentModeUsingFullscreen = isFullscreen
+    syncPresentModeUi()
+    scheduleArtifactLayoutRefit()
+    if (!isFullscreen && state.presentMode) {
+      applyPresentModeState(false)
+    }
   }
 
   function syncPresentModeUi() {
     document.body.classList.toggle('present-mode', state.presentMode)
+    document.body.classList.toggle('present-mode-fullscreen', state.presentModeUsingFullscreen)
     el.presentModeToggle.classList.toggle('is-active', state.presentMode)
     el.presentModeToggle.setAttribute('aria-pressed', state.presentMode ? 'true' : 'false')
     el.presentModeToggle.setAttribute(
@@ -1014,7 +1064,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
   }
 
-  function setPresentMode(enabled) {
+  function applyPresentModeState(enabled) {
     const nextValue = Boolean(enabled)
     if (state.presentMode === nextValue) {
       return
@@ -1031,6 +1081,30 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     syncPresentModeUi()
     syncEditorDockingState()
     scheduleArtifactLayoutRefit()
+  }
+
+  async function setPresentMode(enabled) {
+    const nextValue = Boolean(enabled)
+    if (nextValue) {
+      applyPresentModeState(true)
+      try {
+        state.presentModeUsingFullscreen = await requestPresentModeFullscreen()
+      } catch (error) {
+        state.presentModeUsingFullscreen = false
+      }
+      syncPresentModeUi()
+      scheduleArtifactLayoutRefit()
+      return
+    }
+
+    const isFullscreen = Boolean(getPresentModeFullscreenElement())
+    state.presentModeUsingFullscreen = false
+    if (isFullscreen) {
+      try {
+        await exitPresentModeFullscreen()
+      } catch {}
+    }
+    applyPresentModeState(false)
   }
 
   function syncEditorDockingState() {
@@ -9413,6 +9487,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
     el.presentModeToggle.removeEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
+    document.removeEventListener('fullscreenchange', handlePresentModeFullscreenChange)
+    document.removeEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)
