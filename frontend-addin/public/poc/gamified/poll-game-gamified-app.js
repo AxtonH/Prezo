@@ -803,6 +803,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (state.presentMode || ribbonState.hidden || dragState.active) {
       return
     }
+    if (event.target instanceof Element && event.target.closest('#present-mode-toggle')) {
+      return
+    }
     if (event.target instanceof Element && event.target.closest('#selection-toolbar')) {
       return
     }
@@ -984,7 +987,12 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 
   function setupPresentMode() {
     syncPresentModeUi()
+    el.presentModeToggle.addEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.addEventListener('click', handlePresentModeToggleClick)
+  }
+
+  function handlePresentModeTogglePointerDown(event) {
+    event.stopPropagation()
   }
 
   function handlePresentModeToggleClick() {
@@ -9403,6 +9411,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
     el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
+    el.presentModeToggle.removeEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
