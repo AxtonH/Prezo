@@ -25,6 +25,7 @@ GEMINI_ARTIFACT_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
 GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 4000
+GEMINI_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS = 1200
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
 ARTIFACT_EDIT_MAX_REPAIR_ATTEMPTS = 1
 ARTIFACT_BUILD_MAX_REPAIR_ATTEMPTS = 2
@@ -360,6 +361,76 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
         },
     },
     "required": ["assistantMessage", "edits"],
+    "additionalProperties": False,
+}
+
+POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_SYSTEM_INSTRUCTION = "\n".join(
+    [
+        "You convert a user's background-only artifact request into a safe structured background treatment.",
+        "Output JSON only. Do not output HTML, CSS, markdown, or explanations outside JSON.",
+        'Response shape: { "assistantMessage": string, "treatment": BackgroundTreatment }',
+        "Rules:",
+        "- Preserve foreground gameplay visuals. Do not redesign cars, labels, badges, icons, or layout.",
+        "- Do not invent external image URLs.",
+        "- Use composition types that can be rendered safely with CSS only.",
+        "- Choose colors with meaningful contrast. Avoid blank, washed-out, or near-white-only palettes unless the user explicitly asks for a pale/minimal white look.",
+        "- If the prompt implies a skyline, city, or urban scene, prefer `skyline`.",
+        "- If the prompt implies mountains or peaks, prefer `mountains`.",
+        "- If the prompt implies desert, dunes, or sand, prefer `dunes`.",
+        "- If the prompt implies clouds, haze, mist, or fog, prefer `clouds`.",
+        "- Otherwise use `abstract`.",
+        "- Use only hex colors in #RRGGBB format.",
+    ]
+)
+
+POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_JSON_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "assistantMessage": {"type": "string"},
+        "treatment": {
+            "type": "object",
+            "properties": {
+                "composition": {
+                    "type": "string",
+                    "enum": ["abstract", "skyline", "mountains", "dunes", "clouds"],
+                },
+                "timeOfDay": {
+                    "type": "string",
+                    "enum": ["day", "golden-hour", "sunset", "night", "stormy"],
+                },
+                "intensity": {
+                    "type": "string",
+                    "enum": ["soft", "balanced", "dramatic"],
+                },
+                "topColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "midColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "bottomColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "silhouetteColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "accentColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "hazeColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "lightColor": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                "horizonHeightPct": {"type": "integer", "minimum": 18, "maximum": 78},
+                "detailDensity": {"type": "integer", "minimum": 10, "maximum": 90},
+                "targetSelector": {"type": "string"},
+            },
+            "required": [
+                "composition",
+                "timeOfDay",
+                "intensity",
+                "topColor",
+                "midColor",
+                "bottomColor",
+                "silhouetteColor",
+                "accentColor",
+                "hazeColor",
+                "lightColor",
+                "horizonHeightPct",
+                "detailDensity",
+            ],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["assistantMessage", "treatment"],
     "additionalProperties": False,
 }
 
@@ -975,6 +1046,31 @@ async def attempt_artifact_patch_edit(
             "This edit needs a direct image URL. Provide the exact Dubai image URL and the editor can swap only the background image without redesigning the scene.",
             ["the requested edit needs a direct external image URL."],
         )
+    if is_background_visual_edit_request(original_edit_request):
+        treatment_html, treatment_message, treatment_issues = (
+            await attempt_artifact_background_treatment_edit(
+                api_key=api_key,
+                model=model,
+                original_edit_request=original_edit_request,
+                context=context,
+                current_html=current_html,
+                timeout_seconds=timeout_seconds,
+                remaining_budget_seconds=remaining_budget_seconds,
+            )
+        )
+        if treatment_html:
+            return treatment_html, treatment_message, []
+        if treatment_issues:
+            if not should_fallback_to_generic_patch_after_background_treatment_failure(
+                treatment_issues
+            ):
+                return "", treatment_message, treatment_issues
+    builtin_html, builtin_message = attempt_builtin_cityscape_background_patch(
+        current_html=current_html,
+        original_edit_request=original_edit_request,
+    )
+    if builtin_html:
+        return builtin_html, builtin_message, []
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1003,6 +1099,49 @@ async def attempt_artifact_patch_edit(
     if issues:
         return "", plan.get("assistantMessage", ""), issues
     return patched_html, plan.get("assistantMessage", ""), []
+
+
+async def attempt_artifact_background_treatment_edit(
+    *,
+    api_key: str,
+    model: str,
+    original_edit_request: str,
+    context: dict[str, Any],
+    current_html: str,
+    timeout_seconds: float,
+    remaining_budget_seconds: float | None = None,
+) -> tuple[str, str, list[str]]:
+    prompt = build_artifact_background_treatment_prompt(
+        original_edit_request=original_edit_request,
+        context=context,
+        current_html=current_html,
+    )
+    text, _stop_reason = await request_gemini_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_SYSTEM_INSTRUCTION,
+        prompt_text=prompt,
+        temperature=0.15,
+        max_tokens=GEMINI_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS,
+        timeout_seconds=timeout_seconds,
+        request_stage="artifact background treatment",
+        remaining_budget_seconds=remaining_budget_seconds,
+        response_mime_type="application/json",
+        response_json_schema=POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_JSON_SCHEMA,
+        thinking_budget=0,
+    )
+    plan = normalize_artifact_background_treatment_plan(text)
+    treatment = plan.get("treatment") if isinstance(plan.get("treatment"), dict) else {}
+    if not treatment:
+        return "", plan.get("assistantMessage", ""), ["background treatment planner returned no usable treatment."]
+    treated_html, issues = apply_background_treatment_to_artifact_html(
+        current_html=current_html,
+        treatment=treatment,
+        original_edit_request=original_edit_request,
+    )
+    if issues:
+        return "", plan.get("assistantMessage", ""), issues
+    return treated_html, plan.get("assistantMessage", ""), []
 
 
 async def attempt_artifact_repair(
@@ -1566,6 +1705,86 @@ def build_artifact_patch_edit_prompt(
     )
 
 
+def build_artifact_background_treatment_prompt(
+    *,
+    original_edit_request: str,
+    context: dict[str, Any],
+    current_html: str,
+) -> str:
+    artifact_context = (
+        context.get("artifact") if isinstance(context.get("artifact"), dict) else {}
+    )
+    artifact_type = (
+        artifact_context.get("artifactType")
+        if isinstance(artifact_context.get("artifactType"), str)
+        else ""
+    )
+    design_guidelines = (
+        artifact_context.get("designGuidelines")
+        if isinstance(artifact_context.get("designGuidelines"), str)
+        else ""
+    )
+    poll_title = (
+        artifact_context.get("pollTitle")
+        if isinstance(artifact_context.get("pollTitle"), str)
+        else ""
+    )
+    background_selector_candidates = extract_artifact_background_selector_candidates(
+        current_html
+    )
+    background_style_snippets = extract_artifact_background_style_snippets(current_html)
+    return "\n".join(
+        [
+            "Artifact background treatment task",
+            "Translate the user's request into a structured background-only treatment for the current artifact.",
+            "Do not modify cars, labels, gameplay elements, or live hooks.",
+            f"Original user edit request: {original_edit_request}",
+            f"Current artifact type: {artifact_type}" if artifact_type else "",
+            f"Current design guidelines: {design_guidelines}" if design_guidelines else "",
+            f"Live poll title: {poll_title}" if poll_title else "",
+            (
+                "Available exact background selectors in the current artifact: "
+                + ", ".join(background_selector_candidates)
+                if background_selector_candidates
+                else ""
+            ),
+            (
+                "Current background CSS snippets:\n"
+                + "\n\n".join(background_style_snippets)
+                if background_style_snippets
+                else ""
+            ),
+            "Prefer a meaningful visual composition over a weak color wash.",
+            "Never return a pale blank background unless the user explicitly asks for a minimal white background.",
+            "Choose a composition that fits the request and can be rendered with CSS only.",
+            "Use targetSelector only when one of the exact background selectors above is an obvious fit. Otherwise leave it empty and the backend will choose.",
+        ]
+    )
+
+
+def normalize_artifact_background_treatment_plan(raw_text: str) -> dict[str, Any]:
+    parsed = try_parse_json(raw_text)
+    if parsed is None:
+        fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw_text, re.IGNORECASE)
+        if fenced and fenced.group(1):
+            parsed = try_parse_json(fenced.group(1))
+    if parsed is None:
+        object_slice = extract_first_json_object(raw_text)
+        if object_slice:
+            parsed = try_parse_json(object_slice)
+    if not isinstance(parsed, dict):
+        return {"assistantMessage": "", "treatment": {}}
+    assistant_message = (
+        parsed.get("assistantMessage")
+        if isinstance(parsed.get("assistantMessage"), str)
+        else parsed.get("message")
+        if isinstance(parsed.get("message"), str)
+        else ""
+    )
+    treatment = parsed.get("treatment") if isinstance(parsed.get("treatment"), dict) else {}
+    return {"assistantMessage": assistant_message.strip(), "treatment": treatment}
+
+
 def normalize_artifact_patch_plan(raw_text: str) -> dict[str, Any]:
     parsed = try_parse_json(raw_text)
     if parsed is None:
@@ -1773,7 +1992,7 @@ def is_background_image_asset_edit_request(request: str) -> bool:
 def is_background_visual_edit_request(request: str) -> bool:
     return bool(
         re.search(
-            r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b|city|urban|skyline|downtown|buildings?)\b",
+            r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|buildings?)\b",
             request or "",
             re.IGNORECASE,
         )
@@ -1785,7 +2004,7 @@ def is_city_background_edit_request(request: str) -> bool:
     if not lowered:
         return False
     return bool(
-        re.search(r"\b(?:city|urban|skyline|downtown|buildings?|skyscraper)\b", lowered)
+        re.search(r"\b(?:city|cityscape|urban|skyline|downtown|buildings?|skyscraper)\b", lowered)
     ) and bool(re.search(r"\b(?:background|backdrop|sky|scene|track)\b", lowered))
 
 
@@ -1864,6 +2083,570 @@ def rewrite_artifact_patch_plan_for_current_html(
                 edit["selector"] = replacement
         rewritten.append(edit)
     return {"assistantMessage": assistant_message, "edits": rewritten}
+
+
+def infer_background_composition_from_request(request: str) -> str:
+    lowered = (request or "").strip().lower()
+    if re.search(r"\b(?:city|cityscape|urban|skyline|downtown|buildings?|skyscraper)\b", lowered):
+        return "skyline"
+    if re.search(r"\b(?:mountain|mountains|peak|peaks|alps|cliff|ridge)\b", lowered):
+        return "mountains"
+    if re.search(r"\b(?:desert|dune|dunes|sand|sandy)\b", lowered):
+        return "dunes"
+    if re.search(r"\b(?:cloud|clouds|mist|fog|haze)\b", lowered):
+        return "clouds"
+    return "abstract"
+
+
+def infer_background_time_of_day_from_request(request: str) -> str:
+    lowered = (request or "").strip().lower()
+    if re.search(r"\b(?:night|midnight|moonlit|after dark|dark)\b", lowered):
+        return "night"
+    if re.search(r"\b(?:storm|stormy|thunder|rainy|moody)\b", lowered):
+        return "stormy"
+    if re.search(r"\b(?:sunset|dusk|twilight)\b", lowered):
+        return "sunset"
+    if re.search(r"\b(?:golden hour|sunrise|dawn|morning)\b", lowered):
+        return "golden-hour"
+    return "day"
+
+
+def background_request_explicitly_allows_pale_palette(request: str) -> bool:
+    lowered = (request or "").strip().lower()
+    return bool(
+        re.search(r"\b(?:white|minimal|foggy white|washed|airy|soft white|monochrome white|snow)\b", lowered)
+    )
+
+
+def default_background_palette(time_of_day: str) -> dict[str, str]:
+    palettes = {
+        "day": {
+            "topColor": "#83BFE6",
+            "midColor": "#C9DEF0",
+            "bottomColor": "#F0CF9C",
+            "silhouetteColor": "#3D5670",
+            "accentColor": "#8DD3FF",
+            "hazeColor": "#D7EBF7",
+            "lightColor": "#FFF0C2",
+        },
+        "golden-hour": {
+            "topColor": "#6DA6D6",
+            "midColor": "#F2C789",
+            "bottomColor": "#EF9E5B",
+            "silhouetteColor": "#38445A",
+            "accentColor": "#FFD38A",
+            "hazeColor": "#F3D5AB",
+            "lightColor": "#FFF0CF",
+        },
+        "sunset": {
+            "topColor": "#27395D",
+            "midColor": "#DB7B62",
+            "bottomColor": "#FFBF7A",
+            "silhouetteColor": "#1C2234",
+            "accentColor": "#FFB561",
+            "hazeColor": "#E7A07F",
+            "lightColor": "#FFD8AE",
+        },
+        "night": {
+            "topColor": "#081728",
+            "midColor": "#112743",
+            "bottomColor": "#2A3E5A",
+            "silhouetteColor": "#0B0F19",
+            "accentColor": "#5CBCFF",
+            "hazeColor": "#243650",
+            "lightColor": "#FFE0A4",
+        },
+        "stormy": {
+            "topColor": "#304862",
+            "midColor": "#556779",
+            "bottomColor": "#8F8C86",
+            "silhouetteColor": "#1B232D",
+            "accentColor": "#B8C9D9",
+            "hazeColor": "#90A1B0",
+            "lightColor": "#DDE6EF",
+        },
+    }
+    return dict(palettes.get(time_of_day, palettes["day"]))
+
+
+def parse_hex_color(value: str) -> tuple[int, int, int] | None:
+    text = (value or "").strip()
+    match = re.fullmatch(r"#([0-9a-fA-F]{6})", text)
+    if not match:
+        return None
+    raw = match.group(1)
+    return int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16)
+
+
+def format_hex_color(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    return f"#{max(0, min(255, r)):02X}{max(0, min(255, g)):02X}{max(0, min(255, b)):02X}"
+
+
+def color_luminance(hex_color: str) -> float:
+    rgb = parse_hex_color(hex_color)
+    if not rgb:
+        return 0.0
+    return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255.0
+
+
+def blend_hex_colors(base: str, accent: str, amount: float) -> str:
+    base_rgb = parse_hex_color(base)
+    accent_rgb = parse_hex_color(accent)
+    if not base_rgb or not accent_rgb:
+        return base
+    weight = max(0.0, min(1.0, amount))
+    blended = tuple(
+        round(base_channel * (1.0 - weight) + accent_channel * weight)
+        for base_channel, accent_channel in zip(base_rgb, accent_rgb)
+    )
+    return format_hex_color(blended)
+
+
+def normalize_background_treatment(
+    treatment: dict[str, Any],
+    original_edit_request: str,
+) -> dict[str, Any]:
+    inferred_composition = infer_background_composition_from_request(original_edit_request)
+    inferred_time = infer_background_time_of_day_from_request(original_edit_request)
+    composition = str(treatment.get("composition") or inferred_composition).strip().lower()
+    if composition not in {"abstract", "skyline", "mountains", "dunes", "clouds"}:
+        composition = inferred_composition
+    if inferred_composition != "abstract":
+        composition = inferred_composition
+
+    time_of_day = str(treatment.get("timeOfDay") or inferred_time).strip().lower()
+    if time_of_day not in {"day", "golden-hour", "sunset", "night", "stormy"}:
+        time_of_day = inferred_time
+    if inferred_time != "day":
+        time_of_day = inferred_time
+
+    intensity = str(treatment.get("intensity") or "balanced").strip().lower()
+    if intensity not in {"soft", "balanced", "dramatic"}:
+        intensity = "balanced"
+
+    palette = default_background_palette(time_of_day)
+    for key in (
+        "topColor",
+        "midColor",
+        "bottomColor",
+        "silhouetteColor",
+        "accentColor",
+        "hazeColor",
+        "lightColor",
+    ):
+        value = treatment.get(key)
+        if isinstance(value, str) and parse_hex_color(value):
+            palette[key] = value.upper()
+
+    luminances = [
+        color_luminance(palette["topColor"]),
+        color_luminance(palette["midColor"]),
+        color_luminance(palette["bottomColor"]),
+    ]
+    if (
+        not background_request_explicitly_allows_pale_palette(original_edit_request)
+        and max(luminances) - min(luminances) < 0.14
+        and sum(luminances) / len(luminances) > 0.72
+    ):
+        palette = default_background_palette(time_of_day)
+
+    if intensity == "dramatic":
+        palette["topColor"] = blend_hex_colors(palette["topColor"], "#000814", 0.18)
+        palette["silhouetteColor"] = blend_hex_colors(palette["silhouetteColor"], "#000000", 0.22)
+        palette["accentColor"] = blend_hex_colors(palette["accentColor"], "#FFD38A", 0.16)
+    elif intensity == "soft":
+        palette["topColor"] = blend_hex_colors(palette["topColor"], "#FFFFFF", 0.08)
+        palette["hazeColor"] = blend_hex_colors(palette["hazeColor"], "#FFFFFF", 0.18)
+
+    horizon_height = treatment.get("horizonHeightPct")
+    detail_density = treatment.get("detailDensity")
+    target_selector = (
+        treatment.get("targetSelector").strip()
+        if isinstance(treatment.get("targetSelector"), str)
+        else ""
+    )
+    return {
+        "composition": composition,
+        "timeOfDay": time_of_day,
+        "intensity": intensity,
+        "targetSelector": target_selector,
+        "horizonHeightPct": int(horizon_height)
+        if isinstance(horizon_height, int)
+        else 42,
+        "detailDensity": int(detail_density)
+        if isinstance(detail_density, int)
+        else 55,
+        **palette,
+    }
+
+
+def build_background_base_gradient(treatment: dict[str, Any]) -> str:
+    return (
+        "linear-gradient(180deg, "
+        f"{treatment['topColor']} 0%, "
+        f"{treatment['midColor']} 46%, "
+        f"{treatment['bottomColor']} 100%)"
+    )
+
+
+def build_background_composition_rule(treatment: dict[str, Any]) -> str:
+    composition = treatment["composition"]
+    horizon = max(18, min(78, int(treatment["horizonHeightPct"])))
+    silhouette = treatment["silhouetteColor"]
+    accent = treatment["accentColor"]
+    haze = treatment["hazeColor"]
+    if composition == "skyline":
+        return "\n".join(
+            [
+                "content: \"\";",
+                "position: absolute;",
+                "left: 0;",
+                "right: 0;",
+                "bottom: 0;",
+                f"height: {horizon}%;",
+                "pointer-events: none;",
+                "z-index: 0;",
+                "opacity: 0.95;",
+                "background:",
+                f"  linear-gradient(180deg, {haze}22 0%, transparent 18%),",
+                "  linear-gradient(90deg,",
+                f"    {silhouette} 0 6%,",
+                "    transparent 6% 8%,",
+                f"    {silhouette} 8% 15%,",
+                "    transparent 15% 17%,",
+                f"    {silhouette} 17% 23%,",
+                "    transparent 23% 26%,",
+                f"    {silhouette} 26% 34%,",
+                "    transparent 34% 37%,",
+                f"    {silhouette} 37% 45%,",
+                "    transparent 45% 48%,",
+                f"    {silhouette} 48% 56%,",
+                "    transparent 56% 59%,",
+                f"    {silhouette} 59% 67%,",
+                "    transparent 67% 70%,",
+                f"    {silhouette} 70% 79%,",
+                "    transparent 79% 82%,",
+                f"    {silhouette} 82% 100%),",
+                f"  linear-gradient(0deg, {accent}24 0%, transparent 28%);",
+            ]
+        )
+    if composition == "mountains":
+        return "\n".join(
+            [
+                "content: \"\";",
+                "position: absolute;",
+                "inset: 0;",
+                "pointer-events: none;",
+                "z-index: 0;",
+                "opacity: 0.92;",
+                "background:",
+                f"  linear-gradient(140deg, transparent 0 38%, {silhouette} 38% 58%, transparent 58% 100%),",
+                f"  linear-gradient(35deg, transparent 0 42%, {blend_hex_colors(silhouette, accent, 0.18)} 42% 61%, transparent 61% 100%),",
+                f"  linear-gradient(155deg, transparent 0 54%, {silhouette} 54% 72%, transparent 72% 100%),",
+                f"  linear-gradient(25deg, transparent 0 60%, {blend_hex_colors(silhouette, '#FFFFFF', 0.1)} 60% 76%, transparent 76% 100%),",
+                f"  linear-gradient(0deg, {haze}44 0%, transparent {max(24, horizon - 10)}%);",
+                f"background-position: left bottom, 18% bottom, 62% bottom, 72% bottom, center bottom;",
+                "background-size: 48% 56%, 38% 46%, 46% 52%, 34% 42%, 100% 100%;",
+                "background-repeat: no-repeat;",
+            ]
+        )
+    if composition == "dunes":
+        return "\n".join(
+            [
+                "content: \"\";",
+                "position: absolute;",
+                "left: 0;",
+                "right: 0;",
+                "bottom: 0;",
+                "top: 34%;",
+                "pointer-events: none;",
+                "z-index: 0;",
+                "opacity: 0.95;",
+                "background:",
+                f"  radial-gradient(140% 70% at 8% 100%, {blend_hex_colors(treatment['bottomColor'], accent, 0.18)} 0 38%, transparent 39%),",
+                f"  radial-gradient(125% 62% at 40% 100%, {blend_hex_colors(treatment['bottomColor'], silhouette, 0.12)} 0 34%, transparent 35%),",
+                f"  radial-gradient(135% 68% at 74% 100%, {blend_hex_colors(treatment['bottomColor'], accent, 0.1)} 0 37%, transparent 38%),",
+                f"  linear-gradient(0deg, {haze}55 0%, transparent 42%);",
+            ]
+        )
+    if composition == "clouds":
+        return "\n".join(
+            [
+                "content: \"\";",
+                "position: absolute;",
+                "inset: 0;",
+                "pointer-events: none;",
+                "z-index: 0;",
+                "opacity: 0.82;",
+                "background:",
+                f"  radial-gradient(24% 12% at 18% 20%, {haze}AA 0 58%, transparent 60%),",
+                f"  radial-gradient(28% 14% at 44% 24%, {haze}99 0 58%, transparent 60%),",
+                f"  radial-gradient(26% 13% at 72% 18%, {haze}88 0 58%, transparent 60%),",
+                f"  linear-gradient(180deg, {blend_hex_colors(haze, '#FFFFFF', 0.18)}55 0%, transparent {max(26, horizon)}%);",
+            ]
+        )
+    return "\n".join(
+        [
+            "content: \"\";",
+            "position: absolute;",
+            "inset: 0;",
+            "pointer-events: none;",
+            "z-index: 0;",
+            "opacity: 0.88;",
+            "background:",
+            f"  radial-gradient(circle at 18% 24%, {accent}44 0 10%, transparent 11%),",
+            f"  radial-gradient(circle at 76% 28%, {haze}55 0 12%, transparent 13%),",
+            f"  linear-gradient(135deg, transparent 0 46%, {silhouette}1E 46% 58%, transparent 58% 100%),",
+            f"  linear-gradient(0deg, {haze}44 0%, transparent {max(28, horizon)}%);",
+        ]
+    )
+
+
+def build_background_atmosphere_rule(treatment: dict[str, Any]) -> str:
+    haze = treatment["hazeColor"]
+    light = treatment["lightColor"]
+    top = treatment["topColor"]
+    intensity = treatment["intensity"]
+    overlay_opacity = {"soft": "0.58", "balanced": "0.72", "dramatic": "0.86"}[intensity]
+    return "\n".join(
+        [
+            "content: \"\";",
+            "position: absolute;",
+            "inset: 0;",
+            "pointer-events: none;",
+            "z-index: 0;",
+            f"opacity: {overlay_opacity};",
+            "background:",
+            f"  radial-gradient(circle at 50% 20%, {light}33 0 9%, transparent 10%),",
+            f"  linear-gradient(180deg, {blend_hex_colors(top, '#FFFFFF', 0.14)}22 0%, transparent 24%),",
+            f"  linear-gradient(0deg, {haze}30 0%, transparent 26%);",
+            "mix-blend-mode: screen;",
+        ]
+    )
+
+
+def apply_background_treatment_to_artifact_html(
+    *,
+    current_html: str,
+    treatment: dict[str, Any],
+    original_edit_request: str,
+) -> tuple[str, list[str]]:
+    normalized = normalize_background_treatment(treatment, original_edit_request)
+    background_candidates = [
+        candidate
+        for candidate in extract_artifact_background_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    requested_selector = normalized.get("targetSelector") or "#background"
+    target_selector = choose_background_selector_candidate(
+        requested_selector,
+        background_candidates or extract_artifact_background_selector_candidates(current_html),
+    )
+    if not target_selector:
+        return "", ["no suitable background selector was found in the current artifact html."]
+
+    working = current_html
+    for property_name, value in (
+        ("position", "relative"),
+        ("overflow", "hidden"),
+        ("isolation", "isolate"),
+        ("background", build_background_base_gradient(normalized)),
+    ):
+        working = ensure_css_property_in_artifact_html(
+            working,
+            target_selector,
+            property_name,
+            value,
+        )
+
+    working = upsert_css_rule_in_artifact_html(
+        working,
+        f"{target_selector}::before",
+        build_background_composition_rule(normalized),
+    )
+    working = upsert_css_rule_in_artifact_html(
+        working,
+        f"{target_selector}::after",
+        build_background_atmosphere_rule(normalized),
+    )
+    if target_selector not in {"body", "html"}:
+        working = upsert_css_rule_in_artifact_html(
+            working,
+            f"{target_selector} > *",
+            "position: relative;\nz-index: 1;",
+        )
+    issues = validate_background_edit_result(
+        original_html=current_html,
+        edited_html=working,
+        original_edit_request=original_edit_request,
+    )
+    return (working, issues) if issues else (working, [])
+
+
+def extract_background_edit_signature(html: str) -> str:
+    candidates = extract_artifact_background_selector_candidates(html)
+    snippets = extract_artifact_background_style_snippets(html)
+    pseudo_snippets: list[str] = []
+    for candidate in candidates:
+        for pseudo in ("::before", "::after"):
+            selector = f"{candidate}{pseudo}"
+            selector_re = re.compile(rf"{re.escape(selector)}\s*\{{", re.IGNORECASE)
+            for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+                style_body = style_match.group("body") or ""
+                match = selector_re.search(style_body)
+                if not match:
+                    continue
+                brace_start = match.end() - 1
+                brace_end = find_matching_delimiter(style_body, brace_start, "{", "}")
+                if brace_end < 0:
+                    continue
+                pseudo_snippets.append(style_body[match.start(): brace_end + 1].strip())
+                break
+    return "\n".join(snippets + pseudo_snippets)
+
+
+def validate_background_edit_result(
+    *,
+    original_html: str,
+    edited_html: str,
+    original_edit_request: str,
+) -> list[str]:
+    if not is_background_visual_edit_request(original_edit_request):
+        return []
+    original_signature = extract_background_edit_signature(original_html)
+    edited_signature = extract_background_edit_signature(edited_html)
+    if edited_signature.strip() == original_signature.strip():
+        return ["background edit did not materially change the background treatment."]
+    if background_request_explicitly_allows_pale_palette(original_edit_request):
+        return []
+    colors = re.findall(r"#[0-9A-Fa-f]{6}", edited_signature)
+    if len(colors) >= 3:
+        luminances = [color_luminance(color) for color in colors[:8]]
+        if max(luminances) - min(luminances) < 0.1 and sum(luminances) / len(luminances) > 0.74:
+            return ["background edit appears visually washed out or too close to blank."]
+    return []
+
+
+def should_fallback_to_generic_patch_after_background_treatment_failure(
+    issues: list[str],
+) -> bool:
+    normalized = [issue.strip().lower() for issue in issues if issue and issue.strip()]
+    if not normalized:
+        return True
+    return all(
+        issue in {
+            "background treatment planner returned no usable treatment.",
+            "no suitable background selector was found in the current artifact html.",
+        }
+        for issue in normalized
+    )
+
+
+def attempt_builtin_cityscape_background_patch(
+    *,
+    current_html: str,
+    original_edit_request: str,
+) -> tuple[str, str]:
+    if artifact_edit_request_requires_external_asset_url(original_edit_request):
+        return "", ""
+    if not is_city_background_edit_request(original_edit_request):
+        return "", ""
+    background_candidates = [
+        candidate
+        for candidate in extract_artifact_background_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    target_selector = choose_background_selector_candidate("#city-bg", background_candidates)
+    if not target_selector:
+        return "", ""
+
+    working = current_html
+    for property_name, value in (
+        ("position", "relative"),
+        ("overflow", "hidden"),
+        ("isolation", "isolate"),
+        (
+            "background",
+            "linear-gradient(180deg, #0f2138 0%, #31506f 44%, #f2b77d 100%)",
+        ),
+    ):
+        working = ensure_css_property_in_artifact_html(
+            working,
+            target_selector,
+            property_name,
+            value,
+        )
+
+    skyline_rule = "\n".join(
+        [
+            "content: \"\";",
+            "position: absolute;",
+            "left: 0;",
+            "right: 0;",
+            "bottom: 0;",
+            "height: 46%;",
+            "pointer-events: none;",
+            "z-index: 0;",
+            "opacity: 0.92;",
+            "background:",
+            "  linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 18%),",
+            "  linear-gradient(90deg,",
+            "    rgba(15,20,34,0.96) 0 5%,",
+            "    transparent 5% 7%,",
+            "    rgba(18,24,40,0.96) 7% 13%,",
+            "    transparent 13% 16%,",
+            "    rgba(12,18,32,0.95) 16% 21%,",
+            "    transparent 21% 24%,",
+            "    rgba(16,22,36,0.96) 24% 31%,",
+            "    transparent 31% 34%,",
+            "    rgba(19,25,43,0.97) 34% 41%,",
+            "    transparent 41% 44%,",
+            "    rgba(14,21,35,0.96) 44% 51%,",
+            "    transparent 51% 54%,",
+            "    rgba(20,27,46,0.97) 54% 62%,",
+            "    transparent 62% 65%,",
+            "    rgba(17,24,42,0.96) 65% 72%,",
+            "    transparent 72% 75%,",
+            "    rgba(13,19,33,0.96) 75% 83%,",
+            "    transparent 83% 86%,",
+            "    rgba(18,24,40,0.96) 86% 100%);",
+        ]
+    )
+    glow_rule = "\n".join(
+        [
+            "content: \"\";",
+            "position: absolute;",
+            "inset: 0;",
+            "pointer-events: none;",
+            "z-index: 0;",
+            "opacity: 0.82;",
+            "background:",
+            "  radial-gradient(circle at 14% 22%, rgba(255,221,170,0.22) 0 1.1%, transparent 1.2%),",
+            "  radial-gradient(circle at 26% 18%, rgba(255,210,150,0.16) 0 1%, transparent 1.1%),",
+            "  radial-gradient(circle at 39% 28%, rgba(255,229,186,0.18) 0 1%, transparent 1.1%),",
+            "  radial-gradient(circle at 58% 20%, rgba(255,215,156,0.18) 0 1%, transparent 1.1%),",
+            "  radial-gradient(circle at 74% 25%, rgba(255,228,180,0.18) 0 1%, transparent 1.1%),",
+            "  radial-gradient(circle at 86% 19%, rgba(255,214,148,0.16) 0 1%, transparent 1.1%),",
+            "  linear-gradient(180deg, rgba(255,189,120,0.18) 0%, rgba(255,189,120,0.02) 34%, rgba(255,255,255,0) 55%),",
+            "  linear-gradient(0deg, rgba(255,210,150,0.12) 0%, rgba(255,210,150,0) 28%);",
+            "mix-blend-mode: screen;",
+        ]
+    )
+    working = upsert_css_rule_in_artifact_html(
+        working,
+        f"{target_selector}::before",
+        skyline_rule,
+    )
+    working = upsert_css_rule_in_artifact_html(
+        working,
+        f"{target_selector}::after",
+        glow_rule,
+    )
+    return (
+        working,
+        "Applied a cityscape-style background treatment while keeping the cars and layout unchanged.",
+    )
 
 
 def extract_artifact_background_selector_candidates(html: str) -> list[str]:
@@ -2017,6 +2800,66 @@ def set_css_property_in_artifact_html(
     if remembered_no_change:
         return html, False
     return html, False
+
+
+def ensure_css_property_in_artifact_html(
+    html: str, selector: str, property_name: str, value: str
+) -> str:
+    updated_html, changed = set_css_property_in_artifact_html(
+        html,
+        selector,
+        property_name,
+        value,
+    )
+    if changed:
+        return updated_html
+    rule_body = f"{property_name}: {value};"
+    return upsert_css_rule_in_artifact_html(updated_html, selector, rule_body)
+
+
+def upsert_css_rule_in_artifact_html(html: str, selector: str, rule_body: str) -> str:
+    for match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = match.group("body") or ""
+        updated_body, changed = upsert_css_rule_in_css(style_body, selector, rule_body)
+        if not changed:
+            continue
+        body_start, body_end = match.span("body")
+        return f"{html[:body_start]}{updated_body}{html[body_end:]}"
+
+    rule = build_css_rule(selector, rule_body)
+    head_close = re.search(r"</head\s*>", html, re.IGNORECASE)
+    if head_close:
+        return f"{html[:head_close.start()]}<style>\n{rule}\n</style>\n{html[head_close.start():]}"
+    body_open = re.search(r"<body\b[^>]*>", html, re.IGNORECASE)
+    if body_open:
+        insert_at = body_open.end()
+        return f"{html[:insert_at]}\n<style>\n{rule}\n</style>{html[insert_at:]}"
+    return f"<style>\n{rule}\n</style>\n{html}"
+
+
+def upsert_css_rule_in_css(css_text: str, selector: str, rule_body: str) -> tuple[str, bool]:
+    selector_re = re.compile(rf"(^|}})\s*{re.escape(selector)}\s*\{{", re.IGNORECASE | re.MULTILINE)
+    match = selector_re.search(css_text)
+    if match:
+        brace_start = css_text.find("{", match.start())
+        if brace_start >= 0:
+            brace_end = find_matching_delimiter(css_text, brace_start, "{", "}")
+            if brace_end >= 0:
+                return (
+                    f"{css_text[:match.start()]}{build_css_rule(selector, rule_body)}{css_text[brace_end + 1:]}",
+                    True,
+                )
+
+    suffix = "" if not css_text.strip() or css_text.endswith("\n") else "\n"
+    return f"{css_text}{suffix}{build_css_rule(selector, rule_body)}\n", True
+
+
+def build_css_rule(selector: str, rule_body: str) -> str:
+    lines = [line.rstrip() for line in (rule_body or "").splitlines() if line.strip()]
+    if not lines:
+        return f"{selector} {{\n}}\n"
+    formatted = "\n".join(f"  {line.strip()}" for line in lines)
+    return f"{selector} {{\n{formatted}\n}}"
 
 
 def set_css_property_in_css(

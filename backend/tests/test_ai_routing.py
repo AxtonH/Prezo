@@ -423,6 +423,60 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rewritten["edits"][0]["selector"], "#track-bg")
 
+    def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
+        patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
+            current_html=PATCHABLE_ARTIFACT_HTML,
+            original_edit_request="Edit the background so it is a cityscape.",
+        )
+
+        self.assertIn("#track-bg::before", patched_html)
+        self.assertIn("#track-bg::after", patched_html)
+        self.assertIn(".car", patched_html)
+        self.assertIn("cityscape-style background treatment", assistant_message)
+
+    def test_apply_background_treatment_to_artifact_html_preserves_cars(self) -> None:
+        patched_html, issues = ai_api.apply_background_treatment_to_artifact_html(
+            current_html=PATCHABLE_ARTIFACT_HTML,
+            treatment={
+                "composition": "mountains",
+                "timeOfDay": "sunset",
+                "intensity": "balanced",
+                "topColor": "#355070",
+                "midColor": "#B56576",
+                "bottomColor": "#E56B6F",
+                "silhouetteColor": "#2F3E46",
+                "accentColor": "#EAAC8B",
+                "hazeColor": "#E9C46A",
+                "lightColor": "#FFE8A3",
+                "horizonHeightPct": 44,
+                "detailDensity": 60,
+            },
+            original_edit_request="Make the background look like sunset mountains.",
+        )
+
+        self.assertEqual(issues, [])
+        self.assertIn("#track-bg::before", patched_html)
+        self.assertIn("#track-bg::after", patched_html)
+        self.assertIn(".car", patched_html)
+
+    def test_validate_background_edit_result_rejects_washed_out_signature(self) -> None:
+        washed_out_html = PATCHABLE_ARTIFACT_HTML.replace(
+            "linear-gradient(180deg, #0b1020 0%, #1a2240 100%)",
+            "linear-gradient(180deg, #F9FAFB 0%, #FBFCFD 100%)",
+        )
+        washed_out_html = washed_out_html.replace(
+            "</style>",
+            "\n#track-bg::before {\n  content: \"\";\n  background: linear-gradient(180deg, #F8F9FA 0%, #FCFDFE 100%);\n}\n</style>",
+        )
+
+        issues = ai_api.validate_background_edit_result(
+            original_html=PATCHABLE_ARTIFACT_HTML,
+            edited_html=washed_out_html,
+            original_edit_request="Make the background a cityscape.",
+        )
+
+        self.assertIn("washed out", issues[0])
+
     def test_set_css_property_in_css_can_update_rule_inside_media_block(self) -> None:
         css_text = """
 @media (min-width: 600px) {
@@ -465,13 +519,13 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             return_value=(
                 json.dumps(
                     {
-                        "assistantMessage": "Updated the background to daytime.",
+                        "assistantMessage": "Rounded the track corners.",
                         "edits": [
                             {
                                 "type": "set_css_property",
                                 "selector": "#track-bg",
-                                "property": "background",
-                                "value": "linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)",
+                                "property": "border-radius",
+                                "value": "24px",
                             }
                         ],
                     }
@@ -484,7 +538,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             context={
                 "artifact": {
                     "requestMode": "edit",
-                    "originalEditRequest": "Make the background daytime.",
+                    "originalEditRequest": "Increase the border radius.",
                     "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
                     "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                 }
@@ -499,8 +553,8 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertEqual(response.assistantMessage, "Updated the background to daytime.")
-        self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", response.html)
+        self.assertEqual(response.assistantMessage, "Rounded the track corners.")
+        self.assertIn("border-radius: 24px", response.html)
         self.assertIn(".car", response.html)
 
     async def test_local_edit_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
@@ -521,7 +575,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             context={
                 "artifact": {
                     "requestMode": "edit",
-                    "originalEditRequest": "Make the background daytime.",
+                    "originalEditRequest": "Increase the border radius.",
                     "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
                     "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                 }
@@ -565,21 +619,27 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 0)
 
-    async def test_local_city_background_edit_can_remap_invented_selector(self) -> None:
+    async def test_local_city_background_edit_uses_background_treatment_before_generic_patch(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(
             return_value=(
                 json.dumps(
                     {
-                        "assistantMessage": "Adjusted the background toward a city look.",
-                        "edits": [
-                            {
-                                "type": "set_css_property",
-                                "selector": "#city-bg",
-                                "property": "background",
-                                "value": "linear-gradient(180deg, #17324d 0%, #4e5966 48%, #e0b36c 100%)",
-                            }
-                        ],
+                        "assistantMessage": "Applied a dusk city skyline treatment.",
+                        "treatment": {
+                            "composition": "skyline",
+                            "timeOfDay": "sunset",
+                            "intensity": "balanced",
+                            "topColor": "#2B4162",
+                            "midColor": "#D17A5B",
+                            "bottomColor": "#F3B27A",
+                            "silhouetteColor": "#1F2636",
+                            "accentColor": "#FFC66D",
+                            "hazeColor": "#F1C7A3",
+                            "lightColor": "#FFE5B5",
+                            "horizonHeightPct": 42,
+                            "detailDensity": 64,
+                        },
                     }
                 ),
                 "stop",
@@ -590,7 +650,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             context={
                 "artifact": {
                     "requestMode": "edit",
-                    "originalEditRequest": "Edit the background so its a city.",
+                    "originalEditRequest": "Edit the background so its a cityscape.",
                     "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
                     "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                 }
@@ -604,9 +664,69 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact background treatment",
+        )
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertIn("#17324d", response.html)
+        self.assertIn("#track-bg::before", response.html)
+        self.assertIn("#track-bg::after", response.html)
         self.assertIn(".car", response.html)
+
+    async def test_background_treatment_failure_can_fallback_to_generic_patch(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            side_effect=[
+                (
+                    json.dumps({"assistantMessage": "No usable structured treatment.", "treatment": {}}),
+                    "stop",
+                ),
+                (
+                    json.dumps(
+                        {
+                            "assistantMessage": "Adjusted the background directly.",
+                            "edits": [
+                                {
+                                    "type": "set_css_property",
+                                    "selector": "#track-bg",
+                                    "property": "background",
+                                    "value": "linear-gradient(180deg, #305070 0%, #F0B37E 100%)",
+                                }
+                            ],
+                        }
+                    ),
+                    "stop",
+                ),
+            ]
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Make the background warmer and more atmospheric.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertEqual(
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact background treatment",
+        )
+        self.assertEqual(
+            gemini_mock.await_args_list[1].kwargs["request_stage"],
+            "artifact patch edit",
+        )
+        self.assertIn("#305070", response.html)
 
     async def test_local_edit_with_truncated_artifact_html_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
@@ -639,13 +759,13 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             return_value=(
                 json.dumps(
                     {
-                        "assistantMessage": "Adjusted the background safely on the stable artifact.",
+                        "assistantMessage": "Adjusted the border radius safely on the stable artifact.",
                         "edits": [
                             {
                                 "type": "set_css_property",
                                 "selector": "#track-bg",
-                                "property": "background",
-                                "value": "linear-gradient(180deg, #cfe8ff 0%, #f9f3b0 100%)",
+                                "property": "border-radius",
+                                "value": "20px",
                             }
                         ],
                     }
@@ -658,7 +778,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             context={
                 "artifact": {
                     "requestMode": "repair",
-                    "originalEditRequest": "Make the background daytime.",
+                    "originalEditRequest": "Increase the border radius.",
                     "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
                     "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                     "failedArtifactHtml": INVALID_ARTIFACT_HTML,
@@ -674,8 +794,8 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertIn("Adjusted the background safely", response.assistantMessage)
-        self.assertIn("linear-gradient(180deg, #cfe8ff 0%, #f9f3b0 100%)", response.html)
+        self.assertIn("Adjusted the border radius safely", response.assistantMessage)
+        self.assertIn("border-radius: 20px", response.html)
         self.assertIn(".car", response.html)
 
     async def test_local_repair_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
@@ -696,7 +816,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             context={
                 "artifact": {
                     "requestMode": "repair",
-                    "originalEditRequest": "Make the background daytime.",
+                    "originalEditRequest": "Increase the border radius.",
                     "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
                     "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
                     "failedArtifactHtml": INVALID_ARTIFACT_HTML,
