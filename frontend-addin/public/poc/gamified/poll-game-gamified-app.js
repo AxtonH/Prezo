@@ -47,6 +47,8 @@ import {
   buildArtifactSrcDoc,
   normalizeArtifactMarkup
 } from './poll-game-gamified-artifact-runtime.js'
+import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
+import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
@@ -166,10 +168,8 @@ import {
       model: ''
     },
     library: {
-      hydratedToken: '',
       status: 'pending',
-      detail: '',
-      refreshTimerId: null
+      detail: ''
     }
   }
 
@@ -416,9 +416,61 @@ import {
     themeControls.map((spec) => [spec.id, document.getElementById(spec.id)])
   )
 
+  const libraryStorage = createPollGameLibraryStorage({
+    themeLibraryKey: THEME_LIBRARY_KEY,
+    artifactLibraryKey: ARTIFACT_LIBRARY_KEY,
+    themeDraftKey: THEME_DRAFT_KEY,
+    defaultTheme,
+    clone,
+    asText,
+    safeJsonParse,
+    safeStorageGet,
+    normalizeThemeName,
+    sanitizeTheme,
+    normalizeArtifactMarkup,
+    createEmptyArtifactAnswers,
+    cloneArtifactConversationAnswers,
+    artifactVisualMode: ARTIFACT_VISUAL_MODE
+  })
+  const {
+    loadInitialTheme,
+    loadThemeLibrary,
+    saveThemeLibrary,
+    loadArtifactLibrary,
+    saveArtifactLibrary,
+    saveThemeDraft,
+    sanitizeSavedArtifactRecord
+  } = libraryStorage
+  const librarySyncManager = createPollGameLibrarySyncManager({
+    librarySyncStorageKey: LIBRARY_SYNC_TOKEN_KEY,
+    librarySyncMessageType: LIBRARY_SYNC_MESSAGE_TYPE,
+    librarySyncRequestMessageType: LIBRARY_SYNC_REQUEST_MESSAGE_TYPE,
+    normalizeApiBase,
+    asText,
+    errorToMessage,
+    getSupabaseAccessToken,
+    getApiBase: () => state.apiBase,
+    setApiBase: (apiBase) => {
+      state.apiBase = apiBase
+    },
+    mergeRemoteThemeLibrary,
+    mergeRemoteArtifactLibrary,
+    setStatus: setLibrarySyncStatus,
+    showArtifactFeedback
+  })
+  const {
+    hydrateSavedLibraries,
+    handleLibrarySyncMessage,
+    handleLibrarySyncStatusClick,
+    persistThemeToAccount,
+    deleteThemeFromAccount,
+    persistArtifactToAccount,
+    deleteArtifactFromAccount,
+    reflectLibrarySyncResult,
+    dispose: disposeLibrarySyncManager
+  } = librarySyncManager
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
-  let injectedLibrarySync = loadInjectedLibrarySync()
   let currentTheme = loadInitialTheme(themeLibrary)
   const dragState = {
     enabled: false,
@@ -7620,79 +7672,6 @@ import {
     return null
   }
 
-  function loadInjectedLibrarySync() {
-    try {
-      if (!window.sessionStorage) {
-        return null
-      }
-      const raw = sessionStorage.getItem(LIBRARY_SYNC_TOKEN_KEY)
-      if (!raw) {
-        return null
-      }
-      const parsed = JSON.parse(raw)
-      const token = asText(parsed?.token)
-      const expiresAt = asText(parsed?.expiresAt)
-      if (!token || !expiresAt) {
-        return null
-      }
-      const expiresAtMs = Date.parse(expiresAt)
-      if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-        return null
-      }
-      return {
-        token,
-        expiresAt,
-        apiBaseUrl: asText(parsed?.apiBaseUrl)
-      }
-    } catch {
-      return null
-    }
-  }
-
-  function persistInjectedLibrarySync(payload) {
-    const token = asText(payload?.token)
-    const expiresAt = asText(payload?.expiresAt)
-    if (!token || !expiresAt) {
-      return
-    }
-    const expiresAtMs = Date.parse(expiresAt)
-    if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-      return
-    }
-    injectedLibrarySync = {
-      token,
-      expiresAt,
-      apiBaseUrl: asText(payload?.apiBaseUrl)
-    }
-    try {
-      if (window.sessionStorage) {
-        sessionStorage.setItem(LIBRARY_SYNC_TOKEN_KEY, JSON.stringify(injectedLibrarySync))
-      }
-    } catch {
-      // Ignore storage failures for injected library sync tokens.
-    }
-  }
-
-  function getLibraryAccessToken() {
-    if (injectedLibrarySync?.token) {
-      const expiresAtMs = Date.parse(injectedLibrarySync.expiresAt)
-      if (Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
-        return injectedLibrarySync.token
-      }
-    }
-    return getSupabaseAccessToken()
-  }
-
-  function getLibraryAuthSource() {
-    if (injectedLibrarySync?.token) {
-      const expiresAtMs = Date.parse(injectedLibrarySync.expiresAt)
-      if (Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
-        return 'presentation'
-      }
-    }
-    return getSupabaseAccessToken() ? 'browser' : 'none'
-  }
-
   function setLibrarySyncStatus(type, text, detail = '') {
     state.library.status = type
     state.library.detail = detail
@@ -7708,198 +7687,6 @@ import {
     )
     el.librarySyncStatusText.textContent = text
     el.librarySyncStatus.title = detail || text
-  }
-
-  function clearLibrarySyncRefreshTimer() {
-    if (!state.library.refreshTimerId) {
-      return
-    }
-    window.clearTimeout(state.library.refreshTimerId)
-    state.library.refreshTimerId = null
-  }
-
-  function syncLibraryStatusFromAvailability() {
-    const source = getLibraryAuthSource()
-    if (source === 'presentation') {
-      setLibrarySyncStatus(
-        'pending',
-        'Syncing account library…',
-        'Using the PowerPoint presentation sync bridge to load your saved themes and artifacts.'
-      )
-      return
-    }
-    if (source === 'browser') {
-      setLibrarySyncStatus(
-        'pending',
-        'Syncing account library…',
-        'Using your current browser sign-in to load saved themes and artifacts.'
-      )
-      return
-    }
-    state.library.hydratedToken = ''
-    setLibrarySyncStatus(
-      'warning',
-      'Local library only',
-      'This surface is showing only items saved in its own storage. Open Prezo Host while signed in to sync with your account.'
-    )
-  }
-
-  function handleLibrarySyncMessage(event) {
-    const message = event?.data
-    if (!message || typeof message !== 'object' || message.type !== LIBRARY_SYNC_MESSAGE_TYPE) {
-      return
-    }
-    if (event.origin && event.origin !== window.location.origin) {
-      return
-    }
-    persistInjectedLibrarySync(message)
-    const injectedApiBase = normalizeApiBase(message.apiBaseUrl)
-    if (injectedApiBase) {
-      state.apiBase = injectedApiBase
-    }
-    clearLibrarySyncRefreshTimer()
-    syncLibraryStatusFromAvailability()
-    void hydrateSavedLibraries({ force: true })
-  }
-
-  function handleLibrarySyncStatusClick() {
-    clearLibrarySyncRefreshTimer()
-    const source = getLibraryAuthSource()
-    setLibrarySyncStatus(
-      'pending',
-      source === 'none' ? 'Requesting account sync…' : 'Refreshing account sync…',
-      source === 'presentation'
-        ? 'Refreshing the shared library token from the presentation.'
-        : source === 'browser'
-          ? 'Refreshing the saved library from your browser sign-in.'
-          : 'Requesting a shared library token from the current presentation or retrying browser sign-in.'
-    )
-    if (window.parent && window.parent !== window) {
-      try {
-        window.parent.postMessage(
-          { type: LIBRARY_SYNC_REQUEST_MESSAGE_TYPE },
-          window.location.origin
-        )
-      } catch {
-        // Ignore parent postMessage failures.
-      }
-    }
-    void hydrateSavedLibraries({ force: true })
-    state.library.refreshTimerId = window.setTimeout(() => {
-      state.library.refreshTimerId = null
-      if (state.library.status === 'success') {
-        return
-      }
-      if (getLibraryAccessToken()) {
-        setLibrarySyncStatus(
-          'error',
-          'Library sync unavailable',
-          'A sync token was found, but the account library could not be loaded right now. Try again in a moment.'
-        )
-        showArtifactFeedback('Account library sync failed. Try again in a moment.', 'error')
-        return
-      }
-      setLibrarySyncStatus(
-        'warning',
-        'Local library only',
-        'No shared account sync token was found for this session. Open Prezo Host while signed in, then click this badge again.'
-      )
-      showArtifactFeedback(
-        'No shared account sync was found for this session. Open Prezo Host while signed in, then click the badge again.',
-        'warning'
-      )
-    }, 1800)
-  }
-
-  async function fetchAuthedJson(path, options = {}) {
-    const token = getLibraryAccessToken()
-    if (!token) {
-      throw new Error('Sign in through Prezo Host to sync saved items.')
-    }
-    const headers = new Headers(options.headers || {})
-    headers.set('Authorization', `Bearer ${token}`)
-    if (options.body && !headers.has('Content-Type')) {
-      headers.set('Content-Type', 'application/json')
-    }
-    let response
-    try {
-      response = await fetch(`${state.apiBase}${path}`, {
-        ...options,
-        headers
-      })
-    } catch (error) {
-      const message = errorToMessage(error)
-      throw new Error(`Unable to reach API base ${state.apiBase}: ${message}`)
-    }
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const detail =
-        typeof payload?.detail === 'string' ? payload.detail : `Request failed (${response.status})`
-      throw new Error(`${detail} [API ${state.apiBase}]`)
-    }
-    return payload
-  }
-
-  async function hydrateSavedLibraries({ force = false } = {}) {
-    const token = getLibraryAccessToken()
-    if (!token) {
-      syncLibraryStatusFromAvailability()
-      return
-    }
-    if (!force && state.library.hydratedToken === token) {
-      if (state.library.status !== 'success') {
-        const source = getLibraryAuthSource()
-        setLibrarySyncStatus(
-          'success',
-          'Account sync active',
-          source === 'presentation'
-            ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
-            : 'Saved themes and artifacts are synced from your browser sign-in.'
-        )
-      }
-      return
-    }
-    syncLibraryStatusFromAvailability()
-    try {
-      const [remoteThemes, remoteArtifacts] = await Promise.all([
-        fetchAuthedJson('/library/poll-game/themes'),
-        fetchAuthedJson('/library/poll-game/artifacts')
-      ])
-      mergeRemoteThemeLibrary(remoteThemes)
-      mergeRemoteArtifactLibrary(remoteArtifacts)
-      state.library.hydratedToken = token
-      clearLibrarySyncRefreshTimer()
-      const source = getLibraryAuthSource()
-      setLibrarySyncStatus(
-        'success',
-        'Account sync active',
-        source === 'presentation'
-          ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
-          : 'Saved themes and artifacts are synced from your browser sign-in.'
-      )
-    } catch (error) {
-      state.library.hydratedToken = ''
-      const message = errorToMessage(error)
-      if (
-        message === 'Sign in through Prezo Host to sync saved items.' ||
-        message.includes('Auth required') ||
-        message.includes('Invalid auth token')
-      ) {
-        setLibrarySyncStatus(
-          'warning',
-          'Local library only',
-          'Account sync is unavailable in this surface right now. Open Prezo Host while signed in to refresh the shared library token.'
-        )
-        return
-      }
-      clearLibrarySyncRefreshTimer()
-      setLibrarySyncStatus(
-        'error',
-        'Library sync unavailable',
-        `Unable to load account-synced themes and artifacts: ${message}`
-      )
-      console.warn('Failed to hydrate saved theme/artifact libraries', error)
-    }
   }
 
   function mergeRemoteThemeLibrary(records) {
@@ -7931,131 +7718,6 @@ import {
     }
     saveArtifactLibrary(artifactLibrary)
     refreshArtifactSelect(artifactLibrary.activeName)
-  }
-
-  async function persistThemeToAccount(name, theme) {
-    try {
-      await fetchAuthedJson(`/library/poll-game/themes/${encodeURIComponent(name)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ theme })
-      })
-      return {
-        type: 'success',
-        message: `Theme "${name}" saved. Synced to your account.`
-      }
-    } catch (error) {
-      return buildLibrarySyncFallback(
-        `Theme "${name}" saved locally.`,
-        errorToMessage(error)
-      )
-    }
-  }
-
-  async function deleteThemeFromAccount(name) {
-    try {
-      await fetchAuthedJson(`/library/poll-game/themes/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
-      })
-      return {
-        type: 'success',
-        message: `Theme "${name}" deleted.`
-      }
-    } catch (error) {
-      return buildLibrarySyncFallback(
-        `Theme "${name}" deleted locally.`,
-        errorToMessage(error)
-      )
-    }
-  }
-
-  async function persistArtifactToAccount(name, artifactRecord) {
-    try {
-      await fetchAuthedJson(`/library/poll-game/artifacts/${encodeURIComponent(name)}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          html: artifactRecord.html,
-          last_prompt: artifactRecord.lastPrompt || null,
-          last_answers: artifactRecord.lastAnswers || {},
-          theme_snapshot: artifactRecord.themeSnapshot || null
-        })
-      })
-      return {
-        type: 'success',
-        message: `Artifact "${name}" saved. Synced to your account.`
-      }
-    } catch (error) {
-      return buildLibrarySyncFallback(
-        `Artifact "${name}" saved locally.`,
-        errorToMessage(error)
-      )
-    }
-  }
-
-  async function deleteArtifactFromAccount(name) {
-    try {
-      await fetchAuthedJson(`/library/poll-game/artifacts/${encodeURIComponent(name)}`, {
-        method: 'DELETE'
-      })
-      return {
-        type: 'success',
-        message: `Artifact "${name}" deleted.`
-      }
-    } catch (error) {
-      return buildLibrarySyncFallback(
-        `Artifact "${name}" deleted locally.`,
-        errorToMessage(error)
-      )
-    }
-  }
-
-  function buildLibrarySyncFallback(localMessage, errorMessage) {
-    if (
-      errorMessage === 'Sign in through Prezo Host to sync saved items.' ||
-      errorMessage.includes('Auth required') ||
-      errorMessage.includes('Invalid auth token')
-    ) {
-      return {
-        type: 'warning',
-        message: `${localMessage} Saved only in this surface. Open Prezo Host to sync with your account.`
-      }
-    }
-    return {
-      type: 'error',
-      message: `${localMessage} Sync failed: ${errorMessage}`
-    }
-  }
-
-  function reflectLibrarySyncResult(syncResult) {
-    if (!syncResult || typeof syncResult !== 'object') {
-      return
-    }
-    if (syncResult.type === 'warning') {
-      setLibrarySyncStatus(
-        'warning',
-        'Local library only',
-        syncResult.message ||
-          'This surface is currently using local saved items only. Open Prezo Host while signed in to sync with your account.'
-      )
-      return
-    }
-    if (syncResult.type === 'error') {
-      setLibrarySyncStatus(
-        'error',
-        'Library sync unavailable',
-        syncResult.message || 'Unable to sync the saved library right now.'
-      )
-      return
-    }
-    if (syncResult.type === 'success' && getLibraryAccessToken()) {
-      const source = getLibraryAuthSource()
-      setLibrarySyncStatus(
-        'success',
-        'Account sync active',
-        source === 'presentation'
-          ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
-          : 'Saved themes and artifacts are synced from your browser sign-in.'
-      )
-    }
   }
 
   function bindImageUpload(inputId, themeKey, successText) {
@@ -8874,161 +8536,6 @@ import {
     el.artifactSelect.value = preferred
     if (!el.artifactName.value) {
       el.artifactName.value = preferred
-    }
-  }
-
-  function loadInitialTheme(library) {
-    const draft = loadThemeDraft()
-    if (library.activeName && library.themes[library.activeName]) {
-      return sanitizeTheme(library.themes[library.activeName])
-    }
-    if (draft) {
-      if (isLegacyDarkTheme(draft)) {
-        saveThemeDraft(defaultTheme)
-        return clone(defaultTheme)
-      }
-      return draft
-    }
-    return clone(defaultTheme)
-  }
-
-  function isLegacyDarkTheme(theme) {
-    if (!theme || typeof theme !== 'object') {
-      return false
-    }
-    return (
-      asText(theme.bgA).toLowerCase() === '#04112b' &&
-      asText(theme.bgB).toLowerCase() === '#0a2457' &&
-      asText(theme.panelColor).toLowerCase() === '#040c20' &&
-      asText(theme.textMain).toLowerCase() === '#e8f2ff'
-    )
-  }
-
-  function hasLegacyTitleThemeFields(theme) {
-    if (!theme || typeof theme !== 'object') {
-      return false
-    }
-    return (
-      Object.prototype.hasOwnProperty.call(theme, 'titleX') ||
-      Object.prototype.hasOwnProperty.call(theme, 'titleY') ||
-      Object.prototype.hasOwnProperty.call(theme, 'titleBoxWidth') ||
-      Object.prototype.hasOwnProperty.call(theme, 'titleBoxHeight') ||
-      Object.prototype.hasOwnProperty.call(theme, 'titleScaleX') ||
-      Object.prototype.hasOwnProperty.call(theme, 'titleScaleY')
-    )
-  }
-
-  function loadThemeLibrary() {
-    const parsed = safeJsonParse(safeStorageGet(THEME_LIBRARY_KEY))
-    if (!parsed || typeof parsed !== 'object') {
-      return { themes: {}, activeName: null }
-    }
-    const incomingThemes =
-      parsed.themes && typeof parsed.themes === 'object' ? parsed.themes : {}
-    const themes = {}
-    let migratedLegacyTheme = false
-    for (const [name, theme] of Object.entries(incomingThemes)) {
-      const normalizedName = normalizeThemeName(name)
-      if (!normalizedName) {
-        continue
-      }
-      if (hasLegacyTitleThemeFields(theme)) {
-        migratedLegacyTheme = true
-      }
-      themes[normalizedName] = sanitizeTheme(theme)
-    }
-    const activeName =
-      typeof parsed.activeName === 'string' && themes[parsed.activeName]
-        ? parsed.activeName
-        : null
-    const library = { themes, activeName }
-    if (migratedLegacyTheme) {
-      saveThemeLibrary(library)
-    }
-    return library
-  }
-
-  function saveThemeLibrary(library) {
-    try {
-      localStorage.setItem(THEME_LIBRARY_KEY, JSON.stringify(library))
-    } catch {}
-  }
-
-  function loadArtifactLibrary() {
-    const parsed = safeJsonParse(safeStorageGet(ARTIFACT_LIBRARY_KEY))
-    if (!parsed || typeof parsed !== 'object') {
-      return { artifacts: {}, activeName: null }
-    }
-    const incomingArtifacts =
-      parsed.artifacts && typeof parsed.artifacts === 'object' ? parsed.artifacts : {}
-    const artifacts = {}
-    for (const [name, artifact] of Object.entries(incomingArtifacts)) {
-      const normalizedName = normalizeThemeName(name)
-      const normalizedArtifact = sanitizeSavedArtifactRecord(artifact)
-      if (!normalizedName || !normalizedArtifact) {
-        continue
-      }
-      artifacts[normalizedName] = normalizedArtifact
-    }
-    const activeName =
-      typeof parsed.activeName === 'string' && artifacts[parsed.activeName]
-        ? parsed.activeName
-        : null
-    return { artifacts, activeName }
-  }
-
-  function saveArtifactLibrary(library) {
-    try {
-      localStorage.setItem(ARTIFACT_LIBRARY_KEY, JSON.stringify(library))
-    } catch {}
-  }
-
-  function loadThemeDraft() {
-    const parsed = safeJsonParse(safeStorageGet(THEME_DRAFT_KEY))
-    if (!parsed || typeof parsed !== 'object') {
-      return null
-    }
-    const sanitized = sanitizeTheme(parsed)
-    if (hasLegacyTitleThemeFields(parsed)) {
-      saveThemeDraft(sanitized)
-    }
-    return sanitized
-  }
-
-  function saveThemeDraft(theme) {
-    try {
-      localStorage.setItem(THEME_DRAFT_KEY, JSON.stringify(theme))
-    } catch {}
-  }
-
-  function sanitizeSavedArtifactRecord(value) {
-    if (!value || typeof value !== 'object') {
-      return null
-    }
-    const html = normalizeArtifactMarkup(asText(value.html))
-    if (!html) {
-      return null
-    }
-    const lastPrompt = asText(value.lastPrompt ?? value.last_prompt)
-    const lastAnswersInput =
-      value.lastAnswers && typeof value.lastAnswers === 'object'
-        ? value.lastAnswers
-        : value.last_answers && typeof value.last_answers === 'object'
-          ? value.last_answers
-          : createEmptyArtifactAnswers()
-    const themeSnapshotInput =
-      value.themeSnapshot && typeof value.themeSnapshot === 'object'
-        ? value.themeSnapshot
-        : value.theme_snapshot && typeof value.theme_snapshot === 'object'
-          ? value.theme_snapshot
-          : null
-    return {
-      html,
-      lastPrompt,
-      lastAnswers: cloneArtifactConversationAnswers(lastAnswersInput),
-      themeSnapshot: themeSnapshotInput
-        ? sanitizeTheme({ ...themeSnapshotInput, visualMode: ARTIFACT_VISUAL_MODE })
-        : null
     }
   }
 
@@ -9865,7 +9372,7 @@ import {
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
-    clearLibrarySyncRefreshTimer()
+    disposeLibrarySyncManager()
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }
