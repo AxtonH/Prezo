@@ -191,10 +191,18 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             setattr(ai_api.settings, key, value)
 
     @staticmethod
-    def build_payload(request_mode: str, model: str | None = None) -> ai_api.PollGameArtifactBuildRequest:
+    def build_payload(
+        request_mode: str,
+        model: str | None = None,
+        *,
+        prompt: str = "Build a detailed fighting-game artifact.",
+        original_edit_request: str | None = None,
+    ) -> ai_api.PollGameArtifactBuildRequest:
         context = {"artifact": {"requestMode": request_mode}} if request_mode else {"artifact": {}}
+        if original_edit_request:
+            context["artifact"]["originalEditRequest"] = original_edit_request
         return ai_api.PollGameArtifactBuildRequest(
-            prompt="Build a detailed fighting-game artifact.",
+            prompt=prompt,
             context=context,
             model=model,
         )
@@ -213,10 +221,15 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 0)
         self.assertEqual(anthropic_mock.await_args.kwargs["model"], "claude-sonnet-4-6")
 
-    async def test_edit_request_uses_artifact_edit_model_and_ignores_payload_model(self) -> None:
+    async def test_simple_edit_request_uses_artifact_edit_model_and_ignores_payload_model(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
-        payload = self.build_payload("edit", model="gemini-3.1-pro-preview")
+        payload = self.build_payload(
+            "edit",
+            model="gemini-3.1-pro-preview",
+            prompt="Make the title slightly smaller.",
+            original_edit_request="Make the title slightly smaller.",
+        )
         with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
             ai_api, "request_gemini_text", gemini_mock
         ):
@@ -227,10 +240,52 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
+    async def test_complex_background_edit_request_uses_claude_and_ignores_payload_model(self) -> None:
+        anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
+        gemini_mock = AsyncMock()
+        payload = self.build_payload(
+            "edit",
+            model="gemini-3.1-pro-preview",
+            prompt="Change the background to a Dubai city skyline at sunset.",
+            original_edit_request="Change the background to a Dubai city skyline at sunset.",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(response.model, "claude-sonnet-4-6")
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(anthropic_mock.await_args.kwargs["model"], "claude-sonnet-4-6")
+
+    async def test_structural_edit_request_uses_claude(self) -> None:
+        anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
+        gemini_mock = AsyncMock()
+        payload = self.build_payload(
+            "edit",
+            model="gemini-3.1-pro-preview",
+            prompt="Restructure the layout into two stacked sections.",
+            original_edit_request="Restructure the layout into two stacked sections.",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(response.model, "claude-sonnet-4-6")
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
+
     async def test_repair_request_uses_artifact_repair_model(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
-        payload = self.build_payload("repair", model="gemini-3.1-pro-preview")
+        payload = self.build_payload(
+            "repair",
+            model="gemini-3.1-pro-preview",
+            prompt="Make the title slightly smaller.",
+            original_edit_request="Make the title slightly smaller.",
+        )
         with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
             ai_api, "request_gemini_text", gemini_mock
         ):
@@ -728,8 +783,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 0)
 
     async def test_local_city_background_edit_uses_background_treatment_before_generic_patch(self) -> None:
-        anthropic_mock = AsyncMock()
-        gemini_mock = AsyncMock(
+        anthropic_mock = AsyncMock(
             return_value=(
                 json.dumps(
                     {
@@ -750,9 +804,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                         },
                     }
                 ),
-                "stop",
+                "end_turn",
             )
         )
+        gemini_mock = AsyncMock()
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -770,27 +825,27 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
         self.assertEqual(
-            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            anthropic_mock.await_args_list[0].kwargs["request_stage"],
             "artifact background treatment",
         )
-        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertEqual(response.model, "claude-sonnet-4-6")
         self.assertIn('id="prezo-background-treatment-data"', response.html)
         self.assertIn('"composition":"skyline"', response.html)
         self.assertIn(".car", response.html)
 
     async def test_background_treatment_failure_uses_deterministic_runtime_treatment(self) -> None:
-        anthropic_mock = AsyncMock()
-        gemini_mock = AsyncMock(
+        anthropic_mock = AsyncMock(
             side_effect=[
                 (
                     json.dumps({"assistantMessage": "No usable structured treatment.", "treatment": {}}),
-                    "stop",
+                    "end_turn",
                 ),
             ]
         )
+        gemini_mock = AsyncMock()
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -808,10 +863,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
         self.assertEqual(
-            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            anthropic_mock.await_args_list[0].kwargs["request_stage"],
             "artifact background treatment",
         )
         self.assertIn('id="prezo-background-treatment-data"', response.html)

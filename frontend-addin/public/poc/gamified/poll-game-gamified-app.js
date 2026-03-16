@@ -1424,10 +1424,12 @@ import {
       }
       renderFromSnapshot(true)
       showArtifactStageFrame()
-      const statusMessage =
+      const statusMessage = appendArtifactModelLabel(
         asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
           ? 'Artifact repaired and updated.'
-          : asText(buildResult.assistantMessage) || 'Artifact repaired and updated.'
+          : asText(buildResult.assistantMessage) || 'Artifact repaired and updated.',
+        buildResult.model
+      )
       state.artifact.pendingSuccessMessage = statusMessage
       setArtifactComposerStatus('Artifact repair applied. Verifying updated render...', 'pending')
     } catch (error) {
@@ -1861,12 +1863,14 @@ import {
       } else {
         renderFromSnapshot(true)
         showArtifactStageFrame()
-        const statusMessage =
+        const statusMessage = appendArtifactModelLabel(
           requestKind === 'edit'
             ? asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
               ? 'Artifact updated. Keep prompting to iterate.'
               : asText(buildResult.assistantMessage) || 'Artifact updated. Keep prompting to iterate.'
-            : asText(buildResult.assistantMessage) || 'Artifact generated. Keep prompting to iterate.'
+            : asText(buildResult.assistantMessage) || 'Artifact generated. Keep prompting to iterate.',
+          buildResult.model
+        )
         if (requestKind === 'edit') {
           state.artifact.pendingSuccessMessage = statusMessage
           setArtifactComposerStatus('Artifact update applied. Verifying updated render...', 'pending')
@@ -2413,6 +2417,19 @@ import {
     return parseAiJsonResponse(text)
   }
 
+  function appendArtifactModelLabel(message, model) {
+    const base = asText(message).trim()
+    const normalizedModel = asText(model).trim()
+    if (!normalizedModel) {
+      return base
+    }
+    const suffix = `[Model: ${normalizedModel}]`
+    if (!base) {
+      return suffix
+    }
+    return base.includes(suffix) ? base : `${base} ${suffix}`
+  }
+
   async function requestAiArtifactBuild(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
@@ -2440,7 +2457,8 @@ import {
     }
     return {
       html,
-      assistantMessage: asText(payload?.assistantMessage)
+      assistantMessage: asText(payload?.assistantMessage),
+      model: asText(payload?.model)
     }
   }
 
