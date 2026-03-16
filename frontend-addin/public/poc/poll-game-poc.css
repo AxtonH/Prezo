@@ -342,6 +342,53 @@ body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   margin-top: 8px;
 }
 
+.library-sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 4px 8px;
+  border: 1px solid #b7d0f5;
+  border-radius: 999px;
+  background: rgba(244, 249, 255, 0.9);
+  color: #315781;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.library-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.library-sync-status.status-pending {
+  color: #8a6200;
+  border-color: #efd8a4;
+  background: rgba(255, 248, 228, 0.92);
+}
+
+.library-sync-status.status-success {
+  color: #216e43;
+  border-color: #b6ddc7;
+  background: rgba(236, 249, 240, 0.92);
+}
+
+.library-sync-status.status-warning {
+  color: #9a4d00;
+  border-color: #f3c995;
+  background: rgba(255, 243, 229, 0.94);
+}
+
+.library-sync-status.status-error {
+  color: #b53a4e;
+  border-color: #f0b8c2;
+  background: rgba(255, 240, 243, 0.94);
+}
+
 .ribbon-group.artifact-library-group {
   padding: 8px 14px 8px;
 }

@@ -165,7 +165,9 @@ import {
       model: ''
     },
     library: {
-      hydratedToken: ''
+      hydratedToken: '',
+      status: 'pending',
+      detail: ''
     }
   }
 
@@ -210,6 +212,8 @@ import {
     loadArtifact: must('load-artifact'),
     deleteArtifact: must('delete-artifact'),
     artifactFeedback: must('artifact-feedback'),
+    librarySyncStatus: must('library-sync-status'),
+    librarySyncStatusText: must('library-sync-status-text'),
     textEditFeedback: must('text-edit-feedback'),
     aiChatShell: must('ai-chat-shell'),
     aiChatFab: must('ai-chat-fab'),
@@ -7676,6 +7680,59 @@ import {
     return getSupabaseAccessToken()
   }
 
+  function getLibraryAuthSource() {
+    if (injectedLibrarySync?.token) {
+      const expiresAtMs = Date.parse(injectedLibrarySync.expiresAt)
+      if (Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
+        return 'presentation'
+      }
+    }
+    return getSupabaseAccessToken() ? 'browser' : 'none'
+  }
+
+  function setLibrarySyncStatus(type, text, detail = '') {
+    state.library.status = type
+    state.library.detail = detail
+    el.librarySyncStatus.classList.remove('status-pending', 'status-success', 'status-warning', 'status-error')
+    el.librarySyncStatus.classList.add(
+      type === 'success'
+        ? 'status-success'
+        : type === 'warning'
+          ? 'status-warning'
+          : type === 'error'
+            ? 'status-error'
+            : 'status-pending'
+    )
+    el.librarySyncStatusText.textContent = text
+    el.librarySyncStatus.title = detail || text
+  }
+
+  function syncLibraryStatusFromAvailability() {
+    const source = getLibraryAuthSource()
+    if (source === 'presentation') {
+      setLibrarySyncStatus(
+        'pending',
+        'Syncing account library…',
+        'Using the PowerPoint presentation sync bridge to load your saved themes and artifacts.'
+      )
+      return
+    }
+    if (source === 'browser') {
+      setLibrarySyncStatus(
+        'pending',
+        'Syncing account library…',
+        'Using your current browser sign-in to load saved themes and artifacts.'
+      )
+      return
+    }
+    state.library.hydratedToken = ''
+    setLibrarySyncStatus(
+      'warning',
+      'Local library only',
+      'This surface is showing only items saved in its own storage. Open Prezo Host while signed in to sync with your account.'
+    )
+  }
+
   function handleLibrarySyncMessage(event) {
     const message = event?.data
     if (!message || typeof message !== 'object' || message.type !== LIBRARY_SYNC_MESSAGE_TYPE) {
@@ -7689,6 +7746,7 @@ import {
     if (injectedApiBase) {
       state.apiBase = injectedApiBase
     }
+    syncLibraryStatusFromAvailability()
     void hydrateSavedLibraries({ force: true })
   }
 
@@ -7724,11 +7782,23 @@ import {
   async function hydrateSavedLibraries({ force = false } = {}) {
     const token = getLibraryAccessToken()
     if (!token) {
+      syncLibraryStatusFromAvailability()
       return
     }
     if (!force && state.library.hydratedToken === token) {
+      if (state.library.status !== 'success') {
+        const source = getLibraryAuthSource()
+        setLibrarySyncStatus(
+          'success',
+          'Account sync active',
+          source === 'presentation'
+            ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
+            : 'Saved themes and artifacts are synced from your browser sign-in.'
+        )
+      }
       return
     }
+    syncLibraryStatusFromAvailability()
     try {
       const [remoteThemes, remoteArtifacts] = await Promise.all([
         fetchAuthedJson('/library/poll-game/themes'),
@@ -7737,7 +7807,34 @@ import {
       mergeRemoteThemeLibrary(remoteThemes)
       mergeRemoteArtifactLibrary(remoteArtifacts)
       state.library.hydratedToken = token
+      const source = getLibraryAuthSource()
+      setLibrarySyncStatus(
+        'success',
+        'Account sync active',
+        source === 'presentation'
+          ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
+          : 'Saved themes and artifacts are synced from your browser sign-in.'
+      )
     } catch (error) {
+      state.library.hydratedToken = ''
+      const message = errorToMessage(error)
+      if (
+        message === 'Sign in through Prezo Host to sync saved items.' ||
+        message.includes('Auth required') ||
+        message.includes('Invalid auth token')
+      ) {
+        setLibrarySyncStatus(
+          'warning',
+          'Local library only',
+          'Account sync is unavailable in this surface right now. Open Prezo Host while signed in to refresh the shared library token.'
+        )
+        return
+      }
+      setLibrarySyncStatus(
+        'error',
+        'Library sync unavailable',
+        `Unable to load account-synced themes and artifacts: ${message}`
+      )
       console.warn('Failed to hydrate saved theme/artifact libraries', error)
     }
   }
@@ -7865,6 +7962,39 @@ import {
     }
   }
 
+  function reflectLibrarySyncResult(syncResult) {
+    if (!syncResult || typeof syncResult !== 'object') {
+      return
+    }
+    if (syncResult.type === 'warning') {
+      setLibrarySyncStatus(
+        'warning',
+        'Local library only',
+        syncResult.message ||
+          'This surface is currently using local saved items only. Open Prezo Host while signed in to sync with your account.'
+      )
+      return
+    }
+    if (syncResult.type === 'error') {
+      setLibrarySyncStatus(
+        'error',
+        'Library sync unavailable',
+        syncResult.message || 'Unable to sync the saved library right now.'
+      )
+      return
+    }
+    if (syncResult.type === 'success' && getLibraryAccessToken()) {
+      const source = getLibraryAuthSource()
+      setLibrarySyncStatus(
+        'success',
+        'Account sync active',
+        source === 'presentation'
+          ? 'Saved themes and artifacts are synced from your Prezo Host sign-in through this presentation.'
+          : 'Saved themes and artifacts are synced from your browser sign-in.'
+      )
+    }
+  }
+
   function bindImageUpload(inputId, themeKey, successText) {
     const input = document.getElementById(inputId)
     if (!input) {
@@ -7902,6 +8032,7 @@ import {
     el.themeName.value = name
     const syncResult = await persistThemeToAccount(name, currentTheme)
     showThemeFeedback(syncResult.message || `Theme "${name}" saved.`, syncResult.type)
+    reflectLibrarySyncResult(syncResult)
   }
 
   function loadThemeFromSelect() {
@@ -7938,6 +8069,7 @@ import {
     refreshThemeSelect(themeLibrary.activeName)
     const syncResult = await deleteThemeFromAccount(name)
     showThemeFeedback(syncResult.message || `Theme "${name}" deleted.`, syncResult.type)
+    reflectLibrarySyncResult(syncResult)
   }
 
   async function saveArtifactToLibrary() {
@@ -7958,6 +8090,7 @@ import {
     el.artifactName.value = name
     const syncResult = await persistArtifactToAccount(name, artifactRecord)
     showArtifactFeedback(syncResult.message || `Artifact "${name}" saved.`, syncResult.type)
+    reflectLibrarySyncResult(syncResult)
   }
 
   function loadArtifactFromSelect() {
@@ -8017,6 +8150,7 @@ import {
     refreshArtifactSelect(artifactLibrary.activeName)
     const syncResult = await deleteArtifactFromAccount(name)
     showArtifactFeedback(syncResult.message || `Artifact "${name}" deleted.`, syncResult.type)
+    reflectLibrarySyncResult(syncResult)
   }
 
   function exportCurrentTheme() {
