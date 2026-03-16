@@ -574,10 +574,19 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     for (const tab of ribbonTabs) {
       tab.addEventListener('click', () => {
         const nextTab = asText(tab.dataset.ribbonTab)
-        setActiveRibbonTab(nextTab)
         if (ribbonState.hidden) {
           setRibbonHidden(false)
         }
+        const isActiveExpanded =
+          !ribbonState.hidden &&
+          !ribbonState.collapsed &&
+          nextTab &&
+          nextTab === ribbonState.activeTab
+        if (isActiveExpanded) {
+          setRibbonCollapsed(true)
+          return
+        }
+        setActiveRibbonTab(nextTab)
         if (ribbonState.collapsed) {
           setRibbonCollapsed(false)
         }
