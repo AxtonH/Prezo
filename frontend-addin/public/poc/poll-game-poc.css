@@ -127,7 +127,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   position: fixed;
   top: 0;
   left: 0;
-  right: var(--editor-dock-reserve);
+  right: 0;
   z-index: 28;
   border-bottom: 1px solid rgba(145, 179, 217, 0.52);
   background: rgba(246, 251, 255, 0.93);
@@ -1916,21 +1916,21 @@ body.editor-docked {
 }
 
 body.editor-docked .settings-ribbon {
-  left: var(--editor-dock-reserve);
+  left: 0;
   right: 0;
 }
 
 body.editor-docked .ai-chat-shell {
   position: fixed;
-  top: 0;
+  top: var(--ribbon-offset);
   left: 0;
   right: auto;
   bottom: 0;
   width: var(--editor-sidebar-width);
   max-width: none;
   min-width: 320px;
-  height: 100vh;
-  max-height: 100vh;
+  height: calc(100vh - var(--ribbon-offset));
+  max-height: calc(100vh - var(--ribbon-offset));
   align-items: stretch;
   gap: 0;
   padding: 16px 14px 14px;
@@ -1942,6 +1942,12 @@ body.editor-docked .ai-chat-shell {
   backdrop-filter: blur(12px);
   box-shadow: 12px 0 28px rgba(49, 79, 116, 0.16);
   overflow: hidden;
+}
+
+body.editor-docked.ribbon-hidden .ai-chat-shell {
+  top: 0;
+  height: 100vh;
+  max-height: 100vh;
 }
 
 body.editor-docked .ai-chat-panel,
