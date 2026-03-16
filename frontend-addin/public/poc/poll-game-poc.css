@@ -355,6 +355,28 @@ body.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
+}
+
+.library-sync-status:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(41, 78, 125, 0.12);
+}
+
+.library-sync-status:focus-visible {
+  outline: 2px solid #3f7cff;
+  outline-offset: 2px;
+}
+
+.library-sync-status:active {
+  transform: translateY(0);
+  box-shadow: none;
 }
 
 .library-sync-dot {

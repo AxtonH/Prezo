@@ -86,16 +86,15 @@
 
               <article class="ribbon-group group-medium artifact-library-group">
                 <h3>Artifacts</h3>
-                <div
+                <button
                   id="library-sync-status"
                   class="library-sync-status status-pending"
-                  role="status"
-                  aria-live="polite"
+                  type="button"
                   title="Checking whether saved themes and artifacts are synced with your account."
                 >
                   <span class="library-sync-dot" aria-hidden="true"></span>
-                  <span id="library-sync-status-text">Checking library sync…</span>
-                </div>
+                  <span id="library-sync-status-text" aria-live="polite">Checking library sync…</span>
+                </button>
                 <div class="row">
                   <input id="artifact-name" type="text" placeholder="Artifact name" />
                   <button id="save-artifact" type="button">Save</button>

@@ -56,6 +56,7 @@ import {
   const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
   const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
+  const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
@@ -167,7 +168,8 @@ import {
     library: {
       hydratedToken: '',
       status: 'pending',
-      detail: ''
+      detail: '',
+      refreshTimerId: null
     }
   }
 
@@ -469,6 +471,7 @@ import {
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
+    el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
   }
 
   function setupSettingsPanel() {
@@ -7707,6 +7710,14 @@ import {
     el.librarySyncStatus.title = detail || text
   }
 
+  function clearLibrarySyncRefreshTimer() {
+    if (!state.library.refreshTimerId) {
+      return
+    }
+    window.clearTimeout(state.library.refreshTimerId)
+    state.library.refreshTimerId = null
+  }
+
   function syncLibraryStatusFromAvailability() {
     const source = getLibraryAuthSource()
     if (source === 'presentation') {
@@ -7746,8 +7757,58 @@ import {
     if (injectedApiBase) {
       state.apiBase = injectedApiBase
     }
+    clearLibrarySyncRefreshTimer()
     syncLibraryStatusFromAvailability()
     void hydrateSavedLibraries({ force: true })
+  }
+
+  function handleLibrarySyncStatusClick() {
+    clearLibrarySyncRefreshTimer()
+    const source = getLibraryAuthSource()
+    setLibrarySyncStatus(
+      'pending',
+      source === 'none' ? 'Requesting account sync…' : 'Refreshing account sync…',
+      source === 'presentation'
+        ? 'Refreshing the shared library token from the presentation.'
+        : source === 'browser'
+          ? 'Refreshing the saved library from your browser sign-in.'
+          : 'Requesting a shared library token from the current presentation or retrying browser sign-in.'
+    )
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage(
+          { type: LIBRARY_SYNC_REQUEST_MESSAGE_TYPE },
+          window.location.origin
+        )
+      } catch {
+        // Ignore parent postMessage failures.
+      }
+    }
+    void hydrateSavedLibraries({ force: true })
+    state.library.refreshTimerId = window.setTimeout(() => {
+      state.library.refreshTimerId = null
+      if (state.library.status === 'success') {
+        return
+      }
+      if (getLibraryAccessToken()) {
+        setLibrarySyncStatus(
+          'error',
+          'Library sync unavailable',
+          'A sync token was found, but the account library could not be loaded right now. Try again in a moment.'
+        )
+        showArtifactFeedback('Account library sync failed. Try again in a moment.', 'error')
+        return
+      }
+      setLibrarySyncStatus(
+        'warning',
+        'Local library only',
+        'No shared account sync token was found for this session. Open Prezo Host while signed in, then click this badge again.'
+      )
+      showArtifactFeedback(
+        'No shared account sync was found for this session. Open Prezo Host while signed in, then click the badge again.',
+        'warning'
+      )
+    }, 1800)
   }
 
   async function fetchAuthedJson(path, options = {}) {
@@ -7807,6 +7868,7 @@ import {
       mergeRemoteThemeLibrary(remoteThemes)
       mergeRemoteArtifactLibrary(remoteArtifacts)
       state.library.hydratedToken = token
+      clearLibrarySyncRefreshTimer()
       const source = getLibraryAuthSource()
       setLibrarySyncStatus(
         'success',
@@ -7830,6 +7892,7 @@ import {
         )
         return
       }
+      clearLibrarySyncRefreshTimer()
       setLibrarySyncStatus(
         'error',
         'Library sync unavailable',
@@ -9801,6 +9864,8 @@ import {
     window.removeEventListener('resize', handleArtifactViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
+    el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
+    clearLibrarySyncRefreshTimer()
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
     }

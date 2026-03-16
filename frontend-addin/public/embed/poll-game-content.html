@@ -194,6 +194,7 @@
         const PREZO_NAMESPACE = "https://prezo.app/session-binding"
         const PREZO_LIBRARY_SYNC_NAMESPACE = "https://prezo.app/library-sync"
         const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
+        const PREZO_LIBRARY_SYNC_REQUEST_MESSAGE = "prezo:request-library-sync"
         const params = new URLSearchParams(window.location.search)
         const pollId = params.get("pollId")
 
@@ -428,6 +429,28 @@
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
+        })
+        window.addEventListener("message", async (event) => {
+          if (event.origin && event.origin !== window.location.origin) {
+            return
+          }
+          if (event.source !== frame.contentWindow) {
+            return
+          }
+          const message = event.data
+          if (!message || typeof message !== "object") {
+            return
+          }
+          if (message.type !== PREZO_LIBRARY_SYNC_REQUEST_MESSAGE) {
+            return
+          }
+          librarySyncState = await readLibrarySyncFromDocument()
+          if (librarySyncState?.token) {
+            postLibrarySyncToFrame()
+            setMeta("Shared library sync refreshed from the presentation.")
+            return
+          }
+          setMeta("Open Prezo Host while signed in to sync saved themes and artifacts.")
         })
 
         if (window.Office?.onReady) {
