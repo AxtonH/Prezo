@@ -81,6 +81,35 @@ PATCHABLE_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+SCENE_ROOT_ONLY_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <style>
+      #artifact-root {
+        background: #ffffff;
+        border-radius: 24px;
+      }
+      .car {
+        fill: #ff4d4f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="artifact-root" class="scene-shell">
+      <svg class="car" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>
+    </div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.setAttribute("data-question", state && state.poll ? state.poll.question || "" : "");
+      });
+    </script>
+  </body>
+</html>"""
+
 FULL_SCENE_RESET_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -392,6 +421,14 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#track-bg", selectors)
         self.assertNotIn("#city-bg", selectors)
 
+    def test_extract_artifact_scene_root_selector_candidates_prefers_root_selectors(self) -> None:
+        selectors = ai_api.extract_artifact_scene_root_selector_candidates(
+            SCENE_ROOT_ONLY_ARTIFACT_HTML
+        )
+
+        self.assertIn("#artifact-root", selectors)
+        self.assertIn(".scene-shell", selectors)
+
     def test_build_artifact_patch_edit_prompt_lists_exact_background_targets(self) -> None:
         prompt = ai_api.build_artifact_patch_edit_prompt(
             original_edit_request="Edit the background so it is a city.",
@@ -401,6 +438,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Available exact background selectors", prompt)
         self.assertIn("#track-bg", prompt)
+        self.assertIn("Available exact scene-root selectors", prompt)
         self.assertIn("Do not invent selectors", prompt)
         self.assertIn("Keep it CSS-only", prompt)
 
@@ -457,6 +495,35 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(issues, [])
         self.assertIn("#track-bg::before", patched_html)
         self.assertIn("#track-bg::after", patched_html)
+        self.assertIn(".car", patched_html)
+
+    def test_apply_background_treatment_can_fallback_to_scene_root(self) -> None:
+        patched_html, issues = ai_api.apply_background_treatment_to_artifact_html(
+            current_html=SCENE_ROOT_ONLY_ARTIFACT_HTML,
+            treatment={
+                "composition": "skyline",
+                "timeOfDay": "night",
+                "intensity": "dramatic",
+                "topColor": "#0B1F33",
+                "midColor": "#21405B",
+                "bottomColor": "#4A6A86",
+                "silhouetteColor": "#121A28",
+                "accentColor": "#F2B36D",
+                "hazeColor": "#6E88A3",
+                "lightColor": "#FFE2A8",
+                "horizonHeightPct": 44,
+                "detailDensity": 62,
+            },
+            original_edit_request="Make the background a cityscape at night.",
+        )
+
+        self.assertEqual(issues, [])
+        self.assertTrue(
+            "#artifact-root::before" in patched_html or ".scene-shell::before" in patched_html
+        )
+        self.assertTrue(
+            "#artifact-root::after" in patched_html or ".scene-shell::after" in patched_html
+        )
         self.assertIn(".car", patched_html)
 
     def test_validate_background_edit_result_rejects_washed_out_signature(self) -> None:

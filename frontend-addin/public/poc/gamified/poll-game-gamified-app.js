@@ -127,6 +127,7 @@ import {
       html: '',
       lastStableHtml: '',
       rollbackHtml: '',
+      pendingSuccessMessage: '',
       activeEditRequest: '',
       autoRepairInFlight: false,
       repairAttemptCount: 0,
@@ -1302,13 +1303,22 @@ import {
 
   function confirmArtifactRenderSuccess() {
     clearArtifactRenderWatchdog()
+    const completedRequestKind = state.artifact.pendingRequestKind
+    const successMessage = asText(state.artifact.pendingSuccessMessage)
     state.artifact.renderConfirmed = true
     state.artifact.renderErrorCount = 0
     if (state.artifact.html) {
       state.artifact.lastStableHtml = state.artifact.html
     }
     state.artifact.rollbackHtml = ''
+    state.artifact.pendingSuccessMessage = ''
     state.artifact.pendingRequestKind = ''
+    if (successMessage) {
+      setArtifactComposerStatus(successMessage, 'success')
+      if (completedRequestKind === 'edit') {
+        appendArtifactEditMessage('assistant', successMessage)
+      }
+    }
   }
 
   function handleArtifactRenderError(message) {
@@ -1336,6 +1346,7 @@ import {
     }
     const detail = asText(errorMessage)
     const statusMessage = 'Artifact edit was reverted because the updated artifact failed to render.'
+    state.artifact.pendingSuccessMessage = ''
     applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback' })
     showArtifactStageFrame()
     state.artifact.lastRuntimeError = detail
@@ -1417,10 +1428,11 @@ import {
         asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
           ? 'Artifact repaired and updated.'
           : asText(buildResult.assistantMessage) || 'Artifact repaired and updated.'
-      setArtifactComposerStatus(statusMessage, 'success')
-      appendArtifactEditMessage('assistant', statusMessage)
+      state.artifact.pendingSuccessMessage = statusMessage
+      setArtifactComposerStatus('Artifact repair applied. Verifying updated render...', 'pending')
     } catch (error) {
       const message = `Artifact repair failed: ${errorToMessage(error)}`
+      state.artifact.pendingSuccessMessage = ''
       setArtifactComposerStatus(message, 'error')
       appendArtifactEditMessage('assistant', message)
     } finally {
@@ -1513,7 +1525,19 @@ import {
     ) {
       return false
     }
-    return Boolean(renderHealth.likelyBlank)
+    return (
+      Boolean(renderHealth.likelyBlank) ||
+      (Boolean(renderHealth.likelyWashedOut) &&
+        !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest))
+    )
+  }
+
+  function artifactEditAllowsPaleBackground(request) {
+    const text = asText(request).toLowerCase()
+    if (!text) {
+      return false
+    }
+    return /\b(?:white|minimal|airy|pale|soft white|foggy|washed|monochrome|snow)\b/.test(text)
   }
 
   function buildArtifactRenderHealthErrorMessage(renderHealth) {
@@ -1521,6 +1545,14 @@ import {
     const mediaCount = Math.max(0, toInt(renderHealth?.mediaCount))
     const textLength = Math.max(0, toInt(renderHealth?.textLength))
     const darkCoverCount = Math.max(0, toInt(renderHealth?.largeDarkCoverCount))
+    const paleCoverCount = Math.max(0, toInt(renderHealth?.largePaleCoverCount))
+    if (Boolean(renderHealth?.likelyWashedOut)) {
+      return (
+        'The updated artifact rendered a washed-out light frame instead of a meaningful scene. ' +
+        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
+        `Text length: ${textLength}. Pale full-frame layers: ${paleCoverCount}.`
+      )
+    }
     return (
       'The updated artifact rendered a near-empty dark frame instead of the expected scene. ' +
       `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
@@ -1788,6 +1820,7 @@ import {
       const buildResult = await requestAiArtifactBuild(aiPrompt, context)
       const applied = applyArtifactMarkup(buildResult.html, { requestKind })
       if (!applied) {
+        state.artifact.pendingSuccessMessage = ''
         setArtifactComposerStatus(
           'Artifact request returned empty markup. Try a more specific prompt.',
           'error'
@@ -1808,13 +1841,16 @@ import {
               ? 'Artifact updated. Keep prompting to iterate.'
               : asText(buildResult.assistantMessage) || 'Artifact updated. Keep prompting to iterate.'
             : asText(buildResult.assistantMessage) || 'Artifact generated. Keep prompting to iterate.'
-        setArtifactComposerStatus(statusMessage, 'success')
         if (requestKind === 'edit') {
-          appendArtifactEditMessage('assistant', statusMessage)
+          state.artifact.pendingSuccessMessage = statusMessage
+          setArtifactComposerStatus('Artifact update applied. Verifying updated render...', 'pending')
+        } else {
+          setArtifactComposerStatus(statusMessage, 'success')
         }
       }
     } catch (error) {
       const message = `Artifact request failed: ${errorToMessage(error)}`
+      state.artifact.pendingSuccessMessage = ''
       setArtifactComposerStatus(message, 'error')
       showArtifactStagePlaceholder(message, 'error')
       if (requestKind === 'edit') {
@@ -2363,6 +2399,7 @@ import {
       state.artifact.rollbackHtml = ''
       state.artifact.pendingRequestKind = ''
     }
+    state.artifact.pendingSuccessMessage = ''
     clearArtifactPostLoadReplays()
     clearPendingArtifactPayloadTimer()
     state.artifact.html = normalized
@@ -2393,6 +2430,7 @@ import {
     state.artifact.html = ''
     state.artifact.lastStableHtml = ''
     state.artifact.rollbackHtml = ''
+    state.artifact.pendingSuccessMessage = ''
     state.artifact.instanceId += 1
     state.artifact.frameReady = false
     state.artifact.pendingRequestKind = ''

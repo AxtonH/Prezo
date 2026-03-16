@@ -218,6 +218,9 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- If available, use state.meta.expectedMaxVotes, state.meta.recommendedVisibleUnits, state.meta.recommendedVotesPerUnit, and state.meta.avoidOneToOneVoteObjects when designing scalable vote visuals.",
         "- Prefer registering your renderer with window.prezoSetPollRenderer(fn) when available. You may also define window.prezoRenderPoll(state).",
         "- Do not implement your own window message listener or websocket logic for poll updates unless the user explicitly asks.",
+        '- Use a stable main scene container marked with data-prezo-scene-root="true" whenever you build or substantially revise the artifact structure.',
+        '- When the scene has a distinct background/backdrop layer, mark it with data-prezo-background-layer="true" so targeted background edits can modify it safely.',
+        '- When feasible, keep the main interactive foreground content inside a container marked with data-prezo-foreground-layer="true".',
         "- If context.artifact.currentArtifactHtml is present, treat it as the current artifact to revise and return a full updated HTML artifact, not a diff.",
         "- If context.artifact.currentArtifactLiveHooks is present, preserve that live update wiring unless the user explicitly asks to replace it with an equivalent working implementation.",
         "- If context.artifact.requestMode == 'edit', treat the latest user request as a targeted refinement of the current artifact.",
@@ -1650,6 +1653,9 @@ def build_artifact_patch_edit_prompt(
     background_selector_candidates = extract_artifact_background_selector_candidates(
         current_html
     )
+    scene_root_selector_candidates = extract_artifact_scene_root_selector_candidates(
+        current_html
+    )
     background_style_snippets = extract_artifact_background_style_snippets(current_html)
     return "\n".join(
         [
@@ -1682,8 +1688,19 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "Available exact scene-root selectors in the current artifact: "
+                + ", ".join(scene_root_selector_candidates)
+                if scene_root_selector_candidates
+                else ""
+            ),
+            (
                 "For background edits, if you use set_css_property, the selector must match one of the available exact background selectors above. Do not invent selectors."
                 if background_selector_candidates
+                else ""
+            ),
+            (
+                "If no dedicated background selector fits, use the existing scene-root selectors above as the safe fallback target instead of inventing a new selector."
+                if scene_root_selector_candidates
                 else ""
             ),
             (
@@ -1732,6 +1749,9 @@ def build_artifact_background_treatment_prompt(
     background_selector_candidates = extract_artifact_background_selector_candidates(
         current_html
     )
+    scene_root_selector_candidates = extract_artifact_scene_root_selector_candidates(
+        current_html
+    )
     background_style_snippets = extract_artifact_background_style_snippets(current_html)
     return "\n".join(
         [
@@ -1749,6 +1769,12 @@ def build_artifact_background_treatment_prompt(
                 else ""
             ),
             (
+                "Available exact scene-root selectors in the current artifact: "
+                + ", ".join(scene_root_selector_candidates)
+                if scene_root_selector_candidates
+                else ""
+            ),
+            (
                 "Current background CSS snippets:\n"
                 + "\n\n".join(background_style_snippets)
                 if background_style_snippets
@@ -1758,6 +1784,7 @@ def build_artifact_background_treatment_prompt(
             "Never return a pale blank background unless the user explicitly asks for a minimal white background.",
             "Choose a composition that fits the request and can be rendered with CSS only.",
             "Use targetSelector only when one of the exact background selectors above is an obvious fit. Otherwise leave it empty and the backend will choose.",
+            "If no dedicated background selector is available, the backend may target a stable scene-root selector instead. Do not invent your own selector names.",
         ]
     )
 
@@ -2014,11 +2041,189 @@ def is_background_like_selector(selector: str) -> bool:
         return False
     if lowered in {"body", "html"}:
         return True
+    if "data-prezo-background-layer" in lowered:
+        return True
     return bool(
         re.search(
             r"(?:#|\.|^)(?:[a-z0-9_-]*?(?:bg|background|backdrop|sky|city|scene|track)[a-z0-9_-]*)",
             lowered,
         )
+    )
+
+
+def extract_artifact_scene_root_selector_candidates(html: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def remember(selector: str) -> None:
+        normalized = selector.strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    if re.search(r"data-prezo-scene-root\b", html, re.IGNORECASE):
+        remember("[data-prezo-scene-root]")
+    for selector in (
+        "#scene",
+        "#stage",
+        "#viewport",
+        "#artifact-root",
+        "#root",
+        "#app",
+        "#canvas",
+        "#frame",
+        "#shell",
+        "#container",
+        "main",
+        "body",
+        "html",
+    ):
+        if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(selector)}(?![A-Za-z0-9_-])", html):
+            remember(selector)
+
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = style_match.group("body") or ""
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                lowered = normalized.lower()
+                if (
+                    normalized in {"body", "html", "main"}
+                    or "data-prezo-scene-root" in lowered
+                    or re.search(
+                        r"(?:#|\.)(?:[A-Za-z0-9_-]*?(?:scene|stage|viewport|frame|app|root|canvas|shell|container|wrapper|surface|board|arena)[A-Za-z0-9_-]*)",
+                        lowered,
+                    )
+                ):
+                    remember(normalized)
+
+    for match in re.finditer(r'id\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        raw_id = match.group(1).strip()
+        if raw_id and re.search(
+            r"(scene|stage|viewport|frame|app|root|canvas|shell|container|wrapper|surface|board|arena)",
+            raw_id,
+            re.IGNORECASE,
+        ):
+            remember(f"#{raw_id}")
+
+    for match in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        for raw_class in match.group(1).split():
+            if raw_class and re.search(
+                r"(scene|stage|viewport|frame|app|root|canvas|shell|container|wrapper|surface|board|arena)",
+                raw_class,
+                re.IGNORECASE,
+            ):
+                remember(f".{raw_class}")
+
+    body_match = re.search(r"<body\b[^>]*>(?P<body>[\s\S]*?)</body>", html, re.IGNORECASE)
+    if body_match:
+        body_inner = body_match.group("body") or ""
+        first_child_match = re.search(r"<([a-z0-9:_-]+)\b(?P<attrs>[^>]*)>", body_inner, re.IGNORECASE)
+        if first_child_match:
+            attrs = first_child_match.group("attrs") or ""
+            id_match = re.search(r'id\s*=\s*["\']([^"\']+)["\']', attrs, re.IGNORECASE)
+            if id_match:
+                remember(f"#{id_match.group(1).strip()}")
+            class_match = re.search(r'class\s*=\s*["\']([^"\']+)["\']', attrs, re.IGNORECASE)
+            if class_match:
+                first_class = next(
+                    (item.strip() for item in class_match.group(1).split() if item.strip()),
+                    "",
+                )
+                if first_class:
+                    remember(f".{first_class}")
+            tag_name = (first_child_match.group(1) or "").strip().lower()
+            if tag_name in {"main", "section", "article", "div"}:
+                remember(tag_name)
+
+    return candidates[:14]
+
+
+def score_scene_root_selector_candidate(candidate: str) -> tuple[int, int]:
+    lowered = (candidate or "").strip().lower()
+    if not lowered:
+        return (0, 0)
+    specificity = (
+        3
+        if lowered.startswith("[data-prezo-scene-root]")
+        else 2
+        if lowered.startswith("#")
+        else 1
+        if lowered.startswith(".")
+        else 0
+    )
+    priority_tokens = (
+        "data-prezo-scene-root",
+        "artifact-root",
+        "scene",
+        "stage",
+        "viewport",
+        "root",
+        "app",
+        "canvas",
+        "frame",
+        "shell",
+        "container",
+        "wrapper",
+        "surface",
+        "board",
+        "arena",
+        "main",
+        "body",
+        "html",
+    )
+    priority = 0
+    for index, token in enumerate(priority_tokens):
+        if token in lowered:
+            priority = len(priority_tokens) - index
+            break
+    return (priority, specificity)
+
+
+def choose_scene_root_selector_candidate(candidates: list[str]) -> str:
+    if not candidates:
+        return ""
+    ranked = sorted(
+        candidates,
+        key=score_scene_root_selector_candidate,
+        reverse=True,
+    )
+    return ranked[0] if ranked else ""
+
+
+def choose_artifact_background_treatment_target_selector(
+    current_html: str, requested_selector: str
+) -> str:
+    background_candidates = [
+        candidate
+        for candidate in extract_artifact_background_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    if background_candidates:
+        chosen_background = choose_background_selector_candidate(
+            requested_selector,
+            background_candidates,
+        )
+        if chosen_background:
+            return chosen_background
+
+    scene_root_candidates = [
+        candidate
+        for candidate in extract_artifact_scene_root_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    if scene_root_candidates:
+        chosen_scene_root = choose_scene_root_selector_candidate(scene_root_candidates)
+        if chosen_scene_root:
+            return chosen_scene_root
+
+    return choose_background_selector_candidate(
+        requested_selector,
+        extract_artifact_background_selector_candidates(current_html),
     )
 
 
@@ -2433,15 +2638,10 @@ def apply_background_treatment_to_artifact_html(
     original_edit_request: str,
 ) -> tuple[str, list[str]]:
     normalized = normalize_background_treatment(treatment, original_edit_request)
-    background_candidates = [
-        candidate
-        for candidate in extract_artifact_background_selector_candidates(current_html)
-        if candidate not in {"body", "html"}
-    ]
     requested_selector = normalized.get("targetSelector") or "#background"
-    target_selector = choose_background_selector_candidate(
+    target_selector = choose_artifact_background_treatment_target_selector(
+        current_html,
         requested_selector,
-        background_candidates or extract_artifact_background_selector_candidates(current_html),
     )
     if not target_selector:
         return "", ["no suitable background selector was found in the current artifact html."]
@@ -2660,6 +2860,8 @@ def extract_artifact_background_selector_candidates(html: str) -> list[str]:
         seen.add(normalized)
         candidates.append(normalized)
 
+    if re.search(r"data-prezo-background-layer\b", html, re.IGNORECASE):
+        remember("[data-prezo-background-layer]")
     for selector in ("body", "html", "#scene", "#track-bg", "#background", "#backdrop"):
         if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(selector)}(?![A-Za-z0-9_-])", html):
             remember(selector)
@@ -2675,6 +2877,7 @@ def extract_artifact_background_selector_candidates(html: str) -> list[str]:
                 lowered = normalized.lower()
                 if (
                     normalized in {"body", "html"}
+                    or "data-prezo-background-layer" in lowered
                     or re.search(r"(?:#|\.)(?:[A-Za-z0-9_-]*?(?:bg|background|backdrop|sky|city|scene|track)[A-Za-z0-9_-]*)", lowered)
                     or any(token in lowered for token in (" body", " html", "#scene", "#track-bg", "#background", "#backdrop"))
                 ):
