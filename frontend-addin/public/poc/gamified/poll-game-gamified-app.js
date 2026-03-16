@@ -47,6 +47,7 @@ import {
   buildArtifactSrcDoc,
   normalizeArtifactMarkup
 } from './poll-game-gamified-artifact-runtime.js'
+import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 
@@ -469,6 +470,30 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     reflectLibrarySyncResult,
     dispose: disposeLibrarySyncManager
   } = librarySyncManager
+  const artifactBridge = createPollGameArtifactBridge({
+    artifactState: state.artifact,
+    stageEl: el.artifactStage,
+    frameEl: el.artifactFrame,
+    getIsArtifactMode: () => currentTheme.visualMode === ARTIFACT_VISUAL_MODE,
+    getCurrentPollPayload: () => {
+      if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.currentPoll) {
+        return null
+      }
+      return buildArtifactPollPayload(state.currentPoll, getTotalVotes(state.currentPoll))
+    },
+    buildPayloadKey: buildArtifactPayloadKey,
+    clone,
+    clamp,
+    stageAspectRatio: ARTIFACT_STAGE_ASPECT_RATIO,
+    safeFitScale: ARTIFACT_SAFE_FIT_SCALE,
+    statePushBatchMs: ARTIFACT_STATE_PUSH_BATCH_MS,
+    editRenderConfirmTimeoutMs: ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS,
+    onRenderWatchdogTimeout: () => {
+      restoreArtifactAfterFailedEdit(
+        'The updated artifact never confirmed a successful render after the edit.'
+      )
+    }
+  })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
   let currentTheme = loadInitialTheme(themeLibrary)
@@ -781,9 +806,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     renderArtifactEditQuickActions()
     hideArtifactStagePlaceholder()
     hideArtifactStage()
-    setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
+    artifactBridge.setFrameHeight(state.artifact.frameHeight, { force: true })
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
-    window.addEventListener('resize', handleArtifactViewportResize)
+    window.addEventListener('resize', artifactBridge.handleViewportResize)
     window.addEventListener('message', handleArtifactFrameMessage)
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
@@ -879,7 +904,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return
     }
     requestAnimationFrame(() => {
-      setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
+      artifactBridge.setFrameHeight(state.artifact.frameHeight, { force: true })
     })
   }
 
@@ -1309,19 +1334,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function handleArtifactFrameLoad() {
-    state.artifact.frameReady = true
-    state.artifact.renderErrorCount = 0
-    state.artifact.lastPayloadKey = ''
-    setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
-    scheduleArtifactRenderWatchdog()
-    if (flushPendingArtifactPayload({ force: true })) {
-      scheduleArtifactPostLoadReplays()
-      return
-    }
-    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
-      pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
-      scheduleArtifactPostLoadReplays()
-    }
+    artifactBridge.handleFrameLoad()
   }
 
   function handleArtifactFrameMessage(event) {
@@ -1342,16 +1355,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return
     }
     if (message.type === ARTIFACT_READY_MESSAGE_TYPE) {
-      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
-        pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
-      } else {
-        flushPendingArtifactPayload({ force: true })
-      }
-      scheduleArtifactPostLoadReplays()
+      artifactBridge.handleReadyMessage()
       return
     }
     if (message.type === ARTIFACT_SIZE_MESSAGE_TYPE) {
-      updateArtifactReportedContentSize(message.width, message.height)
+      artifactBridge.updateReportedContentSize(message.width, message.height)
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
@@ -1368,7 +1376,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function confirmArtifactRenderSuccess() {
-    clearArtifactRenderWatchdog()
+    artifactBridge.clearRenderWatchdog()
     const completedRequestKind = state.artifact.pendingRequestKind
     const successMessage = asText(state.artifact.pendingSuccessMessage)
     state.artifact.renderConfirmed = true
@@ -1402,7 +1410,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function restoreArtifactAfterFailedEdit(errorMessage) {
-    clearArtifactRenderWatchdog()
+    artifactBridge.clearRenderWatchdog()
     const failedArtifactHtml = normalizeArtifactMarkup(state.artifact.html)
     const rollbackHtml = normalizeArtifactMarkup(
       state.artifact.rollbackHtml || state.artifact.lastStableHtml
@@ -1510,78 +1518,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
   }
 
-  function updateArtifactReportedContentSize(widthValue, heightValue) {
-    const stageRect = el.artifactStage.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
-    const stageHeight = Number.isFinite(stageRect.height) ? stageRect.height : 0
-    if (stageWidth <= 0 || stageHeight <= 0) {
-      return
-    }
-    const rawWidth = Number(widthValue)
-    const rawHeight = Number(heightValue)
-    const maxWidth = Math.max(stageWidth * 2.4, 1400)
-    const maxHeight = Math.max(stageHeight * 2.4, 1400)
-    const normalizedWidth =
-      Number.isFinite(rawWidth) && rawWidth > 0 && rawWidth <= maxWidth
-        ? Math.max(stageWidth, rawWidth)
-        : stageWidth
-    const normalizedHeight =
-      Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
-        ? Math.max(stageHeight, rawHeight)
-        : stageHeight
-    if (
-      Math.abs(normalizedWidth - state.artifact.reportedContentWidth) < 2 &&
-      Math.abs(normalizedHeight - state.artifact.reportedContentHeight) < 2
-    ) {
-      return
-    }
-    state.artifact.reportedContentWidth = normalizedWidth
-    state.artifact.reportedContentHeight = normalizedHeight
-    applyArtifactFrameFit()
-  }
-
-  function clearArtifactPostLoadReplays() {
-    const timerIds = Array.isArray(state.artifact.postLoadReplayTimerIds)
-      ? state.artifact.postLoadReplayTimerIds
-      : []
-    for (let index = 0; index < timerIds.length; index += 1) {
-      window.clearTimeout(timerIds[index])
-    }
-    state.artifact.postLoadReplayTimerIds = []
-  }
-
-  function clearArtifactRenderWatchdog() {
-    if (!state.artifact.renderWatchdogTimerId) {
-      return
-    }
-    window.clearTimeout(state.artifact.renderWatchdogTimerId)
-    state.artifact.renderWatchdogTimerId = null
-  }
-
-  function scheduleArtifactRenderWatchdog() {
-    clearArtifactRenderWatchdog()
-    if (
-      currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
-      state.artifact.pendingRequestKind !== 'edit' ||
-      !state.artifact.rollbackHtml
-    ) {
-      return
-    }
-    state.artifact.renderWatchdogTimerId = window.setTimeout(() => {
-      state.artifact.renderWatchdogTimerId = null
-      if (
-        currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
-        state.artifact.pendingRequestKind !== 'edit' ||
-        state.artifact.renderConfirmed
-      ) {
-        return
-      }
-      restoreArtifactAfterFailedEdit(
-        'The updated artifact never confirmed a successful render after the edit.'
-      )
-    }, ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS)
-  }
-
   function shouldRejectArtifactRenderHealth(renderHealth) {
     if (
       currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
@@ -1648,146 +1584,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
       `Text length: ${textLength}. Dark full-frame layers: ${darkCoverCount}.`
     )
-  }
-
-  function clearPendingArtifactPayloadTimer() {
-    if (!state.artifact.pendingPayloadTimerId) {
-      return
-    }
-    window.clearTimeout(state.artifact.pendingPayloadTimerId)
-    state.artifact.pendingPayloadTimerId = null
-  }
-
-  function schedulePendingArtifactPayloadFlush(options = {}) {
-    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
-      return false
-    }
-    const force = Boolean(options.force)
-    if (force) {
-      clearPendingArtifactPayloadTimer()
-      return flushPendingArtifactPayload({ force: true })
-    }
-    if (state.artifact.pendingPayloadTimerId) {
-      return true
-    }
-    state.artifact.pendingPayloadTimerId = window.setTimeout(() => {
-      state.artifact.pendingPayloadTimerId = null
-      flushPendingArtifactPayload()
-    }, ARTIFACT_STATE_PUSH_BATCH_MS)
-    return true
-  }
-
-  function scheduleArtifactPostLoadReplays() {
-    clearArtifactPostLoadReplays()
-    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
-      return
-    }
-    const delays = [140, 360, 820, 1600, 2600]
-    for (let index = 0; index < delays.length; index += 1) {
-      const delay = delays[index]
-      const timerId = window.setTimeout(() => {
-        state.artifact.postLoadReplayTimerIds = state.artifact.postLoadReplayTimerIds.filter(
-          (activeId) => activeId !== timerId
-        )
-        if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.artifact.frameReady) {
-          return
-        }
-        if (state.currentPoll) {
-          pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), {
-            force: true
-          })
-          return
-        }
-        flushPendingArtifactPayload({ force: true })
-      }, delay)
-      state.artifact.postLoadReplayTimerIds.push(timerId)
-    }
-  }
-
-  function setArtifactFrameHeight(value, options = {}) {
-    const force = Boolean(options.force)
-    const stageRect = el.artifactStage.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
-    const aspectHeight =
-      stageWidth > 0 ? Math.round((stageWidth / ARTIFACT_STAGE_ASPECT_RATIO) * 1000) / 1000 : NaN
-    const fallback = clamp(value, 200, 6000, state.artifact.frameHeight || 520)
-    const normalized = clamp(Number.isFinite(aspectHeight) ? aspectHeight : fallback, 200, 6000, fallback)
-    if (!force && Math.abs(normalized - state.artifact.frameHeight) < 1) {
-      applyArtifactFrameFit()
-      return
-    }
-    state.artifact.frameHeight = normalized
-    el.artifactStage.style.height = `${Math.round(normalized)}px`
-    applyArtifactFrameFit()
-  }
-
-  function handleArtifactViewportResize() {
-    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
-      return
-    }
-    setArtifactFrameHeight(state.artifact.frameHeight, { force: true })
-  }
-
-  function applyArtifactFrameFit() {
-    const stageRect = el.artifactStage.getBoundingClientRect()
-    const stageWidth = Number.isFinite(stageRect.width) ? stageRect.width : 0
-    const stageHeight = Number.isFinite(stageRect.height) ? stageRect.height : 0
-    if (stageWidth <= 0 || stageHeight <= 0) {
-      return
-    }
-    const contentWidth = clamp(
-      state.artifact.reportedContentWidth,
-      stageWidth,
-      Math.max(stageWidth * 2.4, 1400),
-      stageWidth
-    )
-    const contentHeight = clamp(
-      state.artifact.reportedContentHeight,
-      stageHeight,
-      Math.max(stageHeight * 2.4, 1400),
-      stageHeight
-    )
-    const scaleToFit = Math.min(stageWidth / contentWidth, stageHeight / contentHeight, 1)
-    const fitScale = clamp(scaleToFit * ARTIFACT_SAFE_FIT_SCALE, 0.4, 1, ARTIFACT_SAFE_FIT_SCALE)
-    const scaledWidth = contentWidth * fitScale
-    const scaledHeight = contentHeight * fitScale
-    const insetX = Math.max(0, (stageWidth - scaledWidth) / 2)
-    const insetY = Math.max(0, (stageHeight - scaledHeight) / 2)
-    el.artifactFrame.style.width = `${Math.round(contentWidth)}px`
-    el.artifactFrame.style.height = `${Math.round(contentHeight)}px`
-    el.artifactFrame.style.transform = `translate(${Math.round(insetX)}px, ${Math.round(insetY)}px) scale(${fitScale})`
-    el.artifactFrame.style.transformOrigin = 'top left'
-  }
-
-  function flushPendingArtifactPayload(options = {}) {
-    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
-      return false
-    }
-    let payload = state.artifact.pendingPayload
-    if (!payload && currentTheme.visualMode === ARTIFACT_VISUAL_MODE && state.currentPoll) {
-      payload = buildArtifactPollPayload(state.currentPoll, getTotalVotes(state.currentPoll))
-    }
-    if (!payload) {
-      return false
-    }
-    const force = Boolean(options.force)
-    const payloadKey = buildArtifactPayloadKey(payload)
-    if (!force && payloadKey === state.artifact.lastPayloadKey) {
-      state.artifact.pendingPayload = null
-      return true
-    }
-    clearPendingArtifactPayloadTimer()
-    el.artifactFrame.contentWindow.postMessage(
-      {
-        type: 'prezo-poll-state',
-        payload
-      },
-      '*'
-    )
-    state.artifact.lastPayloadKey = payloadKey
-    state.artifact.lastDeliveredPayload = clone(payload)
-    state.artifact.pendingPayload = null
-    return true
   }
 
   async function submitArtifactConversationAnswer(answer) {
@@ -2563,7 +2359,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!normalized) {
       return false
     }
-    clearArtifactRenderWatchdog()
+    artifactBridge.clearRenderWatchdog()
     const requestKind = asText(options.requestKind).toLowerCase()
     if (requestKind === 'edit') {
       state.artifact.rollbackHtml = normalizeArtifactMarkup(
@@ -2578,8 +2374,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       state.artifact.pendingRequestKind = ''
     }
     state.artifact.pendingSuccessMessage = ''
-    clearArtifactPostLoadReplays()
-    clearPendingArtifactPayloadTimer()
+    artifactBridge.clearPostLoadReplays()
+    artifactBridge.clearPendingPayloadTimer()
     state.artifact.html = normalized
     state.artifact.instanceId += 1
     state.artifact.frameReady = false
@@ -2595,16 +2391,16 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!srcDoc) {
       return false
     }
-    setArtifactFrameHeight(520, { force: true })
+    artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     return true
   }
 
   function clearArtifactMarkup() {
-    clearArtifactRenderWatchdog()
-    clearArtifactPostLoadReplays()
-    clearPendingArtifactPayloadTimer()
+    artifactBridge.clearRenderWatchdog()
+    artifactBridge.clearPostLoadReplays()
+    artifactBridge.clearPendingPayloadTimer()
     state.artifact.html = ''
     state.artifact.lastStableHtml = ''
     state.artifact.rollbackHtml = ''
@@ -2620,7 +2416,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = false
-    setArtifactFrameHeight(520, { force: true })
+    artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
     syncArtifactComposerVisibility()
   }
@@ -2639,8 +2435,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!force && payloadKey === state.artifact.lastPayloadKey) {
       return
     }
-    state.artifact.pendingPayload = payload
-    schedulePendingArtifactPayloadFlush({ force })
+    artifactBridge.queuePayload(payload, { force })
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
@@ -9368,10 +9163,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
-    window.removeEventListener('resize', handleArtifactViewportResize)
+    window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
+    artifactBridge.dispose()
     disposeLibrarySyncManager()
     for (const quickAction of el.aiQuickActions) {
       quickAction.removeEventListener('click', handleAiQuickActionClick)
@@ -9414,8 +9210,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       state.snapshotRenderTimer = null
     }
     stopArtifactLoaderAnimation()
-    clearArtifactPostLoadReplays()
-    clearPendingArtifactPayloadTimer()
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''
