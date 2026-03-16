@@ -75,12 +75,16 @@
                 </div>
                 <div class="row advanced-control">
                   <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
-                  <label class="file-btn ghost theme-transfer-btn">
-                    Import
-                    <input id="import-theme" type="file" accept=".json,application/json" />
-                  </label>
+                  <button id="import-theme-button" type="button" class="ghost theme-transfer-btn">Import</button>
                   <button id="reset-theme" type="button" class="ghost theme-transfer-btn">Reset</button>
                 </div>
+                <input
+                  id="import-theme"
+                  class="hidden"
+                  type="file"
+                  accept=".json,application/json"
+                  tabindex="-1"
+                />
                 <p id="theme-feedback" class="note"></p>
               </article>
 

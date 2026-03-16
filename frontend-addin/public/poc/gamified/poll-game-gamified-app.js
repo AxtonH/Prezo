@@ -207,6 +207,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     loadTheme: must('load-theme'),
     deleteTheme: must('delete-theme'),
     exportTheme: must('export-theme'),
+    importThemeButton: must('import-theme-button'),
     importTheme: must('import-theme'),
     resetTheme: must('reset-theme'),
     themeFeedback: must('theme-feedback'),
@@ -808,6 +809,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.loadTheme.addEventListener('click', loadThemeFromSelect)
     el.deleteTheme.addEventListener('click', deleteThemeFromSelect)
     el.exportTheme.addEventListener('click', exportCurrentTheme)
+    el.importThemeButton.addEventListener('click', () => {
+      el.importTheme.click()
+    })
     el.importTheme.addEventListener('change', importThemeFromFile)
     el.resetTheme.addEventListener('click', resetThemeDraft)
     el.saveArtifact.addEventListener('click', saveArtifactToLibrary)
