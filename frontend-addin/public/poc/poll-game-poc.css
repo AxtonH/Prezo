@@ -1958,7 +1958,7 @@ body.editor-docked .artifact-composer.is-floating {
   min-height: 0;
   height: 100%;
   margin-top: 0;
-  padding: 0;
+  padding: 14px 16px 16px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1981,6 +1981,132 @@ body.editor-docked .ai-chat-panel {
 
 body.editor-docked .ai-chat-messages {
   min-height: 0;
+}
+
+body.editor-docked .ai-chat-shell {
+  padding: 0;
+  background: linear-gradient(180deg, rgba(246, 251, 255, 0.98), rgba(238, 247, 255, 0.98));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: none;
+}
+
+body.editor-docked .ai-chat-header,
+body.editor-docked .artifact-composer-header {
+  align-items: flex-start;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(172, 198, 227, 0.52);
+}
+
+body.editor-docked .ai-chat-header > div,
+body.editor-docked .artifact-composer-header > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.editor-docked .ai-chat-kicker,
+body.editor-docked .artifact-kicker {
+  color: #4f78a8;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+body.editor-docked .ai-chat-header strong {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #1b3a63;
+}
+
+body.editor-docked .artifact-composer-subtitle,
+body.editor-docked .ai-chat-status,
+body.editor-docked .artifact-prompt-status {
+  color: #4d7098;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+body.editor-docked .ai-chat-collapse,
+body.editor-docked .artifact-composer-collapse {
+  border: 1px solid rgba(151, 184, 222, 0.75);
+  background: rgba(245, 249, 255, 0.96);
+  color: #1c3f6a;
+  border-radius: 7px;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+body.editor-docked .ai-chat-collapse:hover,
+body.editor-docked .artifact-composer-collapse:hover {
+  border-color: rgba(87, 145, 215, 0.8);
+  background: rgba(217, 234, 255, 0.98);
+}
+
+body.editor-docked .ai-chat-messages,
+body.editor-docked .artifact-chat-log {
+  border: 1px solid rgba(182, 208, 237, 0.72);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+body.editor-docked .ai-chat-message,
+body.editor-docked .artifact-chat-message {
+  box-shadow: none;
+}
+
+body.editor-docked .ai-chat-message.message-assistant,
+body.editor-docked .artifact-chat-message.assistant {
+  background: rgba(244, 249, 255, 0.98);
+  border: 1px solid rgba(157, 190, 230, 0.72);
+  color: #1f466f;
+}
+
+body.editor-docked .ai-chat-message.message-user,
+body.editor-docked .artifact-chat-message.user {
+  background: linear-gradient(135deg, rgba(89, 156, 239, 0.16), rgba(91, 184, 238, 0.18));
+  border: 1px solid rgba(93, 153, 226, 0.54);
+  color: #17385f;
+}
+
+body.editor-docked .ai-chat-message.message-system,
+body.editor-docked .artifact-chat-message.summary {
+  background: rgba(248, 250, 255, 0.98);
+  border: 1px dashed rgba(185, 207, 235, 0.78);
+  color: #41638b;
+}
+
+body.editor-docked .ai-quick-action,
+body.editor-docked .artifact-edit-quick-action {
+  border: 1px solid rgba(151, 184, 222, 0.75);
+  background: rgba(245, 249, 255, 0.96);
+  color: #1c3f6a;
+  min-height: 26px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+body.editor-docked .ai-quick-action:hover,
+body.editor-docked .artifact-edit-quick-action:hover {
+  border-color: rgba(87, 145, 215, 0.8);
+  background: rgba(217, 234, 255, 0.98);
+}
+
+body.editor-docked .ai-chat-input,
+body.editor-docked .artifact-prompt-input {
+  border: 1px solid rgba(152, 185, 222, 0.74);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  color: #17395f;
+}
+
+body.editor-docked .ai-chat-send,
+body.editor-docked .artifact-prompt-submit {
+  border-radius: 8px;
+  min-height: 34px;
+  padding: 7px 12px;
+  box-shadow: none;
 }
 
 body.editor-docked .settings-minimized {
