@@ -68,6 +68,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
+  const ARTIFACT_LAYOUT_REFIT_DELAY_MS = 220
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
@@ -509,6 +510,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     active: null,
     rafId: null
   }
+  const artifactLayoutRefitState = {
+    rafId: 0,
+    timerIds: []
+  }
   const historyState = {
     initialized: false,
     applying: false,
@@ -615,11 +620,64 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 
   function scheduleRibbonOffsetUpdate() {
     applyRibbonLayoutMode()
+    scheduleArtifactLayoutRefit()
   }
 
   function setupCanvasFitBehavior() {
     el.wrap.addEventListener('pointerdown', handleCanvasPointerDown)
+    el.wrap.addEventListener('transitionend', handleCanvasLayoutTransitionEnd)
     applyRibbonLayoutMode()
+  }
+
+  function clearArtifactLayoutRefitSchedule() {
+    if (artifactLayoutRefitState.rafId) {
+      window.cancelAnimationFrame(artifactLayoutRefitState.rafId)
+      artifactLayoutRefitState.rafId = 0
+    }
+    if (!artifactLayoutRefitState.timerIds.length) {
+      return
+    }
+    for (const timerId of artifactLayoutRefitState.timerIds) {
+      window.clearTimeout(timerId)
+    }
+    artifactLayoutRefitState.timerIds = []
+  }
+
+  function scheduleArtifactLayoutRefit(options = {}) {
+    const includeSettledPass = options.includeSettledPass !== false
+    if (
+      currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
+      state.artifact.stageSurface === ARTIFACT_STAGE_SURFACE_HIDDEN
+    ) {
+      clearArtifactLayoutRefitSchedule()
+      return
+    }
+    clearArtifactLayoutRefitSchedule()
+    artifactLayoutRefitState.rafId = window.requestAnimationFrame(() => {
+      artifactLayoutRefitState.rafId = 0
+      artifactBridge.setFrameHeight(state.artifact.frameHeight, { force: true })
+    })
+    if (!includeSettledPass) {
+      return
+    }
+    const timerId = window.setTimeout(() => {
+      artifactLayoutRefitState.timerIds = artifactLayoutRefitState.timerIds.filter(
+        (activeId) => activeId !== timerId
+      )
+      artifactBridge.setFrameHeight(state.artifact.frameHeight, { force: true })
+    }, ARTIFACT_LAYOUT_REFIT_DELAY_MS)
+    artifactLayoutRefitState.timerIds.push(timerId)
+  }
+
+  function handleCanvasLayoutTransitionEnd(event) {
+    if (event.target !== el.wrap) {
+      return
+    }
+    const propertyName = asText(event.propertyName)
+    if (propertyName !== 'transform' && !propertyName.startsWith('margin')) {
+      return
+    }
+    scheduleArtifactLayoutRefit({ includeSettledPass: false })
   }
 
   function handleCanvasPointerDown(event) {
@@ -847,6 +905,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     syncArtifactStageVisibility(isArtifactMode)
     if (isArtifactMode) {
       syncArtifactConversationUi()
+      scheduleArtifactLayoutRefit()
     }
   }
 
@@ -9144,11 +9203,13 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     stopSnapshotPolling()
     hideSelectionToolbar()
     clearCachedRichTextSelection()
+    clearArtifactLayoutRefitSchedule()
     state.textControlInteractionLocked = false
     state.textControlInteractionUntil = 0
     state.activeInlineStyleNode = null
     clearActiveResizeTarget()
     el.wrap.removeEventListener('pointerdown', handleCanvasPointerDown)
+    el.wrap.removeEventListener('transitionend', handleCanvasLayoutTransitionEnd)
     el.wrap.removeEventListener('focusin', handleRichTextFocusIn)
     el.wrap.removeEventListener('focusout', handleRichTextFocusOut)
     el.wrap.removeEventListener('input', handleRichTextInput)
