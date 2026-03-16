@@ -92,8 +92,8 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   margin-right: auto;
 }
 
-body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
-  margin-top: calc(var(--ribbon-offset) + 24px);
+body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
+  --editor-docked-wrap-top-gap: 30px;
 }
 
 .bg-image,
@@ -1910,6 +1910,7 @@ h1 {
 body.editor-docked {
   display: block;
   place-items: initial;
+  --editor-docked-wrap-top-gap: 12px;
   overflow-x: hidden;
   overflow-y: auto;
 }
@@ -1983,7 +1984,7 @@ body.editor-docked .settings-minimized {
 
 body.editor-docked .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - 40px));
-  margin-top: calc(var(--ribbon-offset) + 12px);
+  margin-top: calc(var(--ribbon-offset) + var(--editor-docked-wrap-top-gap));
   margin-left: calc(var(--editor-dock-reserve) + 20px);
   margin-right: auto;
   max-width: none;
