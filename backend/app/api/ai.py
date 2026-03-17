@@ -21,11 +21,9 @@ DEFAULT_GEMINI_ARTIFACT_EDIT_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_ARTIFACT_REPAIR_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL = "gemini-2.5-flash-lite"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
-ANTHROPIC_ARTIFACT_MAX_TOKENS = 32000
-ANTHROPIC_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS = 2400
-GEMINI_ARTIFACT_MAX_TOKENS = 16000
-GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 16000
-GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 14000
+GEMINI_ARTIFACT_MAX_TOKENS = 12000
+GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
+GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
 GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 4000
 GEMINI_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS = 1200
 ARTIFACT_MAX_REPAIR_ATTEMPTS = 3
@@ -93,22 +91,6 @@ ARTIFACT_LIVE_STATE_TOKENS = (
     "prezo:poll-update",
     "prezoGetPollState",
     "__PREZO_POLL_STATE",
-)
-ARTIFACT_RENDERER_REGISTRATION_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\b(?:window\.)?prezoSetPollRenderer\s*\(", re.IGNORECASE),
-    re.compile(
-        r"\bwindow\s*\[\s*['\"]prezoSetPollRenderer['\"]\s*\]\s*\(",
-        re.IGNORECASE,
-    ),
-    re.compile(r"\b(?:window\.)?prezoRenderPoll\s*=", re.IGNORECASE),
-    re.compile(
-        r"\bwindow\s*\[\s*['\"]prezoRenderPoll['\"]\s*\]\s*=",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"Object\.defineProperty\(\s*window\s*,\s*['\"]prezoRenderPoll['\"]",
-        re.IGNORECASE,
-    ),
 )
 ARTIFACT_JSX_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
@@ -892,7 +874,7 @@ async def create_poll_game_artifact_build(
                 indent=2,
             ),
             temperature=temperature,
-            max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
+            max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
             timeout_seconds=timeout_seconds,
             request_stage="artifact initial build",
             remaining_budget_seconds=remaining_budget_seconds,
@@ -923,7 +905,7 @@ async def create_poll_game_artifact_build(
                     indent=2,
                 ),
                 temperature=temperature,
-                max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
+                max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
                 timeout_seconds=timeout_seconds,
                 request_stage=request_stage,
                 remaining_budget_seconds=remaining_budget_seconds,
@@ -1213,7 +1195,7 @@ async def attempt_artifact_background_treatment_edit(
             system_instruction=POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_SYSTEM_INSTRUCTION,
             prompt_text=prompt,
             temperature=0.15,
-            max_tokens=ANTHROPIC_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS,
+            max_tokens=GEMINI_ARTIFACT_BACKGROUND_TREATMENT_MAX_TOKENS,
             timeout_seconds=timeout_seconds,
             request_stage="artifact background treatment",
             remaining_budget_seconds=remaining_budget_seconds,
@@ -1710,10 +1692,6 @@ def classify_artifact_edit_request_scope(request_text: str) -> str:
     normalized = (request_text or "").strip()
     if not normalized:
         return "unknown"
-    if is_background_visual_edit_request(normalized) and not artifact_edit_request_requires_external_asset_url(
-        normalized
-    ):
-        return "background_local"
     if is_broad_artifact_edit_request(normalized):
         return "broad"
     if is_patch_only_artifact_edit_request(normalized):
@@ -1769,8 +1747,7 @@ def should_require_safe_patch_only_edit(
         request_mode, artifact_context, original_edit_request
     ):
         return False
-    scope = classify_artifact_edit_request_scope(original_edit_request)
-    if scope not in {"patch_only", "background_local"}:
+    if classify_artifact_edit_request_scope(original_edit_request) != "patch_only":
         return False
     return bool(get_artifact_patch_source_html(artifact_context))
 
@@ -3841,8 +3818,6 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         issues.append("artifact output does not look like HTML.")
     if not contains_artifact_live_state_token(text):
         issues.append("artifact output does not appear to consume live poll state.")
-    if not contains_artifact_renderer_registration(text):
-        issues.append("artifact output does not register a live poll renderer.")
     open_script_count = len(ARTIFACT_SCRIPT_OPEN_RE.findall(text))
     close_script_count = len(ARTIFACT_SCRIPT_CLOSE_RE.findall(text))
     if open_script_count != close_script_count:
@@ -3886,13 +3861,6 @@ def contains_artifact_live_state_token(text: str) -> bool:
     return any(token in normalized for token in ARTIFACT_LIVE_STATE_TOKENS)
 
 
-def contains_artifact_renderer_registration(text: str) -> bool:
-    normalized = (text or "").strip()
-    if not normalized:
-        return False
-    return any(pattern.search(normalized) for pattern in ARTIFACT_RENDERER_REGISTRATION_PATTERNS)
-
-
 def extract_artifact_live_hook_scripts(text: str) -> list[str]:
     normalized = (text or "").strip()
     if not normalized:
@@ -3901,7 +3869,7 @@ def extract_artifact_live_hook_scripts(text: str) -> list[str]:
     seen: set[str] = set()
     for script_match in ARTIFACT_SCRIPT_RE.finditer(normalized):
         script_text = script_match.group(0).strip()
-        if not script_text or not contains_artifact_renderer_registration(script_text):
+        if not script_text or not contains_artifact_live_state_token(script_text):
             continue
         if script_text in seen:
             continue
@@ -4057,7 +4025,7 @@ def inject_artifact_live_hook_scripts(html: str, hook_scripts: list[str]) -> str
 
 def restore_artifact_live_hooks_if_missing(html: str, context: dict[str, Any]) -> str:
     normalized = (html or "").strip()
-    if not normalized or contains_artifact_renderer_registration(normalized):
+    if not normalized or contains_artifact_live_state_token(normalized):
         return normalized
     hook_scripts = collect_context_artifact_live_hooks(context)
     if not hook_scripts:
