@@ -429,6 +429,45 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(should_patch)
 
+    def test_should_attempt_artifact_patch_edit_allows_background_redesign_requests(self) -> None:
+        should_patch = ai_api.should_attempt_artifact_patch_edit(
+            "edit",
+            {
+                "currentArtifactHtml": PATCHABLE_ARTIFACT_HTML,
+                "originalEditRequest": "Redesign the background so it is lighter and more animated.",
+            },
+            "Redesign the background so it is lighter and more animated.",
+        )
+
+        self.assertTrue(should_patch)
+
+    def test_validate_poll_game_artifact_html_requires_renderer_registration(self) -> None:
+        invalid_html = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root">window.prezoRenderPoll</div>
+  </body>
+</html>"""
+
+        issues = ai_api.validate_poll_game_artifact_html(invalid_html)
+
+        self.assertIn("artifact output does not register a live poll renderer.", issues)
+
+    def test_restore_artifact_live_hooks_if_missing_reinjects_renderer_registration(self) -> None:
+        html_without_renderer = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root">window.prezoRenderPoll</div>
+  </body>
+</html>"""
+
+        restored = ai_api.restore_artifact_live_hooks_if_missing(
+            html_without_renderer,
+            {"artifact": {"currentArtifactHtml": PATCHABLE_ARTIFACT_HTML}},
+        )
+
+        self.assertIn("prezoSetPollRenderer", restored)
+
     def test_apply_artifact_patch_plan_can_update_css_property(self) -> None:
         patched_html, issues = ai_api.apply_artifact_patch_plan(
             PATCHABLE_ARTIFACT_HTML,
@@ -934,6 +973,58 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.model, "claude-sonnet-4-6")
         self.assertIn('id="prezo-background-treatment-data"', response.html)
         self.assertIn('"composition":"skyline"', response.html)
+        self.assertIn(".car", response.html)
+
+    async def test_local_background_redesign_request_still_uses_background_treatment_patch(self) -> None:
+        anthropic_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Applied a lighter animated treatment.",
+                        "treatment": {
+                            "composition": "abstract",
+                            "timeOfDay": "day",
+                            "intensity": "soft",
+                            "topColor": "#F2F6FF",
+                            "midColor": "#F5EBDD",
+                            "bottomColor": "#EED8B8",
+                            "silhouetteColor": "#6E7C94",
+                            "accentColor": "#C8DFFF",
+                            "hazeColor": "#FFF5E8",
+                            "lightColor": "#FFF8F0",
+                            "horizonHeightPct": 40,
+                            "detailDensity": 58,
+                        },
+                    }
+                ),
+                "end_turn",
+            )
+        )
+        gemini_mock = AsyncMock()
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Redesign the background so its colors are lighter, a white creme and is more animated, with small bricks floating around.",
+                    "currentArtifactFullHtml": PATCHABLE_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(
+            anthropic_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact background treatment",
+        )
+        self.assertIn('id="prezo-background-treatment-data"', response.html)
         self.assertIn(".car", response.html)
 
     async def test_background_treatment_failure_uses_deterministic_runtime_treatment(self) -> None:
