@@ -248,6 +248,21 @@ INVALID_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+MISSING_SCRIPT_CLOSE_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.textContent = state && state.poll ? state.poll.question || "" : "";
+      });
+  </body>
+</html>"""
+
 
 class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
@@ -442,6 +457,25 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(gemini_mock.await_count, 1)
         self.assertEqual(response.model, "gemini-2.5-flash")
 
+    async def test_missing_script_close_tag_is_auto_repaired_before_ai_repair(self) -> None:
+        anthropic_mock = AsyncMock(
+            return_value=(MISSING_SCRIPT_CLOSE_ARTIFACT_HTML, "end_turn")
+        )
+        gemini_mock = AsyncMock()
+        payload = self.build_payload("build")
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(
+            len(ai_api.ARTIFACT_SCRIPT_OPEN_RE.findall(response.html)),
+            len(ai_api.ARTIFACT_SCRIPT_CLOSE_RE.findall(response.html)),
+        )
+        self.assertEqual(ai_api.validate_poll_game_artifact_html(response.html), [])
+
     async def test_claude_build_failure_does_not_fallback_to_gemini(self) -> None:
         anthropic_mock = AsyncMock(
             side_effect=ai_api.HTTPException(status_code=503, detail="Anthropic timed out")
@@ -524,6 +558,18 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "script appears to append option rows on each render without clear keyed reconciliation; repeated poll updates can duplicate rows.",
             issues,
         )
+
+    def test_attempt_artifact_structural_autorepair_balances_missing_script_close_tag(self) -> None:
+        repaired = ai_api.attempt_artifact_structural_autorepair(
+            MISSING_SCRIPT_CLOSE_ARTIFACT_HTML
+        )
+
+        self.assertEqual(
+            len(ai_api.ARTIFACT_SCRIPT_OPEN_RE.findall(repaired)),
+            len(ai_api.ARTIFACT_SCRIPT_CLOSE_RE.findall(repaired)),
+        )
+        self.assertIn("</script>", repaired)
+        self.assertEqual(ai_api.validate_poll_game_artifact_html(repaired), [])
 
     def test_should_attempt_artifact_patch_edit_skips_broad_redesign_requests(self) -> None:
         should_patch = ai_api.should_attempt_artifact_patch_edit(

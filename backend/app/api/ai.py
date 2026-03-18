@@ -826,6 +826,7 @@ async def create_poll_game_artifact_build(
                     patch_html = restore_artifact_live_hooks_if_missing(
                         patch_html, payload.context
                     )
+                    patch_html = attempt_artifact_structural_autorepair(patch_html)
                     patch_package = build_segmented_artifact_package(
                         patch_html,
                         patch_package,
@@ -964,6 +965,7 @@ async def create_poll_game_artifact_build(
 
     html = normalize_poll_game_artifact_html(request_text)
     html = restore_artifact_live_hooks_if_missing(html, payload.context)
+    html = attempt_artifact_structural_autorepair(html)
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1008,6 +1010,7 @@ async def create_poll_game_artifact_build(
         if not repaired_html:
             break
         next_html = restore_artifact_live_hooks_if_missing(repaired_html, payload.context)
+        next_html = attempt_artifact_structural_autorepair(next_html)
         if next_html.strip() == html.strip():
             break
         html = next_html
@@ -1052,6 +1055,7 @@ async def create_poll_game_artifact_build(
         )
         if recovered_html:
             html = restore_artifact_live_hooks_if_missing(recovered_html, payload.context)
+            html = attempt_artifact_structural_autorepair(html)
             validation_issues = validate_poll_game_artifact_html(html)
             response_model = repair_model
             if recovered_stop_reason in {"max_tokens", "model_context_window_exceeded"}:
@@ -4517,6 +4521,66 @@ def normalize_poll_game_artifact_html(raw_text: str) -> str:
             text = stripped_fence_lines
 
     return text.strip()
+
+
+def attempt_artifact_structural_autorepair(html: str) -> str:
+    normalized = (html or "").strip()
+    if not normalized:
+        return normalized
+    repaired_html, _changed = rebalance_artifact_script_tags(normalized)
+    return repaired_html
+
+
+def rebalance_artifact_script_tags(html: str) -> tuple[str, bool]:
+    normalized = (html or "").strip()
+    if not normalized:
+        return normalized, False
+    open_script_count = len(ARTIFACT_SCRIPT_OPEN_RE.findall(normalized))
+    close_script_count = len(ARTIFACT_SCRIPT_CLOSE_RE.findall(normalized))
+    if open_script_count == close_script_count:
+        return normalized, False
+
+    if open_script_count > close_script_count:
+        missing_close_tags = open_script_count - close_script_count
+        insertion = "</script>\n" * missing_close_tags
+        if re.search(r"</body>", normalized, re.IGNORECASE):
+            repaired = re.sub(
+                r"</body>",
+                f"{insertion}</body>",
+                normalized,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        elif re.search(r"</html>", normalized, re.IGNORECASE):
+            repaired = re.sub(
+                r"</html>",
+                f"{insertion}</html>",
+                normalized,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            suffix = "" if normalized.endswith("\n") else "\n"
+            repaired = f"{normalized}{suffix}{insertion}".rstrip()
+        return repaired, repaired != normalized
+
+    extra_close_tags = close_script_count - open_script_count
+    repaired = normalized
+    while extra_close_tags > 0:
+        next_repaired = remove_last_artifact_script_close_tag(repaired)
+        if next_repaired == repaired:
+            break
+        repaired = next_repaired
+        extra_close_tags -= 1
+    return repaired, repaired != normalized
+
+
+def remove_last_artifact_script_close_tag(html: str) -> str:
+    matches = list(ARTIFACT_SCRIPT_CLOSE_RE.finditer(html))
+    if not matches:
+        return html
+    last_match = matches[-1]
+    return f"{html[: last_match.start()]}{html[last_match.end() :]}"
 
 
 def detect_append_only_option_render_issue(script_body: str) -> str | None:
