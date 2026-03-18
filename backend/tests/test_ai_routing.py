@@ -175,6 +175,28 @@ ROOT_SCENE_RESET_HTML = """<!doctype html>
   </body>
 </html>"""
 
+APPEND_ONLY_OPTION_RENDER_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        var options = state && state.poll && Array.isArray(state.poll.options) ? state.poll.options : [];
+        options.forEach(function (option) {
+          var row = document.createElement("div");
+          row.className = "poll-row";
+          row.textContent = option && option.label ? option.label : "";
+          root.appendChild(row);
+        });
+      });
+    </script>
+  </body>
+</html>"""
+
 INVALID_ARTIFACT_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -451,6 +473,14 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(
             "script resets the main scene/root content, which causes hard resets, flicker, or blank artifacts.",
+            issues,
+        )
+
+    def test_validate_poll_game_artifact_html_rejects_append_only_option_renderer(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(APPEND_ONLY_OPTION_RENDER_HTML)
+
+        self.assertIn(
+            "script appears to append option rows on each render without clear keyed reconciliation; repeated poll updates can duplicate rows.",
             issues,
         )
 

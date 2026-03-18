@@ -119,7 +119,7 @@ export function createPollGameArtifactBridge({
         if (payload) {
           artifactState.pendingPayload = payload
         }
-        flushPendingPayload({ force: true })
+        flushPendingPayload()
       }, delay)
       artifactState.postLoadReplayTimerIds.push(timerId)
     }
@@ -297,7 +297,7 @@ export function createPollGameArtifactBridge({
     if (currentPayload) {
       artifactState.pendingPayload = currentPayload
     }
-    flushPendingPayload({ force: true })
+    flushPendingPayload()
     schedulePostLoadReplays()
   }
 

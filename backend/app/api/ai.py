@@ -274,6 +274,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Never blank the stage between updates and never use hide-then-show, fade-to-black, blackout overlays, or other hard reset transitions unless the user explicitly asks for that effect.",
         "- Build around a stable scene root and persistent option nodes keyed by option id.",
         "- Reconcile by option id and update only changed elements when possible.",
+        "- Renderer idempotence is required: repeated calls with the same or newer state must not increase option-row count or duplicate labels.",
         "- Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.",
         "- If the scene contains moving objects such as cars, runners, avatars, or tokens, keep the same DOM nodes mounted and animate them forward from prior state instead of destroying and recreating them.",
         "Design guidance:",
@@ -4129,6 +4130,44 @@ def normalize_poll_game_artifact_html(raw_text: str) -> str:
     return text.strip()
 
 
+def detect_append_only_option_render_issue(script_body: str) -> str | None:
+    normalized = (script_body or "").strip()
+    if not normalized:
+        return None
+    lowered = normalized.lower()
+    if "prezosetpollrenderer" not in lowered and "prezorenderpoll" not in lowered:
+        return None
+    if not re.search(
+        r"(?:poll\s*\.\s*options|state\s*\.\s*poll\s*\.\s*options|options)\s*\.\s*forEach\s*\(",
+        normalized,
+        re.IGNORECASE,
+    ):
+        return None
+    if "appendChild" not in normalized or "createElement" not in normalized:
+        return None
+    reconciliation_markers = (
+        r"\.replaceChildren\s*\(",
+        r"\.innerHTML\s*=\s*['\"]\s*['\"]",
+        r"\.textContent\s*=\s*['\"]\s*['\"]",
+        r"data-option-id",
+        r"data-prezo-option-id",
+        r"\browsById\b",
+        r"\browById\b",
+        r"\boptionNodesById\b",
+        r"\bmountedRows\b",
+        r"\bnew Map\s*\(",
+    )
+    if any(
+        re.search(marker, normalized, re.IGNORECASE)
+        for marker in reconciliation_markers
+    ):
+        return None
+    return (
+        "script appears to append option rows on each render without clear keyed reconciliation; "
+        "repeated poll updates can duplicate rows."
+    )
+
+
 def validate_poll_game_artifact_html(html: str) -> list[str]:
     text = (html or "").strip()
     if not text:
@@ -4162,6 +4201,9 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         for pattern, message in ARTIFACT_FULL_SCENE_RESET_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
+        append_only_issue = detect_append_only_option_render_issue(script_body)
+        if append_only_issue:
+            issues.append(append_only_issue)
         syntax_issue = validate_inline_script_syntax(script_body)
         if syntax_issue:
             issues.append(syntax_issue)
