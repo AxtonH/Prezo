@@ -110,6 +110,43 @@ SCENE_ROOT_ONLY_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+LAYOUT_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <style>
+      #artifact-root {
+        padding: 16px;
+      }
+      .poll-options {
+        display: flex;
+        flex-direction: row;
+        gap: 12px;
+      }
+      .poll-option {
+        display: flex;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="artifact-root">
+      <div class="poll-options">
+        <div class="poll-option">A</div>
+        <div class="poll-option">B</div>
+      </div>
+    </div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.setAttribute("data-question", state && state.poll ? state.poll.question || "" : "");
+      });
+    </script>
+  </body>
+</html>"""
+
 FULL_SCENE_RESET_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -429,6 +466,22 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(should_patch)
 
+    def test_is_patch_only_artifact_edit_request_treats_layout_orientation_as_patchable(self) -> None:
+        self.assertTrue(
+            ai_api.is_patch_only_artifact_edit_request(
+                "Change the alignment so horizontal polls become vertical polls."
+            )
+        )
+
+    def test_should_route_artifact_edit_to_anthropic_skips_orientation_when_current_html_exists(self) -> None:
+        should_route = ai_api.should_route_artifact_edit_to_anthropic(
+            "edit",
+            {"currentArtifactHtml": LAYOUT_ARTIFACT_HTML},
+            "Change the alignment so horizontal polls become vertical polls.",
+        )
+
+        self.assertFalse(should_route)
+
     def test_apply_artifact_patch_plan_can_update_css_property(self) -> None:
         patched_html, issues = ai_api.apply_artifact_patch_plan(
             PATCHABLE_ARTIFACT_HTML,
@@ -535,6 +588,25 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rewritten["edits"][0]["selector"], "#track-bg")
 
+    def test_rewrite_artifact_patch_plan_remaps_invented_layout_selector(self) -> None:
+        rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
+            plan={
+                "assistantMessage": "Switched to vertical alignment.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": "#poll-grid",
+                        "property": "flex-direction",
+                        "value": "column",
+                    }
+                ],
+            },
+            current_html=LAYOUT_ARTIFACT_HTML,
+            original_edit_request="Change the alignment so horizontal polls become vertical polls.",
+        )
+
+        self.assertEqual(rewritten["edits"][0]["selector"], ".poll-options")
+
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
             current_html=PATCHABLE_ARTIFACT_HTML,
@@ -545,6 +617,19 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#track-bg::after", patched_html)
         self.assertIn(".car", patched_html)
         self.assertIn("cityscape-style background treatment", assistant_message)
+
+    def test_attempt_builtin_layout_orientation_patch_updates_flex_direction(self) -> None:
+        patched_html, _patched_package, assistant_message = (
+            ai_api.attempt_builtin_layout_orientation_patch(
+                current_html=LAYOUT_ARTIFACT_HTML,
+                current_package=None,
+                original_edit_request="Change the alignment so horizontal polls become vertical polls.",
+            )
+        )
+
+        self.assertIn("flex-direction: column;", patched_html)
+        self.assertIn("align-items: stretch;", patched_html)
+        self.assertIn("align vertical", assistant_message)
 
     def test_apply_background_treatment_to_artifact_html_preserves_cars(self) -> None:
         patched_html, issues = ai_api.apply_background_treatment_to_artifact_html(
@@ -820,6 +905,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.assistantMessage, "Rounded the track corners.")
         self.assertIn("border-radius: 24px", response.html)
         self.assertIn(".car", response.html)
+
+    async def test_layout_orientation_edit_prefers_builtin_patch_flow_before_model_calls(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock()
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "Change the alignment so horizontal polls become vertical polls.",
+                    "currentArtifactFullHtml": LAYOUT_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn("align vertical", response.assistantMessage)
+        self.assertIn("flex-direction: column;", response.html)
 
     async def test_local_edit_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
         anthropic_mock = AsyncMock()

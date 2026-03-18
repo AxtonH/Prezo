@@ -34,7 +34,8 @@ DEFAULT_GEMINI_ARTIFACT_EDIT_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_ARTIFACT_REPAIR_MODEL = "gemini-2.5-flash"
 DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL = "gemini-2.5-flash-lite"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
-GEMINI_ARTIFACT_MAX_TOKENS = 12000
+ANTHROPIC_ARTIFACT_MAX_TOKENS = 16000
+GEMINI_ARTIFACT_MAX_TOKENS = 16000
 GEMINI_ARTIFACT_REPAIR_MAX_TOKENS = 12000
 GEMINI_ARTIFACT_RECOVERY_MAX_TOKENS = 10000
 GEMINI_ARTIFACT_PATCH_MAX_TOKENS = 4000
@@ -96,6 +97,10 @@ ARTIFACT_FEEDBACK_FOLLOWUP_RE = re.compile(
 )
 ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE = re.compile(
     r"\b(?:image|photo|picture|texture|asset|logo|svg|illustration|replace|swap|convert|turn into|add|remove|insert|delete|layout|rearrange|reposition|restructure|scene element|track image)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_LAYOUT_ORIENTATION_EDIT_REQUEST_RE = re.compile(
+    r"\b(?:align|alignment|horizontal|vertical|column|columns|stack|stacked|orientation|left-align|right-align|center-align|centre-align|side by side|top to bottom|flip to vertical|flip to horizontal)\b",
     re.IGNORECASE,
 )
 ARTIFACT_LIVE_STATE_TOKENS = (
@@ -878,7 +883,7 @@ async def create_poll_game_artifact_build(
                 indent=2,
             ),
             temperature=temperature,
-            max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
+            max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
             timeout_seconds=timeout_seconds,
             request_stage="artifact initial build",
             remaining_budget_seconds=remaining_budget_seconds,
@@ -909,7 +914,7 @@ async def create_poll_game_artifact_build(
                     indent=2,
                 ),
                 temperature=temperature,
-                max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
+                max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
                 timeout_seconds=timeout_seconds,
                 request_stage=request_stage,
                 remaining_budget_seconds=remaining_budget_seconds,
@@ -1161,6 +1166,15 @@ async def attempt_artifact_patch_edit(
     if builtin_html:
         builtin_package = build_segmented_artifact_package(builtin_html, current_package)
         return builtin_html, builtin_package, builtin_message, []
+    orientation_html, orientation_package, orientation_message = (
+        attempt_builtin_layout_orientation_patch(
+            current_html=current_html,
+            current_package=current_package,
+            original_edit_request=original_edit_request,
+        )
+    )
+    if orientation_html:
+        return orientation_html, orientation_package, orientation_message, []
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1701,11 +1715,67 @@ def is_broad_artifact_edit_request(request_text: str) -> bool:
     return bool(ARTIFACT_BROAD_EDIT_REQUEST_RE.search(normalized))
 
 
+def is_layout_orientation_artifact_edit_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    return bool(ARTIFACT_LAYOUT_ORIENTATION_EDIT_REQUEST_RE.search(normalized))
+
+
+def infer_requested_artifact_layout_orientation(request_text: str) -> str:
+    lowered = (request_text or "").strip().lower()
+    if not lowered:
+        return ""
+    if re.search(
+        r"horizontal[\s\S]{0,80}(?:become|becomes|turn(?:ed)?|change(?:d)?|convert(?:ed)?|to)\s+vertical",
+        lowered,
+    ):
+        return "vertical"
+    if re.search(
+        r"vertical[\s\S]{0,80}(?:become|becomes|turn(?:ed)?|change(?:d)?|convert(?:ed)?|to)\s+horizontal",
+        lowered,
+    ):
+        return "horizontal"
+    if re.search(
+        r"(?:instead of|from)\s+horizontal[\s\S]{0,80}(?:to|into)?\s*vertical",
+        lowered,
+    ):
+        return "vertical"
+    if re.search(
+        r"(?:instead of|from)\s+vertical[\s\S]{0,80}(?:to|into)?\s*horizontal",
+        lowered,
+    ):
+        return "horizontal"
+    vertical_score = 0
+    horizontal_score = 0
+    if re.search(r"\b(?:vertical|column|columns|stack|stacked|top to bottom)\b", lowered):
+        vertical_score += 1
+    if re.search(
+        r"\b(?:horizontal|row|rows|side by side|left to right)\b", lowered
+    ):
+        horizontal_score += 1
+    if re.search(r"\b(?:rotate|flip|switch|convert|change)\b", lowered):
+        vertical_score += 1 if "vertical" in lowered else 0
+        horizontal_score += 1 if "horizontal" in lowered else 0
+    if "vertical" in lowered and "horizontal" in lowered:
+        if lowered.rfind("vertical") > lowered.rfind("horizontal"):
+            vertical_score += 1
+        elif lowered.rfind("horizontal") > lowered.rfind("vertical"):
+            horizontal_score += 1
+    if vertical_score > horizontal_score:
+        return "vertical"
+    if horizontal_score > vertical_score:
+        return "horizontal"
+    return ""
+
+
 def is_patch_only_artifact_edit_request(request_text: str) -> bool:
     normalized = (request_text or "").strip()
     if not normalized:
         return False
     if is_background_image_asset_edit_request(normalized):
+        return True
+    if is_layout_orientation_artifact_edit_request(normalized):
         return True
     if ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE.search(normalized):
         return False
@@ -1733,6 +1803,8 @@ def should_route_artifact_edit_to_anthropic(
     normalized = (original_edit_request or "").strip()
     if not normalized:
         return False
+    if is_layout_orientation_artifact_edit_request(normalized):
+        return not bool(get_artifact_patch_source_html(artifact_context))
     if is_background_visual_edit_request(normalized):
         if artifact_edit_request_requires_external_asset_url(normalized):
             return False
@@ -1883,6 +1955,12 @@ def build_artifact_patch_edit_prompt(
         else ""
     )
     is_background_edit = is_background_visual_edit_request(original_edit_request)
+    is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
+        original_edit_request
+    )
+    requested_layout_orientation = infer_requested_artifact_layout_orientation(
+        original_edit_request
+    )
     is_city_background_edit = is_city_background_edit_request(original_edit_request)
     requires_external_asset_url = artifact_edit_request_requires_external_asset_url(
         original_edit_request
@@ -1890,6 +1968,7 @@ def build_artifact_patch_edit_prompt(
     background_selector_candidates = extract_artifact_background_selector_candidates(
         current_html
     )
+    layout_selector_candidates = extract_artifact_layout_selector_candidates(current_html)
     scene_root_selector_candidates = extract_artifact_scene_root_selector_candidates(
         current_html
     )
@@ -1920,6 +1999,16 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "This is an orientation/alignment request. Keep the same concept and visuals, but switch poll option layout orientation using local CSS changes only."
+                if is_layout_orientation_edit
+                else ""
+            ),
+            (
+                f"Requested poll layout orientation: {requested_layout_orientation}."
+                if is_layout_orientation_edit and requested_layout_orientation
+                else ""
+            ),
+            (
                 "This request appears to need a new external image or asset URL. If the user did not provide a direct URL, do not guess one. Return an empty edits array and explain that a direct image URL is required."
                 if requires_external_asset_url
                 else ""
@@ -1937,8 +2026,19 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "Available exact layout selectors in the current artifact: "
+                + ", ".join(layout_selector_candidates)
+                if layout_selector_candidates
+                else ""
+            ),
+            (
                 "For background edits, if you use set_css_property, the selector must match one of the available exact background selectors above. Do not invent selectors."
                 if background_selector_candidates
+                else ""
+            ),
+            (
+                "For layout-orientation edits, target the exact layout selectors above and prefer flex-direction/grid-flow changes over HTML rewrites. Do not invent selectors."
+                if is_layout_orientation_edit and layout_selector_candidates
                 else ""
             ),
             (
@@ -2246,6 +2346,150 @@ def is_explicit_background_layer_selector(selector: str) -> bool:
     )
 
 
+def is_layout_like_selector(selector: str) -> bool:
+    lowered = (selector or "").strip().lower()
+    if not lowered:
+        return False
+    if lowered in {"body", "html"}:
+        return False
+    if "::before" in lowered or "::after" in lowered:
+        return False
+    if "data-prezo-foreground-layer" in lowered:
+        return True
+    return bool(
+        re.search(
+            r"(?:option|poll|choice|answer|lane|row|bar|column|stack|vote|result|list|grid|rank)",
+            lowered,
+        )
+    )
+
+
+def extract_artifact_layout_selector_candidates(html: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def remember(selector: str) -> None:
+        normalized = selector.strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    for selector in (
+        "#options",
+        "#poll-options",
+        "#poll-rows",
+        "#lanes",
+        ".options",
+        ".poll-options",
+        ".poll-rows",
+        ".choices",
+        ".answers",
+        ".lanes",
+        ".rows",
+        ".bars",
+        ".columns",
+        ".option-list",
+        ".poll-list",
+    ):
+        if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(selector)}(?![A-Za-z0-9_-])", html):
+            remember(selector)
+
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = style_match.group("body") or ""
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                if is_layout_like_selector(normalized):
+                    remember(normalized)
+
+    for match in re.finditer(r'id\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        raw_id = match.group(1).strip()
+        if raw_id and re.search(
+            r"(option|poll|choice|answer|lane|row|bar|column|stack|vote|result|list|grid|rank)",
+            raw_id,
+            re.IGNORECASE,
+        ):
+            remember(f"#{raw_id}")
+
+    for match in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        for raw_class in match.group(1).split():
+            if raw_class and re.search(
+                r"(option|poll|choice|answer|lane|row|bar|column|stack|vote|result|list|grid|rank)",
+                raw_class,
+                re.IGNORECASE,
+            ):
+                remember(f".{raw_class}")
+
+    return candidates[:14]
+
+
+def score_layout_selector_candidate(
+    requested_selector: str, candidate: str
+) -> tuple[int, int, int]:
+    requested_tokens = set(re.findall(r"[a-z]+", (requested_selector or "").lower()))
+    candidate_tokens = set(re.findall(r"[a-z]+", (candidate or "").lower()))
+    overlap = len(requested_tokens & candidate_tokens)
+    specificity = (
+        2
+        if candidate.startswith("#")
+        else 1
+        if candidate.startswith(".") or candidate.startswith("[")
+        else 0
+    )
+    priority_tokens = (
+        "options",
+        "poll-options",
+        "poll-rows",
+        "choices",
+        "answers",
+        "lanes",
+        "rows",
+        "bars",
+        "columns",
+        "option",
+        "poll",
+        "vote",
+        "result",
+        "list",
+        "grid",
+        "stack",
+        "rank",
+    )
+    priority = 0
+    lowered_candidate = candidate.lower()
+    for index, token in enumerate(priority_tokens):
+        if token in lowered_candidate:
+            priority = len(priority_tokens) - index
+            break
+    complexity_penalty = -1 if (" " in candidate or ">" in candidate) else 0
+    return (overlap, priority, specificity + complexity_penalty)
+
+
+def choose_layout_selector_candidate(
+    requested_selector: str, candidates: list[str]
+) -> str:
+    if not candidates:
+        return ""
+    normalized_candidates = [item for item in candidates if is_layout_like_selector(item)]
+    if not normalized_candidates:
+        return ""
+    normalized_requested = (requested_selector or "").strip()
+    if normalized_requested in normalized_candidates:
+        return normalized_requested
+    ranked = sorted(
+        normalized_candidates,
+        key=lambda candidate: score_layout_selector_candidate(
+            normalized_requested, candidate
+        ),
+        reverse=True,
+    )
+    return ranked[0] if ranked else ""
+
+
 def extract_artifact_scene_root_selector_candidates(html: str) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
@@ -2484,10 +2728,15 @@ def rewrite_artifact_patch_plan_for_current_html(
     )
     edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
     rewritten: list[dict[str, Any]] = []
-    if not is_background_visual_edit_request(original_edit_request):
+    is_background_edit = is_background_visual_edit_request(original_edit_request)
+    is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
+        original_edit_request
+    )
+    if not is_background_edit and not is_layout_orientation_edit:
         return {"assistantMessage": assistant_message, "edits": edits}
 
     background_candidates = extract_artifact_background_selector_candidates(current_html)
+    layout_candidates = extract_artifact_layout_selector_candidates(current_html)
     for raw_edit in edits:
         if not isinstance(raw_edit, dict):
             continue
@@ -2497,8 +2746,25 @@ def rewrite_artifact_patch_plan_for_current_html(
             rewritten.append(edit)
             continue
         selector = str(edit.get("selector") or "").strip()
-        if selector and selector not in background_candidates and is_background_like_selector(selector):
-            replacement = choose_background_selector_candidate(selector, background_candidates)
+        if (
+            is_background_edit
+            and selector
+            and selector not in background_candidates
+            and is_background_like_selector(selector)
+        ):
+            replacement = choose_background_selector_candidate(
+                selector, background_candidates
+            )
+            if replacement:
+                edit["selector"] = replacement
+                selector = replacement
+        if (
+            is_layout_orientation_edit
+            and selector
+            and selector not in layout_candidates
+            and is_layout_like_selector(selector)
+        ):
+            replacement = choose_layout_selector_candidate(selector, layout_candidates)
             if replacement:
                 edit["selector"] = replacement
         rewritten.append(edit)
@@ -3360,6 +3626,97 @@ def attempt_builtin_cityscape_background_patch(
         working,
         "Applied a cityscape-style background treatment while keeping the cars and layout unchanged.",
     )
+
+
+def attempt_builtin_layout_orientation_patch(
+    *,
+    current_html: str,
+    current_package: dict[str, Any] | None,
+    original_edit_request: str,
+) -> tuple[str, dict[str, Any] | None, str]:
+    if not is_layout_orientation_artifact_edit_request(original_edit_request):
+        return "", current_package, ""
+    target_orientation = infer_requested_artifact_layout_orientation(
+        original_edit_request
+    )
+    if target_orientation not in {"horizontal", "vertical"}:
+        return "", current_package, ""
+
+    layout_candidates = [
+        candidate
+        for candidate in extract_artifact_layout_selector_candidates(current_html)
+        if candidate not in {"body", "html"}
+    ]
+    if not layout_candidates:
+        scene_root_candidates = [
+            candidate
+            for candidate in extract_artifact_scene_root_selector_candidates(current_html)
+            if candidate not in {"body", "html"}
+        ]
+        fallback_selector = choose_scene_root_selector_candidate(scene_root_candidates)
+        if fallback_selector:
+            layout_candidates = [fallback_selector]
+    if not layout_candidates:
+        return "", current_package, ""
+
+    preferred_selector = choose_layout_selector_candidate(
+        "#poll-options", layout_candidates
+    )
+    ordered_candidates: list[str] = []
+    if preferred_selector:
+        ordered_candidates.append(preferred_selector)
+    ordered_candidates.extend(
+        candidate
+        for candidate in layout_candidates
+        if candidate not in ordered_candidates
+    )
+
+    for target_selector in ordered_candidates[:3]:
+        plan = {
+            "assistantMessage": "",
+            "edits": [
+                {
+                    "type": "set_css_property",
+                    "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                    "selector": target_selector,
+                    "property": "display",
+                    "value": "flex",
+                },
+                {
+                    "type": "set_css_property",
+                    "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                    "selector": target_selector,
+                    "property": "flex-direction",
+                    "value": "column" if target_orientation == "vertical" else "row",
+                },
+                {
+                    "type": "set_css_property",
+                    "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                    "selector": target_selector,
+                    "property": "align-items",
+                    "value": "stretch",
+                },
+            ],
+        }
+        patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
+            html=current_html,
+            artifact_package=current_package,
+            plan=plan,
+            max_edits=ARTIFACT_PATCH_MAX_EDITS,
+        )
+        if issues:
+            continue
+        if not patched_html or patched_html.strip() == current_html.strip():
+            continue
+        orientation_text = (
+            "vertical" if target_orientation == "vertical" else "horizontal"
+        )
+        return (
+            patched_html,
+            patched_package,
+            f"Applied a targeted layout patch so poll options align {orientation_text}.",
+        )
+    return "", current_package, ""
 
 
 def extract_artifact_background_selector_candidates(html: str) -> list[str]:
