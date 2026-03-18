@@ -1906,16 +1906,35 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return false
     }
     const paleAllowed = artifactEditAllowsPaleBackground(state.artifact.activeEditRequest)
+    const isBackgroundEdit = isArtifactBackgroundEditRequest(state.artifact.activeEditRequest)
     const requiresVisibleBackground =
-      isArtifactBackgroundEditRequest(state.artifact.activeEditRequest) && !paleAllowed
+      isBackgroundEdit && !paleAllowed
+    const hasMeaningfulScene = hasMeaningfulArtifactScene(renderHealth)
     const runtimeBackgroundVisibleCount = Math.max(
       0,
       toInt(renderHealth?.runtimeBackgroundVisibleCount)
     )
+    const shouldBlockWashedOut =
+      Boolean(renderHealth.likelyWashedOut) &&
+      !paleAllowed &&
+      (isBackgroundEdit || !hasMeaningfulScene)
     return (
       Boolean(renderHealth.likelyBlank) ||
       (requiresVisibleBackground && runtimeBackgroundVisibleCount === 0) ||
-      (Boolean(renderHealth.likelyWashedOut) && !paleAllowed)
+      shouldBlockWashedOut
+    )
+  }
+
+  function hasMeaningfulArtifactScene(renderHealth) {
+    const visibleElementCount = Math.max(0, toInt(renderHealth?.visibleElementCount))
+    const largeVisibleElementCount = Math.max(0, toInt(renderHealth?.largeVisibleElementCount))
+    const mediaCount = Math.max(0, toInt(renderHealth?.mediaCount))
+    const textLength = Math.max(0, toInt(renderHealth?.textLength))
+    return (
+      visibleElementCount >= 24 ||
+      largeVisibleElementCount >= 7 ||
+      mediaCount > 0 ||
+      textLength >= 130
     )
   }
 

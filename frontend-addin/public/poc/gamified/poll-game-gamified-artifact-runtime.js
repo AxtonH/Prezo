@@ -1084,7 +1084,7 @@ function buildBridgeScript(instanceId = 0) {
     '      runtimeBackgroundLayerCount: runtimeBackgroundLayerCount,',
     '      runtimeBackgroundVisibleCount: runtimeBackgroundVisibleCount,',
     '      likelyBlank: textLength === 0 && mediaCount === 0 && visibleElementCount <= 2 && largeDarkCoverCount > 0,',
-    '      likelyWashedOut: largePaleCoverCount > 0 && textLength >= 18 && largeDarkCoverCount === 0 && largeVisibleElementCount <= 12 && runtimeBackgroundVisibleCount === 0',
+    '      likelyWashedOut: largePaleCoverCount > 0 && textLength >= 18 && textLength <= 120 && mediaCount === 0 && visibleElementCount <= 28 && largeDarkCoverCount === 0 && largeVisibleElementCount <= 12 && runtimeBackgroundVisibleCount === 0',
     '    }',
     '  }',
     '  function isRecoverableRenderError(error) {',
