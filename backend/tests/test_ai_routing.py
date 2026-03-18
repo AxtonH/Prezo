@@ -375,9 +375,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
-    async def test_complex_background_edit_request_uses_claude_and_ignores_payload_model(self) -> None:
-        anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
-        gemini_mock = AsyncMock()
+    async def test_complex_background_edit_request_uses_gemini_first_and_ignores_payload_model(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
         payload = self.build_payload(
             "edit",
             model="gemini-3.1-pro-preview",
@@ -389,14 +389,37 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(response.model, "claude-sonnet-4-6")
-        self.assertEqual(anthropic_mock.await_count, 1)
-        self.assertEqual(gemini_mock.await_count, 0)
-        self.assertEqual(anthropic_mock.await_args.kwargs["model"], "claude-sonnet-4-6")
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_args.kwargs["model"], "gemini-2.5-flash")
 
-    async def test_structural_edit_request_uses_claude(self) -> None:
+    async def test_structural_edit_request_uses_gemini_first(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "stop"))
+        payload = self.build_payload(
+            "edit",
+            model="gemini-3.1-pro-preview",
+            prompt="Restructure the layout into two stacked sections.",
+            original_edit_request="Restructure the layout into two stacked sections.",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+
+    async def test_edit_generation_falls_back_to_claude_when_gemini_candidate_fails_validation(self) -> None:
         anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
-        gemini_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            side_effect=[
+                ("<html><body><div>No live renderer wiring.</div></body></html>", "stop"),
+                ("<html><body><div>Still no live renderer wiring.</div></body></html>", "stop"),
+            ]
+        )
         payload = self.build_payload(
             "edit",
             model="gemini-3.1-pro-preview",
@@ -410,7 +433,77 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.model, "claude-sonnet-4-6")
         self.assertEqual(anthropic_mock.await_count, 1)
-        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertGreaterEqual(gemini_mock.await_count, 2)
+        self.assertEqual(
+            anthropic_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact edit fallback generation",
+        )
+
+    async def test_edit_patch_falls_back_to_claude_when_gemini_patch_fails(self) -> None:
+        anthropic_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Added LEGO studs to the title container.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-title::before",
+                                "property": "content",
+                                "value": "\"\"",
+                            },
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-title::before",
+                                "property": "background",
+                                "value": "#F4C531",
+                            },
+                        ],
+                    }
+                ),
+                "end_turn",
+            )
+        )
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Attempted a patch.",
+                        "edits": [
+                            {
+                                "type": "replace_between",
+                                "start": "<style>",
+                                "end": "</style>",
+                                "content": "/* unsupported */",
+                            }
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "add studs to the title container",
+                    "currentArtifactFullHtml": TITLE_OVERLAP_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(response.model, "claude-sonnet-4-6")
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertIn(".poll-title::before {", response.html)
+        self.assertIn("background: #F4C531;", response.html)
 
     async def test_repair_request_uses_artifact_repair_model(self) -> None:
         anthropic_mock = AsyncMock()
@@ -1195,7 +1288,17 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("margin-top: 14px;", response.html)
 
     async def test_local_edit_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
-        anthropic_mock = AsyncMock()
+        anthropic_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Patch mode is not suitable.",
+                        "edits": [],
+                    }
+                ),
+                "end_turn",
+            )
+        )
         gemini_mock = AsyncMock(
             return_value=(
                 json.dumps(
@@ -1227,7 +1330,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(exc_info.exception.status_code, 409)
         self.assertIn("Targeted artifact update was blocked", str(exc_info.exception.detail))
-        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(anthropic_mock.await_count, 1)
         self.assertEqual(gemini_mock.await_count, 1)
 
     async def test_background_image_request_without_url_is_blocked_before_regeneration(self) -> None:
@@ -1257,7 +1360,8 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 0)
 
     async def test_local_city_background_edit_uses_background_treatment_before_generic_patch(self) -> None:
-        anthropic_mock = AsyncMock(
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
             return_value=(
                 json.dumps(
                     {
@@ -1278,10 +1382,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                         },
                     }
                 ),
-                "end_turn",
+                "stop",
             )
         )
-        gemini_mock = AsyncMock()
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -1299,27 +1402,27 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(anthropic_mock.await_count, 1)
-        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(
-            anthropic_mock.await_args_list[0].kwargs["request_stage"],
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
             "artifact background treatment",
         )
-        self.assertEqual(response.model, "claude-sonnet-4-6")
+        self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertIn('id="prezo-background-treatment-data"', response.html)
         self.assertIn('"composition":"skyline"', response.html)
         self.assertIn(".car", response.html)
 
     async def test_background_treatment_failure_uses_deterministic_runtime_treatment(self) -> None:
-        anthropic_mock = AsyncMock(
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
             side_effect=[
                 (
                     json.dumps({"assistantMessage": "No usable structured treatment.", "treatment": {}}),
-                    "end_turn",
+                    "stop",
                 ),
             ]
         )
-        gemini_mock = AsyncMock()
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -1337,10 +1440,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(anthropic_mock.await_count, 1)
-        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(
-            anthropic_mock.await_args_list[0].kwargs["request_stage"],
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
             "artifact background treatment",
         )
         self.assertIn('id="prezo-background-treatment-data"', response.html)

@@ -772,32 +772,18 @@ async def create_poll_game_artifact_build(
         artifact_context,
         original_edit_request,
     )
-    use_anthropic_for_edit = should_route_artifact_edit_to_anthropic(
-        request_mode,
-        artifact_context,
-        original_edit_request,
-    ) and bool((settings.anthropic_api_key or "").strip())
-    use_anthropic_for_patch = should_use_anthropic_for_artifact_patch_edit(
-        request_mode,
-        original_edit_request,
-    ) and bool((settings.anthropic_api_key or "").strip())
+    anthropic_api_key = (settings.anthropic_api_key or "").strip()
+    gemini_api_key = (settings.gemini_api_key or "").strip()
+    can_fallback_to_anthropic_edit = request_mode == "edit" and bool(anthropic_api_key)
     patch_failure_reasons: list[str] = []
     if should_attempt_artifact_patch_edit(
         request_mode,
         artifact_context,
         original_edit_request,
     ):
-        patch_api_key = (
-            (settings.anthropic_api_key or "").strip()
-            if use_anthropic_for_patch
-            else (settings.gemini_api_key or "").strip()
-        )
+        patch_api_key = gemini_api_key
         if patch_api_key:
-            patch_model = (
-                resolve_anthropic_artifact_build_model()
-                if use_anthropic_for_patch
-                else resolve_gemini_artifact_edit_model()
-            )
+            patch_model = resolve_gemini_artifact_edit_model()
             current_html = get_artifact_patch_source_html(artifact_context)
             current_package = get_artifact_patch_source_package(artifact_context)
             try:
@@ -820,7 +806,8 @@ async def create_poll_game_artifact_build(
                     current_package=current_package,
                     timeout_seconds=patch_timeout_seconds,
                     remaining_budget_seconds=remaining_budget_seconds,
-                    use_anthropic_background_treatment=use_anthropic_for_patch,
+                    use_anthropic_background_treatment=False,
+                    use_anthropic_patch_planner=False,
                 )
                 if patch_html:
                     patch_html = restore_artifact_live_hooks_if_missing(
@@ -846,6 +833,66 @@ async def create_poll_game_artifact_build(
                 if patch_only_edit:
                     raise
                 patch_failure_reasons.append("the patch edit request failed before a safe patch could be applied")
+            if (
+                request_mode == "edit"
+                and anthropic_api_key
+                and patch_failure_reasons
+            ):
+                fallback_patch_model = resolve_anthropic_artifact_build_model()
+                try:
+                    remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+                    patch_timeout_seconds = min(
+                        ARTIFACT_PATCH_TIMEOUT_SECONDS,
+                        ensure_artifact_time_budget_remaining(
+                            deadline,
+                            "starting artifact patch edit fallback",
+                            minimum_seconds=ARTIFACT_PATCH_MIN_CALL_TIMEOUT_SECONDS,
+                        ),
+                    )
+                    fallback_html, fallback_package, fallback_assistant_message, fallback_issues = (
+                        await attempt_artifact_patch_edit(
+                            api_key=anthropic_api_key,
+                            model=fallback_patch_model,
+                            original_edit_request=original_edit_request,
+                            context=payload.context,
+                            current_html=current_html,
+                            current_package=current_package,
+                            timeout_seconds=patch_timeout_seconds,
+                            remaining_budget_seconds=remaining_budget_seconds,
+                            use_anthropic_background_treatment=True,
+                            use_anthropic_patch_planner=True,
+                        )
+                    )
+                    if fallback_html:
+                        fallback_html = restore_artifact_live_hooks_if_missing(
+                            fallback_html, payload.context
+                        )
+                        fallback_html = attempt_artifact_structural_autorepair(
+                            fallback_html
+                        )
+                        fallback_package = build_segmented_artifact_package(
+                            fallback_html,
+                            fallback_package,
+                        )
+                        fallback_validation_issues = validate_poll_game_artifact_html(
+                            fallback_html
+                        )
+                        if not fallback_validation_issues:
+                            return PollGameArtifactBuildResponse(
+                                html=fallback_html,
+                                artifact_package=fallback_package,
+                                model=fallback_patch_model,
+                                assistantMessage=fallback_assistant_message
+                                or "Artifact updated with a targeted patch.",
+                            )
+                        patch_failure_reasons.extend(fallback_validation_issues)
+                    patch_failure_reasons.extend(fallback_issues)
+                except HTTPException:
+                    if patch_only_edit:
+                        raise
+                    patch_failure_reasons.append(
+                        "the claude patch fallback failed before a safe patch could be applied"
+                    )
 
     if patch_only_edit:
         raise HTTPException(
@@ -858,7 +905,7 @@ async def create_poll_game_artifact_build(
         )
 
     if is_initial_build:
-        build_api_key = (settings.anthropic_api_key or "").strip()
+        build_api_key = anthropic_api_key
         if not build_api_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -890,179 +937,122 @@ async def create_poll_game_artifact_build(
             request_stage="artifact initial build",
             remaining_budget_seconds=remaining_budget_seconds,
         )
+        generation_provider_name = "Anthropic"
     else:
-        if use_anthropic_for_edit:
-            build_api_key = (settings.anthropic_api_key or "").strip()
-            model = resolve_anthropic_artifact_build_model()
-            temperature = 0.35
-            request_stage = "artifact complex edit generation"
-            configured_timeout_seconds = settings.anthropic_artifact_build_timeout_seconds
-            remaining_budget_seconds = max(0.0, deadline - time.monotonic())
-            timeout_seconds = min(
-                configured_timeout_seconds,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "starting artifact generation",
-                    minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
-                    reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
-                ),
+        build_api_key = gemini_api_key
+        if not build_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
             )
-            request_text, stop_reason = await request_anthropic_text(
-                api_key=build_api_key,
-                model=model,
-                system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-                prompt_text=json.dumps(
-                    {"prompt": payload.prompt, "context": model_context},
-                    indent=2,
-                ),
-                temperature=temperature,
-                max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
-                timeout_seconds=timeout_seconds,
-                request_stage=request_stage,
-                remaining_budget_seconds=remaining_budget_seconds,
-            )
+        model = resolve_gemini_artifact_edit_model()
+        if request_mode == "repair":
+            temperature = 0.2
+            request_stage = "artifact repair generation"
+            model = resolve_gemini_artifact_repair_model()
+            configured_timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
         else:
-            build_api_key = (settings.gemini_api_key or "").strip()
-            if not build_api_key:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
-                )
-            model = resolve_gemini_artifact_edit_model()
-            if request_mode == "repair":
-                temperature = 0.2
-                request_stage = "artifact repair generation"
-                model = resolve_gemini_artifact_repair_model()
-                configured_timeout_seconds = settings.gemini_artifact_repair_timeout_seconds
-            else:
-                temperature = 0.2
-                request_stage = "artifact edit generation"
-                configured_timeout_seconds = settings.gemini_artifact_edit_timeout_seconds
-            remaining_budget_seconds = max(0.0, deadline - time.monotonic())
-            timeout_seconds = min(
-                configured_timeout_seconds,
-                ensure_artifact_time_budget_remaining(
-                    deadline,
-                    "starting artifact generation",
-                    minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
-                    reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
-                ),
-            )
-            request_text, stop_reason = await request_gemini_text(
-                api_key=build_api_key,
-                model=model,
-                system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-                prompt_text=json.dumps(
-                    {"prompt": payload.prompt, "context": model_context},
-                    indent=2,
-                ),
-                temperature=temperature,
-                max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
-                timeout_seconds=timeout_seconds,
-                request_stage=request_stage,
-                remaining_budget_seconds=remaining_budget_seconds,
-            )
+            temperature = 0.2
+            request_stage = "artifact edit generation"
+            configured_timeout_seconds = settings.gemini_artifact_edit_timeout_seconds
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        timeout_seconds = min(
+            configured_timeout_seconds,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "starting artifact generation",
+                minimum_seconds=ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
+                reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
+            ),
+        )
+        request_text, stop_reason = await request_gemini_text(
+            api_key=build_api_key,
+            model=model,
+            system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+            prompt_text=json.dumps(
+                {"prompt": payload.prompt, "context": model_context},
+                indent=2,
+            ),
+            temperature=temperature,
+            max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
+            timeout_seconds=timeout_seconds,
+            request_stage=request_stage,
+            remaining_budget_seconds=remaining_budget_seconds,
+        )
+        generation_provider_name = "Gemini"
 
     html = normalize_poll_game_artifact_html(request_text)
-    html = restore_artifact_live_hooks_if_missing(html, payload.context)
-    html = attempt_artifact_structural_autorepair(html)
     if not html:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"{'Anthropic' if is_initial_build or use_anthropic_for_edit else 'Gemini'} response did not include artifact HTML.",
+            detail=f"{generation_provider_name} response did not include artifact HTML.",
         )
-    validation_issues = validate_poll_game_artifact_html(html)
-    if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
-        validation_issues.insert(
-            0,
-            "artifact output appears truncated before completion.",
-        )
-    max_repair_attempts = resolve_artifact_max_repair_attempts(request_mode)
-    repair_attempts = 0
-    response_model = model
-    while validation_issues and repair_attempts < max_repair_attempts:
-        repair_api_key = (settings.gemini_api_key or "").strip()
-        if not repair_api_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
-            )
-        repair_model = resolve_gemini_artifact_repair_model()
-        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
-        repair_timeout_seconds = min(
-            settings.gemini_artifact_repair_timeout_seconds,
-            ensure_artifact_time_budget_remaining(
-                deadline,
-                "repairing artifact output",
-                minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
-            ),
-        )
-        repaired_html = await attempt_artifact_repair(
-            api_key=repair_api_key,
-            model=repair_model,
-            original_prompt=original_edit_request or payload.prompt,
-            context=model_context,
+    html, validation_issues, response_model = (
+        await validate_and_repair_artifact_html_candidate(
             html=html,
-            validation_issues=validation_issues,
-            timeout_seconds=repair_timeout_seconds,
-            remaining_budget_seconds=remaining_budget_seconds,
+            stop_reason=stop_reason,
+            request_mode=request_mode,
+            original_prompt=original_edit_request or payload.prompt,
+            prepared_context=model_context,
+            request_context=payload.context,
+            deadline=deadline,
+            initial_model=model,
         )
-        if not repaired_html:
-            break
-        next_html = restore_artifact_live_hooks_if_missing(repaired_html, payload.context)
-        next_html = attempt_artifact_structural_autorepair(next_html)
-        if next_html.strip() == html.strip():
-            break
-        html = next_html
-        validation_issues = validate_poll_game_artifact_html(html)
-        repair_attempts += 1
-        response_model = repair_model
-    if should_attempt_stable_artifact_recovery(
-        request_mode, validation_issues, payload.context
-    ):
-        repair_api_key = (settings.gemini_api_key or "").strip()
-        if not repair_api_key:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
-            )
-        repair_model = resolve_gemini_artifact_repair_model()
-        recovery_context = build_stable_artifact_recovery_context(
-            payload.context,
-            failed_html=html,
-            validation_issues=validation_issues,
-        )
-        prepared_recovery_context = prepare_artifact_context_for_model(
-            recovery_context, "repair"
-        )
+    )
+
+    if validation_issues and can_fallback_to_anthropic_edit:
+        fallback_model = resolve_anthropic_artifact_build_model()
         remaining_budget_seconds = max(0.0, deadline - time.monotonic())
-        recovery_timeout_seconds = min(
-            90.0,
+        fallback_timeout_seconds = min(
+            settings.anthropic_artifact_build_timeout_seconds,
             ensure_artifact_time_budget_remaining(
                 deadline,
-                "recovering artifact output from the last stable artifact",
+                "starting artifact edit fallback generation",
                 minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
             ),
         )
-        recovered_html, recovered_stop_reason = await attempt_artifact_stable_recovery(
-            api_key=repair_api_key,
-            model=repair_model,
-            original_prompt=original_edit_request or payload.prompt,
-            context=prepared_recovery_context,
-            validation_issues=validation_issues,
-            timeout_seconds=recovery_timeout_seconds,
+        fallback_text, fallback_stop_reason = await request_anthropic_text(
+            api_key=anthropic_api_key,
+            model=fallback_model,
+            system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+            prompt_text=json.dumps(
+                {"prompt": payload.prompt, "context": model_context},
+                indent=2,
+            ),
+            temperature=0.35,
+            max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
+            timeout_seconds=fallback_timeout_seconds,
+            request_stage="artifact edit fallback generation",
             remaining_budget_seconds=remaining_budget_seconds,
         )
-        if recovered_html:
-            html = restore_artifact_live_hooks_if_missing(recovered_html, payload.context)
-            html = attempt_artifact_structural_autorepair(html)
-            validation_issues = validate_poll_game_artifact_html(html)
-            response_model = repair_model
-            if recovered_stop_reason in {"max_tokens", "model_context_window_exceeded"}:
-                validation_issues.insert(
-                    0,
-                    "artifact output appears truncated before completion.",
-                )
+        fallback_html = normalize_poll_game_artifact_html(fallback_text)
+        if fallback_html:
+            (
+                fallback_html,
+                fallback_validation_issues,
+                fallback_response_model,
+            ) = await validate_and_repair_artifact_html_candidate(
+                html=fallback_html,
+                stop_reason=fallback_stop_reason,
+                request_mode=request_mode,
+                original_prompt=original_edit_request or payload.prompt,
+                prepared_context=model_context,
+                request_context=payload.context,
+                deadline=deadline,
+                initial_model=fallback_model,
+            )
+            if not fallback_validation_issues:
+                html = fallback_html
+                validation_issues = []
+                response_model = fallback_response_model
+            else:
+                html = fallback_html
+                validation_issues = fallback_validation_issues
+                response_model = fallback_response_model
+        else:
+            validation_issues = [
+                "claude fallback response did not include artifact HTML."
+            ] + validation_issues
     if validation_issues:
         issue_text = "; ".join(validation_issues[:4])
         raise HTTPException(
@@ -1132,6 +1122,7 @@ async def attempt_artifact_patch_edit(
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
     use_anthropic_background_treatment: bool = False,
+    use_anthropic_patch_planner: bool = False,
 ) -> tuple[str, dict[str, Any] | None, str, list[str]]:
     if artifact_edit_request_requires_external_asset_url(original_edit_request):
         return (
@@ -1194,20 +1185,33 @@ async def attempt_artifact_patch_edit(
         context=context,
         current_html=current_html,
     )
-    text, _stop_reason = await request_gemini_text(
-        api_key=api_key,
-        model=model,
-        system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
-        prompt_text=patch_prompt,
-        temperature=0.1,
-        max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
-        timeout_seconds=timeout_seconds,
-        request_stage="artifact patch edit",
-        remaining_budget_seconds=remaining_budget_seconds,
-        response_mime_type="application/json",
-        response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
-        thinking_budget=0,
-    )
+    if use_anthropic_patch_planner:
+        text, _stop_reason = await request_anthropic_text(
+            api_key=api_key,
+            model=model,
+            system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+            prompt_text=patch_prompt,
+            temperature=0.1,
+            max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
+            timeout_seconds=timeout_seconds,
+            request_stage="artifact patch edit",
+            remaining_budget_seconds=remaining_budget_seconds,
+        )
+    else:
+        text, _stop_reason = await request_gemini_text(
+            api_key=api_key,
+            model=model,
+            system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+            prompt_text=patch_prompt,
+            temperature=0.1,
+            max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
+            timeout_seconds=timeout_seconds,
+            request_stage="artifact patch edit",
+            remaining_budget_seconds=remaining_budget_seconds,
+            response_mime_type="application/json",
+            response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
+            thinking_budget=0,
+        )
     plan = rewrite_artifact_patch_plan_for_current_html(
         plan=normalize_artifact_patch_plan_payload(text),
         current_html=current_html,
@@ -1371,6 +1375,121 @@ async def attempt_artifact_stable_recovery(
     )
     recovered = normalize_poll_game_artifact_html(text)
     return recovered.strip(), stop_reason
+
+
+async def validate_and_repair_artifact_html_candidate(
+    *,
+    html: str,
+    stop_reason: str,
+    request_mode: str,
+    original_prompt: str,
+    prepared_context: dict[str, Any],
+    request_context: dict[str, Any],
+    deadline: float,
+    initial_model: str,
+) -> tuple[str, list[str], str]:
+    next_html = restore_artifact_live_hooks_if_missing(html, request_context)
+    next_html = attempt_artifact_structural_autorepair(next_html)
+    validation_issues = validate_poll_game_artifact_html(next_html)
+    if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+        validation_issues.insert(
+            0,
+            "artifact output appears truncated before completion.",
+        )
+
+    max_repair_attempts = resolve_artifact_max_repair_attempts(request_mode)
+    repair_attempts = 0
+    response_model = initial_model
+    while validation_issues and repair_attempts < max_repair_attempts:
+        repair_api_key = (settings.gemini_api_key or "").strip()
+        if not repair_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
+            )
+        repair_model = resolve_gemini_artifact_repair_model()
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        repair_timeout_seconds = min(
+            settings.gemini_artifact_repair_timeout_seconds,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "repairing artifact output",
+                minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
+            ),
+        )
+        repaired_html = await attempt_artifact_repair(
+            api_key=repair_api_key,
+            model=repair_model,
+            original_prompt=original_prompt,
+            context=prepared_context,
+            html=next_html,
+            validation_issues=validation_issues,
+            timeout_seconds=repair_timeout_seconds,
+            remaining_budget_seconds=remaining_budget_seconds,
+        )
+        if not repaired_html:
+            break
+        candidate_html = restore_artifact_live_hooks_if_missing(
+            repaired_html, request_context
+        )
+        candidate_html = attempt_artifact_structural_autorepair(candidate_html)
+        if candidate_html.strip() == next_html.strip():
+            break
+        next_html = candidate_html
+        validation_issues = validate_poll_game_artifact_html(next_html)
+        repair_attempts += 1
+        response_model = repair_model
+
+    if should_attempt_stable_artifact_recovery(
+        request_mode, validation_issues, request_context
+    ):
+        repair_api_key = (settings.gemini_api_key or "").strip()
+        if not repair_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Artifact repair is not configured. Set GEMINI_API_KEY on backend.",
+            )
+        repair_model = resolve_gemini_artifact_repair_model()
+        recovery_context = build_stable_artifact_recovery_context(
+            request_context,
+            failed_html=next_html,
+            validation_issues=validation_issues,
+        )
+        prepared_recovery_context = prepare_artifact_context_for_model(
+            recovery_context, "repair"
+        )
+        remaining_budget_seconds = max(0.0, deadline - time.monotonic())
+        recovery_timeout_seconds = min(
+            90.0,
+            ensure_artifact_time_budget_remaining(
+                deadline,
+                "recovering artifact output from the last stable artifact",
+                minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
+            ),
+        )
+        recovered_html, recovered_stop_reason = await attempt_artifact_stable_recovery(
+            api_key=repair_api_key,
+            model=repair_model,
+            original_prompt=original_prompt,
+            context=prepared_recovery_context,
+            validation_issues=validation_issues,
+            timeout_seconds=recovery_timeout_seconds,
+            remaining_budget_seconds=remaining_budget_seconds,
+        )
+        if recovered_html:
+            next_html = restore_artifact_live_hooks_if_missing(
+                recovered_html, request_context
+            )
+            next_html = attempt_artifact_structural_autorepair(next_html)
+            validation_issues = validate_poll_game_artifact_html(next_html)
+            response_model = repair_model
+            if recovered_stop_reason in {"max_tokens", "model_context_window_exceeded"}:
+                validation_issues.insert(
+                    0,
+                    "artifact output appears truncated before completion.",
+                )
+
+    return next_html, validation_issues, response_model
 
 
 def build_artifact_repair_prompt(
@@ -1911,10 +2030,6 @@ def should_require_safe_patch_only_edit(
 ) -> bool:
     if request_mode not in {"edit", "repair"}:
         return False
-    if should_route_artifact_edit_to_anthropic(
-        request_mode, artifact_context, original_edit_request
-    ):
-        return False
     if classify_artifact_edit_request_scope(original_edit_request) != "patch_only":
         return False
     return bool(get_artifact_patch_source_html(artifact_context))
@@ -1924,10 +2039,6 @@ def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
     if request_mode not in {"edit", "repair"}:
-        return False
-    if should_route_artifact_edit_to_anthropic(
-        request_mode, artifact_context, original_edit_request
-    ):
         return False
     current_html = get_artifact_patch_source_html(artifact_context)
     if not current_html:
