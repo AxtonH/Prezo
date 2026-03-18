@@ -648,6 +648,56 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", patched_html)
         self.assertIn(".car", patched_html)
 
+    def test_apply_artifact_patch_plan_can_add_pseudo_rule_when_base_selector_exists(self) -> None:
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            TITLE_OVERLAP_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added LEGO-like title studs.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "content",
+                        "value": "\"\"",
+                    },
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "background",
+                        "value": "#F4C531",
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(issues, [])
+        self.assertIn(".poll-title::before {", patched_html)
+        self.assertIn("content: \"\";", patched_html)
+        self.assertIn("background: #F4C531;", patched_html)
+
+    def test_apply_artifact_patch_plan_rejects_pseudo_rule_when_base_selector_missing(self) -> None:
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Tried to add title studs.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "content",
+                        "value": "\"\"",
+                    }
+                ],
+            },
+        )
+
+        self.assertTrue(issues)
+        self.assertIn(
+            "could not apply CSS selector `.poll-title::before`",
+            issues[0],
+        )
+        self.assertNotIn(".poll-title::before {", patched_html)
+
     def test_apply_artifact_patch_plan_rejects_legacy_string_patch_ops(self) -> None:
         patched_html, issues = ai_api.apply_artifact_patch_plan(
             PATCHABLE_ARTIFACT_HTML,

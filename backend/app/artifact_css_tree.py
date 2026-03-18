@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 
 @dataclass(slots=True, frozen=True)
@@ -61,6 +62,17 @@ def set_css_property_in_css_tree(
             True,
             "changed",
         )
+
+    if _is_insertable_pseudo_selector(normalized_selector):
+        base_selector = _strip_terminal_pseudo_selector(normalized_selector)
+        if base_selector and _css_selector_exists(css_text, base_selector):
+            appended_css = _append_css_rule(
+                css_text,
+                selector=normalized_selector,
+                property_name=normalized_property_name,
+                value=normalized_value,
+            )
+            return appended_css, True, "changed"
 
     if saw_no_change:
         return css_text, False, "no_change"
@@ -272,6 +284,42 @@ def _normalize_property_name(name: str) -> str:
     if normalized.startswith("--"):
         return normalized
     return normalized.lower()
+
+
+def _is_insertable_pseudo_selector(selector: str) -> bool:
+    return bool(re.search(r":{1,2}(?:before|after)\s*$", selector, re.IGNORECASE))
+
+
+def _strip_terminal_pseudo_selector(selector: str) -> str:
+    return re.sub(
+        r"\s*:{1,2}(?:before|after)\s*$",
+        "",
+        selector.strip(),
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def _css_selector_exists(css_text: str, selector: str) -> bool:
+    target = selector.strip().lower()
+    if not target:
+        return False
+    for block in _iter_css_rule_blocks(css_text):
+        if block.selector.strip().lower() == target:
+            return True
+    return False
+
+
+def _append_css_rule(
+    css_text: str,
+    *,
+    selector: str,
+    property_name: str,
+    value: str,
+) -> str:
+    normalized = css_text.rstrip()
+    separator = "\n\n" if normalized else ""
+    appended_rule = f"{selector} {{\n  {property_name}: {value};\n}}"
+    return f"{normalized}{separator}{appended_rule}\n"
 
 
 def _find_matching_delimiter(
