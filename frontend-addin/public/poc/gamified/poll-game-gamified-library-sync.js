@@ -362,6 +362,7 @@ export function createPollGameLibrarySyncManager({
         method: 'PUT',
         body: JSON.stringify({
           html: artifactRecord.html,
+          artifact_package: artifactRecord.package || null,
           last_prompt: artifactRecord.lastPrompt || null,
           last_answers: artifactRecord.lastAnswers || {},
           theme_snapshot: artifactRecord.themeSnapshot || null
@@ -396,6 +397,26 @@ export function createPollGameLibrarySyncManager({
     }
   }
 
+  async function listArtifactVersionsFromAccount(name, limit = 30) {
+    const safeLimit = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 30))
+    return fetchAuthedJson(
+      `/library/poll-game/artifacts/${encodeURIComponent(name)}/versions?limit=${safeLimit}`
+    )
+  }
+
+  async function restoreArtifactVersionInAccount(name, version) {
+    const safeVersion = Math.max(1, Number.parseInt(version, 10) || 0)
+    if (!safeVersion) {
+      throw new Error('Select a valid artifact version first.')
+    }
+    return fetchAuthedJson(
+      `/library/poll-game/artifacts/${encodeURIComponent(name)}/versions/${safeVersion}/restore`,
+      {
+        method: 'POST'
+      }
+    )
+  }
+
   function dispose() {
     clearRefreshTimer()
   }
@@ -408,6 +429,8 @@ export function createPollGameLibrarySyncManager({
     deleteThemeFromAccount,
     persistArtifactToAccount,
     deleteArtifactFromAccount,
+    listArtifactVersionsFromAccount,
+    restoreArtifactVersionInAccount,
     reflectLibrarySyncResult,
     dispose
   }

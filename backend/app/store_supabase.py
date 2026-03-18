@@ -13,10 +13,12 @@ SNAPSHOT_CACHE_TTL_SECONDS = 1.0
 SNAPSHOT_STALE_MAX_SECONDS = 30.0
 SUPABASE_TRANSPORT_BACKOFF_SECONDS = 15.0
 
+from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     Poll,
     PollOption,
     PollStatus,
+    SavedArtifactVersion,
     QnaPrompt,
     QnaPromptStatus,
     QnaMode,
@@ -306,6 +308,94 @@ class SupabaseStore:
     def _to_saved_artifact(self, data: dict[str, Any]) -> SavedArtifact:
         payload = {key: value for key, value in data.items() if key != "user_id"}
         return SavedArtifact(**payload)
+
+    def _to_saved_artifact_version(
+        self, data: dict[str, Any]
+    ) -> SavedArtifactVersion:
+        payload = {key: value for key, value in data.items() if key != "user_id"}
+        return SavedArtifactVersion(**payload)
+
+    async def _record_saved_artifact_version(
+        self,
+        *,
+        user_id: str,
+        artifact: SavedArtifact,
+        source: str,
+    ) -> None:
+        rows = await self._select(
+            "saved_poll_game_artifact_versions",
+            {
+                "select": "*",
+                "artifact_id": f"eq.{artifact.id}",
+                "order": "version.desc",
+                "limit": "1",
+            },
+        )
+        latest = rows[0] if rows else None
+        latest_signature = ""
+        next_version = 1
+        if latest:
+            next_version = max(1, int(latest.get("version") or 0) + 1)
+            latest_signature = build_saved_artifact_snapshot_signature(
+                html=str(latest.get("html") or ""),
+                artifact_package=(
+                    latest.get("artifact_package")
+                    if isinstance(latest.get("artifact_package"), dict)
+                    else None
+                ),
+                last_prompt=(
+                    str(latest.get("last_prompt"))
+                    if latest.get("last_prompt") is not None
+                    else None
+                ),
+                last_answers=(
+                    latest.get("last_answers")
+                    if isinstance(latest.get("last_answers"), dict)
+                    else {}
+                ),
+                theme_snapshot=(
+                    latest.get("theme_snapshot")
+                    if isinstance(latest.get("theme_snapshot"), dict)
+                    else None
+                ),
+            )
+
+        next_signature = build_saved_artifact_snapshot_signature(
+            html=artifact.html,
+            artifact_package=(
+                artifact.artifact_package.model_dump(mode="json")
+                if artifact.artifact_package
+                else None
+            ),
+            last_prompt=artifact.last_prompt,
+            last_answers=artifact.last_answers,
+            theme_snapshot=artifact.theme_snapshot,
+        )
+        if latest and next_signature == latest_signature:
+            return
+
+        await self._request(
+            "POST",
+            "saved_poll_game_artifact_versions",
+            json={
+                "id": str(uuid.uuid4()),
+                "artifact_id": artifact.id,
+                "user_id": user_id,
+                "name": artifact.name,
+                "version": next_version,
+                "html": artifact.html,
+                "artifact_package": (
+                    artifact.artifact_package.model_dump(mode="json")
+                    if artifact.artifact_package
+                    else None
+                ),
+                "last_prompt": artifact.last_prompt,
+                "last_answers": artifact.last_answers,
+                "theme_snapshot": artifact.theme_snapshot,
+                "source": source,
+            },
+            prefer="return=representation",
+        )
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         for _ in range(6):
@@ -831,6 +921,7 @@ class SupabaseStore:
         user_id: str,
         name: str,
         html: str,
+        artifact_package: dict[str, Any] | None,
         last_prompt: str | None,
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
@@ -843,6 +934,7 @@ class SupabaseStore:
                 "user_id": user_id,
                 "name": name,
                 "html": html,
+                "artifact_package": artifact_package,
                 "last_prompt": last_prompt,
                 "last_answers": last_answers,
                 "theme_snapshot": theme_snapshot,
@@ -852,7 +944,19 @@ class SupabaseStore:
         data = response.json()
         if not data:
             raise SupabaseError(500, "failed to save artifact")
-        return self._to_saved_artifact(data[0])
+        saved = self._to_saved_artifact(data[0])
+        try:
+            await self._record_saved_artifact_version(
+                user_id=user_id,
+                artifact=saved,
+                source="save",
+            )
+        except SupabaseError as exc:
+            logger.warning(
+                "Saved artifact versioning is unavailable; continuing without version snapshot: %s",
+                exc.detail,
+            )
+        return saved
 
     async def delete_saved_artifact(self, user_id: str, name: str) -> SavedArtifact:
         response = await self._request(
@@ -865,6 +969,165 @@ class SupabaseStore:
         if not data:
             raise NotFoundError("saved artifact not found")
         return self._to_saved_artifact(data[0])
+
+    async def list_saved_artifact_versions(
+        self, user_id: str, name: str, limit: int = 30
+    ) -> list[SavedArtifactVersion]:
+        artifacts = await self._select(
+            "saved_poll_game_artifacts",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "name": f"eq.{name}",
+                "limit": "1",
+            },
+        )
+        if not artifacts:
+            raise NotFoundError("saved artifact not found")
+        artifact_id = str(artifacts[0]["id"])
+        params: dict[str, str] = {
+            "select": "*",
+            "artifact_id": f"eq.{artifact_id}",
+            "user_id": f"eq.{user_id}",
+            "order": "version.desc",
+        }
+        if limit > 0:
+            params["limit"] = str(limit)
+        try:
+            rows = await self._select("saved_poll_game_artifact_versions", params)
+        except SupabaseError as exc:
+            logger.warning(
+                "Saved artifact versions table is unavailable; using legacy fallback: %s",
+                exc.detail,
+            )
+            rows = []
+        if not rows:
+            base = artifacts[0]
+            return [
+                SavedArtifactVersion(
+                    id=str(base.get("id")),
+                    artifact_id=str(base.get("id")),
+                    name=str(base.get("name") or name),
+                    version=1,
+                    html=str(base.get("html") or ""),
+                    artifact_package=(
+                        base.get("artifact_package")
+                        if isinstance(base.get("artifact_package"), dict)
+                        else None
+                    ),
+                    last_prompt=(
+                        str(base.get("last_prompt"))
+                        if base.get("last_prompt") is not None
+                        else None
+                    ),
+                    last_answers=(
+                        base.get("last_answers")
+                        if isinstance(base.get("last_answers"), dict)
+                        else {}
+                    ),
+                    theme_snapshot=(
+                        base.get("theme_snapshot")
+                        if isinstance(base.get("theme_snapshot"), dict)
+                        else None
+                    ),
+                    source="legacy-import",
+                    created_at=base.get("updated_at") or base.get("created_at"),
+                )
+            ]
+        return [self._to_saved_artifact_version(row) for row in rows]
+
+    async def restore_saved_artifact_version(
+        self,
+        user_id: str,
+        name: str,
+        version: int,
+    ) -> SavedArtifact:
+        artifacts = await self._select(
+            "saved_poll_game_artifacts",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "name": f"eq.{name}",
+                "limit": "1",
+            },
+        )
+        if not artifacts:
+            raise NotFoundError("saved artifact not found")
+        artifact_row = artifacts[0]
+        artifact_id = str(artifact_row["id"])
+
+        version_row: dict[str, Any] | None = None
+        try:
+            version_rows = await self._select(
+                "saved_poll_game_artifact_versions",
+                {
+                    "select": "*",
+                    "artifact_id": f"eq.{artifact_id}",
+                    "user_id": f"eq.{user_id}",
+                    "version": f"eq.{version}",
+                    "limit": "1",
+                },
+            )
+            version_row = version_rows[0] if version_rows else None
+        except SupabaseError as exc:
+            logger.warning(
+                "Saved artifact versions table is unavailable during restore: %s",
+                exc.detail,
+            )
+
+        if not version_row:
+            if version != 1:
+                raise NotFoundError("saved artifact version not found")
+            version_row = artifact_row
+
+        response = await self._request(
+            "PATCH",
+            "saved_poll_game_artifacts",
+            params={
+                "id": f"eq.{artifact_id}",
+                "user_id": f"eq.{user_id}",
+            },
+            json={
+                "html": str(version_row.get("html") or ""),
+                "artifact_package": (
+                    version_row.get("artifact_package")
+                    if isinstance(version_row.get("artifact_package"), dict)
+                    else None
+                ),
+                "last_prompt": (
+                    str(version_row.get("last_prompt"))
+                    if version_row.get("last_prompt") is not None
+                    else None
+                ),
+                "last_answers": (
+                    version_row.get("last_answers")
+                    if isinstance(version_row.get("last_answers"), dict)
+                    else {}
+                ),
+                "theme_snapshot": (
+                    version_row.get("theme_snapshot")
+                    if isinstance(version_row.get("theme_snapshot"), dict)
+                    else None
+                ),
+            },
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("saved artifact not found")
+        restored = self._to_saved_artifact(data[0])
+        try:
+            await self._record_saved_artifact_version(
+                user_id=user_id,
+                artifact=restored,
+                source="restore",
+            )
+        except SupabaseError as exc:
+            logger.warning(
+                "Saved artifact versioning is unavailable after restore: %s",
+                exc.detail,
+            )
+        return restored
 
     async def record_event(self, session_id: str, event: object) -> None:
         return None

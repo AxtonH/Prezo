@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class SessionStatus(str, Enum):
@@ -129,10 +129,23 @@ class SavedThemeUpsert(BaseModel):
     theme: dict[str, Any]
 
 
+class ArtifactPackageFile(BaseModel):
+    path: str = Field(min_length=1, max_length=256)
+    content: str = ""
+    language: str | None = Field(default=None, max_length=32)
+
+
+class ArtifactPackage(BaseModel):
+    format: str = Field(default="prezo-artifact-package@1", max_length=64)
+    entry: str = Field(default="index.html", min_length=1, max_length=256)
+    files: list[ArtifactPackageFile] = Field(min_length=1)
+
+
 class SavedArtifact(BaseModel):
     id: str
     name: str
     html: str
+    artifact_package: ArtifactPackage | None = None
     last_prompt: str | None = None
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
@@ -141,10 +154,34 @@ class SavedArtifact(BaseModel):
 
 
 class SavedArtifactUpsert(BaseModel):
-    html: str = Field(min_length=1)
+    html: str = Field(default="")
+    artifact_package: ArtifactPackage | None = None
     last_prompt: str | None = Field(default=None, max_length=4000)
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def ensure_html_or_package(self) -> SavedArtifactUpsert:
+        html = self.html.strip()
+        if html:
+            self.html = html
+        if not html and not self.artifact_package:
+            raise ValueError("Artifact HTML or artifact package is required")
+        return self
+
+
+class SavedArtifactVersion(BaseModel):
+    id: str
+    artifact_id: str
+    name: str
+    version: int
+    html: str
+    artifact_package: ArtifactPackage | None = None
+    last_prompt: str | None = None
+    last_answers: dict[str, Any] = Field(default_factory=dict)
+    theme_snapshot: dict[str, Any] | None = None
+    source: str | None = None
+    created_at: datetime
 
 
 class LibrarySyncToken(BaseModel):

@@ -47,6 +47,12 @@ import {
   buildArtifactSrcDoc,
   normalizeArtifactMarkup
 } from './poll-game-gamified-artifact-runtime.js'
+import {
+  buildSegmentedArtifactPackage,
+  buildSingleFileArtifactPackage,
+  resolveArtifactHtmlFromPackage,
+  sanitizeArtifactPackage
+} from './poll-game-gamified-artifact-package.js'
 import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
@@ -135,8 +141,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       lastPrompt: '',
       lastAnswers: createEmptyArtifactAnswers(),
       html: '',
+      package: null,
       lastStableHtml: '',
+      lastStablePackage: null,
       rollbackHtml: '',
+      rollbackPackage: null,
       pendingSuccessMessage: '',
       activeEditRequest: '',
       autoRepairInFlight: false,
@@ -222,6 +231,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     saveArtifact: must('save-artifact'),
     loadArtifact: must('load-artifact'),
     deleteArtifact: must('delete-artifact'),
+    artifactVersionSelect: must('artifact-version-select'),
+    restoreArtifactVersion: must('restore-artifact-version'),
     artifactFeedback: must('artifact-feedback'),
     librarySyncStatus: must('library-sync-status'),
     librarySyncStatusText: must('library-sync-status-text'),
@@ -475,6 +486,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     deleteThemeFromAccount,
     persistArtifactToAccount,
     deleteArtifactFromAccount,
+    listArtifactVersionsFromAccount,
+    restoreArtifactVersionInAccount,
     reflectLibrarySyncResult,
     dispose: disposeLibrarySyncManager
   } = librarySyncManager
@@ -504,6 +517,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
+  const artifactVersionState = {
+    selectedName: '',
+    versions: [],
+    loading: false
+  }
   let currentTheme = loadInitialTheme(themeLibrary)
   const dragState = {
     enabled: false,
@@ -559,6 +577,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
     refreshArtifactSelect(artifactLibrary.activeName)
+    void refreshArtifactVersionHistory()
     renderInitialState()
     initializeHistoryState()
     void hydrateSavedLibraries()
@@ -939,6 +958,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.saveArtifact.addEventListener('click', saveArtifactToLibrary)
     el.loadArtifact.addEventListener('click', loadArtifactFromSelect)
     el.deleteArtifact.addEventListener('click', deleteArtifactFromSelect)
+    el.artifactSelect.addEventListener('change', handleArtifactSelectChange)
+    el.restoreArtifactVersion.addEventListener('click', restoreArtifactFromVersionHistory)
     if (el.resetPositions) {
       el.resetPositions.addEventListener('click', openResetPositionsModal)
     }
@@ -1717,8 +1738,12 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     state.artifact.renderErrorCount = 0
     if (state.artifact.html) {
       state.artifact.lastStableHtml = state.artifact.html
+      state.artifact.lastStablePackage = state.artifact.package
+        ? buildSegmentedArtifactPackage(state.artifact.package)
+        : buildSegmentedArtifactPackage(state.artifact.html)
     }
     state.artifact.rollbackHtml = ''
+    state.artifact.rollbackPackage = null
     state.artifact.pendingSuccessMessage = ''
     state.artifact.pendingRequestKind = ''
     if (successMessage) {
@@ -1746,16 +1771,24 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   function restoreArtifactAfterFailedEdit(errorMessage) {
     artifactBridge.clearRenderWatchdog()
     const failedArtifactHtml = normalizeArtifactMarkup(state.artifact.html)
+    const failedArtifactPackage = state.artifact.package
+      ? buildSegmentedArtifactPackage(state.artifact.package)
+      : null
     const rollbackHtml = normalizeArtifactMarkup(
       state.artifact.rollbackHtml || state.artifact.lastStableHtml
     )
+    const rollbackPackage = state.artifact.rollbackPackage
+      ? buildSegmentedArtifactPackage(state.artifact.rollbackPackage)
+      : state.artifact.lastStablePackage
+        ? buildSegmentedArtifactPackage(state.artifact.lastStablePackage)
+        : buildSegmentedArtifactPackage(rollbackHtml)
     if (!rollbackHtml) {
       return
     }
     const detail = asText(errorMessage)
     const statusMessage = 'Artifact edit was reverted because the updated artifact failed to render.'
     state.artifact.pendingSuccessMessage = ''
-    applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback' })
+    applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback', artifactPackage: rollbackPackage })
     showArtifactStageFrame()
     state.artifact.lastRuntimeError = detail
     if (
@@ -1776,7 +1809,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         request: state.artifact.activeEditRequest,
         runtimeError: detail,
         failedArtifactHtml,
-        baseArtifactHtml: rollbackHtml
+        failedArtifactPackage,
+        baseArtifactHtml: rollbackHtml,
+        baseArtifactPackage: rollbackPackage
       })
       return
     }
@@ -1791,7 +1826,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     request,
     runtimeError,
     failedArtifactHtml,
-    baseArtifactHtml
+    failedArtifactPackage,
+    baseArtifactHtml,
+    baseArtifactPackage
   }) {
     const normalizedRequest = asText(request).trim()
     if (!normalizedRequest) {
@@ -1817,12 +1854,17 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
           originalEditRequest: normalizedRequest,
           runtimeRenderError: runtimeError,
           failedMarkup: failedArtifactHtml,
-          baseMarkup: baseArtifactHtml
+          failedPackage: failedArtifactPackage,
+          baseMarkup: baseArtifactHtml,
+          basePackage: baseArtifactPackage
         },
         context.poll
       )
       const buildResult = await requestAiArtifactBuild(repairPrompt, context)
-      const applied = applyArtifactMarkup(buildResult.html, { requestKind: 'edit' })
+      const applied = applyArtifactMarkup(buildResult.html, {
+        requestKind: 'edit',
+        artifactPackage: buildResult.package || null
+      })
       if (!applied) {
         const message =
           'Artifact repair failed because the AI returned empty markup. The previous working artifact was kept.'
@@ -2042,7 +2084,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context)
-      const applied = applyArtifactMarkup(buildResult.html, { requestKind })
+      const applied = applyArtifactMarkup(buildResult.html, {
+        requestKind,
+        artifactPackage: buildResult.package || null
+      })
       if (!applied) {
         state.artifact.pendingSuccessMessage = ''
         setArtifactComposerStatus(
@@ -2103,12 +2148,30 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         : createEmptyArtifactAnswers()
     const requestMode =
       artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.mode) : ''
-    const baseArtifactMarkup =
+    const baseArtifactMarkupInput =
       artifactInput && typeof artifactInput === 'object'
         ? asText(artifactInput.baseMarkup) || state.artifact.html
         : state.artifact.html
-    const failedArtifactMarkup =
+    const baseArtifactPackageInput =
+      artifactInput && typeof artifactInput === 'object'
+        ? artifactInput.basePackage || state.artifact.package
+        : state.artifact.package
+    const baseArtifactPackage = buildSegmentedArtifactPackage(
+      sanitizeArtifactPackage(baseArtifactPackageInput, baseArtifactMarkupInput) || baseArtifactMarkupInput
+    )
+    const baseArtifactMarkup =
+      resolveArtifactHtmlFromPackage(baseArtifactPackage) || normalizeArtifactMarkup(baseArtifactMarkupInput)
+    const failedArtifactMarkupInput =
       artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.failedMarkup) : ''
+    const failedArtifactPackageInput =
+      artifactInput && typeof artifactInput === 'object' ? artifactInput.failedPackage : null
+    const failedArtifactPackage = buildSegmentedArtifactPackage(
+      sanitizeArtifactPackage(failedArtifactPackageInput, failedArtifactMarkupInput) ||
+        failedArtifactMarkupInput
+    )
+    const failedArtifactMarkup =
+      resolveArtifactHtmlFromPackage(failedArtifactPackage) ||
+      normalizeArtifactMarkup(failedArtifactMarkupInput)
     const runtimeRenderError =
       artifactInput && typeof artifactInput === 'object'
         ? asText(artifactInput.runtimeRenderError)
@@ -2126,8 +2189,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       hasExistingArtifact: Boolean(baseArtifactMarkup),
       currentArtifactFullHtml: asText(baseArtifactMarkup).trim(),
       currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkup),
+      currentArtifactPackage: baseArtifactPackage,
       currentArtifactLiveHooks: buildArtifactLiveHookContext(baseArtifactMarkup),
       failedArtifactHtml: buildArtifactEditContextMarkup(failedArtifactMarkup),
+      failedArtifactPackage: failedArtifactPackage,
       runtimeRenderError,
       originalEditRequest: originalEditRequest || prompt,
       recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
@@ -2653,8 +2718,13 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!html) {
       throw new Error('AI service returned empty artifact markup.')
     }
+    const artifactPackage = buildSegmentedArtifactPackage(
+      sanitizeArtifactPackage(payload?.artifact_package || payload?.artifactPackage, html) || html
+    )
+    const resolvedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
     return {
-      html,
+      html: resolvedHtml,
+      package: artifactPackage,
       assistantMessage: asText(payload?.assistantMessage),
       model: asText(payload?.model)
     }
@@ -2695,24 +2765,41 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!normalized) {
       return false
     }
+    const packageInput =
+      options && typeof options === 'object' ? options.artifactPackage || null : null
+    const normalizedPackage = buildSegmentedArtifactPackage(
+      sanitizeArtifactPackage(packageInput, normalized) || normalized
+    )
+    const resolvedMarkup = resolveArtifactHtmlFromPackage(normalizedPackage) || normalized
+    if (!resolvedMarkup) {
+      return false
+    }
     artifactBridge.clearRenderWatchdog()
     const requestKind = asText(options.requestKind).toLowerCase()
     if (requestKind === 'edit') {
       state.artifact.rollbackHtml = normalizeArtifactMarkup(
         state.artifact.lastStableHtml || state.artifact.html
       )
+      state.artifact.rollbackPackage = state.artifact.lastStablePackage
+        ? buildSegmentedArtifactPackage(state.artifact.lastStablePackage)
+        : state.artifact.package
+          ? buildSegmentedArtifactPackage(state.artifact.package)
+          : null
       state.artifact.pendingRequestKind = 'edit'
     } else if (requestKind === 'build') {
       state.artifact.rollbackHtml = ''
+      state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = 'build'
     } else {
       state.artifact.rollbackHtml = ''
+      state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = ''
     }
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
-    state.artifact.html = normalized
+    state.artifact.html = resolvedMarkup
+    state.artifact.package = normalizedPackage
     state.artifact.instanceId += 1
     state.artifact.frameReady = false
     state.artifact.renderConfirmed = false
@@ -2723,7 +2810,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
-    const srcDoc = buildArtifactSrcDoc(normalized, { instanceId: state.artifact.instanceId })
+    const srcDoc = buildArtifactSrcDoc(resolvedMarkup, { instanceId: state.artifact.instanceId })
     if (!srcDoc) {
       return false
     }
@@ -2738,8 +2825,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
     state.artifact.html = ''
+    state.artifact.package = null
     state.artifact.lastStableHtml = ''
+    state.artifact.lastStablePackage = null
     state.artifact.rollbackHtml = ''
+    state.artifact.rollbackPackage = null
     state.artifact.pendingSuccessMessage = ''
     state.artifact.instanceId += 1
     state.artifact.frameReady = false
@@ -7849,6 +7939,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
     saveArtifactLibrary(artifactLibrary)
     refreshArtifactSelect(artifactLibrary.activeName)
+    void refreshArtifactVersionHistory()
   }
 
   function bindImageUpload(inputId, themeKey, successText) {
@@ -7947,14 +8038,12 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const syncResult = await persistArtifactToAccount(name, artifactRecord)
     showArtifactFeedback(syncResult.message || `Artifact "${name}" saved.`, syncResult.type)
     reflectLibrarySyncResult(syncResult)
+    void refreshArtifactVersionHistory({ force: true })
   }
 
-  function loadArtifactFromSelect() {
-    const name = asText(el.artifactSelect.value)
-    const artifactRecord = name ? artifactLibrary.artifacts[name] : null
+  function applyArtifactLibraryRecord(name, artifactRecord, options = {}) {
     if (!name || !artifactRecord) {
-      showArtifactFeedback('Select a saved artifact first.', 'error')
-      return
+      return false
     }
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
@@ -7977,7 +8066,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     state.artifact.autoRepairInFlight = false
     state.artifact.repairAttemptCount = 0
     state.artifact.lastRuntimeError = ''
-    const applied = applyArtifactMarkup(artifactRecord.html, { requestKind: 'build' })
+    const applied = applyArtifactMarkup(artifactRecord.html, {
+      requestKind: 'build',
+      artifactPackage: artifactRecord.package || null
+    })
     syncArtifactConversationUi()
     el.artifactName.value = name
     if (state.snapshot) {
@@ -7985,11 +8077,26 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     } else if (applied) {
       showArtifactStageFrame()
     }
-    recordHistoryCheckpoint('Load artifact')
-    showArtifactFeedback(
-      applied ? `Artifact "${name}" loaded.` : `Artifact "${name}" could not be loaded.`,
-      applied ? 'success' : 'error'
-    )
+    recordHistoryCheckpoint(asText(options.historyLabel) || 'Load artifact')
+    const successMessage = asText(options.successMessage) || `Artifact "${name}" loaded.`
+    const failureMessage =
+      asText(options.failureMessage) || `Artifact "${name}" could not be loaded.`
+    showArtifactFeedback(applied ? successMessage : failureMessage, applied ? 'success' : 'error')
+    return applied
+  }
+
+  function loadArtifactFromSelect() {
+    const name = asText(el.artifactSelect.value)
+    const artifactRecord = name ? artifactLibrary.artifacts[name] : null
+    if (!name || !artifactRecord) {
+      showArtifactFeedback('Select a saved artifact first.', 'error')
+      return
+    }
+    applyArtifactLibraryRecord(name, artifactRecord, {
+      historyLabel: 'Load artifact',
+      successMessage: `Artifact "${name}" loaded.`
+    })
+    void refreshArtifactVersionHistory()
   }
 
   async function deleteArtifactFromSelect() {
@@ -8007,6 +8114,148 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const syncResult = await deleteArtifactFromAccount(name)
     showArtifactFeedback(syncResult.message || `Artifact "${name}" deleted.`, syncResult.type)
     reflectLibrarySyncResult(syncResult)
+    void refreshArtifactVersionHistory({ force: true })
+  }
+
+  function handleArtifactSelectChange() {
+    const selectedName = asText(el.artifactSelect.value)
+    if (selectedName) {
+      el.artifactName.value = selectedName
+    }
+    void refreshArtifactVersionHistory({ force: true })
+  }
+
+  function buildArtifactVersionLabel(record) {
+    const version = Math.max(1, toInt(record?.version))
+    const source = asText(record?.source)
+    const createdAt = Date.parse(asText(record?.created_at))
+    const timestamp = Number.isFinite(createdAt)
+      ? new Date(createdAt).toLocaleString()
+      : ''
+    return [source ? `v${version} · ${source}` : `v${version}`, timestamp]
+      .filter(Boolean)
+      .join(' · ')
+  }
+
+  function renderArtifactVersionSelect() {
+    const selectedName = asText(el.artifactSelect.value)
+    const versions = Array.isArray(artifactVersionState.versions) ? artifactVersionState.versions : []
+    el.artifactVersionSelect.innerHTML = ''
+    if (!selectedName) {
+      const option = document.createElement('option')
+      option.value = ''
+      option.textContent = 'Select artifact'
+      el.artifactVersionSelect.appendChild(option)
+      el.restoreArtifactVersion.disabled = true
+      return
+    }
+    if (artifactVersionState.loading) {
+      const option = document.createElement('option')
+      option.value = ''
+      option.textContent = 'Loading versions…'
+      el.artifactVersionSelect.appendChild(option)
+      el.restoreArtifactVersion.disabled = true
+      return
+    }
+    if (versions.length === 0) {
+      const option = document.createElement('option')
+      option.value = ''
+      option.textContent = 'No account history'
+      el.artifactVersionSelect.appendChild(option)
+      el.restoreArtifactVersion.disabled = true
+      return
+    }
+    for (const versionRecord of versions) {
+      const option = document.createElement('option')
+      const versionNumber = Math.max(1, toInt(versionRecord?.version))
+      option.value = String(versionNumber)
+      option.textContent = buildArtifactVersionLabel(versionRecord)
+      el.artifactVersionSelect.appendChild(option)
+    }
+    el.artifactVersionSelect.value = String(Math.max(1, toInt(versions[0]?.version)))
+    el.restoreArtifactVersion.disabled = false
+  }
+
+  async function refreshArtifactVersionHistory({ force = false } = {}) {
+    const selectedName = asText(el.artifactSelect.value)
+    if (!selectedName) {
+      artifactVersionState.selectedName = ''
+      artifactVersionState.versions = []
+      artifactVersionState.loading = false
+      renderArtifactVersionSelect()
+      return
+    }
+    if (
+      !force &&
+      artifactVersionState.selectedName === selectedName &&
+      Array.isArray(artifactVersionState.versions) &&
+      artifactVersionState.versions.length > 0
+    ) {
+      renderArtifactVersionSelect()
+      return
+    }
+    artifactVersionState.selectedName = selectedName
+    artifactVersionState.loading = true
+    renderArtifactVersionSelect()
+    try {
+      const rows = await listArtifactVersionsFromAccount(selectedName, 30)
+      if (artifactVersionState.selectedName !== selectedName) {
+        return
+      }
+      artifactVersionState.versions = Array.isArray(rows)
+        ? rows
+            .filter((row) => row && typeof row === 'object' && Number.isFinite(toInt(row.version)))
+            .sort((left, right) => toInt(right?.version) - toInt(left?.version))
+        : []
+    } catch (error) {
+      if (artifactVersionState.selectedName !== selectedName) {
+        return
+      }
+      artifactVersionState.versions = []
+      if (!String(errorToMessage(error)).includes('Sign in through Prezo Host')) {
+        console.warn('Failed to load artifact version history', error)
+      }
+    } finally {
+      if (artifactVersionState.selectedName === selectedName) {
+        artifactVersionState.loading = false
+        renderArtifactVersionSelect()
+      }
+    }
+  }
+
+  async function restoreArtifactFromVersionHistory() {
+    const name = asText(el.artifactSelect.value)
+    if (!name || !artifactLibrary.artifacts[name]) {
+      showArtifactFeedback('Select a saved artifact first.', 'error')
+      return
+    }
+    const version = Math.max(1, toInt(el.artifactVersionSelect.value))
+    if (!version) {
+      showArtifactFeedback('Select an artifact version first.', 'error')
+      return
+    }
+    el.restoreArtifactVersion.disabled = true
+    try {
+      const restoredRecordRaw = await restoreArtifactVersionInAccount(name, version)
+      const restoredRecord = sanitizeSavedArtifactRecord(restoredRecordRaw)
+      if (!restoredRecord) {
+        throw new Error('Restored artifact payload was invalid.')
+      }
+      artifactLibrary.artifacts[name] = restoredRecord
+      artifactLibrary.activeName = name
+      saveArtifactLibrary(artifactLibrary)
+      refreshArtifactSelect(name)
+      applyArtifactLibraryRecord(name, restoredRecord, {
+        historyLabel: 'Restore artifact version',
+        successMessage: `Artifact "${name}" restored to version v${version}.`,
+        failureMessage: `Artifact "${name}" restore returned invalid markup.`
+      })
+      await refreshArtifactVersionHistory({ force: true })
+    } catch (error) {
+      showArtifactFeedback(`Artifact restore failed: ${errorToMessage(error)}`, 'error')
+    } finally {
+      renderArtifactVersionSelect()
+    }
   }
 
   function exportCurrentTheme() {
@@ -8632,8 +8881,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!html) {
       return null
     }
+    const artifactPackage = buildSegmentedArtifactPackage(state.artifact.package || html)
+    const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
     return sanitizeSavedArtifactRecord({
-      html,
+      html: materializedHtml,
+      package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),
       lastPrompt: state.artifact.lastPrompt,
       lastAnswers: state.artifact.lastAnswers,
       themeSnapshot: {
@@ -8652,6 +8904,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       option.value = ''
       option.textContent = 'No saved artifacts'
       el.artifactSelect.appendChild(option)
+      renderArtifactVersionSelect()
       return
     }
 
@@ -8668,6 +8921,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (!el.artifactName.value) {
       el.artifactName.value = preferred
     }
+    renderArtifactVersionSelect()
   }
 
   function showThemeFeedback(text, type) {

@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     Event,
     Poll,
     PollOption,
     PollStatus,
+    SavedArtifactVersion,
     QnaPrompt,
     QnaPromptStatus,
     QnaMode,
@@ -118,11 +120,28 @@ class SavedArtifactData:
     user_id: str
     name: str
     html: str
+    artifact_package: dict[str, Any] | None
     last_prompt: str | None
     last_answers: dict[str, Any]
     theme_snapshot: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(slots=True)
+class SavedArtifactVersionData:
+    id: str
+    artifact_id: str
+    user_id: str
+    name: str
+    version: int
+    html: str
+    artifact_package: dict[str, Any] | None
+    last_prompt: str | None
+    last_answers: dict[str, Any]
+    theme_snapshot: dict[str, Any] | None
+    source: str | None
+    created_at: datetime
 
 
 class InMemoryStore:
@@ -142,6 +161,9 @@ class InMemoryStore:
         self._session_hosts: dict[str, set[str]] = defaultdict(set)
         self._saved_themes_by_user: dict[str, dict[str, SavedThemeData]] = defaultdict(dict)
         self._saved_artifacts_by_user: dict[str, dict[str, SavedArtifactData]] = defaultdict(dict)
+        self._saved_artifact_versions_by_user: dict[
+            str, dict[str, list[SavedArtifactVersionData]]
+        ] = defaultdict(lambda: defaultdict(list))
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         async with self._lock:
@@ -497,6 +519,7 @@ class InMemoryStore:
         user_id: str,
         name: str,
         html: str,
+        artifact_package: dict[str, Any] | None,
         last_prompt: str | None,
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
@@ -504,18 +527,37 @@ class InMemoryStore:
         async with self._lock:
             existing = self._saved_artifacts_by_user[user_id].get(name)
             now = utc_now()
+            next_signature = build_saved_artifact_snapshot_signature(
+                html=html,
+                artifact_package=clone_optional_dict(artifact_package),
+                last_prompt=last_prompt,
+                last_answers=clone_dict(last_answers),
+                theme_snapshot=clone_optional_dict(theme_snapshot),
+            )
             if existing:
+                existing_signature = build_saved_artifact_snapshot_signature(
+                    html=existing.html,
+                    artifact_package=clone_optional_dict(existing.artifact_package),
+                    last_prompt=existing.last_prompt,
+                    last_answers=clone_dict(existing.last_answers),
+                    theme_snapshot=clone_optional_dict(existing.theme_snapshot),
+                )
+                changed = existing_signature != next_signature
                 existing.html = html
+                existing.artifact_package = clone_optional_dict(artifact_package)
                 existing.last_prompt = last_prompt
                 existing.last_answers = clone_dict(last_answers)
                 existing.theme_snapshot = clone_optional_dict(theme_snapshot)
                 existing.updated_at = now
+                if changed:
+                    self._append_saved_artifact_version(existing, source="save")
                 return self._to_saved_artifact(existing)
             created = SavedArtifactData(
                 id=uuid.uuid4().hex,
                 user_id=user_id,
                 name=name,
                 html=html,
+                artifact_package=clone_optional_dict(artifact_package),
                 last_prompt=last_prompt,
                 last_answers=clone_dict(last_answers),
                 theme_snapshot=clone_optional_dict(theme_snapshot),
@@ -523,6 +565,7 @@ class InMemoryStore:
                 updated_at=now,
             )
             self._saved_artifacts_by_user[user_id][name] = created
+            self._append_saved_artifact_version(created, source="create")
             return self._to_saved_artifact(created)
 
     async def delete_saved_artifact(self, user_id: str, name: str) -> SavedArtifact:
@@ -530,7 +573,58 @@ class InMemoryStore:
             existing = self._saved_artifacts_by_user.get(user_id, {}).pop(name, None)
             if not existing:
                 raise NotFoundError("saved artifact not found")
+            self._saved_artifact_versions_by_user.get(user_id, {}).pop(name, None)
             return self._to_saved_artifact(existing)
+
+    async def list_saved_artifact_versions(
+        self, user_id: str, name: str, limit: int = 30
+    ) -> list[SavedArtifactVersion]:
+        async with self._lock:
+            artifact = self._saved_artifacts_by_user.get(user_id, {}).get(name)
+            if not artifact:
+                raise NotFoundError("saved artifact not found")
+            versions = list(self._saved_artifact_versions_by_user[user_id].get(name, []))
+            versions.sort(key=lambda item: item.version, reverse=True)
+            if limit > 0:
+                versions = versions[:limit]
+            return [self._to_saved_artifact_version(item) for item in versions]
+
+    async def restore_saved_artifact_version(
+        self, user_id: str, name: str, version: int
+    ) -> SavedArtifact:
+        async with self._lock:
+            artifact = self._saved_artifacts_by_user.get(user_id, {}).get(name)
+            if not artifact:
+                raise NotFoundError("saved artifact not found")
+            versions = self._saved_artifact_versions_by_user.get(user_id, {}).get(name, [])
+            target = next((item for item in versions if item.version == version), None)
+            if not target:
+                raise NotFoundError("saved artifact version not found")
+
+            existing_signature = build_saved_artifact_snapshot_signature(
+                html=artifact.html,
+                artifact_package=clone_optional_dict(artifact.artifact_package),
+                last_prompt=artifact.last_prompt,
+                last_answers=clone_dict(artifact.last_answers),
+                theme_snapshot=clone_optional_dict(artifact.theme_snapshot),
+            )
+            target_signature = build_saved_artifact_snapshot_signature(
+                html=target.html,
+                artifact_package=clone_optional_dict(target.artifact_package),
+                last_prompt=target.last_prompt,
+                last_answers=clone_dict(target.last_answers),
+                theme_snapshot=clone_optional_dict(target.theme_snapshot),
+            )
+
+            artifact.html = target.html
+            artifact.artifact_package = clone_optional_dict(target.artifact_package)
+            artifact.last_prompt = target.last_prompt
+            artifact.last_answers = clone_dict(target.last_answers)
+            artifact.theme_snapshot = clone_optional_dict(target.theme_snapshot)
+            artifact.updated_at = utc_now()
+            if existing_signature != target_signature:
+                self._append_saved_artifact_version(artifact, source="restore")
+            return self._to_saved_artifact(artifact)
 
     async def record_event(self, session_id: str, event: Event) -> None:
         async with self._lock:
@@ -646,11 +740,51 @@ class InMemoryStore:
             id=data.id,
             name=data.name,
             html=data.html,
+            artifact_package=clone_optional_dict(data.artifact_package),
             last_prompt=data.last_prompt,
             last_answers=clone_dict(data.last_answers),
             theme_snapshot=clone_optional_dict(data.theme_snapshot),
             created_at=data.created_at,
             updated_at=data.updated_at,
+        )
+
+    def _append_saved_artifact_version(
+        self, data: SavedArtifactData, *, source: str | None
+    ) -> None:
+        versions = self._saved_artifact_versions_by_user[data.user_id][data.name]
+        next_version = versions[-1].version + 1 if versions else 1
+        versions.append(
+            SavedArtifactVersionData(
+                id=uuid.uuid4().hex,
+                artifact_id=data.id,
+                user_id=data.user_id,
+                name=data.name,
+                version=next_version,
+                html=data.html,
+                artifact_package=clone_optional_dict(data.artifact_package),
+                last_prompt=data.last_prompt,
+                last_answers=clone_dict(data.last_answers),
+                theme_snapshot=clone_optional_dict(data.theme_snapshot),
+                source=source,
+                created_at=utc_now(),
+            )
+        )
+
+    def _to_saved_artifact_version(
+        self, data: SavedArtifactVersionData
+    ) -> SavedArtifactVersion:
+        return SavedArtifactVersion(
+            id=data.id,
+            artifact_id=data.artifact_id,
+            name=data.name,
+            version=data.version,
+            html=data.html,
+            artifact_package=clone_optional_dict(data.artifact_package),
+            last_prompt=data.last_prompt,
+            last_answers=clone_dict(data.last_answers),
+            theme_snapshot=clone_optional_dict(data.theme_snapshot),
+            source=data.source,
+            created_at=data.created_at,
         )
 
 

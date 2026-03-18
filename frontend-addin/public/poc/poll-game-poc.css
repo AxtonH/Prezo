@@ -439,6 +439,11 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   padding: 8px 14px 8px;
 }
 
+.artifact-version-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .ribbon-group.group-wide {
   min-width: 560px;
 }

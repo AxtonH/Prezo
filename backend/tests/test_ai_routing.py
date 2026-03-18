@@ -449,24 +449,25 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("linear-gradient(180deg, #7ec8ff 0%, #f6e58d 100%)", patched_html)
         self.assertIn(".car", patched_html)
 
-    def test_apply_artifact_patch_plan_can_replace_between_anchors(self) -> None:
+    def test_apply_artifact_patch_plan_rejects_legacy_string_patch_ops(self) -> None:
         patched_html, issues = ai_api.apply_artifact_patch_plan(
-            "<div id='root'><span>Old</span></div>",
+            PATCHABLE_ARTIFACT_HTML,
             {
-                "assistantMessage": "Updated the label.",
+                "assistantMessage": "Tried a legacy patch.",
                 "edits": [
                     {
                         "type": "replace_between",
-                        "start": "<span>",
-                        "end": "</span>",
-                        "content": "New",
+                        "start": "<style>",
+                        "end": "</style>",
+                        "content": "/* legacy */",
                     }
                 ],
             },
         )
 
-        self.assertEqual(issues, [])
-        self.assertEqual(patched_html, "<div id='root'><span>New</span></div>")
+        self.assertEqual(len(issues), 1)
+        self.assertIn("unsupported type `replace_between`", issues[0])
+        self.assertIn("#track-bg", patched_html)
 
     def test_extract_artifact_background_selector_candidates_prefers_real_selectors(self) -> None:
         selectors = ai_api.extract_artifact_background_selector_candidates(

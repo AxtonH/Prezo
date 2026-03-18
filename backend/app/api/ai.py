@@ -9,7 +9,20 @@ import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from ..artifact_package import (
+    ARTIFACT_PACKAGE_ENTRY_FILE,
+    ARTIFACT_PACKAGE_RENDERER_FILE,
+    ARTIFACT_PACKAGE_STYLES_FILE,
+    build_segmented_artifact_package,
+    materialize_artifact_html_from_package,
+    sanitize_artifact_package,
+)
+from ..artifact_patch import (
+    apply_artifact_patch_plan_to_package,
+    normalize_artifact_patch_plan as normalize_artifact_patch_plan_payload,
+)
 from ..config import settings
+from ..models import ArtifactPackage
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-sonnet-4-6"
@@ -309,21 +322,15 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Output JSON only. Do not output markdown, code fences, prose, or full HTML.",
         'Response shape: { "assistantMessage": string, "edits": PatchEdit[] }',
         "Allowed PatchEdit objects:",
-        '- { "type":"set_css_property", "selector": string, "property": string, "value": string }',
-        '- { "type":"replace_once", "find": string, "replace": string }',
-        '- { "type":"replace_all", "find": string, "replace": string }',
-        '- { "type":"replace_between", "start": string, "end": string, "content": string }',
-        '- { "type":"insert_before", "anchor": string, "content": string }',
-        '- { "type":"insert_after", "anchor": string, "content": string }',
-        '- { "type":"remove_once", "find": string }',
+        '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
         "Rules:",
         "- Prefer 1-4 edits and never emit more than 8 edits.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
+        "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
+        "- For set_css_property, use file='styles.css'.",
         "- For local visual edits such as background, time-of-day, lighting, or atmosphere, modify only background/backdrop/ambient layers and closely related color tokens.",
         "- Do not redesign cars, avatars, icons, labels, vote chips, foreground gameplay visuals, or unrelated decorative detail unless the user explicitly asks.",
         "- Prefer set_css_property for color, lighting, spacing, and timing tweaks.",
-        "- For find/anchor/start/end fields, copy exact substrings from the current artifact HTML.",
-        "- Use replace_between when a small structural local change needs to swap the content inside a stable container without rewriting unrelated markup.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- Never invent, guess, or fabricate third-party asset URLs.",
         "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL, return an empty edits array and explain that a direct asset URL is required.",
@@ -345,23 +352,12 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": [
                             "set_css_property",
-                            "replace_once",
-                            "replace_all",
-                            "replace_between",
-                            "insert_before",
-                            "insert_after",
-                            "remove_once",
                         ],
                     },
+                    "file": {"type": "string"},
                     "selector": {"type": "string"},
                     "property": {"type": "string"},
                     "value": {"type": "string"},
-                    "find": {"type": "string"},
-                    "replace": {"type": "string"},
-                    "start": {"type": "string"},
-                    "end": {"type": "string"},
-                    "anchor": {"type": "string"},
-                    "content": {"type": "string"},
                 },
                 "required": ["type"],
                 "additionalProperties": False,
@@ -477,6 +473,7 @@ class PollGameArtifactBuildRequest(BaseModel):
 
 class PollGameArtifactBuildResponse(BaseModel):
     html: str
+    artifact_package: ArtifactPackage | None = None
     model: str
     assistantMessage: str
 
@@ -796,6 +793,7 @@ async def create_poll_game_artifact_build(
                 else resolve_gemini_artifact_edit_model()
             )
             current_html = get_artifact_patch_source_html(artifact_context)
+            current_package = get_artifact_patch_source_package(artifact_context)
             try:
                 remaining_budget_seconds = max(0.0, deadline - time.monotonic())
                 patch_timeout_seconds = min(
@@ -807,12 +805,13 @@ async def create_poll_game_artifact_build(
                         reserve_seconds=ARTIFACT_PATCH_FALLBACK_RESERVE_SECONDS,
                     ),
                 )
-                patch_html, patch_assistant_message, patch_issues = await attempt_artifact_patch_edit(
+                patch_html, patch_package, patch_assistant_message, patch_issues = await attempt_artifact_patch_edit(
                     api_key=patch_api_key,
                     model=patch_model,
                     original_edit_request=original_edit_request,
                     context=payload.context,
                     current_html=current_html,
+                    current_package=current_package,
                     timeout_seconds=patch_timeout_seconds,
                     remaining_budget_seconds=remaining_budget_seconds,
                     use_anthropic_background_treatment=use_anthropic_for_patch,
@@ -821,10 +820,15 @@ async def create_poll_game_artifact_build(
                     patch_html = restore_artifact_live_hooks_if_missing(
                         patch_html, payload.context
                     )
+                    patch_package = build_segmented_artifact_package(
+                        patch_html,
+                        patch_package,
+                    )
                     patch_validation_issues = validate_poll_game_artifact_html(patch_html)
                     if not patch_validation_issues:
                         return PollGameArtifactBuildResponse(
                             html=patch_html,
+                            artifact_package=patch_package,
                             model=patch_model,
                             assistantMessage=patch_assistant_message
                             or "Artifact updated with a targeted patch.",
@@ -1056,8 +1060,16 @@ async def create_poll_game_artifact_build(
             detail=f"Artifact request failed validation: {issue_text}",
         )
 
+    response_package = build_segmented_artifact_package(html)
+    if response_package:
+        html = materialize_artifact_html_from_package(
+            response_package,
+            fallback_html=html,
+        )
+
     return PollGameArtifactBuildResponse(
         html=html,
+        artifact_package=response_package,
         model=response_model,
         assistantMessage="Artifact ready. Keep prompting to iterate.",
     )
@@ -1106,13 +1118,15 @@ async def attempt_artifact_patch_edit(
     original_edit_request: str,
     context: dict[str, Any],
     current_html: str,
+    current_package: dict[str, Any] | None,
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
     use_anthropic_background_treatment: bool = False,
-) -> tuple[str, str, list[str]]:
+) -> tuple[str, dict[str, Any] | None, str, list[str]]:
     if artifact_edit_request_requires_external_asset_url(original_edit_request):
         return (
             "",
+            current_package,
             "This edit needs a direct image URL. Provide the exact Dubai image URL and the editor can swap only the background image without redesigning the scene.",
             ["the requested edit needs a direct external image URL."],
         )
@@ -1130,18 +1144,23 @@ async def attempt_artifact_patch_edit(
             )
         )
         if treatment_html:
-            return treatment_html, treatment_message, []
+            treatment_package = build_segmented_artifact_package(
+                treatment_html,
+                current_package,
+            )
+            return treatment_html, treatment_package, treatment_message, []
         if treatment_issues:
             if not should_fallback_to_generic_patch_after_background_treatment_failure(
                 treatment_issues
             ):
-                return "", treatment_message, treatment_issues
+                return "", current_package, treatment_message, treatment_issues
     builtin_html, builtin_message = attempt_builtin_cityscape_background_patch(
         current_html=current_html,
         original_edit_request=original_edit_request,
     )
     if builtin_html:
-        return builtin_html, builtin_message, []
+        builtin_package = build_segmented_artifact_package(builtin_html, current_package)
+        return builtin_html, builtin_package, builtin_message, []
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1162,14 +1181,19 @@ async def attempt_artifact_patch_edit(
         thinking_budget=0,
     )
     plan = rewrite_artifact_patch_plan_for_current_html(
-        plan=normalize_artifact_patch_plan(text),
+        plan=normalize_artifact_patch_plan_payload(text),
         current_html=current_html,
         original_edit_request=original_edit_request,
     )
-    patched_html, issues = apply_artifact_patch_plan(current_html, plan)
+    patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
+        html=current_html,
+        artifact_package=current_package,
+        plan=plan,
+        max_edits=ARTIFACT_PATCH_MAX_EDITS,
+    )
     if issues:
-        return "", plan.get("assistantMessage", ""), issues
-    return patched_html, plan.get("assistantMessage", ""), []
+        return "", current_package, plan.get("assistantMessage", ""), issues
+    return patched_html, patched_package, plan.get("assistantMessage", ""), []
 
 
 async def attempt_artifact_background_treatment_edit(
@@ -1731,11 +1755,28 @@ def should_use_anthropic_for_artifact_patch_edit(
 
 
 def get_artifact_patch_source_html(artifact_context: dict[str, Any]) -> str:
-    for key in ("currentArtifactFullHtml", "currentArtifactHtml"):
-        value = artifact_context.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+    full_html = artifact_context.get("currentArtifactFullHtml")
+    if isinstance(full_html, str) and full_html.strip():
+        return full_html.strip()
+    package = get_artifact_patch_source_package(artifact_context)
+    if package:
+        return materialize_artifact_html_from_package(package)
+    current_html = artifact_context.get("currentArtifactHtml")
+    if isinstance(current_html, str) and current_html.strip():
+        return current_html.strip()
     return ""
+
+
+def get_artifact_patch_source_package(
+    artifact_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    for key in ("currentArtifactPackage", "currentArtifactFullPackage"):
+        value = artifact_context.get(key)
+        if isinstance(value, dict):
+            sanitized = sanitize_artifact_package(value)
+            if sanitized:
+                return sanitized
+    return None
 
 
 def should_require_safe_patch_only_edit(
@@ -1859,6 +1900,12 @@ def build_artifact_patch_edit_prompt(
             "Apply the user request with minimal edits to the current artifact.",
             "Do not redesign the scene. Preserve unrelated markup exactly.",
             f"Original user edit request: {original_edit_request}",
+            (
+                "Artifact package target files: "
+                f"{ARTIFACT_PACKAGE_ENTRY_FILE}, "
+                f"{ARTIFACT_PACKAGE_STYLES_FILE}, "
+                f"{ARTIFACT_PACKAGE_RENDERER_FILE}."
+            ),
             f"Current artifact type: {artifact_type}" if artifact_type else "",
             f"Current design guidelines: {design_guidelines}" if design_guidelines else "",
             f"Live poll title: {poll_title}" if poll_title else "",
@@ -1907,9 +1954,7 @@ def build_artifact_patch_edit_prompt(
             ),
             "Use the fewest edits possible.",
             "Prefer set_css_property for local visual changes.",
-            "If you need replace_once/replace_all/replace_between/insert_before/insert_after/remove_once, use exact substrings copied from the current artifact HTML.",
-            "Use replace_between when the request needs a small structural local change inside an existing stable container or style block.",
-            "If a background edit cannot be expressed with an existing exact selector, use replace_between or replace_once on an exact current CSS snippet instead of inventing a selector.",
+            f"For set_css_property, target file `{ARTIFACT_PACKAGE_STYLES_FILE}`.",
             "Do not rename or remove live poll hooks, ids, classes, or data attributes relied on by the existing artifact.",
             "If patch mode is not suitable for this request, return an empty edits array.",
             "Current artifact HTML:",
@@ -2031,96 +2076,17 @@ def normalize_artifact_background_treatment_plan(raw_text: str) -> dict[str, Any
 
 
 def normalize_artifact_patch_plan(raw_text: str) -> dict[str, Any]:
-    parsed = try_parse_json(raw_text)
-    if parsed is None:
-        fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw_text, re.IGNORECASE)
-        if fenced and fenced.group(1):
-            parsed = try_parse_json(fenced.group(1))
-    if parsed is None:
-        object_slice = extract_first_json_object(raw_text)
-        if object_slice:
-            parsed = try_parse_json(object_slice)
-    if not isinstance(parsed, dict):
-        return {"assistantMessage": "", "edits": []}
-    assistant_message = (
-        parsed.get("assistantMessage")
-        if isinstance(parsed.get("assistantMessage"), str)
-        else parsed.get("message")
-        if isinstance(parsed.get("message"), str)
-        else ""
-    )
-    edits_raw = parsed.get("edits")
-    if not isinstance(edits_raw, list):
-        edits_raw = []
-    edits = [item for item in edits_raw if isinstance(item, dict)]
-    return {"assistantMessage": assistant_message.strip(), "edits": edits}
+    return normalize_artifact_patch_plan_payload(raw_text)
 
 
 def apply_artifact_patch_plan(html: str, plan: dict[str, Any]) -> tuple[str, list[str]]:
-    original = (html or "").strip()
-    if not original:
-        return original, ["patch target html is empty."]
-    edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
-    if not edits:
-        return original, ["patch plan did not include any edits."]
-    if len(edits) > ARTIFACT_PATCH_MAX_EDITS:
-        return original, [f"patch plan included too many edits ({len(edits)})."]
-
-    working = original
-    issues: list[str] = []
-    for index, edit in enumerate(edits):
-        edit_type = (
-            edit.get("type").strip().lower()
-            if isinstance(edit.get("type"), str)
-            else ""
-        )
-        if edit_type == "set_css_property":
-            selector = edit.get("selector")
-            property_name = edit.get("property")
-            value = edit.get("value")
-            if not all(
-                isinstance(item, str) and item.strip()
-                for item in (selector, property_name, value)
-            ):
-                issues.append(f"patch edit #{index + 1} is missing selector/property/value.")
-                break
-            next_html, changed = set_css_property_in_artifact_html(
-                working,
-                selector.strip(),
-                property_name.strip(),
-                value.strip(),
-            )
-            if not changed:
-                issues.append(
-                    f"patch edit #{index + 1} could not apply CSS selector `{selector.strip()}`."
-                )
-                break
-            working = next_html
-            continue
-
-        if edit_type in {
-            "replace_once",
-            "replace_all",
-            "replace_between",
-            "insert_before",
-            "insert_after",
-            "remove_once",
-        }:
-            next_html, issue = apply_string_artifact_patch_edit(working, edit_type, edit)
-            if issue:
-                issues.append(f"patch edit #{index + 1} {issue}")
-                break
-            working = next_html
-            continue
-
-        issues.append(f"patch edit #{index + 1} used unsupported type `{edit_type}`.")
-        break
-
-    if issues:
-        return original, issues
-    if working.strip() == original.strip():
-        return original, ["patch plan did not change the artifact html."]
-    return working, []
+    patched_html, _patched_package, issues = apply_artifact_patch_plan_to_package(
+        html=html,
+        artifact_package=None,
+        plan=plan,
+        max_edits=ARTIFACT_PATCH_MAX_EDITS,
+    )
+    return patched_html, issues
 
 
 def apply_string_artifact_patch_edit(
@@ -3911,6 +3877,9 @@ def prepare_artifact_context_for_model(
         request_mode=request_mode,
     )
     artifact_context.pop("currentArtifactFullHtml", None)
+    artifact_context.pop("currentArtifactPackage", None)
+    artifact_context.pop("currentArtifactFullPackage", None)
+    artifact_context.pop("failedArtifactPackage", None)
     artifact_context["failedArtifactHtml"] = compress_artifact_markup_for_model(
         artifact_context.get("failedArtifactHtml")
         if isinstance(artifact_context.get("failedArtifactHtml"), str)

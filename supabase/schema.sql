@@ -81,12 +81,32 @@ create table if not exists saved_poll_game_artifacts (
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
   html text not null,
+  artifact_package jsonb,
   last_prompt text,
   last_answers jsonb not null default '{}'::jsonb,
   theme_snapshot jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, name)
+);
+
+alter table if exists saved_poll_game_artifacts
+  add column if not exists artifact_package jsonb;
+
+create table if not exists saved_poll_game_artifact_versions (
+  id uuid primary key default gen_random_uuid(),
+  artifact_id uuid not null references saved_poll_game_artifacts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  version integer not null,
+  html text not null,
+  artifact_package jsonb,
+  last_prompt text,
+  last_answers jsonb not null default '{}'::jsonb,
+  theme_snapshot jsonb,
+  source text,
+  created_at timestamptz not null default now(),
+  unique (artifact_id, version)
 );
 
 do $$
@@ -342,6 +362,8 @@ create index if not exists saved_poll_game_themes_user_id_idx on saved_poll_game
 create index if not exists saved_poll_game_themes_updated_at_idx on saved_poll_game_themes (updated_at desc);
 create index if not exists saved_poll_game_artifacts_user_id_idx on saved_poll_game_artifacts (user_id);
 create index if not exists saved_poll_game_artifacts_updated_at_idx on saved_poll_game_artifacts (updated_at desc);
+create index if not exists saved_poll_game_artifact_versions_artifact_id_idx on saved_poll_game_artifact_versions (artifact_id, version desc);
+create index if not exists saved_poll_game_artifact_versions_user_name_idx on saved_poll_game_artifact_versions (user_id, name, created_at desc);
 create index if not exists questions_session_id_idx on questions (session_id);
 create index if not exists questions_prompt_id_idx on questions (prompt_id);
 create index if not exists qna_prompts_session_id_idx on qna_prompts (session_id);
@@ -354,6 +376,7 @@ alter table public.sessions enable row level security;
 alter table public.session_hosts enable row level security;
 alter table public.saved_poll_game_themes enable row level security;
 alter table public.saved_poll_game_artifacts enable row level security;
+alter table public.saved_poll_game_artifact_versions enable row level security;
 alter table public.qna_prompts enable row level security;
 alter table public.questions enable row level security;
 alter table public.question_votes enable row level security;
@@ -474,6 +497,27 @@ create policy saved_poll_game_artifacts_update_own
 drop policy if exists saved_poll_game_artifacts_delete_own on public.saved_poll_game_artifacts;
 create policy saved_poll_game_artifacts_delete_own
   on public.saved_poll_game_artifacts
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifact_versions_select_own on public.saved_poll_game_artifact_versions;
+create policy saved_poll_game_artifact_versions_select_own
+  on public.saved_poll_game_artifact_versions
+  for select
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifact_versions_insert_own on public.saved_poll_game_artifact_versions;
+create policy saved_poll_game_artifact_versions_insert_own
+  on public.saved_poll_game_artifact_versions
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists saved_poll_game_artifact_versions_delete_own on public.saved_poll_game_artifact_versions;
+create policy saved_poll_game_artifact_versions_delete_own
+  on public.saved_poll_game_artifact_versions
   for delete
   to authenticated
   using ((select auth.uid()) = user_id);

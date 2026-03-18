@@ -1,3 +1,9 @@
+import {
+  buildSegmentedArtifactPackage,
+  resolveArtifactHtmlFromPackage,
+  sanitizeArtifactPackage
+} from './poll-game-gamified-artifact-package.js'
+
 export function createPollGameLibraryStorage({
   windowObj = window,
   themeLibraryKey,
@@ -120,10 +126,23 @@ export function createPollGameLibraryStorage({
     if (!value || typeof value !== 'object') {
       return null
     }
-    const html = normalizeArtifactMarkup(asText(value.html))
+    const rawHtml = normalizeArtifactMarkup(asText(value.html))
+    const packageInput =
+      value.package && typeof value.package === 'object'
+        ? value.package
+        : value.artifactPackage && typeof value.artifactPackage === 'object'
+          ? value.artifactPackage
+          : value.artifact_package && typeof value.artifact_package === 'object'
+            ? value.artifact_package
+            : null
+    const html = rawHtml || resolveArtifactHtmlFromPackage(packageInput)
     if (!html) {
       return null
     }
+    const artifactPackage = buildSegmentedArtifactPackage(
+      sanitizeArtifactPackage(packageInput, html) || html
+    )
+    const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
     const lastPrompt = asText(value.lastPrompt ?? value.last_prompt)
     const lastAnswersInput =
       value.lastAnswers && typeof value.lastAnswers === 'object'
@@ -138,7 +157,8 @@ export function createPollGameLibraryStorage({
           ? value.theme_snapshot
           : null
     return {
-      html,
+      html: materializedHtml,
+      package: artifactPackage,
       lastPrompt,
       lastAnswers: cloneArtifactConversationAnswers(lastAnswersInput),
       themeSnapshot: themeSnapshotInput
