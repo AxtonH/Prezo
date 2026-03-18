@@ -840,6 +840,7 @@ async def create_poll_game_artifact_build(
                 request_mode == "edit"
                 and anthropic_api_key
                 and patch_failure_reasons
+                and not patch_only_edit
             ):
                 fallback_patch_model = resolve_anthropic_artifact_build_model()
                 try:
@@ -3438,6 +3439,11 @@ def evaluate_artifact_patch_satisfaction(
         for selector in extract_artifact_title_selector_candidates(html)
         if is_title_like_selector(selector)
     ]
+    primary_title_selectors = [
+        selector for selector in title_selectors if is_primary_title_selector(selector)
+    ]
+    if not primary_title_selectors:
+        primary_title_selectors = title_selectors
     layout_selectors = extract_artifact_layout_selector_candidates(html)
     missing: list[str] = []
     for requirement in requirements:
@@ -3464,7 +3470,7 @@ def evaluate_artifact_patch_satisfaction(
                 has_css_property_for_selector(css_text, selector, "margin-bottom")
                 or has_css_property_for_selector(css_text, selector, "margin-top")
                 or has_css_property_for_selector(css_text, selector, "padding-top")
-                for selector in title_selectors
+                for selector in primary_title_selectors
             ) or any(
                 has_css_property_for_selector(css_text, selector, "margin-top")
                 or has_css_property_for_selector(css_text, selector, "gap")
@@ -3483,19 +3489,19 @@ def evaluate_artifact_patch_satisfaction(
                     or has_css_property_for_selector(css_text, selector, "border")
                     or has_css_property_for_selector(css_text, selector, "box-shadow")
                 )
-                for selector in title_selectors
+                for selector in primary_title_selectors
             )
             if not has_container:
                 missing.append(requirement)
             continue
         if requirement == "title_studs":
-            if not has_title_stud_selector_rule(css_text, title_selectors):
+            if not has_title_stud_selector_rule(css_text, primary_title_selectors):
                 missing.append(requirement)
             continue
         if requirement == "title_yellow":
             yellow_found = False
             candidate_selectors: list[str] = []
-            for selector in title_selectors:
+            for selector in primary_title_selectors:
                 candidate_selectors.append(selector)
                 candidate_selectors.append(f"{selector}::before")
                 candidate_selectors.append(f"{selector}::after")
@@ -3594,9 +3600,46 @@ def has_title_stud_selector_rule(css_text: str, title_selectors: list[str]) -> b
                         normalized_css, pseudo_selector, "border"
                     )
                 )
-                if has_content and has_stud_fill:
+                has_size = (
+                    (
+                        has_css_property_for_selector(
+                            normalized_css, pseudo_selector, "width"
+                        )
+                        or has_css_property_for_selector(
+                            normalized_css, pseudo_selector, "inline-size"
+                        )
+                    )
+                    and (
+                        has_css_property_for_selector(
+                            normalized_css, pseudo_selector, "height"
+                        )
+                        or has_css_property_for_selector(
+                            normalized_css, pseudo_selector, "block-size"
+                        )
+                    )
+                )
+                if has_content and has_stud_fill and has_size:
                     return True
     return False
+
+
+def is_primary_title_selector(selector: str) -> bool:
+    lowered = (selector or "").strip().lower()
+    if not lowered:
+        return False
+    if not is_title_like_selector(lowered):
+        return False
+    if re.search(
+        r"(?:option|choice|answer|row|item|vote|count|score|percent|bar|track|result|stat|metric|value)",
+        lowered,
+    ):
+        return False
+    if "label" in lowered and not re.search(
+        r"(?:title|headline|question|header|heading|eyebrow|caption|prompt)",
+        lowered,
+    ):
+        return False
+    return True
 
 
 def contains_yellow_like_color(text: str) -> bool:

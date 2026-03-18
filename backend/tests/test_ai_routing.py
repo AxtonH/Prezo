@@ -455,6 +455,18 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
                             {
                                 "type": "set_css_property",
                                 "selector": ".poll-title::before",
+                                "property": "width",
+                                "value": "20px",
+                            },
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-title::before",
+                                "property": "height",
+                                "value": "8px",
+                            },
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-title::before",
                                 "property": "background",
                                 "value": "#F4C531",
                             },
@@ -1039,6 +1051,19 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(".poll-title::before {", patched_html)
         self.assertIn("background: #F7D34B;", patched_html)
 
+    def test_title_studs_requirement_requires_sized_title_pseudo_element(self) -> None:
+        unsized_studs_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+            "</style>",
+            "\n.poll-title::before {\n  content: \"\";\n  background: #F7D34B;\n}\n</style>",
+        )
+        satisfied, missing = ai_api.evaluate_artifact_patch_satisfaction(
+            requirements=["title_studs"],
+            html=unsized_studs_html,
+        )
+
+        self.assertFalse(satisfied)
+        self.assertIn("title_studs", missing)
+
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
             current_html=PATCHABLE_ARTIFACT_HTML,
@@ -1446,7 +1471,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(exc_info.exception.status_code, 409)
         self.assertIn("Targeted artifact update was blocked", str(exc_info.exception.detail))
-        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(anthropic_mock.await_count, 0)
         self.assertEqual(gemini_mock.await_count, 1)
 
     async def test_oversized_title_patch_plan_is_compacted_instead_of_blocked(self) -> None:
