@@ -61,6 +61,9 @@ ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
 ARTIFACT_PATCH_MAX_EDITS = 8
+ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
+ARTIFACT_PATCH_BATCH_SIZE = 6
+ARTIFACT_PATCH_MAX_BATCHES = 12
 ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID = "prezo-background-treatment-data"
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
@@ -330,7 +333,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Allowed PatchEdit objects:",
         '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
         "Rules:",
-        "- Prefer 1-4 edits and never emit more than 8 edits.",
+        "- Prefer 1-8 edits for focused requests. If the request needs richer styling, you may emit more edits, but stay concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
@@ -350,7 +353,7 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
         "assistantMessage": {"type": "string"},
         "edits": {
             "type": "array",
-            "maxItems": ARTIFACT_PATCH_MAX_EDITS,
+            "maxItems": ARTIFACT_PATCH_CANDIDATE_MAX_EDITS,
             "items": {
                 "type": "object",
                 "properties": {
@@ -1217,11 +1220,12 @@ async def attempt_artifact_patch_edit(
         current_html=current_html,
         original_edit_request=original_edit_request,
     )
-    patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
-        html=current_html,
-        artifact_package=current_package,
+    patched_html, patched_package, issues = apply_artifact_patch_plan_progressively(
+        current_html=current_html,
+        current_package=current_package,
         plan=plan,
-        max_edits=ARTIFACT_PATCH_MAX_EDITS,
+        original_edit_request=original_edit_request,
+        context=context,
     )
     if issues:
         return "", current_package, plan.get("assistantMessage", ""), issues
@@ -3166,7 +3170,458 @@ def rewrite_artifact_patch_plan_for_current_html(
             if replacement:
                 edit["selector"] = replacement
         rewritten.append(edit)
-    return {"assistantMessage": assistant_message, "edits": rewritten}
+    compacted = compact_artifact_patch_plan_edits(
+        rewritten,
+        original_edit_request=original_edit_request,
+        max_edits=ARTIFACT_PATCH_CANDIDATE_MAX_EDITS,
+    )
+    return {"assistantMessage": assistant_message, "edits": compacted}
+
+
+def compact_artifact_patch_plan_edits(
+    edits: list[dict[str, Any]],
+    *,
+    original_edit_request: str,
+    max_edits: int,
+) -> list[dict[str, Any]]:
+    if not edits:
+        return []
+    if max_edits <= 0:
+        return []
+
+    normalized_edits: list[dict[str, Any]] = []
+    dedup_index_by_key: dict[tuple[str, str, str], int] = {}
+    for raw_edit in edits:
+        if not isinstance(raw_edit, dict):
+            continue
+        edit_type = str(raw_edit.get("type") or "").strip().lower()
+        selector = str(raw_edit.get("selector") or "").strip()
+        property_name = str(raw_edit.get("property") or "").strip()
+        value = str(raw_edit.get("value") or "").strip()
+        if (
+            edit_type != "set_css_property"
+            or not selector
+            or not property_name
+            or not value
+        ):
+            continue
+        normalized_edit = dict(raw_edit)
+        normalized_edit["type"] = "set_css_property"
+        normalized_edit["selector"] = selector
+        normalized_edit["property"] = property_name
+        normalized_edit["value"] = value
+        file_name = str(raw_edit.get("file") or ARTIFACT_PACKAGE_STYLES_FILE).strip()
+        normalized_edit["file"] = file_name or ARTIFACT_PACKAGE_STYLES_FILE
+        dedup_key = (
+            normalized_edit["file"].lower(),
+            selector.lower(),
+            property_name.lower(),
+        )
+        existing_index = dedup_index_by_key.get(dedup_key)
+        if existing_index is not None:
+            normalized_edits[existing_index] = normalized_edit
+            continue
+        dedup_index_by_key[dedup_key] = len(normalized_edits)
+        normalized_edits.append(normalized_edit)
+
+    if len(normalized_edits) <= max_edits:
+        return normalized_edits
+
+    is_title_request = is_title_text_artifact_edit_request(original_edit_request)
+    scored_edits: list[tuple[int, int, dict[str, Any]]] = []
+    for index, edit in enumerate(normalized_edits):
+        scored_edits.append(
+            (
+                score_artifact_patch_edit_priority(
+                    edit,
+                    original_edit_request=original_edit_request,
+                    is_title_request=is_title_request,
+                ),
+                index,
+                edit,
+            )
+        )
+    scored_edits.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    selected = [item[2] for item in scored_edits[:max_edits]]
+    return selected
+
+
+def score_artifact_patch_edit_priority(
+    edit: dict[str, Any], *, original_edit_request: str, is_title_request: bool
+) -> int:
+    selector = str(edit.get("selector") or "").strip().lower()
+    property_name = str(edit.get("property") or "").strip().lower()
+    value = str(edit.get("value") or "").strip().lower()
+    request_text = (original_edit_request or "").strip().lower()
+    mentions_lego_studs = bool(re.search(r"\b(?:lego|stud|studs)\b", request_text))
+    score = 0
+
+    if is_title_request:
+        if is_title_like_selector(selector):
+            score += 45
+        if "::before" in selector or "::after" in selector:
+            score += 26
+            if mentions_lego_studs:
+                score += 36
+                if property_name in {"content", "background", "border-radius", "box-shadow"}:
+                    score += 18
+        if re.search(r"\b(?:container|box|badge|lego|stud)\b", request_text, re.IGNORECASE):
+            if property_name in {
+                "background",
+                "border",
+                "border-radius",
+                "box-shadow",
+                "padding",
+                "margin",
+                "position",
+                "content",
+                "width",
+                "height",
+                "top",
+                "left",
+                "right",
+                "bottom",
+                "z-index",
+            }:
+                score += 20
+        if "yellow" in request_text and (
+            property_name == "background"
+            or property_name == "border-color"
+            or property_name == "box-shadow"
+            or "#f" in value
+            or "yellow" in value
+        ):
+            score += 12
+
+    if property_name in {"content", "background", "border-radius", "box-shadow"}:
+        score += 8
+    if property_name in {"padding", "margin", "z-index", "position"}:
+        score += 5
+    return score
+
+
+def apply_artifact_patch_plan_progressively(
+    *,
+    current_html: str,
+    current_package: dict[str, Any] | None,
+    plan: dict[str, Any],
+    original_edit_request: str,
+    context: dict[str, Any],
+) -> tuple[str, dict[str, Any] | None, list[str]]:
+    raw_edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
+    if not raw_edits:
+        return "", current_package, ["patch plan did not include any edits."]
+
+    candidate_edits = compact_artifact_patch_plan_edits(
+        [edit for edit in raw_edits if isinstance(edit, dict)],
+        original_edit_request=original_edit_request,
+        max_edits=ARTIFACT_PATCH_CANDIDATE_MAX_EDITS,
+    )
+    if not candidate_edits:
+        return "", current_package, ["patch plan did not include any applicable edits."]
+
+    requirements = infer_artifact_patch_satisfaction_requirements(original_edit_request)
+    working_html = current_html
+    working_package = current_package
+    applied_any_batch = False
+    batch_issues: list[str] = []
+
+    for batch_index, batch_edits in enumerate(
+        chunk_artifact_patch_plan_edits(candidate_edits, ARTIFACT_PATCH_BATCH_SIZE)
+    ):
+        if batch_index >= ARTIFACT_PATCH_MAX_BATCHES:
+            break
+        if not batch_edits:
+            continue
+        batch_plan = {"assistantMessage": "", "edits": batch_edits}
+        patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
+            html=working_html,
+            artifact_package=working_package,
+            plan=batch_plan,
+            max_edits=ARTIFACT_PATCH_MAX_EDITS,
+        )
+        if issues:
+            batch_issues.extend(issues)
+            continue
+        candidate_html = restore_artifact_live_hooks_if_missing(patched_html, context)
+        candidate_html = attempt_artifact_structural_autorepair(candidate_html)
+        validation_issues = validate_poll_game_artifact_html(candidate_html)
+        if validation_issues:
+            batch_issues.extend(validation_issues)
+            continue
+        working_html = candidate_html
+        working_package = build_segmented_artifact_package(candidate_html, patched_package)
+        applied_any_batch = True
+        satisfied, _missing = evaluate_artifact_patch_satisfaction(
+            requirements=requirements,
+            html=working_html,
+        )
+        if satisfied:
+            return working_html, working_package, []
+
+    if applied_any_batch:
+        satisfied, missing = evaluate_artifact_patch_satisfaction(
+            requirements=requirements,
+            html=working_html,
+        )
+        if satisfied:
+            return working_html, working_package, []
+        missing_text = ", ".join(missing[:4]) if missing else "requested visual details"
+        issue = (
+            "patch batches applied safely but did not fully satisfy the request "
+            f"({missing_text})."
+        )
+        deduped_issues = dedupe_patch_issue_list([issue] + batch_issues)
+        return "", current_package, deduped_issues[:3]
+
+    deduped_issues = dedupe_patch_issue_list(batch_issues)
+    if deduped_issues:
+        return "", current_package, deduped_issues[:3]
+    return "", current_package, ["patch plan did not change the artifact html."]
+
+
+def chunk_artifact_patch_plan_edits(
+    edits: list[dict[str, Any]], batch_size: int
+) -> list[list[dict[str, Any]]]:
+    size = max(1, batch_size)
+    return [edits[index : index + size] for index in range(0, len(edits), size)]
+
+
+def infer_artifact_patch_satisfaction_requirements(
+    original_edit_request: str,
+) -> list[str]:
+    normalized = (original_edit_request or "").strip().lower()
+    if not normalized:
+        return []
+    requirements: list[str] = []
+    if is_layout_orientation_artifact_edit_request(normalized):
+        requested_orientation = infer_requested_artifact_layout_orientation(normalized)
+        if requested_orientation == "vertical":
+            requirements.append("layout_vertical")
+        elif requested_orientation == "horizontal":
+            requirements.append("layout_horizontal")
+    if is_title_overlap_spacing_artifact_edit_request(normalized):
+        requirements.append("title_spacing")
+    if is_title_text_artifact_edit_request(normalized):
+        mentions_container = bool(
+            re.search(r"\b(?:container|box|badge|pill|frame|card|lego)\b", normalized)
+        )
+        mentions_studs = bool(re.search(r"\b(?:stud|studs|lego)\b", normalized))
+        explicit_container_wrap = bool(
+            re.search(r"\b(?:put|place|wrap|enclose|encase)\b", normalized)
+        )
+        add_studs_only = bool(re.search(r"\badd\s+studs?\b", normalized))
+        if mentions_container and (explicit_container_wrap or not add_studs_only):
+            requirements.append("title_container")
+        if mentions_studs:
+            requirements.append("title_studs")
+        if re.search(r"\b(?:yellow|gold|amber|mustard)\b", normalized):
+            requirements.append("title_yellow")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for requirement in requirements:
+        if requirement in seen:
+            continue
+        seen.add(requirement)
+        deduped.append(requirement)
+    return deduped
+
+
+def evaluate_artifact_patch_satisfaction(
+    *, requirements: list[str], html: str
+) -> tuple[bool, list[str]]:
+    if not requirements:
+        return True, []
+    css_text = extract_combined_artifact_css_text(html)
+    title_selectors = [
+        selector
+        for selector in extract_artifact_title_selector_candidates(html)
+        if is_title_like_selector(selector)
+    ]
+    layout_selectors = extract_artifact_layout_selector_candidates(html)
+    missing: list[str] = []
+    for requirement in requirements:
+        if requirement == "layout_vertical":
+            if not any(
+                has_css_property_value_for_selector(
+                    css_text, selector, "flex-direction", "column"
+                )
+                for selector in layout_selectors
+            ) and not re.search(r"\bflex-direction\s*:\s*column\b", css_text, re.IGNORECASE):
+                missing.append(requirement)
+            continue
+        if requirement == "layout_horizontal":
+            if not any(
+                has_css_property_value_for_selector(
+                    css_text, selector, "flex-direction", "row"
+                )
+                for selector in layout_selectors
+            ) and not re.search(r"\bflex-direction\s*:\s*row\b", css_text, re.IGNORECASE):
+                missing.append(requirement)
+            continue
+        if requirement == "title_spacing":
+            has_spacing = any(
+                has_css_property_for_selector(css_text, selector, "margin-bottom")
+                or has_css_property_for_selector(css_text, selector, "margin-top")
+                or has_css_property_for_selector(css_text, selector, "padding-top")
+                for selector in title_selectors
+            ) or any(
+                has_css_property_for_selector(css_text, selector, "margin-top")
+                or has_css_property_for_selector(css_text, selector, "gap")
+                or has_css_property_for_selector(css_text, selector, "padding-top")
+                for selector in layout_selectors
+            )
+            if not has_spacing:
+                missing.append(requirement)
+            continue
+        if requirement == "title_container":
+            has_container = any(
+                has_css_property_for_selector(css_text, selector, "background")
+                and (
+                    has_css_property_for_selector(css_text, selector, "padding")
+                    or has_css_property_for_selector(css_text, selector, "border-radius")
+                    or has_css_property_for_selector(css_text, selector, "border")
+                    or has_css_property_for_selector(css_text, selector, "box-shadow")
+                )
+                for selector in title_selectors
+            )
+            if not has_container:
+                missing.append(requirement)
+            continue
+        if requirement == "title_studs":
+            if not has_title_stud_selector_rule(css_text, title_selectors):
+                missing.append(requirement)
+            continue
+        if requirement == "title_yellow":
+            yellow_found = False
+            candidate_selectors: list[str] = []
+            for selector in title_selectors:
+                candidate_selectors.append(selector)
+                candidate_selectors.append(f"{selector}::before")
+                candidate_selectors.append(f"{selector}::after")
+            for selector in candidate_selectors:
+                for body in extract_css_rule_bodies_for_selector(css_text, selector):
+                    if contains_yellow_like_color(body):
+                        yellow_found = True
+                        break
+                if yellow_found:
+                    break
+            if not yellow_found and not contains_yellow_like_color(css_text):
+                missing.append(requirement)
+            continue
+    return len(missing) == 0, missing
+
+
+def extract_combined_artifact_css_text(html: str) -> str:
+    segments = [
+        (style_match.group("body") or "")
+        for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html or "")
+    ]
+    return "\n\n".join(segment for segment in segments if segment.strip())
+
+
+def extract_css_rule_bodies_for_selector(css_text: str, selector: str) -> list[str]:
+    normalized_selector = (selector or "").strip()
+    if not normalized_selector:
+        return []
+    selector_pattern = re.escape(normalized_selector)
+    pattern = re.compile(
+        rf"{selector_pattern}\s*\{{(?P<body>[\s\S]*?)\}}",
+        re.IGNORECASE,
+    )
+    return [
+        (match.group("body") or "").strip()
+        for match in pattern.finditer(css_text or "")
+    ]
+
+
+def has_css_property_for_selector(
+    css_text: str, selector: str, property_name: str
+) -> bool:
+    normalized_property = (property_name or "").strip()
+    if not normalized_property:
+        return False
+    property_pattern = re.compile(
+        rf"\b{re.escape(normalized_property)}\s*:",
+        re.IGNORECASE,
+    )
+    return any(
+        property_pattern.search(body)
+        for body in extract_css_rule_bodies_for_selector(css_text, selector)
+    )
+
+
+def has_css_property_value_for_selector(
+    css_text: str, selector: str, property_name: str, value_fragment: str
+) -> bool:
+    normalized_property = (property_name or "").strip()
+    normalized_value = (value_fragment or "").strip()
+    if not normalized_property or not normalized_value:
+        return False
+    pattern = re.compile(
+        rf"\b{re.escape(normalized_property)}\s*:\s*[^;]*{re.escape(normalized_value)}[^;]*;",
+        re.IGNORECASE,
+    )
+    return any(
+        pattern.search(body)
+        for body in extract_css_rule_bodies_for_selector(css_text, selector)
+    )
+
+
+def has_title_stud_selector_rule(css_text: str, title_selectors: list[str]) -> bool:
+    normalized_css = css_text or ""
+    for selector in title_selectors:
+        for pseudo_selector in (f"{selector}::before", f"{selector}::after"):
+            if re.search(
+                rf"{re.escape(pseudo_selector)}\s*\{{",
+                normalized_css,
+                re.IGNORECASE,
+            ):
+                has_content = has_css_property_for_selector(
+                    normalized_css, pseudo_selector, "content"
+                )
+                has_stud_fill = (
+                    has_css_property_for_selector(
+                        normalized_css, pseudo_selector, "background"
+                    )
+                    or has_css_property_for_selector(
+                        normalized_css, pseudo_selector, "background-color"
+                    )
+                    or has_css_property_for_selector(
+                        normalized_css, pseudo_selector, "box-shadow"
+                    )
+                    or has_css_property_for_selector(
+                        normalized_css, pseudo_selector, "border"
+                    )
+                )
+                if has_content and has_stud_fill:
+                    return True
+    return False
+
+
+def contains_yellow_like_color(text: str) -> bool:
+    normalized = (text or "").lower()
+    if re.search(r"\b(?:yellow|gold|amber|mustard)\b", normalized):
+        return True
+    for hex_color in re.findall(r"#[0-9a-f]{6}", normalized):
+        red = int(hex_color[1:3], 16)
+        green = int(hex_color[3:5], 16)
+        blue = int(hex_color[5:7], 16)
+        if red >= 150 and green >= 120 and blue <= 140 and (red + green) >= (blue * 2):
+            return True
+    return False
+
+
+def dedupe_patch_issue_list(issues: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for issue in issues:
+        normalized = (issue or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
 
 
 def infer_background_composition_from_request(request: str) -> str:

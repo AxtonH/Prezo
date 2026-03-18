@@ -923,6 +923,122 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rewritten["edits"][0]["selector"], ".poll-header")
 
+    def test_rewrite_artifact_patch_plan_compacts_oversized_title_studs_plan(self) -> None:
+        oversized_edits = [
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "background",
+                "value": "#F4C531",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "padding",
+                "value": "10px 16px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "border-radius",
+                "value": "10px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "box-shadow",
+                "value": "0 4px 0 #C79D1A",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "border",
+                "value": "2px solid #C9A323",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "display",
+                "value": "inline-block",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "position",
+                "value": "relative",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title",
+                "property": "z-index",
+                "value": "2",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "content",
+                "value": "\"\"",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "position",
+                "value": "absolute",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "top",
+                "value": "-10px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "left",
+                "value": "12px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "width",
+                "value": "22px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "height",
+                "value": "10px",
+            },
+            {
+                "type": "set_css_property",
+                "selector": ".poll-title::before",
+                "property": "background",
+                "value": "#F7D34B",
+            },
+        ]
+        rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
+            plan={
+                "assistantMessage": "Added a LEGO title container with studs.",
+                "edits": oversized_edits,
+            },
+            current_html=TITLE_OVERLAP_ARTIFACT_HTML,
+            original_edit_request="put the title in a lego shaped container, high quality and well design with studs, yellow color,",
+        )
+        patched_html, _patched_package, issues = ai_api.apply_artifact_patch_plan_progressively(
+            current_html=TITLE_OVERLAP_ARTIFACT_HTML,
+            current_package=None,
+            plan=rewritten,
+            original_edit_request="put the title in a lego shaped container, high quality and well design with studs, yellow color,",
+            context={},
+        )
+
+        self.assertLessEqual(
+            len(rewritten["edits"]), ai_api.ARTIFACT_PATCH_CANDIDATE_MAX_EDITS
+        )
+        self.assertEqual(issues, [])
+        self.assertIn(".poll-title::before {", patched_html)
+        self.assertIn("background: #F7D34B;", patched_html)
+
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
             current_html=PATCHABLE_ARTIFACT_HTML,
@@ -1332,6 +1448,58 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Targeted artifact update was blocked", str(exc_info.exception.detail))
         self.assertEqual(anthropic_mock.await_count, 1)
         self.assertEqual(gemini_mock.await_count, 1)
+
+    async def test_oversized_title_patch_plan_is_compacted_instead_of_blocked(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Added a LEGO title container with studs.",
+                        "edits": [
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "background", "value": "#F4C531"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "padding", "value": "10px 16px"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "border-radius", "value": "10px"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "box-shadow", "value": "0 4px 0 #C79D1A"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "border", "value": "2px solid #C9A323"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "display", "value": "inline-block"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "position", "value": "relative"},
+                            {"type": "set_css_property", "selector": ".poll-title", "property": "z-index", "value": "2"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "content", "value": "\"\""},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "position", "value": "absolute"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "top", "value": "-10px"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "left", "value": "12px"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "width", "value": "22px"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "height", "value": "10px"},
+                            {"type": "set_css_property", "selector": ".poll-title::before", "property": "background", "value": "#F7D34B"},
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "put the title in a lego shaped container, high quality and well design with studs, yellow color,",
+                    "currentArtifactFullHtml": TITLE_OVERLAP_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn(".poll-title::before {", response.html)
+        self.assertIn("background: #F7D34B;", response.html)
 
     async def test_background_image_request_without_url_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
