@@ -147,6 +147,47 @@ LAYOUT_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+TITLE_OVERLAP_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <style>
+      .poll-header {
+        display: block;
+      }
+      .poll-title {
+        font-size: 44px;
+        margin-bottom: 0;
+      }
+      .poll-options {
+        margin-top: 0;
+      }
+      .option-label {
+        color: #222;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="artifact-root">
+      <header class="poll-header">
+        <h1 class="poll-title">Question</h1>
+      </header>
+      <div class="poll-options">
+        <div class="option-row"><span class="option-label">A</span></div>
+        <div class="option-row"><span class="option-label">B</span></div>
+      </div>
+    </section>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.setAttribute("data-question", state && state.poll ? state.poll.question || "" : "");
+      });
+    </script>
+  </body>
+</html>"""
+
 FULL_SCENE_RESET_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -568,6 +609,14 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#artifact-root", selectors)
         self.assertIn(".scene-shell", selectors)
 
+    def test_extract_artifact_title_selector_candidates_prefers_heading_selectors(self) -> None:
+        selectors = ai_api.extract_artifact_title_selector_candidates(
+            TITLE_OVERLAP_ARTIFACT_HTML
+        )
+
+        self.assertIn(".poll-header", selectors)
+        self.assertIn(".poll-title", selectors)
+
     def test_is_background_visual_edit_request_treats_track_as_background(self) -> None:
         self.assertTrue(ai_api.is_background_visual_edit_request("Edit the track so it feels like a cityscape."))
 
@@ -637,6 +686,25 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rewritten["edits"][0]["selector"], ".poll-options")
 
+    def test_rewrite_artifact_patch_plan_remaps_invented_header_selector_for_title_edit(self) -> None:
+        rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
+            plan={
+                "assistantMessage": "Added spacing above the poll rows.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": "#header",
+                        "property": "margin-bottom",
+                        "value": "18px",
+                    }
+                ],
+            },
+            current_html=TITLE_OVERLAP_ARTIFACT_HTML,
+            original_edit_request="Increase title spacing so it is not hidden behind the blocks.",
+        )
+
+        self.assertEqual(rewritten["edits"][0]["selector"], ".poll-header")
+
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
             current_html=PATCHABLE_ARTIFACT_HTML,
@@ -660,6 +728,19 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("flex-direction: column;", patched_html)
         self.assertIn("align-items: stretch;", patched_html)
         self.assertIn("align vertical", assistant_message)
+
+    def test_attempt_builtin_title_overlap_spacing_patch_updates_title_and_layout(self) -> None:
+        patched_html, _patched_package, assistant_message = (
+            ai_api.attempt_builtin_title_overlap_spacing_patch(
+                current_html=TITLE_OVERLAP_ARTIFACT_HTML,
+                current_package=None,
+                original_edit_request="The title text is hidden behind the blocks. Add spacing so it stays visible.",
+            )
+        )
+
+        self.assertIn("z-index: 4;", patched_html)
+        self.assertIn("margin-top: 14px;", patched_html)
+        self.assertIn("readability patch", assistant_message)
 
     def test_apply_background_treatment_to_artifact_html_preserves_cars(self) -> None:
         patched_html, issues = ai_api.apply_background_treatment_to_artifact_html(
@@ -961,6 +1042,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertIn("align vertical", response.assistantMessage)
         self.assertIn("flex-direction: column;", response.html)
+
+    async def test_title_overlap_edit_prefers_builtin_patch_flow_before_model_calls(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock()
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "the title of each poll is being hidden behind the blocks can we space it out more so they are not hidden.",
+                    "currentArtifactFullHtml": TITLE_OVERLAP_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn("readability patch", response.assistantMessage)
+        self.assertIn("margin-top: 14px;", response.html)
 
     async def test_local_edit_patch_failure_does_not_fallback_to_full_regeneration(self) -> None:
         anthropic_mock = AsyncMock()

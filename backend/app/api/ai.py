@@ -1176,6 +1176,15 @@ async def attempt_artifact_patch_edit(
     )
     if orientation_html:
         return orientation_html, orientation_package, orientation_message, []
+    title_overlap_html, title_overlap_package, title_overlap_message = (
+        attempt_builtin_title_overlap_spacing_patch(
+            current_html=current_html,
+            current_package=current_package,
+            original_edit_request=original_edit_request,
+        )
+    )
+    if title_overlap_html:
+        return title_overlap_html, title_overlap_package, title_overlap_message, []
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1723,6 +1732,47 @@ def is_layout_orientation_artifact_edit_request(request_text: str) -> bool:
     return bool(ARTIFACT_LAYOUT_ORIENTATION_EDIT_REQUEST_RE.search(normalized))
 
 
+def is_title_text_artifact_edit_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:title|headline|question|header|heading|eyebrow|caption|label|labels|text)\b",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+
+
+def is_spacing_artifact_edit_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:space|spacing|margin|padding|gap|offset|separate|separation|distance|line-height|line height|move down|push down|push lower)\b",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+
+
+def is_title_overlap_spacing_artifact_edit_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip()
+    if not normalized:
+        return False
+    has_text_target = is_title_text_artifact_edit_request(normalized)
+    has_overlap_signal = bool(
+        re.search(
+            r"\b(?:hidden|hide|hiding|behind|overlap|overlapping|covered|covering|obscured|blocked|clipped|clip|under)\b",
+            normalized,
+            re.IGNORECASE,
+        )
+    )
+    return has_text_target and (has_overlap_signal or is_spacing_artifact_edit_request(normalized))
+
+
 def infer_requested_artifact_layout_orientation(request_text: str) -> str:
     lowered = (request_text or "").strip().lower()
     if not lowered:
@@ -1959,6 +2009,10 @@ def build_artifact_patch_edit_prompt(
     is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
         original_edit_request
     )
+    is_title_text_edit = is_title_text_artifact_edit_request(original_edit_request)
+    is_title_overlap_spacing_edit = is_title_overlap_spacing_artifact_edit_request(
+        original_edit_request
+    )
     requested_layout_orientation = infer_requested_artifact_layout_orientation(
         original_edit_request
     )
@@ -1966,12 +2020,22 @@ def build_artifact_patch_edit_prompt(
     requires_external_asset_url = artifact_edit_request_requires_external_asset_url(
         original_edit_request
     )
-    background_selector_candidates = extract_artifact_background_selector_candidates(
-        current_html
+    style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
+    background_selector_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_background_selector_candidates(current_html),
+        style_selector_candidates,
     )
-    layout_selector_candidates = extract_artifact_layout_selector_candidates(current_html)
-    scene_root_selector_candidates = extract_artifact_scene_root_selector_candidates(
-        current_html
+    layout_selector_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_layout_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    title_selector_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_title_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    scene_root_selector_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_scene_root_selector_candidates(current_html),
+        style_selector_candidates,
     )
     background_style_snippets = extract_artifact_background_style_snippets(current_html)
     return "\n".join(
@@ -2010,6 +2074,11 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "This is a title/label readability-overlap request. Keep the artifact design intact and apply local CSS fixes only (title z-index/layering and spacing between title and option rows)."
+                if is_title_overlap_spacing_edit
+                else ""
+            ),
+            (
                 "This request appears to need a new external image or asset URL. If the user did not provide a direct URL, do not guess one. Return an empty edits array and explain that a direct image URL is required."
                 if requires_external_asset_url
                 else ""
@@ -2033,6 +2102,12 @@ def build_artifact_patch_edit_prompt(
                 else ""
             ),
             (
+                "Available exact title/heading selectors in the current artifact: "
+                + ", ".join(title_selector_candidates)
+                if is_title_text_edit and title_selector_candidates
+                else ""
+            ),
+            (
                 "For background edits, if you use set_css_property, the selector must match one of the available exact background selectors above. Do not invent selectors."
                 if background_selector_candidates
                 else ""
@@ -2040,6 +2115,11 @@ def build_artifact_patch_edit_prompt(
             (
                 "For layout-orientation edits, target the exact layout selectors above and prefer flex-direction/grid-flow changes over HTML rewrites. Do not invent selectors."
                 if is_layout_orientation_edit and layout_selector_candidates
+                else ""
+            ),
+            (
+                "For title/label overlap fixes, target only the exact title/heading selectors above and nearby options container selectors. Do not invent selectors like #header unless present."
+                if is_title_text_edit
                 else ""
             ),
             (
@@ -2365,6 +2445,37 @@ def is_layout_like_selector(selector: str) -> bool:
     )
 
 
+def extract_artifact_style_rule_selectors(html: str) -> list[str]:
+    selectors: list[str] = []
+    seen: set[str] = set()
+
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = style_match.group("body") or ""
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                selectors.append(normalized)
+    return selectors
+
+
+def prefer_selectors_with_existing_css_rule(
+    candidates: list[str], style_selectors: list[str]
+) -> list[str]:
+    if not candidates:
+        return []
+    if not style_selectors:
+        return candidates
+    style_selector_set = set(style_selectors)
+    matched = [candidate for candidate in candidates if candidate in style_selector_set]
+    return matched if matched else candidates
+
+
 def extract_artifact_layout_selector_candidates(html: str) -> list[str]:
     candidates: list[str] = []
     seen: set[str] = set()
@@ -2484,6 +2595,145 @@ def choose_layout_selector_candidate(
     ranked = sorted(
         normalized_candidates,
         key=lambda candidate: score_layout_selector_candidate(
+            normalized_requested, candidate
+        ),
+        reverse=True,
+    )
+    return ranked[0] if ranked else ""
+
+
+def is_title_like_selector(selector: str) -> bool:
+    lowered = (selector or "").strip().lower()
+    if not lowered:
+        return False
+    if lowered in {"body", "html"}:
+        return False
+    if "::before" in lowered or "::after" in lowered:
+        return False
+    if lowered in {"h1", "h2", "h3", "header"}:
+        return True
+    return bool(
+        re.search(
+            r"(?:title|headline|question|header|heading|eyebrow|caption|prompt|label)",
+            lowered,
+        )
+    )
+
+
+def extract_artifact_title_selector_candidates(html: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def remember(selector: str) -> None:
+        normalized = selector.strip()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    for selector in (
+        "#header",
+        "#title",
+        "#question",
+        ".header",
+        ".poll-header",
+        ".title",
+        ".poll-title",
+        ".question",
+        ".headline",
+        ".eyebrow",
+        "header",
+        "h1",
+        "h2",
+        "h3",
+    ):
+        if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(selector)}(?![A-Za-z0-9_-])", html):
+            remember(selector)
+
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        style_body = style_match.group("body") or ""
+        for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
+            selector_text = raw_selector[1].strip()
+            if not selector_text or selector_text.startswith("@"):
+                continue
+            for selector in selector_text.split(","):
+                normalized = selector.strip()
+                if is_title_like_selector(normalized):
+                    remember(normalized)
+
+    for match in re.finditer(r'id\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        raw_id = match.group(1).strip()
+        if raw_id and re.search(
+            r"(title|headline|question|header|heading|eyebrow|caption|prompt|label)",
+            raw_id,
+            re.IGNORECASE,
+        ):
+            remember(f"#{raw_id}")
+
+    for match in re.finditer(r'class\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE):
+        for raw_class in match.group(1).split():
+            if raw_class and re.search(
+                r"(title|headline|question|header|heading|eyebrow|caption|prompt|label)",
+                raw_class,
+                re.IGNORECASE,
+            ):
+                remember(f".{raw_class}")
+
+    return candidates[:14]
+
+
+def score_title_selector_candidate(
+    requested_selector: str, candidate: str
+) -> tuple[int, int, int]:
+    requested_tokens = set(re.findall(r"[a-z]+", (requested_selector or "").lower()))
+    candidate_tokens = set(re.findall(r"[a-z]+", (candidate or "").lower()))
+    overlap = len(requested_tokens & candidate_tokens)
+    specificity = (
+        2
+        if candidate.startswith("#")
+        else 1
+        if candidate.startswith(".") or candidate.startswith("[")
+        else 0
+    )
+    priority_tokens = (
+        "poll-title",
+        "title",
+        "headline",
+        "question",
+        "poll-header",
+        "header",
+        "heading",
+        "eyebrow",
+        "prompt",
+        "label",
+        "h1",
+        "h2",
+        "h3",
+    )
+    priority = 0
+    lowered_candidate = candidate.lower()
+    for index, token in enumerate(priority_tokens):
+        if token in lowered_candidate:
+            priority = len(priority_tokens) - index
+            break
+    complexity_penalty = -1 if (" " in candidate or ">" in candidate) else 0
+    return (overlap, priority, specificity + complexity_penalty)
+
+
+def choose_title_selector_candidate(
+    requested_selector: str, candidates: list[str]
+) -> str:
+    if not candidates:
+        return ""
+    normalized_candidates = [item for item in candidates if is_title_like_selector(item)]
+    if not normalized_candidates:
+        return ""
+    normalized_requested = (requested_selector or "").strip()
+    if normalized_requested in normalized_candidates:
+        return normalized_requested
+    ranked = sorted(
+        normalized_candidates,
+        key=lambda candidate: score_title_selector_candidate(
             normalized_requested, candidate
         ),
         reverse=True,
@@ -2733,11 +2983,33 @@ def rewrite_artifact_patch_plan_for_current_html(
     is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
         original_edit_request
     )
-    if not is_background_edit and not is_layout_orientation_edit:
+    is_title_text_edit = is_title_text_artifact_edit_request(original_edit_request)
+    is_title_overlap_spacing_edit = is_title_overlap_spacing_artifact_edit_request(
+        original_edit_request
+    )
+    should_remap_layout_selectors = (
+        is_layout_orientation_edit or is_title_overlap_spacing_edit
+    )
+    if (
+        not is_background_edit
+        and not should_remap_layout_selectors
+        and not is_title_text_edit
+    ):
         return {"assistantMessage": assistant_message, "edits": edits}
 
-    background_candidates = extract_artifact_background_selector_candidates(current_html)
-    layout_candidates = extract_artifact_layout_selector_candidates(current_html)
+    style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
+    background_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_background_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    layout_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_layout_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    title_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_title_selector_candidates(current_html),
+        style_selector_candidates,
+    )
     for raw_edit in edits:
         if not isinstance(raw_edit, dict):
             continue
@@ -2760,12 +3032,22 @@ def rewrite_artifact_patch_plan_for_current_html(
                 edit["selector"] = replacement
                 selector = replacement
         if (
-            is_layout_orientation_edit
+            should_remap_layout_selectors
             and selector
             and selector not in layout_candidates
             and is_layout_like_selector(selector)
         ):
             replacement = choose_layout_selector_candidate(selector, layout_candidates)
+            if replacement:
+                edit["selector"] = replacement
+                selector = replacement
+        if (
+            is_title_text_edit
+            and selector
+            and selector not in title_candidates
+            and is_title_like_selector(selector)
+        ):
+            replacement = choose_title_selector_candidate(selector, title_candidates)
             if replacement:
                 edit["selector"] = replacement
         rewritten.append(edit)
@@ -3626,6 +3908,113 @@ def attempt_builtin_cityscape_background_patch(
     return (
         working,
         "Applied a cityscape-style background treatment while keeping the cars and layout unchanged.",
+    )
+
+
+def attempt_builtin_title_overlap_spacing_patch(
+    *,
+    current_html: str,
+    current_package: dict[str, Any] | None,
+    original_edit_request: str,
+) -> tuple[str, dict[str, Any] | None, str]:
+    if not is_title_overlap_spacing_artifact_edit_request(original_edit_request):
+        return "", current_package, ""
+
+    style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
+    title_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_title_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    layout_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_layout_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+    scene_root_candidates = prefer_selectors_with_existing_css_rule(
+        extract_artifact_scene_root_selector_candidates(current_html),
+        style_selector_candidates,
+    )
+
+    title_selector = choose_title_selector_candidate("#header", title_candidates)
+    label_selector = choose_title_selector_candidate(".label", title_candidates)
+    layout_selector = choose_layout_selector_candidate("#poll-options", layout_candidates)
+    scene_root_selector = choose_scene_root_selector_candidate(scene_root_candidates)
+
+    selectors_to_promote: list[str] = []
+    for selector in (title_selector, label_selector):
+        normalized = selector.strip()
+        if not normalized or normalized in selectors_to_promote:
+            continue
+        selectors_to_promote.append(normalized)
+
+    edits: list[dict[str, str]] = []
+    for selector in selectors_to_promote[:2]:
+        edits.append(
+            {
+                "type": "set_css_property",
+                "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                "selector": selector,
+                "property": "position",
+                "value": "relative",
+            }
+        )
+        edits.append(
+            {
+                "type": "set_css_property",
+                "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                "selector": selector,
+                "property": "z-index",
+                "value": "4",
+            }
+        )
+
+    if title_selector:
+        edits.append(
+            {
+                "type": "set_css_property",
+                "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                "selector": title_selector,
+                "property": "margin-bottom",
+                "value": "14px",
+            }
+        )
+
+    if layout_selector:
+        edits.append(
+            {
+                "type": "set_css_property",
+                "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                "selector": layout_selector,
+                "property": "margin-top",
+                "value": "14px",
+            }
+        )
+    elif scene_root_selector:
+        edits.append(
+            {
+                "type": "set_css_property",
+                "file": ARTIFACT_PACKAGE_STYLES_FILE,
+                "selector": scene_root_selector,
+                "property": "padding-top",
+                "value": "8px",
+            }
+        )
+
+    if not edits:
+        return "", current_package, ""
+
+    plan = {"assistantMessage": "", "edits": edits[: ARTIFACT_PATCH_MAX_EDITS]}
+    patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
+        html=current_html,
+        artifact_package=current_package,
+        plan=plan,
+        max_edits=ARTIFACT_PATCH_MAX_EDITS,
+    )
+    if issues or not patched_html or patched_html.strip() == current_html.strip():
+        return "", current_package, ""
+    return (
+        patched_html,
+        patched_package,
+        "Applied a targeted readability patch to keep titles/labels above the blocks and add spacing.",
     )
 
 
