@@ -163,13 +163,13 @@ ARTIFACT_UNSAFE_DIRECT_DOM_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 ARTIFACT_FULL_SCENE_RESET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
         re.compile(
-            r"\b(?:document\.)?(?:body|documentElement)\s*\.\s*(?:innerHTML|textContent)\s*="
+            r"\b(?:window\.)?document\s*\.\s*(?:body|documentElement)\s*\.\s*(?:innerHTML|textContent)\s*="
         ),
         "script resets the full document/body content, which causes blank or flickering artifacts.",
     ),
     (
         re.compile(
-            r"\b(?:document\.)?(?:body|documentElement)\s*\.\s*(?:replaceChildren|replaceWith|appendChild|insertAdjacentHTML|insertAdjacentElement)\s*\("
+            r"\b(?:window\.)?document\s*\.\s*(?:body|documentElement)\s*\.\s*(?:replaceChildren|replaceWith|appendChild|insertAdjacentHTML|insertAdjacentElement)\s*\("
         ),
         "script replaces the full document/body structure, which is not allowed for artifact output.",
     ),
@@ -193,7 +193,7 @@ ARTIFACT_FULL_SCENE_RESET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(
-            r"\b(?:document\.)?(?:getElementById|querySelector)\s*\(\s*['\"]#?(?:artifact-root|app|root|scene|stage|mount)['\"]\s*\)\s*\.\s*(?:innerHTML|replaceChildren|replaceWith)\b"
+            r"\b(?:window\.)?document\s*\.\s*(?:getElementById|querySelector)\s*\(\s*['\"]#?(?:artifact-root|app|root|scene|stage|mount)['\"]\s*\)\s*\.\s*(?:innerHTML|replaceChildren|replaceWith)\b"
         ),
         "script rewrites a likely scene root node directly, which causes hard resets or flicker.",
     ),

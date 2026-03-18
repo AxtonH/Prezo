@@ -216,6 +216,26 @@ ROOT_SCENE_RESET_HTML = """<!doctype html>
   </body>
 </html>"""
 
+LOCAL_BODY_VARIABLE_APPEND_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var body = document.createElement("div");
+        var badge = document.createElement("span");
+        badge.textContent = state && state.poll ? state.poll.question || "" : "";
+        body.appendChild(badge);
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.textContent = badge.textContent;
+      });
+    </script>
+  </body>
+</html>"""
+
 APPEND_ONLY_OPTION_RENDER_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -550,6 +570,15 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             "script resets the main scene/root content, which causes hard resets, flicker, or blank artifacts.",
             issues,
         )
+
+    def test_validate_poll_game_artifact_html_allows_local_body_variable_append(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(LOCAL_BODY_VARIABLE_APPEND_HTML)
+
+        self.assertNotIn(
+            "script replaces the full document/body structure, which is not allowed for artifact output.",
+            issues,
+        )
+        self.assertEqual(issues, [])
 
     def test_validate_poll_game_artifact_html_rejects_append_only_option_renderer(self) -> None:
         issues = ai_api.validate_poll_game_artifact_html(APPEND_ONLY_OPTION_RENDER_HTML)
