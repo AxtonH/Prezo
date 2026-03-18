@@ -62,6 +62,7 @@ ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
 ARTIFACT_PATCH_MAX_EDITS = 8
 ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
+ARTIFACT_PATCH_SCHEMA_MAX_EDITS = 24
 ARTIFACT_PATCH_BATCH_SIZE = 6
 ARTIFACT_PATCH_MAX_BATCHES = 12
 ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID = "prezo-background-treatment-data"
@@ -333,7 +334,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Allowed PatchEdit objects:",
         '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
         "Rules:",
-        "- Prefer 1-8 edits for focused requests. If the request needs richer styling, you may emit more edits, but stay concise.",
+        "- Prefer 1-8 edits for focused requests. If the request needs richer styling, you may emit more edits (up to 24), but stay concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
@@ -353,7 +354,7 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
         "assistantMessage": {"type": "string"},
         "edits": {
             "type": "array",
-            "maxItems": ARTIFACT_PATCH_CANDIDATE_MAX_EDITS,
+            "maxItems": ARTIFACT_PATCH_SCHEMA_MAX_EDITS,
             "items": {
                 "type": "object",
                 "properties": {
@@ -1202,20 +1203,37 @@ async def attempt_artifact_patch_edit(
             remaining_budget_seconds=remaining_budget_seconds,
         )
     else:
-        text, _stop_reason = await request_gemini_text(
-            api_key=api_key,
-            model=model,
-            system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
-            prompt_text=patch_prompt,
-            temperature=0.1,
-            max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
-            timeout_seconds=timeout_seconds,
-            request_stage="artifact patch edit",
-            remaining_budget_seconds=remaining_budget_seconds,
-            response_mime_type="application/json",
-            response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
-            thinking_budget=0,
-        )
+        try:
+            text, _stop_reason = await request_gemini_text(
+                api_key=api_key,
+                model=model,
+                system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+                prompt_text=patch_prompt,
+                temperature=0.1,
+                max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
+                timeout_seconds=timeout_seconds,
+                request_stage="artifact patch edit",
+                remaining_budget_seconds=remaining_budget_seconds,
+                response_mime_type="application/json",
+                response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
+                thinking_budget=0,
+            )
+        except HTTPException as exc:
+            if not is_gemini_schema_state_overflow_error_detail(exc.detail):
+                raise
+            text, _stop_reason = await request_gemini_text(
+                api_key=api_key,
+                model=model,
+                system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+                prompt_text=patch_prompt,
+                temperature=0.1,
+                max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
+                timeout_seconds=timeout_seconds,
+                request_stage="artifact patch edit",
+                remaining_budget_seconds=remaining_budget_seconds,
+                response_mime_type="application/json",
+                thinking_budget=0,
+            )
     plan = rewrite_artifact_patch_plan_for_current_html(
         plan=normalize_artifact_patch_plan_payload(text),
         current_html=current_html,
@@ -1673,6 +1691,17 @@ def extract_gemini_error(payload: Any) -> str:
         if isinstance(block_reason, str) and block_reason.strip():
             return block_reason.strip()
     return ""
+
+
+def is_gemini_schema_state_overflow_error_detail(detail: Any) -> bool:
+    normalized = str(detail or "").strip().lower()
+    if not normalized:
+        return False
+    return (
+        "too many states for serving" in normalized
+        or "schema produces a constraint" in normalized
+        or ("schema" in normalized and "too many states" in normalized)
+    )
 
 
 def extract_gemini_stop_reason(payload: Any) -> str:

@@ -1526,6 +1526,95 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(".poll-title::before {", response.html)
         self.assertIn("background: #F7D34B;", response.html)
 
+    async def test_patch_planner_retries_without_schema_when_gemini_schema_states_overflow(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            side_effect=[
+                ai_api.HTTPException(
+                    status_code=502,
+                    detail=(
+                        "The specified schema produces a constraint that has too many states for serving."
+                    ),
+                ),
+                (
+                    json.dumps(
+                        {
+                            "assistantMessage": "Added a yellow title container with studs.",
+                            "edits": [
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title",
+                                    "property": "background",
+                                    "value": "#F4C531",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title",
+                                    "property": "padding",
+                                    "value": "10px 16px",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title",
+                                    "property": "border-radius",
+                                    "value": "10px",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title::before",
+                                    "property": "content",
+                                    "value": "\"\"",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title::before",
+                                    "property": "width",
+                                    "value": "22px",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title::before",
+                                    "property": "height",
+                                    "value": "10px",
+                                },
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-title::before",
+                                    "property": "background",
+                                    "value": "#F7D34B",
+                                },
+                            ],
+                        }
+                    ),
+                    "stop",
+                ),
+            ]
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "put the title in a lego shaped container, high quality and well design with studs, yellow color",
+                    "currentArtifactFullHtml": TITLE_OVERLAP_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertIsNotNone(gemini_mock.await_args_list[0].kwargs.get("response_json_schema"))
+        self.assertIsNone(gemini_mock.await_args_list[1].kwargs.get("response_json_schema"))
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn(".poll-title::before {", response.html)
+        self.assertIn("background: #F7D34B;", response.html)
+
     async def test_background_image_request_without_url_is_blocked_before_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock()
