@@ -79,12 +79,6 @@ def apply_artifact_patch_plan_to_package(
     edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
     if not edits:
         return original_html, segmented_package, ["patch plan did not include any edits."]
-    if len(edits) > max_edits:
-        return (
-            original_html,
-            segmented_package,
-            [f"patch plan included too many edits ({len(edits)})."],
-        )
 
     working_package = deepcopy(segmented_package)
     issues: list[str] = []

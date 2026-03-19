@@ -4970,7 +4970,7 @@ def attempt_builtin_title_overlap_spacing_patch(
     if not edits:
         return "", current_package, ""
 
-    plan = {"assistantMessage": "", "edits": edits[: ARTIFACT_PATCH_MAX_EDITS]}
+    plan = {"assistantMessage": "", "edits": edits}
     patched_html, patched_package, issues = apply_artifact_patch_plan_to_package(
         html=current_html,
         artifact_package=current_package,
