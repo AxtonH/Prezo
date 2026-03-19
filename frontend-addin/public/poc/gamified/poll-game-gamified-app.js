@@ -1718,7 +1718,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
-      confirmArtifactRenderSuccess()
+      confirmArtifactRenderSuccess(message.renderHealth)
       return
     }
     if (message.type === ARTIFACT_RENDER_ERROR_MESSAGE_TYPE) {
@@ -1726,7 +1726,21 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
   }
 
-  function confirmArtifactRenderSuccess() {
+  function confirmArtifactRenderSuccess(renderHealth) {
+    const normalizedRenderHealth =
+      renderHealth && typeof renderHealth === 'object' ? renderHealth : null
+    if (
+      state.artifact.pendingRequestKind === 'edit' &&
+      shouldRejectArtifactRenderHealth(normalizedRenderHealth)
+    ) {
+      artifactBridge.clearRenderWatchdog()
+      handleArtifactRenderError({
+        message: buildArtifactRenderHealthErrorMessage(normalizedRenderHealth),
+        failureCount: 3,
+        recoverable: false
+      })
+      return
+    }
     artifactBridge.clearRenderWatchdog()
     const completedRequestKind = state.artifact.pendingRequestKind
     const successMessage = asText(state.artifact.pendingSuccessMessage)
@@ -1891,6 +1905,18 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function shouldRejectArtifactRenderHealth(renderHealth) {
+    if (!renderHealth || typeof renderHealth !== 'object') {
+      return false
+    }
+    if (Boolean(renderHealth.likelyBlank)) {
+      return true
+    }
+    if (
+      Boolean(renderHealth.likelyWashedOut) &&
+      !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest)
+    ) {
+      return true
+    }
     return false
   }
 
@@ -1921,21 +1947,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const textLength = Math.max(0, toInt(renderHealth?.textLength))
     const darkCoverCount = Math.max(0, toInt(renderHealth?.largeDarkCoverCount))
     const paleCoverCount = Math.max(0, toInt(renderHealth?.largePaleCoverCount))
-    const runtimeBackgroundVisibleCount = Math.max(
-      0,
-      toInt(renderHealth?.runtimeBackgroundVisibleCount)
-    )
-    if (
-      isArtifactBackgroundEditRequest(state.artifact.activeEditRequest) &&
-      !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest) &&
-      runtimeBackgroundVisibleCount === 0
-    ) {
-      return (
-        'The updated artifact did not attach a visible background treatment to the rendered scene. ' +
-        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
-        `Text length: ${textLength}. Visible runtime background layers: ${runtimeBackgroundVisibleCount}.`
-      )
-    }
     if (Boolean(renderHealth?.likelyWashedOut)) {
       return (
         'The updated artifact rendered a washed-out light frame instead of a meaningful scene. ' +
