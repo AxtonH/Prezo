@@ -1114,6 +1114,77 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(dense_satisfied)
         self.assertEqual(dense_missing, [])
 
+    def test_infer_requirements_adds_dynamic_title_color_requirement(self) -> None:
+        requirements = ai_api.infer_artifact_patch_satisfaction_requirements(
+            "make the title container blue"
+        )
+
+        self.assertIn("title_requested_color::blue", requirements)
+        self.assertNotIn("title_yellow", requirements)
+
+    def test_title_requested_color_requirement_checks_title_css(self) -> None:
+        blue_title_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+            "</style>",
+            "\n.poll-title { background: blue; }\n</style>",
+        )
+        red_title_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+            "</style>",
+            "\n.poll-title { background: red; }\n</style>",
+        )
+        blue_satisfied, blue_missing = ai_api.evaluate_artifact_patch_satisfaction(
+            requirements=["title_requested_color::blue"],
+            html=blue_title_html,
+        )
+        red_satisfied, red_missing = ai_api.evaluate_artifact_patch_satisfaction(
+            requirements=["title_requested_color::blue"],
+            html=red_title_html,
+        )
+
+        self.assertTrue(blue_satisfied)
+        self.assertEqual(blue_missing, [])
+        self.assertFalse(red_satisfied)
+        self.assertIn("title_requested_color::blue", red_missing)
+
+    def test_progressive_patch_accepts_partial_when_only_dense_decoration_is_missing(self) -> None:
+        patched_html, _patched_package, issues = ai_api.apply_artifact_patch_plan_progressively(
+            current_html=TITLE_OVERLAP_ARTIFACT_HTML,
+            current_package=None,
+            plan={
+                "assistantMessage": "Added top shells.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "content",
+                        "value": "\"\"",
+                    },
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "width",
+                        "value": "18px",
+                    },
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "height",
+                        "value": "8px",
+                    },
+                    {
+                        "type": "set_css_property",
+                        "selector": ".poll-title::before",
+                        "property": "background",
+                        "value": "#F7D34B",
+                    },
+                ],
+            },
+            original_edit_request="fill the top of the title with shells",
+            context={},
+        )
+
+        self.assertEqual(issues, [])
+        self.assertIn(".poll-title::before {", patched_html)
+
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(
             current_html=PATCHABLE_ARTIFACT_HTML,

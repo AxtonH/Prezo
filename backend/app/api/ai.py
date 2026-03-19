@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import colorsys
 from typing import Any
 
 import httpx
@@ -65,6 +66,35 @@ ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
 ARTIFACT_PATCH_SCHEMA_MAX_EDITS = 30
 ARTIFACT_PATCH_BATCH_SIZE = 30
 ARTIFACT_PATCH_MAX_BATCHES = 12
+TITLE_TOP_DECORATION_DENSE_MIN_BOX_SHADOW_OFFSETS = 2
+TITLE_COLOR_KEYWORDS = (
+    "red",
+    "orange",
+    "yellow",
+    "gold",
+    "amber",
+    "green",
+    "teal",
+    "cyan",
+    "blue",
+    "navy",
+    "indigo",
+    "violet",
+    "purple",
+    "magenta",
+    "pink",
+    "brown",
+    "beige",
+    "white",
+    "black",
+    "gray",
+    "grey",
+    "silver",
+    "maroon",
+    "olive",
+    "lime",
+    "turquoise",
+)
 ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID = "prezo-background-treatment-data"
 ARTIFACT_SCRIPT_RE = re.compile(
     r"<script\b[^>]*>(?P<body>[\s\S]*?)</script>", re.IGNORECASE
@@ -3287,6 +3317,7 @@ def score_artifact_patch_edit_priority(
         has_title_decoration_intent,
         has_dense_title_decoration_intent,
     ) = infer_title_decoration_intent(request_text)
+    requested_title_color_tokens = extract_title_requested_color_tokens(request_text)
     mentions_dense_pattern = bool(
         re.search(r"\b(?:more|many|extra|fill|filled|across|full|entire|whole|dense|packed|repeat|repeating|row|rows)\b", request_text)
     )
@@ -3360,12 +3391,12 @@ def score_artifact_patch_edit_priority(
             "height",
         }:
             score += 10
-        if "yellow" in request_text and (
-            property_name == "background"
-            or property_name == "border-color"
-            or property_name == "box-shadow"
-            or "#f" in value
-            or "yellow" in value
+        if requested_title_color_tokens and (
+            property_name in {"color", "background", "background-color", "border-color", "box-shadow"}
+            or any(
+                color_token_matches_css_text(value, color_token)
+                for color_token in requested_title_color_tokens
+            )
         ):
             score += 12
 
@@ -3442,6 +3473,12 @@ def apply_artifact_patch_plan_progressively(
         )
         if satisfied:
             return working_html, working_package, []
+        if should_accept_partial_patch_satisfaction_result(
+            requirements=requirements,
+            missing=missing,
+            html=working_html,
+        ):
+            return working_html, working_package, []
         missing_text = ", ".join(missing[:4]) if missing else "requested visual details"
         issue = (
             "patch batches applied safely but did not fully satisfy the request "
@@ -3496,8 +3533,8 @@ def infer_artifact_patch_satisfaction_requirements(
             requirements.append("title_top_decoration")
         if has_dense_title_decoration_intent:
             requirements.append("title_top_decoration_dense")
-        if re.search(r"\b(?:yellow|gold|amber|mustard)\b", normalized):
-            requirements.append("title_yellow")
+        for color_token in extract_title_requested_color_tokens(normalized):
+            requirements.append(f"title_requested_color::{color_token}")
     deduped: list[str] = []
     seen: set[str] = set()
     for requirement in requirements:
@@ -3581,6 +3618,219 @@ def is_title_decoration_only_request(request_text: str) -> bool:
     return False
 
 
+def extract_title_requested_color_tokens(request_text: str) -> list[str]:
+    normalized = (request_text or "").strip().lower()
+    if not normalized or not is_title_text_artifact_edit_request(normalized):
+        return []
+    tokens: list[str] = []
+    seen: set[str] = set()
+
+    def remember(token: str) -> None:
+        normalized_token = normalize_requested_color_token(token)
+        if not normalized_token or normalized_token in seen:
+            return
+        seen.add(normalized_token)
+        tokens.append(normalized_token)
+
+    for hex_color in re.findall(r"#[0-9a-f]{3,8}\b", normalized):
+        remember(hex_color)
+    for functional_color in re.findall(
+        r"\b(?:rgb|rgba|hsl|hsla)\s*\(\s*[^()]{3,80}\)",
+        normalized,
+    ):
+        remember(functional_color)
+    for color_keyword in TITLE_COLOR_KEYWORDS:
+        if re.search(rf"\b{re.escape(color_keyword)}\b", normalized):
+            remember(color_keyword)
+    return tokens[:4]
+
+
+def normalize_requested_color_token(color_token: str) -> str:
+    normalized = (color_token or "").strip().lower()
+    if not normalized:
+        return ""
+    if normalized.startswith("#"):
+        return normalized
+    if re.match(r"^(?:rgb|rgba|hsl|hsla)\s*\(", normalized):
+        return re.sub(r"\s+", "", normalized)
+    return normalized
+
+
+def map_color_keyword_to_family(color_keyword: str) -> str:
+    normalized = (color_keyword or "").strip().lower()
+    family_map = {
+        "red": "red",
+        "maroon": "red",
+        "orange": "orange",
+        "yellow": "yellow",
+        "gold": "yellow",
+        "amber": "yellow",
+        "green": "green",
+        "lime": "green",
+        "olive": "green",
+        "teal": "cyan",
+        "cyan": "cyan",
+        "turquoise": "cyan",
+        "blue": "blue",
+        "navy": "blue",
+        "indigo": "purple",
+        "violet": "purple",
+        "purple": "purple",
+        "magenta": "pink",
+        "pink": "pink",
+        "brown": "brown",
+        "beige": "brown",
+        "gray": "gray",
+        "grey": "gray",
+        "silver": "gray",
+        "black": "black",
+        "white": "white",
+    }
+    return family_map.get(normalized, "")
+
+
+def classify_rgb_color_family(red: int, green: int, blue: int) -> str:
+    red = max(0, min(255, int(red)))
+    green = max(0, min(255, int(green)))
+    blue = max(0, min(255, int(blue)))
+    max_channel = max(red, green, blue)
+    min_channel = min(red, green, blue)
+    channel_delta = max_channel - min_channel
+    if max_channel <= 28:
+        return "black"
+    if min_channel >= 235 and channel_delta <= 18:
+        return "white"
+    if channel_delta <= 20:
+        return "gray"
+
+    hue, saturation, value = colorsys.rgb_to_hsv(red / 255.0, green / 255.0, blue / 255.0)
+    hue_deg = hue * 360.0
+    if saturation < 0.12:
+        return "gray"
+    if 15 <= hue_deg < 45 and value < 0.68:
+        return "brown"
+    if hue_deg < 15 or hue_deg >= 345:
+        return "red"
+    if hue_deg < 45:
+        return "orange"
+    if hue_deg < 70:
+        return "yellow"
+    if hue_deg < 170:
+        return "green"
+    if hue_deg < 200:
+        return "cyan"
+    if hue_deg < 255:
+        return "blue"
+    if hue_deg < 300:
+        return "purple"
+    return "pink"
+
+
+def parse_css_rgb_component(raw_value: str) -> int | None:
+    value = (raw_value or "").strip().lower()
+    if not value:
+        return None
+    if value.endswith("%"):
+        try:
+            percent = float(value[:-1].strip())
+        except ValueError:
+            return None
+        percent = max(0.0, min(100.0, percent))
+        return int(round((percent / 100.0) * 255.0))
+    try:
+        channel = float(value)
+    except ValueError:
+        return None
+    channel = max(0.0, min(255.0, channel))
+    return int(round(channel))
+
+
+def extract_css_rgb_triplets(css_text: str) -> list[tuple[int, int, int]]:
+    rgb_values: list[tuple[int, int, int]] = []
+    for hex_color in re.findall(r"#[0-9a-f]{3,8}\b", (css_text or "").lower()):
+        if len(hex_color) == 4:
+            red = int(hex_color[1] * 2, 16)
+            green = int(hex_color[2] * 2, 16)
+            blue = int(hex_color[3] * 2, 16)
+            rgb_values.append((red, green, blue))
+            continue
+        if len(hex_color) >= 7:
+            red = int(hex_color[1:3], 16)
+            green = int(hex_color[3:5], 16)
+            blue = int(hex_color[5:7], 16)
+            rgb_values.append((red, green, blue))
+    for rgb_function in re.findall(
+        r"\brgba?\(\s*([^,]+),\s*([^,]+),\s*([^) ,]+)",
+        (css_text or "").lower(),
+    ):
+        red = parse_css_rgb_component(rgb_function[0])
+        green = parse_css_rgb_component(rgb_function[1])
+        blue = parse_css_rgb_component(rgb_function[2])
+        if red is None or green is None or blue is None:
+            continue
+        rgb_values.append((red, green, blue))
+    return rgb_values
+
+
+def color_token_matches_css_text(css_text: str, color_token: str) -> bool:
+    normalized_css_text = (css_text or "").strip().lower()
+    normalized_color = normalize_requested_color_token(color_token)
+    if not normalized_css_text or not normalized_color:
+        return False
+    if normalized_color.startswith("#"):
+        return normalized_color in normalized_css_text
+    if normalized_color.startswith(("rgb(", "rgba(", "hsl(", "hsla(")):
+        compact_css = re.sub(r"\s+", "", normalized_css_text)
+        return normalized_color in compact_css
+    if re.search(rf"\b{re.escape(normalized_color)}\b", normalized_css_text):
+        return True
+    color_family = map_color_keyword_to_family(normalized_color)
+    if not color_family:
+        return False
+    for red, green, blue in extract_css_rgb_triplets(normalized_css_text):
+        if classify_rgb_color_family(red, green, blue) == color_family:
+            return True
+    return False
+
+
+def has_requested_title_color_in_css(
+    css_text: str, title_selectors: list[str], requested_color: str
+) -> bool:
+    selectors_to_check: list[str] = []
+    for selector in title_selectors:
+        selectors_to_check.append(selector)
+        selectors_to_check.append(f"{selector}::before")
+        selectors_to_check.append(f"{selector}::after")
+    for selector in selectors_to_check:
+        for body in extract_css_rule_bodies_for_selector(css_text, selector):
+            if color_token_matches_css_text(body, requested_color):
+                return True
+    return color_token_matches_css_text(css_text, requested_color)
+
+
+def should_accept_partial_patch_satisfaction_result(
+    *, requirements: list[str], missing: list[str], html: str
+) -> bool:
+    if not missing:
+        return True
+    missing_set = {item.strip() for item in missing if item and item.strip()}
+    if not missing_set:
+        return True
+    allowed_soft_missing = {"title_top_decoration_dense", "title_studs_dense"}
+    if not missing_set.issubset(allowed_soft_missing):
+        return False
+    top_decoration_ok, _top_decoration_missing = evaluate_artifact_patch_satisfaction(
+        requirements=["title_top_decoration"],
+        html=html,
+    )
+    if not top_decoration_ok:
+        return False
+    return bool(
+        {"title_top_decoration_dense", "title_studs_dense"}
+        & set(requirements)
+    )
+
+
 def evaluate_artifact_patch_satisfaction(
     *, requirements: list[str], html: str
 ) -> tuple[bool, list[str]]:
@@ -3660,20 +3910,26 @@ def evaluate_artifact_patch_satisfaction(
                 missing.append(requirement)
             continue
         if requirement == "title_yellow":
-            yellow_found = False
-            candidate_selectors: list[str] = []
-            for selector in primary_title_selectors:
-                candidate_selectors.append(selector)
-                candidate_selectors.append(f"{selector}::before")
-                candidate_selectors.append(f"{selector}::after")
-            for selector in candidate_selectors:
-                for body in extract_css_rule_bodies_for_selector(css_text, selector):
-                    if contains_yellow_like_color(body):
-                        yellow_found = True
-                        break
-                if yellow_found:
-                    break
-            if not yellow_found and not contains_yellow_like_color(css_text):
+            if not has_requested_title_color_in_css(
+                css_text,
+                primary_title_selectors,
+                "yellow",
+            ):
+                missing.append(requirement)
+            continue
+        if requirement.startswith("title_requested_color::"):
+            requested_color = (
+                requirement.split("::", 1)[1].strip()
+                if "::" in requirement
+                else ""
+            )
+            if not requested_color:
+                continue
+            if not has_requested_title_color_in_css(
+                css_text,
+                primary_title_selectors,
+                requested_color,
+            ):
                 missing.append(requirement)
             continue
     return len(missing) == 0, missing
@@ -3820,7 +4076,10 @@ def has_dense_repeating_decoration_pattern_in_css_body(css_body: str) -> bool:
     lowered = (css_body or "").lower()
     box_shadow_match = re.search(r"\bbox-shadow\s*:\s*([^;]+);", lowered)
     if box_shadow_match:
-        if box_shadow_match.group(1).count(",") >= 4:
+        if (
+            box_shadow_match.group(1).count(",")
+            >= TITLE_TOP_DECORATION_DENSE_MIN_BOX_SHADOW_OFFSETS
+        ):
             return True
     if "repeating-radial-gradient(" in lowered:
         return True
@@ -3854,19 +4113,6 @@ def is_primary_title_selector(selector: str) -> bool:
     ):
         return False
     return True
-
-
-def contains_yellow_like_color(text: str) -> bool:
-    normalized = (text or "").lower()
-    if re.search(r"\b(?:yellow|gold|amber|mustard)\b", normalized):
-        return True
-    for hex_color in re.findall(r"#[0-9a-f]{6}", normalized):
-        red = int(hex_color[1:3], 16)
-        green = int(hex_color[3:5], 16)
-        blue = int(hex_color[5:7], 16)
-        if red >= 150 and green >= 120 and blue <= 140 and (red + green) >= (blue * 2):
-            return True
-    return False
 
 
 def dedupe_patch_issue_list(issues: list[str]) -> list[str]:
