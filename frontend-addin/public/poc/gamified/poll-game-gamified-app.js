@@ -1718,10 +1718,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
-      if (shouldRejectArtifactRenderHealth(message?.renderHealth)) {
-        restoreArtifactAfterFailedEdit(buildArtifactRenderHealthErrorMessage(message?.renderHealth))
-        return
-      }
       confirmArtifactRenderSuccess()
       return
     }
