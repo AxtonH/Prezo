@@ -86,14 +86,14 @@ def apply_artifact_patch_plan_to_package(
     for index, raw_edit in enumerate(edits):
         if not isinstance(raw_edit, dict):
             issues.append(f"patch edit #{index + 1} is not an object.")
-            break
+            continue
         edit = dict(raw_edit)
         edit_type = (
             edit.get("type").strip().lower() if isinstance(edit.get("type"), str) else ""
         )
         if edit_type not in SUPPORTED_PATCH_EDIT_TYPES:
             issues.append(f"patch edit #{index + 1} used unsupported type `{edit_type}`.")
-            break
+            continue
 
         if edit_type == "set_css_property":
             selector = edit.get("selector")
@@ -104,13 +104,13 @@ def apply_artifact_patch_plan_to_package(
                 for item in (selector, property_name, value)
             ):
                 issues.append(f"patch edit #{index + 1} is missing selector/property/value.")
-                break
+                continue
             target_file = normalize_patch_target_file(edit.get("file"), edit_type=edit_type)
             if target_file != ARTIFACT_PACKAGE_STYLES_FILE:
                 issues.append(
                     f"patch edit #{index + 1} set_css_property only supports `{ARTIFACT_PACKAGE_STYLES_FILE}`."
                 )
-                break
+                continue
             css_text = get_artifact_package_file_content(working_package, target_file)
             updated_css, changed, status = set_css_property_in_css_tree(
                 css_text,
@@ -122,7 +122,7 @@ def apply_artifact_patch_plan_to_package(
                 issues.append(
                     f"patch edit #{index + 1} could not apply CSS selector `{selector.strip()}` in `{target_file}`."
                 )
-                break
+                continue
             if changed:
                 working_package = upsert_artifact_package_file_content(
                     working_package,
@@ -133,17 +133,20 @@ def apply_artifact_patch_plan_to_package(
                 any_change = True
             continue
 
-    if issues:
-        return original_html, segmented_package, issues
-
     patched_html = materialize_artifact_html_from_package(
         working_package,
         fallback_html=original_html,
     ).strip()
-    if not any_change or not patched_html or patched_html == original_html:
+    if any_change and patched_html and patched_html != original_html:
+        return patched_html, working_package, []
+
+    if issues:
+        return original_html, segmented_package, issues
+
+    if not patched_html or patched_html == original_html:
         return original_html, segmented_package, ["patch plan did not change the artifact html."]
 
-    return patched_html, working_package, []
+    return original_html, segmented_package, ["patch plan did not change the artifact html."]
 
 
 def apply_artifact_patch_plan(

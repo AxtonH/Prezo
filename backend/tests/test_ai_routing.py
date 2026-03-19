@@ -823,6 +823,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("unsupported type `replace_between`", issues[0])
         self.assertIn("#track-bg", patched_html)
 
+    def test_apply_artifact_patch_plan_tolerates_invalid_edits_when_valid_edits_exist(self) -> None:
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Mixed plan.",
+                "edits": [
+                    {
+                        "type": "replace_between",
+                        "start": "<style>",
+                        "end": "</style>",
+                        "content": "/* unsupported */",
+                    },
+                    {
+                        "type": "set_css_property",
+                        "selector": "#track-bg",
+                        "property": "border-radius",
+                        "value": "20px",
+                    },
+                ],
+            },
+        )
+
+        self.assertEqual(issues, [])
+        self.assertIn("border-radius: 20px;", patched_html)
+        self.assertIn(".car", patched_html)
+
     def test_extract_artifact_background_selector_candidates_prefers_real_selectors(self) -> None:
         selectors = ai_api.extract_artifact_background_selector_candidates(
             PATCHABLE_ARTIFACT_HTML
