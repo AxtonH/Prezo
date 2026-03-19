@@ -854,6 +854,13 @@ async def create_poll_game_artifact_build(
             patch_model = resolve_gemini_artifact_edit_model()
             current_html = get_artifact_patch_source_html(artifact_context)
             current_package = get_artifact_patch_source_package(artifact_context)
+            if current_package:
+                materialized_current_html = materialize_artifact_html_from_package(
+                    current_package,
+                    fallback_html=current_html,
+                ).strip()
+                if materialized_current_html:
+                    current_html = materialized_current_html
             try:
                 remaining_budget_seconds = max(0.0, deadline - time.monotonic())
                 patch_timeout_seconds = min(
@@ -3500,18 +3507,18 @@ def evaluate_artifact_completion_requirements(
             after_html=after_html,
             selector_matcher=is_poll_scale_selector,
         )
+        changed_unit_scale_selectors = collect_changed_scale_selectors(
+            before_html=before_html,
+            after_html=after_html,
+            selector_matcher=is_poll_unit_scale_selector,
+        )
         if (
             "poll_visual_scale" in scale_requirements
             and not changed_poll_scale_selectors
         ):
             missing.append("poll_visual_scale")
-        if "poll_unit_scale" in scale_requirements:
-            has_unit_selector_change = any(
-                is_poll_unit_scale_selector(selector)
-                for selector in changed_poll_scale_selectors
-            )
-            if not has_unit_selector_change and len(changed_poll_scale_selectors) < 2:
-                missing.append("poll_unit_scale")
+        if "poll_unit_scale" in scale_requirements and not changed_unit_scale_selectors:
+            missing.append("poll_unit_scale")
 
     deduped: list[str] = []
     seen: set[str] = set()
