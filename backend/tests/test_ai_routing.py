@@ -1051,18 +1051,68 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(".poll-title::before {", patched_html)
         self.assertIn("background: #F7D34B;", patched_html)
 
-    def test_title_studs_requirement_requires_sized_title_pseudo_element(self) -> None:
-        unsized_studs_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+    def test_title_top_decoration_requirement_requires_sized_title_pseudo_element(self) -> None:
+        unsized_decoration_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
             "</style>",
             "\n.poll-title::before {\n  content: \"\";\n  background: #F7D34B;\n}\n</style>",
         )
         satisfied, missing = ai_api.evaluate_artifact_patch_satisfaction(
-            requirements=["title_studs"],
-            html=unsized_studs_html,
+            requirements=["title_top_decoration"],
+            html=unsized_decoration_html,
         )
 
         self.assertFalse(satisfied)
-        self.assertIn("title_studs", missing)
+        self.assertIn("title_top_decoration", missing)
+
+    def test_infer_requirements_adds_dense_title_decoration_for_shells_request(self) -> None:
+        requirements = ai_api.infer_artifact_patch_satisfaction_requirements(
+            "for the title container, add more shells till the top is fully filled"
+        )
+
+        self.assertIn("title_top_decoration", requirements)
+        self.assertIn("title_top_decoration_dense", requirements)
+        self.assertNotIn("title_studs", requirements)
+
+    def test_title_top_decoration_dense_requirement_needs_dense_pattern(self) -> None:
+        sparse_decoration_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+            "</style>",
+            (
+                "\n.poll-title::before {\n"
+                "  content: \"\";\n"
+                "  width: 18px;\n"
+                "  height: 8px;\n"
+                "  background: #F7D34B;\n"
+                "  box-shadow: 24px 0 0 #F7D34B;\n"
+                "}\n"
+                "</style>"
+            ),
+        )
+        dense_decoration_html = TITLE_OVERLAP_ARTIFACT_HTML.replace(
+            "</style>",
+            (
+                "\n.poll-title::before {\n"
+                "  content: \"\";\n"
+                "  width: 18px;\n"
+                "  height: 8px;\n"
+                "  background: #F7D34B;\n"
+                "  box-shadow: 24px 0 0 #F7D34B, 48px 0 0 #F7D34B, 72px 0 0 #F7D34B, 96px 0 0 #F7D34B, 120px 0 0 #F7D34B;\n"
+                "}\n"
+                "</style>"
+            ),
+        )
+        sparse_satisfied, sparse_missing = ai_api.evaluate_artifact_patch_satisfaction(
+            requirements=["title_top_decoration_dense"],
+            html=sparse_decoration_html,
+        )
+        dense_satisfied, dense_missing = ai_api.evaluate_artifact_patch_satisfaction(
+            requirements=["title_top_decoration_dense"],
+            html=dense_decoration_html,
+        )
+
+        self.assertFalse(sparse_satisfied)
+        self.assertIn("title_top_decoration_dense", sparse_missing)
+        self.assertTrue(dense_satisfied)
+        self.assertEqual(dense_missing, [])
 
     def test_attempt_builtin_cityscape_background_patch_preserves_cars(self) -> None:
         patched_html, assistant_message = ai_api.attempt_builtin_cityscape_background_patch(

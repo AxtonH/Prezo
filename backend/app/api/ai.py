@@ -60,10 +60,10 @@ ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT = 12000
 ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
-ARTIFACT_PATCH_MAX_EDITS = 8
+ARTIFACT_PATCH_MAX_EDITS = 30
 ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
-ARTIFACT_PATCH_SCHEMA_MAX_EDITS = 24
-ARTIFACT_PATCH_BATCH_SIZE = 6
+ARTIFACT_PATCH_SCHEMA_MAX_EDITS = 30
+ARTIFACT_PATCH_BATCH_SIZE = 30
 ARTIFACT_PATCH_MAX_BATCHES = 12
 ARTIFACT_BACKGROUND_TREATMENT_SCRIPT_ID = "prezo-background-treatment-data"
 ARTIFACT_SCRIPT_RE = re.compile(
@@ -334,7 +334,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Allowed PatchEdit objects:",
         '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
         "Rules:",
-        "- Prefer 1-8 edits for focused requests. If the request needs richer styling, you may emit more edits (up to 24), but stay concise.",
+        "- Prefer 1-12 edits for focused requests. If the request needs richer styling, you may emit more edits (up to 30), but stay concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
@@ -3283,7 +3283,13 @@ def score_artifact_patch_edit_priority(
     property_name = str(edit.get("property") or "").strip().lower()
     value = str(edit.get("value") or "").strip().lower()
     request_text = (original_edit_request or "").strip().lower()
-    mentions_lego_studs = bool(re.search(r"\b(?:lego|stud|studs)\b", request_text))
+    (
+        has_title_decoration_intent,
+        has_dense_title_decoration_intent,
+    ) = infer_title_decoration_intent(request_text)
+    mentions_dense_pattern = bool(
+        re.search(r"\b(?:more|many|extra|fill|filled|across|full|entire|whole|dense|packed|repeat|repeating|row|rows)\b", request_text)
+    )
     score = 0
 
     if is_title_request:
@@ -3291,11 +3297,26 @@ def score_artifact_patch_edit_priority(
             score += 45
         if "::before" in selector or "::after" in selector:
             score += 26
-            if mentions_lego_studs:
+            if has_title_decoration_intent:
                 score += 36
                 if property_name in {"content", "background", "border-radius", "box-shadow"}:
                     score += 18
-        if re.search(r"\b(?:container|box|badge|lego|stud)\b", request_text, re.IGNORECASE):
+                if has_dense_title_decoration_intent and property_name in {
+                    "box-shadow",
+                    "background",
+                    "background-color",
+                    "background-image",
+                    "background-size",
+                    "background-repeat",
+                    "width",
+                    "height",
+                }:
+                    score += 24
+        if re.search(
+            r"\b(?:container|box|badge|pill|frame|card|capsule|panel|brick)\b",
+            request_text,
+            re.IGNORECASE,
+        ):
             if property_name in {
                 "background",
                 "border",
@@ -3314,6 +3335,31 @@ def score_artifact_patch_edit_priority(
                 "z-index",
             }:
                 score += 20
+        if has_title_decoration_intent and property_name in {
+            "content",
+            "box-shadow",
+            "background",
+            "background-color",
+            "background-image",
+            "background-size",
+            "background-repeat",
+            "top",
+            "left",
+            "right",
+            "bottom",
+            "transform",
+            "opacity",
+        }:
+            score += 14
+        if has_title_decoration_intent and mentions_dense_pattern and property_name in {
+            "box-shadow",
+            "background-image",
+            "background-size",
+            "background-repeat",
+            "width",
+            "height",
+        }:
+            score += 10
         if "yellow" in request_text and (
             property_name == "background"
             or property_name == "border-color"
@@ -3434,17 +3480,22 @@ def infer_artifact_patch_satisfaction_requirements(
         requirements.append("title_spacing")
     if is_title_text_artifact_edit_request(normalized):
         mentions_container = bool(
-            re.search(r"\b(?:container|box|badge|pill|frame|card|lego)\b", normalized)
+            re.search(
+                r"\b(?:container|box|badge|pill|frame|card|capsule|panel|brick|lego)\b",
+                normalized,
+            )
         )
-        mentions_studs = bool(re.search(r"\b(?:stud|studs|lego)\b", normalized))
-        explicit_container_wrap = bool(
-            re.search(r"\b(?:put|place|wrap|enclose|encase)\b", normalized)
-        )
-        add_studs_only = bool(re.search(r"\badd\s+studs?\b", normalized))
-        if mentions_container and (explicit_container_wrap or not add_studs_only):
+        explicit_container_wrap = request_explicitly_wraps_title_in_container(normalized)
+        decoration_only_request = is_title_decoration_only_request(normalized)
+        if mentions_container and (explicit_container_wrap or not decoration_only_request):
             requirements.append("title_container")
-        if mentions_studs:
-            requirements.append("title_studs")
+        has_title_decoration_intent, has_dense_title_decoration_intent = (
+            infer_title_decoration_intent(normalized)
+        )
+        if has_title_decoration_intent:
+            requirements.append("title_top_decoration")
+        if has_dense_title_decoration_intent:
+            requirements.append("title_top_decoration_dense")
         if re.search(r"\b(?:yellow|gold|amber|mustard)\b", normalized):
             requirements.append("title_yellow")
     deduped: list[str] = []
@@ -3455,6 +3506,79 @@ def infer_artifact_patch_satisfaction_requirements(
         seen.add(requirement)
         deduped.append(requirement)
     return deduped
+
+
+def request_explicitly_wraps_title_in_container(request_text: str) -> bool:
+    normalized = (request_text or "").strip().lower()
+    if not normalized:
+        return False
+    if re.search(
+        r"\b(?:put|place|wrap|enclose|encase)\b[\s\S]{0,60}\b(?:title|headline|question)\b[\s\S]{0,40}\b(?:in|inside|within)\b",
+        normalized,
+    ):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:title|headline|question)\b[\s\S]{0,40}\b(?:in|inside|within)\b[\s\S]{0,50}\b(?:container|box|badge|pill|frame|card|capsule|panel|brick|lego)\b",
+            normalized,
+        )
+    )
+
+
+def infer_title_decoration_intent(request_text: str) -> tuple[bool, bool]:
+    normalized = (request_text or "").strip().lower()
+    if not normalized or not is_title_text_artifact_edit_request(normalized):
+        return (False, False)
+    dense_terms = bool(
+        re.search(
+            r"\b(?:more|many|extra|fill|filled|across|full|entire|whole|dense|packed|repeat|repeating|row|rows)\b",
+            normalized,
+        )
+    )
+    top_terms = bool(re.search(r"\b(?:top|upper|above|header)\b", normalized))
+    direct_decoration_terms = bool(
+        re.search(
+            r"\b(?:stud|studs|decorate|decorative|embellish|ornament|ornaments|motif|motifs|pattern|patterns|icon|icons|symbol|symbols)\b",
+            normalized,
+        )
+    )
+    decorative_object_phrase = re.search(
+        r"\b(?:add|put|place|overlay)\s+(?P<object>[a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*){0,3})\s+(?:on|onto|to|across|along|over)\b",
+        normalized,
+    )
+    style_terms = re.compile(
+        r"\b(?:padding|margin|spacing|gap|radius|border|color|colour|font|size|width|height|alignment|align|position|z-index|background)\b"
+    )
+    object_is_style_term = bool(
+        decorative_object_phrase and style_terms.search(decorative_object_phrase.group("object") or "")
+    )
+    has_object_decoration_phrase = bool(decorative_object_phrase) and not object_is_style_term
+    has_title_decoration_intent = (
+        direct_decoration_terms
+        or has_object_decoration_phrase
+        or (top_terms and dense_terms)
+    )
+    has_dense_title_decoration_intent = has_title_decoration_intent and (
+        dense_terms or (top_terms and "fill" in normalized)
+    )
+    return (has_title_decoration_intent, has_dense_title_decoration_intent)
+
+
+def is_title_decoration_only_request(request_text: str) -> bool:
+    normalized = (request_text or "").strip().lower()
+    if not normalized or not is_title_text_artifact_edit_request(normalized):
+        return False
+    has_title_decoration_intent, _dense = infer_title_decoration_intent(normalized)
+    if not has_title_decoration_intent:
+        return False
+    if request_explicitly_wraps_title_in_container(normalized):
+        return False
+    if re.search(
+        r"\b(?:add|put|place|overlay|decorate|decorative|embellish)\b",
+        normalized,
+    ):
+        return True
+    return False
 
 
 def evaluate_artifact_patch_satisfaction(
@@ -3523,8 +3647,16 @@ def evaluate_artifact_patch_satisfaction(
             if not has_container:
                 missing.append(requirement)
             continue
-        if requirement == "title_studs":
-            if not has_title_stud_selector_rule(css_text, primary_title_selectors):
+        if requirement in {"title_top_decoration", "title_studs"}:
+            if not has_title_top_decoration_selector_rule(
+                css_text, primary_title_selectors
+            ):
+                missing.append(requirement)
+            continue
+        if requirement in {"title_top_decoration_dense", "title_studs_dense"}:
+            if not has_dense_title_top_decoration_selector_rule(
+                css_text, primary_title_selectors
+            ):
                 missing.append(requirement)
             continue
         if requirement == "title_yellow":
@@ -3603,7 +3735,9 @@ def has_css_property_value_for_selector(
     )
 
 
-def has_title_stud_selector_rule(css_text: str, title_selectors: list[str]) -> bool:
+def has_title_top_decoration_selector_rule(
+    css_text: str, title_selectors: list[str]
+) -> bool:
     normalized_css = css_text or ""
     for selector in title_selectors:
         for pseudo_selector in (f"{selector}::before", f"{selector}::after"):
@@ -3649,6 +3783,57 @@ def has_title_stud_selector_rule(css_text: str, title_selectors: list[str]) -> b
                 )
                 if has_content and has_stud_fill and has_size:
                     return True
+    return False
+
+
+def has_dense_title_top_decoration_selector_rule(
+    css_text: str, title_selectors: list[str]
+) -> bool:
+    normalized_css = css_text or ""
+    for selector in title_selectors:
+        for pseudo_selector in (f"{selector}::before", f"{selector}::after"):
+            for body in extract_css_rule_bodies_for_selector(normalized_css, pseudo_selector):
+                if not _is_valid_title_stud_rule_body(body):
+                    continue
+                if has_dense_repeating_decoration_pattern_in_css_body(body):
+                    return True
+    return False
+
+
+def _is_valid_title_stud_rule_body(css_body: str) -> bool:
+    lowered = (css_body or "").lower()
+    has_content = bool(re.search(r"\bcontent\s*:", lowered))
+    has_fill = bool(
+        re.search(
+            r"\b(?:background|background-color|box-shadow|border)\s*:",
+            lowered,
+        )
+    )
+    has_size = bool(
+        re.search(r"\b(?:width|inline-size)\s*:", lowered)
+        and re.search(r"\b(?:height|block-size)\s*:", lowered)
+    )
+    return has_content and has_fill and has_size
+
+
+def has_dense_repeating_decoration_pattern_in_css_body(css_body: str) -> bool:
+    lowered = (css_body or "").lower()
+    box_shadow_match = re.search(r"\bbox-shadow\s*:\s*([^;]+);", lowered)
+    if box_shadow_match:
+        if box_shadow_match.group(1).count(",") >= 4:
+            return True
+    if "repeating-radial-gradient(" in lowered:
+        return True
+    if len(re.findall(r"radial-gradient\(", lowered)) >= 4:
+        return True
+    for background_value in re.findall(
+        r"\bbackground(?:-image)?\s*:\s*([^;]+);", lowered
+    ):
+        if (
+            "radial-gradient(" in background_value
+            and ("repeat-x" in background_value or "space" in background_value)
+        ):
+            return True
     return False
 
 
