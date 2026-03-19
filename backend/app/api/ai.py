@@ -1140,15 +1140,6 @@ async def attempt_artifact_patch_edit(
             "This edit needs a direct image URL. Provide the exact image URL and the editor can swap only the requested background image.",
             ["the requested edit needs a direct external image URL."],
         )
-    orientation_html, orientation_package, orientation_message = (
-        attempt_builtin_layout_orientation_patch(
-            current_html=current_html,
-            current_package=current_package,
-            original_edit_request=original_edit_request,
-        )
-    )
-    if orientation_html:
-        return orientation_html, orientation_package, orientation_message, []
     title_overlap_html, title_overlap_package, title_overlap_message = (
         attempt_builtin_title_overlap_spacing_patch(
             current_html=current_html,
