@@ -4,7 +4,7 @@ import json
 import re
 import time
 import colorsys
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
@@ -135,6 +135,42 @@ ARTIFACT_LAYOUT_ORIENTATION_EDIT_REQUEST_RE = re.compile(
     r"\b(?:align|alignment|horizontal|vertical|column|columns|stack|stacked|orientation|left-align|right-align|center-align|centre-align|side by side|top to bottom|flip to vertical|flip to horizontal)\b",
     re.IGNORECASE,
 )
+ARTIFACT_SCALE_INTENT_RE = re.compile(
+    r"\b(?:increase|enlarge|larger|bigger|grow|scale|expand|boost|widen|heighten|upsize)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_SCALE_AMOUNT_RE = re.compile(r"\b\d{1,3}\s*%\b")
+ARTIFACT_SCALE_POLL_TARGET_RE = re.compile(
+    r"\b(?:poll|option|options|bar|bars|column|columns|row|rows|lane|lanes|vote|votes)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_SCALE_UNIT_TARGET_RE = re.compile(
+    r"\b(?:lego|brick|bricks|stud|studs|block|blocks|tile|tiles|shell|shells|chip|chips|piece|pieces)\b",
+    re.IGNORECASE,
+)
+ARTIFACT_SCALE_INSIDE_POLL_RE = re.compile(
+    r"\b(?:inside|within|in)\s+(?:the\s+)?poll\b", re.IGNORECASE
+)
+ARTIFACT_SCALE_CSS_PROPERTIES = {
+    "width",
+    "height",
+    "min-width",
+    "min-height",
+    "max-width",
+    "max-height",
+    "transform",
+    "scale",
+    "flex-basis",
+    "padding",
+    "padding-top",
+    "padding-right",
+    "padding-bottom",
+    "padding-left",
+    "font-size",
+    "gap",
+    "row-gap",
+    "column-gap",
+}
 ARTIFACT_LIVE_STATE_TOKENS = (
     "prezoSetPollRenderer",
     "prezoRenderPoll",
@@ -782,9 +818,14 @@ async def create_poll_game_edit_plan(
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
 ) -> PollGameArtifactBuildResponse:
+    request_context = (
+        json.loads(json.dumps(payload.context, ensure_ascii=False))
+        if isinstance(payload.context, dict)
+        else {}
+    )
     artifact_context = (
-        payload.context.get("artifact")
-        if isinstance(payload.context.get("artifact"), dict)
+        request_context.get("artifact")
+        if isinstance(request_context.get("artifact"), dict)
         else {}
     )
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
@@ -793,7 +834,7 @@ async def create_poll_game_artifact_build(
         artifact_context,
         payload.prompt,
     )
-    model_context = prepare_artifact_context_for_model(payload.context, request_mode)
+    model_context = prepare_artifact_context_for_model(request_context, request_mode)
     deadline = time.monotonic() + max(
         settings.gemini_artifact_total_timeout_seconds,
         ARTIFACT_MIN_INITIAL_CALL_TIMEOUT_SECONDS,
@@ -802,6 +843,7 @@ async def create_poll_game_artifact_build(
     gemini_api_key = (settings.gemini_api_key or "").strip()
     can_fallback_to_anthropic_edit = request_mode == "edit" and bool(anthropic_api_key)
     patch_failure_reasons: list[str] = []
+    force_full_generation_after_patch = False
     if should_attempt_artifact_patch_edit(
         request_mode,
         artifact_context,
@@ -827,7 +869,7 @@ async def create_poll_game_artifact_build(
                     api_key=patch_api_key,
                     model=patch_model,
                     original_edit_request=original_edit_request,
-                    context=payload.context,
+                    context=request_context,
                     current_html=current_html,
                     current_package=current_package,
                     timeout_seconds=patch_timeout_seconds,
@@ -836,7 +878,7 @@ async def create_poll_game_artifact_build(
                 )
                 if patch_html:
                     patch_html = restore_artifact_live_hooks_if_missing(
-                        patch_html, payload.context
+                        patch_html, request_context
                     )
                     patch_html = attempt_artifact_structural_autorepair(patch_html)
                     patch_package = build_segmented_artifact_package(
@@ -845,12 +887,41 @@ async def create_poll_game_artifact_build(
                     )
                     patch_validation_issues = validate_poll_game_artifact_html(patch_html)
                     if not patch_validation_issues:
-                        return PollGameArtifactBuildResponse(
-                            html=patch_html,
-                            artifact_package=patch_package,
-                            model=patch_model,
-                            assistantMessage=patch_assistant_message
-                            or "Artifact updated with a targeted patch.",
+                        completion_requirements = infer_artifact_completion_requirements(
+                            original_edit_request
+                        )
+                        completion_satisfied, missing_requirements = (
+                            evaluate_artifact_completion_requirements(
+                                requirements=completion_requirements,
+                                before_html=current_html,
+                                after_html=patch_html,
+                            )
+                        )
+                        if completion_satisfied:
+                            return PollGameArtifactBuildResponse(
+                                html=patch_html,
+                                artifact_package=patch_package,
+                                model=patch_model,
+                                assistantMessage=patch_assistant_message
+                                or "Artifact updated with a targeted patch.",
+                            )
+                        force_full_generation_after_patch = True
+                        missing_text = ", ".join(
+                            item for item in missing_requirements[:3] if item
+                        ) or "unspecified requirements"
+                        patch_failure_reasons.append(
+                            "patch updated artifact but missed part of the requested change "
+                            f"({missing_text}); running a completion pass."
+                        )
+                        request_context = build_artifact_completion_followup_context(
+                            context=request_context,
+                            patched_html=patch_html,
+                            patched_package=patch_package,
+                            original_edit_request=original_edit_request,
+                            missing_requirements=missing_requirements,
+                        )
+                        model_context = prepare_artifact_context_for_model(
+                            request_context, request_mode
                         )
                     patch_failure_reasons.extend(patch_validation_issues)
                 patch_failure_reasons.extend(patch_issues)
@@ -860,6 +931,7 @@ async def create_poll_game_artifact_build(
                 request_mode == "edit"
                 and anthropic_api_key
                 and patch_failure_reasons
+                and not force_full_generation_after_patch
             ):
                 fallback_patch_model = resolve_anthropic_artifact_build_model()
                 try:
@@ -877,7 +949,7 @@ async def create_poll_game_artifact_build(
                             api_key=anthropic_api_key,
                             model=fallback_patch_model,
                             original_edit_request=original_edit_request,
-                            context=payload.context,
+                            context=request_context,
                             current_html=current_html,
                             current_package=current_package,
                             timeout_seconds=patch_timeout_seconds,
@@ -887,7 +959,7 @@ async def create_poll_game_artifact_build(
                     )
                     if fallback_html:
                         fallback_html = restore_artifact_live_hooks_if_missing(
-                            fallback_html, payload.context
+                            fallback_html, request_context
                         )
                         fallback_html = attempt_artifact_structural_autorepair(
                             fallback_html
@@ -900,12 +972,42 @@ async def create_poll_game_artifact_build(
                             fallback_html
                         )
                         if not fallback_validation_issues:
-                            return PollGameArtifactBuildResponse(
-                                html=fallback_html,
-                                artifact_package=fallback_package,
-                                model=fallback_patch_model,
-                                assistantMessage=fallback_assistant_message
-                                or "Artifact updated with a targeted patch.",
+                            fallback_completion_requirements = (
+                                infer_artifact_completion_requirements(
+                                    original_edit_request
+                                )
+                            )
+                            fallback_completion_satisfied, fallback_missing = (
+                                evaluate_artifact_completion_requirements(
+                                    requirements=fallback_completion_requirements,
+                                    before_html=current_html,
+                                    after_html=fallback_html,
+                                )
+                            )
+                            if fallback_completion_satisfied:
+                                return PollGameArtifactBuildResponse(
+                                    html=fallback_html,
+                                    artifact_package=fallback_package,
+                                    model=fallback_patch_model,
+                                    assistantMessage=fallback_assistant_message
+                                    or "Artifact updated with a targeted patch.",
+                                )
+                            missing_text = ", ".join(
+                                item for item in fallback_missing[:3] if item
+                            ) or "unspecified requirements"
+                            patch_failure_reasons.append(
+                                "claude patch fallback updated artifact but missed part of the requested change "
+                                f"({missing_text}); running a completion pass."
+                            )
+                            request_context = build_artifact_completion_followup_context(
+                                context=request_context,
+                                patched_html=fallback_html,
+                                patched_package=fallback_package,
+                                original_edit_request=original_edit_request,
+                                missing_requirements=fallback_missing,
+                            )
+                            model_context = prepare_artifact_context_for_model(
+                                request_context, request_mode
                             )
                         patch_failure_reasons.extend(fallback_validation_issues)
                     patch_failure_reasons.extend(fallback_issues)
@@ -1004,7 +1106,7 @@ async def create_poll_game_artifact_build(
             request_mode=request_mode,
             original_prompt=original_edit_request or payload.prompt,
             prepared_context=model_context,
-            request_context=payload.context,
+            request_context=request_context,
             deadline=deadline,
             initial_model=model,
         )
@@ -1047,7 +1149,7 @@ async def create_poll_game_artifact_build(
                 request_mode=request_mode,
                 original_prompt=original_edit_request or payload.prompt,
                 prepared_context=model_context,
-                request_context=payload.context,
+                request_context=request_context,
                 deadline=deadline,
                 initial_model=fallback_model,
             )
@@ -3332,6 +3434,174 @@ def chunk_artifact_patch_plan_edits(
 ) -> list[list[dict[str, Any]]]:
     size = max(1, batch_size)
     return [edits[index : index + size] for index in range(0, len(edits), size)]
+
+
+def infer_artifact_completion_requirements(original_edit_request: str) -> list[str]:
+    normalized = (original_edit_request or "").strip().lower()
+    requirements = infer_artifact_patch_satisfaction_requirements(original_edit_request)
+    if not normalized:
+        return requirements
+    has_scale_intent = bool(
+        ARTIFACT_SCALE_INTENT_RE.search(normalized)
+        or ARTIFACT_SCALE_AMOUNT_RE.search(normalized)
+    )
+    if not has_scale_intent:
+        return requirements
+    mentions_poll_target = bool(ARTIFACT_SCALE_POLL_TARGET_RE.search(normalized))
+    mentions_unit_target = bool(
+        ARTIFACT_SCALE_UNIT_TARGET_RE.search(normalized)
+        or ARTIFACT_SCALE_INSIDE_POLL_RE.search(normalized)
+    )
+    if mentions_poll_target:
+        requirements.append("poll_visual_scale")
+    if mentions_unit_target or (mentions_poll_target and " and " in normalized):
+        requirements.append("poll_unit_scale")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for requirement in requirements:
+        if requirement in seen:
+            continue
+        seen.add(requirement)
+        deduped.append(requirement)
+    return deduped
+
+
+def evaluate_artifact_completion_requirements(
+    *,
+    requirements: list[str],
+    before_html: str,
+    after_html: str,
+) -> tuple[bool, list[str]]:
+    if not requirements:
+        return True, []
+
+    missing: list[str] = []
+    patch_requirements = [
+        requirement
+        for requirement in requirements
+        if requirement not in {"poll_visual_scale", "poll_unit_scale"}
+    ]
+    if patch_requirements:
+        patch_satisfied, patch_missing = evaluate_artifact_patch_satisfaction(
+            requirements=patch_requirements,
+            html=after_html,
+        )
+        if not patch_satisfied:
+            missing.extend(patch_missing)
+
+    scale_requirements = [
+        requirement
+        for requirement in requirements
+        if requirement in {"poll_visual_scale", "poll_unit_scale"}
+    ]
+    if scale_requirements:
+        changed_poll_scale_selectors = collect_changed_scale_selectors(
+            before_html=before_html,
+            after_html=after_html,
+            selector_matcher=is_poll_scale_selector,
+        )
+        if (
+            "poll_visual_scale" in scale_requirements
+            and not changed_poll_scale_selectors
+        ):
+            missing.append("poll_visual_scale")
+        if "poll_unit_scale" in scale_requirements:
+            has_unit_selector_change = any(
+                is_poll_unit_scale_selector(selector)
+                for selector in changed_poll_scale_selectors
+            )
+            if not has_unit_selector_change and len(changed_poll_scale_selectors) < 2:
+                missing.append("poll_unit_scale")
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for requirement in missing:
+        normalized = (requirement or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return len(deduped) == 0, deduped
+
+
+def collect_changed_scale_selectors(
+    *,
+    before_html: str,
+    after_html: str,
+    selector_matcher: Callable[[str], bool],
+) -> set[str]:
+    before_map = extract_artifact_css_declaration_map(before_html)
+    after_map = extract_artifact_css_declaration_map(after_html)
+    changed: set[str] = set()
+    for (selector, property_name), after_value in after_map.items():
+        if property_name not in ARTIFACT_SCALE_CSS_PROPERTIES:
+            continue
+        if not selector_matcher(selector):
+            continue
+        before_value = before_map.get((selector, property_name))
+        if normalize_css_value_for_match(before_value) != normalize_css_value_for_match(
+            after_value
+        ):
+            changed.add(selector)
+    return changed
+
+
+def extract_artifact_css_declaration_map(
+    html: str,
+) -> dict[tuple[str, str], str]:
+    css_text = extract_combined_artifact_css_text(html)
+    selectors = extract_artifact_style_rule_selectors(html)
+    declarations: dict[tuple[str, str], str] = {}
+    for selector in selectors:
+        selector_bodies = extract_css_rule_bodies_for_selector(css_text, selector)
+        normalized_selector = selector.strip().lower()
+        if not normalized_selector:
+            continue
+        for body in selector_bodies:
+            for declaration in (body or "").split(";"):
+                if ":" not in declaration:
+                    continue
+                property_name, value = declaration.split(":", 1)
+                normalized_property = property_name.strip().lower()
+                normalized_value = value.strip()
+                if not normalized_property:
+                    continue
+                declarations[(normalized_selector, normalized_property)] = normalized_value
+    return declarations
+
+
+def normalize_css_value_for_match(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def is_poll_scale_selector(selector: str) -> bool:
+    normalized = (selector or "").strip().lower()
+    if not normalized or normalized in {"body", "html"}:
+        return False
+    if is_layout_like_selector(normalized):
+        return True
+    return bool(ARTIFACT_SCALE_POLL_TARGET_RE.search(normalized))
+
+
+def is_poll_unit_scale_selector(selector: str) -> bool:
+    normalized = (selector or "").strip().lower()
+    if not normalized:
+        return False
+    if ARTIFACT_SCALE_UNIT_TARGET_RE.search(normalized):
+        return True
+    if "::before" in normalized or "::after" in normalized:
+        return bool(
+            re.search(
+                r"(option|poll|vote|bar|lane|row|column|chip|piece|unit|block|brick)",
+                normalized,
+            )
+        )
+    return bool(
+        re.search(
+            r"(option|poll|vote|bar|lane|row|column).*(item|chip|piece|unit|block|brick)",
+            normalized,
+        )
+    )
 
 
 def infer_artifact_patch_satisfaction_requirements(
@@ -5682,6 +5952,46 @@ def build_stable_artifact_recovery_context(
         combined_runtime_error,
         1200,
     )
+    return prepared
+
+
+def build_artifact_completion_followup_context(
+    *,
+    context: dict[str, Any],
+    patched_html: str,
+    patched_package: dict[str, Any] | None,
+    original_edit_request: str,
+    missing_requirements: list[str],
+) -> dict[str, Any]:
+    prepared = json.loads(json.dumps(context, ensure_ascii=False))
+    artifact_context = (
+        prepared.get("artifact") if isinstance(prepared.get("artifact"), dict) else None
+    )
+    if artifact_context is None:
+        artifact_context = {}
+        prepared["artifact"] = artifact_context
+    artifact_context["requestMode"] = "edit"
+    normalized_html = (patched_html or "").strip()
+    if normalized_html:
+        artifact_context["currentArtifactFullHtml"] = normalized_html
+        artifact_context["currentArtifactHtml"] = normalized_html
+    if isinstance(patched_package, dict):
+        artifact_context["currentArtifactPackage"] = patched_package
+        artifact_context["currentArtifactFullPackage"] = patched_package
+    missing_text = ", ".join(item.strip() for item in missing_requirements[:4] if item.strip())
+    completion_error = (
+        "The targeted patch only completed part of the request. "
+        f"Unmet goals: {missing_text or 'unspecified requirements'}."
+    )
+    artifact_context["runtimeRenderError"] = trim_artifact_context_text(
+        completion_error,
+        1200,
+    )
+    if (original_edit_request or "").strip():
+        artifact_context["originalEditRequest"] = trim_artifact_context_text(
+            original_edit_request,
+            1200,
+        )
     return prepared
 
 

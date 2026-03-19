@@ -147,6 +147,39 @@ LAYOUT_ARTIFACT_HTML = """<!doctype html>
   </body>
 </html>"""
 
+PATCH_COMPLETION_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <style>
+      .poll-options {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+      .poll-brick {
+        width: 28px;
+        height: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="artifact-root">
+      <div class="poll-options">
+        <div class="poll-brick"></div>
+      </div>
+    </section>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        root.setAttribute("data-question", state && state.poll ? state.poll.question || "" : "");
+      });
+    </script>
+  </body>
+</html>"""
+
 TITLE_OVERLAP_ARTIFACT_HTML = """<!doctype html>
 <html lang="en">
   <head>
@@ -1171,6 +1204,26 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(red_satisfied)
         self.assertIn("title_requested_color::blue", red_missing)
 
+    def test_infer_completion_requirements_detects_compound_poll_scale_request(self) -> None:
+        requirements = ai_api.infer_artifact_completion_requirements(
+            "increase the poll size and the lego inside the poll by 50%"
+        )
+
+        self.assertIn("poll_visual_scale", requirements)
+        self.assertIn("poll_unit_scale", requirements)
+
+    def test_evaluate_completion_requirements_detects_partial_poll_scale(self) -> None:
+        before_html = PATCH_COMPLETION_ARTIFACT_HTML
+        after_html = PATCH_COMPLETION_ARTIFACT_HTML.replace("gap: 14px;", "gap: 21px;")
+        satisfied, missing = ai_api.evaluate_artifact_completion_requirements(
+            requirements=["poll_visual_scale", "poll_unit_scale"],
+            before_html=before_html,
+            after_html=after_html,
+        )
+
+        self.assertFalse(satisfied)
+        self.assertIn("poll_unit_scale", missing)
+
     def test_progressive_patch_accepts_partial_when_only_dense_decoration_is_missing(self) -> None:
         patched_html, _patched_package, issues = ai_api.apply_artifact_patch_plan_progressively(
             current_html=TITLE_OVERLAP_ARTIFACT_HTML,
@@ -1522,6 +1575,59 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.assistantMessage, "Rounded the track corners.")
         self.assertIn("border-radius: 24px", response.html)
         self.assertIn(".car", response.html)
+
+    async def test_partial_patch_completion_triggers_full_generation_pass(self) -> None:
+        anthropic_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            side_effect=[
+                (
+                    json.dumps(
+                        {
+                            "assistantMessage": "Scaled the poll layout.",
+                            "edits": [
+                                {
+                                    "type": "set_css_property",
+                                    "selector": ".poll-options",
+                                    "property": "gap",
+                                    "value": "21px",
+                                }
+                            ],
+                        }
+                    ),
+                    "stop",
+                ),
+                (VALID_ARTIFACT_HTML, "stop"),
+            ]
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "increase the poll size and the lego inside the poll by 50%",
+                    "currentArtifactFullHtml": PATCH_COMPLETION_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            response = await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertEqual(
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact patch edit",
+        )
+        self.assertEqual(
+            gemini_mock.await_args_list[1].kwargs["request_stage"],
+            "artifact edit generation",
+        )
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn("Artifact ready. Keep prompting to iterate.", response.assistantMessage)
 
     async def test_layout_orientation_edit_uses_model_patch_flow(self) -> None:
         anthropic_mock = AsyncMock()
