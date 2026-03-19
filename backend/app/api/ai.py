@@ -835,7 +835,6 @@ async def create_poll_game_artifact_build(
                     current_package=current_package,
                     timeout_seconds=patch_timeout_seconds,
                     remaining_budget_seconds=remaining_budget_seconds,
-                    use_anthropic_background_treatment=False,
                     use_anthropic_patch_planner=False,
                 )
                 if patch_html:
@@ -886,7 +885,6 @@ async def create_poll_game_artifact_build(
                             current_package=current_package,
                             timeout_seconds=patch_timeout_seconds,
                             remaining_budget_seconds=remaining_budget_seconds,
-                            use_anthropic_background_treatment=True,
                             use_anthropic_patch_planner=True,
                         )
                     )
@@ -1136,47 +1134,15 @@ async def attempt_artifact_patch_edit(
     current_package: dict[str, Any] | None,
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
-    use_anthropic_background_treatment: bool = False,
     use_anthropic_patch_planner: bool = False,
 ) -> tuple[str, dict[str, Any] | None, str, list[str]]:
     if artifact_edit_request_requires_external_asset_url(original_edit_request):
         return (
             "",
             current_package,
-            "This edit needs a direct image URL. Provide the exact Dubai image URL and the editor can swap only the background image without redesigning the scene.",
+            "This edit needs a direct image URL. Provide the exact image URL and the editor can swap only the requested background image.",
             ["the requested edit needs a direct external image URL."],
         )
-    if is_background_visual_edit_request(original_edit_request):
-        treatment_html, treatment_message, treatment_issues = (
-            await attempt_artifact_background_treatment_edit(
-                api_key=api_key,
-                model=model,
-                original_edit_request=original_edit_request,
-                context=context,
-                current_html=current_html,
-                timeout_seconds=timeout_seconds,
-                remaining_budget_seconds=remaining_budget_seconds,
-                use_anthropic=use_anthropic_background_treatment,
-            )
-        )
-        if treatment_html:
-            treatment_package = build_segmented_artifact_package(
-                treatment_html,
-                current_package,
-            )
-            return treatment_html, treatment_package, treatment_message, []
-        if treatment_issues:
-            if not should_fallback_to_generic_patch_after_background_treatment_failure(
-                treatment_issues
-            ):
-                return "", current_package, treatment_message, treatment_issues
-    builtin_html, builtin_message = attempt_builtin_cityscape_background_patch(
-        current_html=current_html,
-        original_edit_request=original_edit_request,
-    )
-    if builtin_html:
-        builtin_package = build_segmented_artifact_package(builtin_html, current_package)
-        return builtin_html, builtin_package, builtin_message, []
     orientation_html, orientation_package, orientation_message = (
         attempt_builtin_layout_orientation_patch(
             current_html=current_html,

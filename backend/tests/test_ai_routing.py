@@ -1779,27 +1779,21 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertIn("Artifact ready. Keep prompting to iterate.", response.assistantMessage)
 
-    async def test_local_city_background_edit_uses_background_treatment_before_generic_patch(self) -> None:
+    async def test_local_city_background_edit_uses_generic_patch_flow(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(
             return_value=(
                 json.dumps(
                     {
-                        "assistantMessage": "Applied a dusk city skyline treatment.",
-                        "treatment": {
-                            "composition": "skyline",
-                            "timeOfDay": "sunset",
-                            "intensity": "balanced",
-                            "topColor": "#2B4162",
-                            "midColor": "#D17A5B",
-                            "bottomColor": "#F3B27A",
-                            "silhouetteColor": "#1F2636",
-                            "accentColor": "#FFC66D",
-                            "hazeColor": "#F1C7A3",
-                            "lightColor": "#FFE5B5",
-                            "horizonHeightPct": 42,
-                            "detailDensity": 64,
-                        },
+                        "assistantMessage": "Updated the background to a city-inspired dusk gradient.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": "#track-bg",
+                                "property": "background",
+                                "value": "linear-gradient(180deg, #243B55 0%, #141E30 100%)",
+                            }
+                        ],
                     }
                 ),
                 "stop",
@@ -1826,21 +1820,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gemini_mock.await_count, 1)
         self.assertEqual(
             gemini_mock.await_args_list[0].kwargs["request_stage"],
-            "artifact background treatment",
+            "artifact patch edit",
         )
         self.assertEqual(response.model, "gemini-2.5-flash")
-        self.assertIn('id="prezo-background-treatment-data"', response.html)
-        self.assertIn('"composition":"skyline"', response.html)
+        self.assertIn("Updated the background to a city-inspired dusk gradient.", response.assistantMessage)
+        self.assertIn("background: linear-gradient(180deg, #243B55 0%, #141E30 100%);", response.html)
         self.assertIn(".car", response.html)
 
-    async def test_background_treatment_failure_uses_deterministic_runtime_treatment(self) -> None:
-        anthropic_mock = AsyncMock()
+    async def test_background_patch_plan_failure_falls_back_to_full_regeneration(self) -> None:
+        anthropic_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Patch mode is not suitable.",
+                        "edits": [],
+                    }
+                ),
+                "end_turn",
+            )
+        )
         gemini_mock = AsyncMock(
             side_effect=[
                 (
-                    json.dumps({"assistantMessage": "No usable structured treatment.", "treatment": {}}),
+                    json.dumps({"assistantMessage": "No usable patch edits.", "edits": []}),
                     "stop",
                 ),
+                (VALID_ARTIFACT_HTML, "stop"),
             ]
         )
         payload = ai_api.PollGameArtifactBuildRequest(
@@ -1860,14 +1865,22 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
-        self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(anthropic_mock.await_count, 1)
+        self.assertEqual(gemini_mock.await_count, 2)
+        self.assertEqual(
+            anthropic_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact patch edit",
+        )
         self.assertEqual(
             gemini_mock.await_args_list[0].kwargs["request_stage"],
-            "artifact background treatment",
+            "artifact patch edit",
         )
-        self.assertIn('id="prezo-background-treatment-data"', response.html)
-        self.assertIn('"runtimeMode":"overlay"', response.html)
+        self.assertEqual(
+            gemini_mock.await_args_list[1].kwargs["request_stage"],
+            "artifact edit generation",
+        )
+        self.assertEqual(response.model, "gemini-2.5-flash")
+        self.assertIn("Artifact ready. Keep prompting to iterate.", response.assistantMessage)
 
     async def test_local_edit_with_truncated_artifact_html_uses_full_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
