@@ -61,9 +61,7 @@ ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT = 12000
 ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
-ARTIFACT_PATCH_MAX_EDITS = 30
 ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
-ARTIFACT_PATCH_SCHEMA_MAX_EDITS = 30
 ARTIFACT_PATCH_BATCH_SIZE = 30
 ARTIFACT_PATCH_MAX_BATCHES = 12
 TITLE_TOP_DECORATION_DENSE_MIN_BOX_SHADOW_OFFSETS = 2
@@ -364,7 +362,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Allowed PatchEdit objects:",
         '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
         "Rules:",
-        "- Prefer 1-12 edits for focused requests. If the request needs richer styling, you may emit more edits (up to 30), but stay concise.",
+        "- Prefer 1-12 edits for focused requests. If the request needs richer styling, emit the edits needed to satisfy the request while staying concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
@@ -384,7 +382,6 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
         "assistantMessage": {"type": "string"},
         "edits": {
             "type": "array",
-            "maxItems": ARTIFACT_PATCH_SCHEMA_MAX_EDITS,
             "items": {
                 "type": "object",
                 "properties": {
@@ -2339,7 +2336,6 @@ def apply_artifact_patch_plan(html: str, plan: dict[str, Any]) -> tuple[str, lis
         html=html,
         artifact_package=None,
         plan=plan,
-        max_edits=ARTIFACT_PATCH_MAX_EDITS,
     )
     return patched_html, issues
 
@@ -3340,7 +3336,6 @@ def apply_artifact_patch_plan_progressively(
             html=working_html,
             artifact_package=working_package,
             plan=batch_plan,
-            max_edits=ARTIFACT_PATCH_MAX_EDITS,
         )
         if issues:
             batch_issues.extend(issues)
@@ -4975,7 +4970,6 @@ def attempt_builtin_title_overlap_spacing_patch(
         html=current_html,
         artifact_package=current_package,
         plan=plan,
-        max_edits=ARTIFACT_PATCH_MAX_EDITS,
     )
     if issues or not patched_html or patched_html.strip() == current_html.strip():
         return "", current_package, ""
@@ -5060,7 +5054,6 @@ def attempt_builtin_layout_orientation_patch(
             html=current_html,
             artifact_package=current_package,
             plan=plan,
-            max_edits=ARTIFACT_PATCH_MAX_EDITS,
         )
         if issues:
             continue

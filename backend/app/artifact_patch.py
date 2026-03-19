@@ -63,7 +63,6 @@ def apply_artifact_patch_plan_to_package(
     html: str,
     artifact_package: dict[str, Any] | None,
     plan: dict[str, Any],
-    max_edits: int,
 ) -> tuple[str, dict[str, Any] | None, list[str]]:
     segmented_package = build_segmented_artifact_package(html, artifact_package)
     if not segmented_package:
@@ -150,14 +149,11 @@ def apply_artifact_patch_plan_to_package(
 def apply_artifact_patch_plan(
     html: str,
     plan: dict[str, Any],
-    *,
-    max_edits: int,
 ) -> tuple[str, list[str]]:
     patched_html, _patched_package, issues = apply_artifact_patch_plan_to_package(
         html=html,
         artifact_package=None,
         plan=plan,
-        max_edits=max_edits,
     )
     return patched_html, issues
 
