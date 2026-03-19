@@ -1895,34 +1895,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function shouldRejectArtifactRenderHealth(renderHealth) {
-    if (
-      currentTheme.visualMode !== ARTIFACT_VISUAL_MODE ||
-      state.artifact.pendingRequestKind !== 'edit' ||
-      state.artifact.renderConfirmed ||
-      !state.artifact.rollbackHtml ||
-      !renderHealth ||
-      typeof renderHealth !== 'object'
-    ) {
-      return false
-    }
-    const paleAllowed = artifactEditAllowsPaleBackground(state.artifact.activeEditRequest)
-    const isBackgroundEdit = isArtifactBackgroundEditRequest(state.artifact.activeEditRequest)
-    const requiresVisibleBackground =
-      isBackgroundEdit && !paleAllowed
-    const hasMeaningfulScene = hasMeaningfulArtifactScene(renderHealth)
-    const runtimeBackgroundVisibleCount = Math.max(
-      0,
-      toInt(renderHealth?.runtimeBackgroundVisibleCount)
-    )
-    const shouldBlockWashedOut =
-      Boolean(renderHealth.likelyWashedOut) &&
-      !paleAllowed &&
-      (isBackgroundEdit || !hasMeaningfulScene)
-    return (
-      Boolean(renderHealth.likelyBlank) ||
-      (requiresVisibleBackground && runtimeBackgroundVisibleCount === 0) ||
-      shouldBlockWashedOut
-    )
+    return false
   }
 
   function hasMeaningfulArtifactScene(renderHealth) {
