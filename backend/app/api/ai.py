@@ -1140,15 +1140,6 @@ async def attempt_artifact_patch_edit(
             "This edit needs a direct image URL. Provide the exact image URL and the editor can swap only the requested background image.",
             ["the requested edit needs a direct external image URL."],
         )
-    title_overlap_html, title_overlap_package, title_overlap_message = (
-        attempt_builtin_title_overlap_spacing_patch(
-            current_html=current_html,
-            current_package=current_package,
-            original_edit_request=original_edit_request,
-        )
-    )
-    if title_overlap_html:
-        return title_overlap_html, title_overlap_package, title_overlap_message, []
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
         context=context,
@@ -1866,19 +1857,6 @@ def is_title_text_artifact_edit_request(request_text: str) -> bool:
     )
 
 
-def is_spacing_artifact_edit_request(request_text: str) -> bool:
-    normalized = (request_text or "").strip()
-    if not normalized:
-        return False
-    return bool(
-        re.search(
-            r"\b(?:space|spacing|margin|padding|gap|offset|separate|separation|distance|line-height|line height|move down|push down|push lower)\b",
-            normalized,
-            re.IGNORECASE,
-        )
-    )
-
-
 def is_title_overlap_spacing_artifact_edit_request(request_text: str) -> bool:
     normalized = (request_text or "").strip()
     if not normalized:
@@ -1891,7 +1869,7 @@ def is_title_overlap_spacing_artifact_edit_request(request_text: str) -> bool:
             re.IGNORECASE,
         )
     )
-    return has_text_target and (has_overlap_signal or is_spacing_artifact_edit_request(normalized))
+    return has_text_target and has_overlap_signal
 
 
 def infer_requested_artifact_layout_orientation(request_text: str) -> str:
@@ -3309,7 +3287,6 @@ def apply_artifact_patch_plan_progressively(
     if not candidate_edits:
         return "", current_package, ["patch plan did not include any applicable edits."]
 
-    requirements = infer_artifact_patch_satisfaction_requirements(original_edit_request)
     working_html = current_html
     working_package = current_package
     applied_any_batch = False
@@ -3340,33 +3317,9 @@ def apply_artifact_patch_plan_progressively(
         working_html = candidate_html
         working_package = build_segmented_artifact_package(candidate_html, patched_package)
         applied_any_batch = True
-        satisfied, _missing = evaluate_artifact_patch_satisfaction(
-            requirements=requirements,
-            html=working_html,
-        )
-        if satisfied:
-            return working_html, working_package, []
 
     if applied_any_batch:
-        satisfied, missing = evaluate_artifact_patch_satisfaction(
-            requirements=requirements,
-            html=working_html,
-        )
-        if satisfied:
-            return working_html, working_package, []
-        if should_accept_partial_patch_satisfaction_result(
-            requirements=requirements,
-            missing=missing,
-            html=working_html,
-        ):
-            return working_html, working_package, []
-        missing_text = ", ".join(missing[:4]) if missing else "requested visual details"
-        issue = (
-            "patch batches applied safely but did not fully satisfy the request "
-            f"({missing_text})."
-        )
-        deduped_issues = dedupe_patch_issue_list([issue] + batch_issues)
-        return "", current_package, deduped_issues[:3]
+        return working_html, working_package, []
 
     deduped_issues = dedupe_patch_issue_list(batch_issues)
     if deduped_issues:

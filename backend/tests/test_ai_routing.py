@@ -1556,9 +1556,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("targeted layout update", response.assistantMessage)
         self.assertIn("flex-direction: column;", response.html)
 
-    async def test_title_overlap_edit_prefers_builtin_patch_flow_before_model_calls(self) -> None:
+    async def test_title_overlap_edit_uses_model_patch_flow(self) -> None:
         anthropic_mock = AsyncMock()
-        gemini_mock = AsyncMock()
+        gemini_mock = AsyncMock(
+            return_value=(
+                json.dumps(
+                    {
+                        "assistantMessage": "Applied a targeted readability patch.",
+                        "edits": [
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-title",
+                                "property": "margin-bottom",
+                                "value": "14px",
+                            },
+                            {
+                                "type": "set_css_property",
+                                "selector": ".poll-options",
+                                "property": "margin-top",
+                                "value": "14px",
+                            },
+                        ],
+                    }
+                ),
+                "stop",
+            )
+        )
         payload = ai_api.PollGameArtifactBuildRequest(
             prompt="Apply a targeted edit.",
             context={
@@ -1577,7 +1600,11 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             response = await ai_api.create_poll_game_artifact_build(payload)
 
         self.assertEqual(anthropic_mock.await_count, 0)
-        self.assertEqual(gemini_mock.await_count, 0)
+        self.assertEqual(gemini_mock.await_count, 1)
+        self.assertEqual(
+            gemini_mock.await_args_list[0].kwargs["request_stage"],
+            "artifact patch edit",
+        )
         self.assertEqual(response.model, "gemini-2.5-flash")
         self.assertIn("readability patch", response.assistantMessage)
         self.assertIn("margin-top: 14px;", response.html)
