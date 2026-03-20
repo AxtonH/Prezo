@@ -275,6 +275,23 @@ def correct_parent_child_selector(
     parent_score = _request_selector_affinity(user_tokens, parent)
     child_score = _request_selector_affinity(user_tokens, child_tail)
 
+    # Adjust scores when the user explicitly negated words matching a
+    # selector's tokens (e.g. "not the stud" should penalise `.stud`,
+    # "not the brick" should penalise `.lego-brick`).
+    negated_tokens = _extract_negated_tokens(user_request)
+    if negated_tokens:
+        parent_sel_tokens = _tokenise_selector(parent)
+        if parent_sel_tokens:
+            hits = sum(1 for t in parent_sel_tokens if t in negated_tokens)
+            if hits:
+                parent_score -= hits / len(parent_sel_tokens)
+
+        child_sel_tokens = _tokenise_selector(child_tail)
+        if child_sel_tokens:
+            hits = sum(1 for t in child_sel_tokens if t in negated_tokens)
+            if hits:
+                child_score -= hits / len(child_sel_tokens)
+
     if parent_score > child_score:
         return SelectorCorrectionResult(
             parent,
@@ -419,6 +436,25 @@ def _property_mentioned_in_request(css_property: str, user_request: str) -> bool
 
 
 _USER_REQUEST_TOKEN_RE = re.compile(r"[a-zA-Z]+")
+_NEGATION_WORDS = frozenset({"not", "no", "dont", "never", "without", "except"})
+
+
+_USER_REQUEST_STOP_WORDS = frozenset({
+    "the", "a", "an", "of", "by", "to", "in", "on", "and", "or", "it",
+    "is", "be", "do", "at", "for", "with", "from", "as", "its", "make",
+    "set", "css", "px", "rem", "em", "vh", "vw",
+})
+
+
+def _stem_token(word: str) -> str | None:
+    """Return a basic stem of *word*, or ``None`` if no stemming applies."""
+    if word.endswith("es") and len(word) > 3:
+        return word[:-2]
+    if word.endswith("s") and len(word) > 2:
+        return word[:-1]
+    if word.endswith("ed") and len(word) > 3:
+        return word[:-2]
+    return None
 
 
 def _tokenise_user_request(text: str) -> set[str]:
@@ -428,25 +464,50 @@ def _tokenise_user_request(text: str) -> set[str]:
     "bricks" matches "brick" and "increased" matches "increase".
     """
     raw_tokens = _USER_REQUEST_TOKEN_RE.findall(text.lower())
-    # Filter out very short / stop words.
-    stop_words = {
-        "the", "a", "an", "of", "by", "to", "in", "on", "and", "or", "it",
-        "is", "be", "do", "at", "for", "with", "from", "as", "its", "make",
-        "set", "css", "px", "rem", "em", "vh", "vw",
-    }
     tokens: set[str] = set()
     for word in raw_tokens:
-        if len(word) < 2 or word in stop_words:
+        if len(word) < 2 or word in _USER_REQUEST_STOP_WORDS:
             continue
         tokens.add(word)
-        # Basic plural/tense stemming for matching.
-        if word.endswith("es") and len(word) > 3:
-            tokens.add(word[:-2])
-        elif word.endswith("s") and len(word) > 2:
-            tokens.add(word[:-1])
-        elif word.endswith("ed") and len(word) > 3:
-            tokens.add(word[:-2])
+        stem = _stem_token(word)
+        if stem:
+            tokens.add(stem)
     return tokens
+
+
+def _extract_negated_tokens(text: str) -> set[str]:
+    """Identify tokens that follow negation words in *text*.
+
+    Splits on clause boundaries (commas, semicolons, periods) first so that
+    negation in one clause does not bleed into the next.  Within a clause,
+    content words after a negation word are treated as negated.
+
+    Example::
+
+        "not the stud"                          → {"stud"}
+        "not the stud, the actual brick"        → {"stud"}
+        "increase, not studs"                   → {"stud", "studs"}
+    """
+    clauses = re.split(r"[,;.]+", text.lower())
+    negated: set[str] = set()
+
+    for clause in clauses:
+        words = _USER_REQUEST_TOKEN_RE.findall(clause)
+        seen_negation = False
+        for word in words:
+            if word in _NEGATION_WORDS:
+                seen_negation = True
+                continue
+            if not seen_negation:
+                continue
+            if len(word) < 2 or word in _USER_REQUEST_STOP_WORDS:
+                continue
+            negated.add(word)
+            stem = _stem_token(word)
+            if stem:
+                negated.add(stem)
+
+    return negated
 
 
 def _request_selector_affinity(
