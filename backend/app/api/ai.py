@@ -2640,6 +2640,9 @@ def extract_artifact_style_rule_selectors(html: str) -> list[str]:
         style_body = style_match.group("body") or ""
         for raw_selector in re.findall(r"(^|})\s*([^{}]+)\{", style_body, re.MULTILINE):
             selector_text = raw_selector[1].strip()
+            # Strip CSS comments that the regex may have captured as part
+            # of the selector text (e.g. "/* comment */\n  .selector").
+            selector_text = re.sub(r"/\*.*?\*/", "", selector_text, flags=re.DOTALL).strip()
             if not selector_text or selector_text.startswith("@"):
                 continue
             for selector in selector_text.split(","):

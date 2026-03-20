@@ -1048,6 +1048,49 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(rewritten["edits"][0]["selector"], "#header")
 
+    def test_rewrite_preserves_selector_when_css_has_comments(self) -> None:
+        """CSS comments preceding a rule must not pollute the extracted
+        selector text, which would cause fuzzy matching to kick in
+        and remap the selector to a child (e.g. .lego-brick -> .lego-brick .stud)."""
+        html_with_comments = """<!doctype html><html><head><style>
+  /* Individual LEGO brick in the stack */
+  .lego-brick {
+    position: relative;
+    width: 66px; /* Increased by 50% from 44px */
+    height: 40px;
+  }
+  .lego-brick .stud {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+  }
+  .lego-brick .stud:nth-child(1) { left: 9px; }
+  .lego-brick .stud:nth-child(2) { left: 36px; }
+  .brick-track { width: 74px; }
+</style></head><body>
+  <script>window.prezoSetPollRenderer(function(){})</script>
+</body></html>"""
+        rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
+            plan={
+                "assistantMessage": "Increased poll width.",
+                "edits": [
+                    {"type": "set_css_property", "selector": ".brick-track", "property": "width", "value": "111px"},
+                    {"type": "set_css_property", "selector": ".lego-brick", "property": "width", "value": "99px"},
+                    {"type": "set_css_property", "selector": ".lego-brick .stud:nth-child(1)", "property": "left", "value": "13.5px"},
+                    {"type": "set_css_property", "selector": ".lego-brick .stud:nth-child(2)", "property": "left", "value": "54px"},
+                ],
+            },
+            current_html=html_with_comments,
+            original_edit_request="increase the width of the polls by 50%",
+        )
+        edits = rewritten["edits"]
+        self.assertEqual(len(edits), 4)
+        # .lego-brick must NOT be remapped to .lego-brick .stud
+        self.assertEqual(edits[0]["selector"], ".brick-track")
+        self.assertEqual(edits[1]["selector"], ".lego-brick")
+        self.assertEqual(edits[2]["selector"], ".lego-brick .stud:nth-child(1)")
+        self.assertEqual(edits[3]["selector"], ".lego-brick .stud:nth-child(2)")
+
     def test_rewrite_artifact_patch_plan_compacts_oversized_title_studs_plan(self) -> None:
         oversized_edits = [
             {
