@@ -564,6 +564,7 @@ class PollGameArtifactBuildResponse(BaseModel):
     artifact_package: ArtifactPackage | None = None
     model: str
     assistantMessage: str
+    debugPatchPlan: str | None = None
 
 
 class PollGameArtifactAssistantResponse(BaseModel):
@@ -858,6 +859,7 @@ async def create_poll_game_artifact_build(
     gemini_api_key = (settings.gemini_api_key or "").strip()
     can_fallback_to_anthropic_edit = request_mode == "edit" and bool(anthropic_api_key)
     patch_failure_reasons: list[str] = []
+    patch_debug: str = ""
     force_full_generation_after_patch = False
     if should_attempt_artifact_patch_edit(
         request_mode,
@@ -887,7 +889,7 @@ async def create_poll_game_artifact_build(
                         reserve_seconds=ARTIFACT_PATCH_FALLBACK_RESERVE_SECONDS,
                     ),
                 )
-                patch_html, patch_package, patch_assistant_message, patch_issues = await attempt_artifact_patch_edit(
+                patch_html, patch_package, patch_assistant_message, patch_issues, patch_debug = await attempt_artifact_patch_edit(
                     api_key=patch_api_key,
                     model=patch_model,
                     original_edit_request=original_edit_request,
@@ -926,6 +928,7 @@ async def create_poll_game_artifact_build(
                                 model=patch_model,
                                 assistantMessage=patch_assistant_message
                                 or "Artifact updated with a targeted patch.",
+                                debugPatchPlan=patch_debug or None,
                             )
                         force_full_generation_after_patch = True
                         missing_text = ", ".join(
@@ -966,7 +969,7 @@ async def create_poll_game_artifact_build(
                             minimum_seconds=ARTIFACT_PATCH_MIN_CALL_TIMEOUT_SECONDS,
                         ),
                     )
-                    fallback_html, fallback_package, fallback_assistant_message, fallback_issues = (
+                    fallback_html, fallback_package, fallback_assistant_message, fallback_issues, fallback_debug = (
                         await attempt_artifact_patch_edit(
                             api_key=anthropic_api_key,
                             model=fallback_patch_model,
@@ -979,6 +982,8 @@ async def create_poll_game_artifact_build(
                             use_anthropic_patch_planner=True,
                         )
                     )
+                    if fallback_debug:
+                        patch_debug = f"[Anthropic fallback]\n{fallback_debug}"
                     if fallback_html:
                         fallback_html = restore_artifact_live_hooks_if_missing(
                             fallback_html, request_context
@@ -1013,6 +1018,7 @@ async def create_poll_game_artifact_build(
                                     model=fallback_patch_model,
                                     assistantMessage=fallback_assistant_message
                                     or "Artifact updated with a targeted patch.",
+                                    debugPatchPlan=fallback_debug or None,
                                 )
                             missing_text = ", ".join(
                                 item for item in fallback_missing[:3] if item
@@ -1206,6 +1212,7 @@ async def create_poll_game_artifact_build(
         artifact_package=response_package,
         model=response_model,
         assistantMessage="Artifact ready. Keep prompting to iterate.",
+        debugPatchPlan=patch_debug or None,
     )
 
 
@@ -1256,13 +1263,14 @@ async def attempt_artifact_patch_edit(
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
     use_anthropic_patch_planner: bool = False,
-) -> tuple[str, dict[str, Any] | None, str, list[str]]:
+) -> tuple[str, dict[str, Any] | None, str, list[str], str]:
     if artifact_edit_request_requires_external_asset_url(original_edit_request):
         return (
             "",
             current_package,
             "This edit needs a direct image URL. Provide the exact image URL and the editor can swap only the requested background image.",
             ["the requested edit needs a direct external image URL."],
+            "",
         )
     patch_prompt = build_artifact_patch_edit_prompt(
         original_edit_request=original_edit_request,
@@ -1313,11 +1321,13 @@ async def attempt_artifact_patch_edit(
                 response_mime_type="application/json",
                 thinking_budget=0,
             )
+    raw_plan = normalize_artifact_patch_plan_payload(text)
     plan = rewrite_artifact_patch_plan_for_current_html(
-        plan=normalize_artifact_patch_plan_payload(text),
+        plan=raw_plan,
         current_html=current_html,
         original_edit_request=original_edit_request,
     )
+    debug_patch_plan = _build_debug_patch_plan(text, raw_plan, plan)
     patched_html, patched_package, issues = apply_artifact_patch_plan_progressively(
         current_html=current_html,
         current_package=current_package,
@@ -1326,8 +1336,8 @@ async def attempt_artifact_patch_edit(
         context=context,
     )
     if issues:
-        return "", current_package, plan.get("assistantMessage", ""), issues
-    return patched_html, patched_package, plan.get("assistantMessage", ""), []
+        return "", current_package, plan.get("assistantMessage", ""), issues, debug_patch_plan
+    return patched_html, patched_package, plan.get("assistantMessage", ""), [], debug_patch_plan
 
 
 async def attempt_artifact_background_treatment_edit(
@@ -3425,6 +3435,38 @@ def score_artifact_patch_edit_priority(
     if property_name in {"padding", "margin", "z-index", "position"}:
         score += 5
     return score
+
+
+def _build_debug_patch_plan(
+    raw_text: str,
+    raw_plan: dict[str, Any],
+    rewritten_plan: dict[str, Any],
+) -> str:
+    """Build a human-readable debug summary of the patch pipeline."""
+    import json as _json
+
+    parts: list[str] = []
+    parts.append("=== RAW LLM OUTPUT ===")
+    parts.append(raw_text[:4000] if len(raw_text) > 4000 else raw_text)
+
+    raw_edits = raw_plan.get("edits") if isinstance(raw_plan.get("edits"), list) else []
+    rewritten_edits = rewritten_plan.get("edits") if isinstance(rewritten_plan.get("edits"), list) else []
+
+    parts.append("")
+    parts.append(f"=== PARSED PLAN ({len(raw_edits)} edits) ===")
+    for i, edit in enumerate(raw_edits):
+        parts.append(f"  #{i+1}: {edit.get('type','')} | {edit.get('selector','')} | {edit.get('property','')} = {edit.get('value','')}")
+
+    if raw_edits != rewritten_edits:
+        parts.append("")
+        parts.append(f"=== REWRITTEN PLAN ({len(rewritten_edits)} edits) ===")
+        for i, edit in enumerate(rewritten_edits):
+            parts.append(f"  #{i+1}: {edit.get('type','')} | {edit.get('selector','')} | {edit.get('property','')} = {edit.get('value','')}")
+    else:
+        parts.append("")
+        parts.append("=== REWRITTEN PLAN: (no changes from parsed) ===")
+
+    return "\n".join(parts)
 
 
 def apply_artifact_patch_plan_progressively(

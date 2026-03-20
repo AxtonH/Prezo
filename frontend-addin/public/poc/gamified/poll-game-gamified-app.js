@@ -2117,6 +2117,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         } else {
           setArtifactComposerStatus(statusMessage, 'success')
         }
+        if (buildResult.debugPatchPlan) {
+          appendArtifactEditMessage('assistant', buildResult.debugPatchPlan)
+        }
       }
     } catch (error) {
       const message = `Artifact request failed: ${errorToMessage(error)}`
@@ -2725,7 +2728,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       html: resolvedHtml,
       package: artifactPackage,
       assistantMessage: asText(payload?.assistantMessage),
-      model: asText(payload?.model)
+      model: asText(payload?.model),
+      debugPatchPlan: asText(payload?.debugPatchPlan)
     }
   }
 
