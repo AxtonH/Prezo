@@ -10,6 +10,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from ..artifact_css_tree import extract_selector_property_map
 from ..artifact_package import (
     ARTIFACT_PACKAGE_ENTRY_FILE,
     ARTIFACT_PACKAGE_RENDERER_FILE,
@@ -411,6 +412,11 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
+        "- SELECTOR TARGETING: Use the selector reference map provided in the prompt to pick the correct selector. "
+        "When the user refers to an element by its visual name (e.g. 'the bricks', 'the polls', 'the options'), "
+        "target the selector that directly owns the sizing properties (width, height, font-size, etc.) for that element. "
+        "Do NOT target child/decoration sub-elements (e.g. studs, icons, labels) unless the user specifically asks for those. "
+        "A parent selector like `.lego-brick` controls the whole brick; `.lego-brick .stud` is just the stud decoration on top.",
         "- For local visual edits such as background, time-of-day, lighting, or atmosphere, modify only background/backdrop/ambient layers and closely related color tokens.",
         "- Do not redesign cars, avatars, icons, labels, vote chips, foreground gameplay visuals, or unrelated decorative detail unless the user explicitly asks.",
         "- Prefer set_css_property for color, lighting, spacing, and timing tweaks.",
@@ -2199,6 +2205,7 @@ def build_artifact_patch_edit_prompt(
         style_selector_candidates,
     )
     background_style_snippets = extract_artifact_background_style_snippets(current_html)
+    selector_context_map = build_selector_context_map(current_html)
     return "\n".join(
         [
             "Artifact patch edit task",
@@ -2299,6 +2306,16 @@ def build_artifact_patch_edit_prompt(
             f"For set_css_property, target file `{ARTIFACT_PACKAGE_STYLES_FILE}`.",
             "Do not rename or remove live poll hooks, ids, classes, or data attributes relied on by the existing artifact.",
             "If patch mode is not suitable for this request, return an empty edits array.",
+            (
+                "IMPORTANT: Below is a selector reference map showing each CSS selector and its current sizing/layout properties. "
+                "Use this to identify the CORRECT selector for the user's request. "
+                "A child selector (e.g. `.lego-brick .stud`) is a sub-element, NOT the parent. "
+                "When the user refers to an element (e.g. 'the bricks', 'the polls', 'the title'), "
+                "target the selector that owns the primary sizing properties for that element, not its children or decorations.\n"
+                "Selector reference map:\n" + selector_context_map
+                if selector_context_map
+                else ""
+            ),
             "Current artifact HTML:",
             current_html,
         ]
@@ -2622,6 +2639,58 @@ def extract_artifact_style_rule_selectors(html: str) -> list[str]:
                 seen.add(normalized)
                 selectors.append(normalized)
     return selectors
+
+
+def build_selector_context_map(html: str, *, max_selectors: int = 40) -> str:
+    """Build a concise summary of every CSS selector and its key sizing/layout
+    properties in the artifact.  This is injected into the patch prompt so the
+    LLM can see *which selector controls what* without having to parse the
+    full HTML/CSS itself.
+
+    Output looks like::
+
+        .lego-brick  →  width: 66px; height: 40px
+        .lego-brick .stud  →  width: 12px; height: 12px; top: -5px
+        .brick-track  →  width: 74px; min-height: 180px
+    """
+    # Collect CSS from all <style> blocks.
+    css_chunks: list[str] = []
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        css_chunks.append(style_match.group("body") or "")
+    if not css_chunks:
+        return ""
+    full_css = "\n".join(css_chunks)
+
+    prop_map = extract_selector_property_map(full_css)
+    if not prop_map:
+        return ""
+
+    # Properties worth surfacing (sizing, layout, positioning, visual identity).
+    sizing_props = {
+        "width", "height", "min-width", "min-height", "max-width", "max-height",
+        "flex", "flex-basis", "flex-grow", "flex-shrink", "flex-direction",
+        "gap", "row-gap", "column-gap",
+        "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+        "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+        "font-size", "display", "position", "top", "left", "right", "bottom",
+        "transform", "scale", "border-radius", "overflow",
+    }
+
+    lines: list[str] = []
+    for selector, declarations in list(prop_map.items())[:max_selectors]:
+        # Filter to key properties only to keep the map compact.
+        key_props = [
+            f"{name}: {value}"
+            for name, value in declarations
+            if name.strip().lower() in sizing_props
+        ]
+        if not key_props:
+            continue
+        lines.append(f"  {selector}  →  {'; '.join(key_props)}")
+
+    if not lines:
+        return ""
+    return "\n".join(lines)
 
 
 def prefer_selectors_with_existing_css_rule(

@@ -136,6 +136,30 @@ def _apply_property_to_selector(
     return None
 
 
+def extract_selector_property_map(
+    css_text: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Return a mapping of selector → [(property, value), ...] for every rule
+    block in *css_text*.  Useful for building prompt context so the LLM knows
+    what each selector currently controls.
+
+    Selectors with no declarations are omitted.  Duplicate selectors (e.g.
+    media-query overrides) are merged into one entry.
+    """
+    result: dict[str, list[tuple[str, str]]] = {}
+    for block in _iter_css_rule_blocks(css_text):
+        body = css_text[block.body_start : block.body_end]
+        declarations = _parse_css_declarations(body)
+        if not declarations:
+            continue
+        existing = result.get(block.selector)
+        if existing is not None:
+            existing.extend(declarations)
+        else:
+            result[block.selector] = list(declarations)
+    return result
+
+
 def _iter_css_rule_blocks(
     css_text: str,
     *,
