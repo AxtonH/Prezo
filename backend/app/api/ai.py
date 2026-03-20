@@ -3220,7 +3220,6 @@ def rewrite_artifact_patch_plan_for_current_html(
     from ..artifact_selector_match import (
         correct_parent_child_selector,
         find_best_selector_match,
-        should_drop_child_echo_edit,
     )
 
     assistant_message = (
@@ -3335,8 +3334,9 @@ def rewrite_artifact_patch_plan_for_current_html(
         # When the LLM targets a child selector (e.g. ".lego-brick .stud")
         # but the user's request clearly refers to the parent element
         # (e.g. "the bricks"), redirect to the parent selector.
-        # GUARD: skip if the parent already has an explicit edit for the same
-        # property — redirecting would overwrite the correct value during dedup.
+        # GUARD: when the correction says the user meant the parent, but the
+        # parent already has an explicit edit for the same property, the child
+        # edit is a duplicate echo — drop it instead of letting it through.
         css_property = str(edit.get("property") or "").strip()
         if selector and css_property:
             correction = correct_parent_child_selector(
@@ -3352,20 +3352,11 @@ def rewrite_artifact_patch_plan_for_current_html(
                 )
                 if parent_key not in explicit_edit_targets:
                     edit["selector"] = correction.corrected_selector
-
-        # --- Child-echo filter ---
-        # Drop edits targeting a child selector when the user clearly meant
-        # the parent and the parent already has explicit edits.  This catches
-        # cases where the LLM sends e.g. both `.lego-brick` width: 66px AND
-        # `.lego-brick .stud` width: 66px — the child edit is an echo.
-        current_selector = str(edit.get("selector") or "").strip()
-        if current_selector and css_property and should_drop_child_echo_edit(
-            selector=current_selector,
-            css_property=css_property,
-            user_request=original_edit_request,
-            explicit_edit_targets=explicit_edit_targets,
-        ):
-            continue
+                else:
+                    # Parent already has an explicit edit for this property
+                    # and the user clearly meant the parent — drop the
+                    # redundant child edit.
+                    continue
 
         rewritten.append(edit)
     compacted = compact_artifact_patch_plan_edits(
