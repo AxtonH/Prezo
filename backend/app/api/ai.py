@@ -3256,6 +3256,18 @@ def rewrite_artifact_patch_plan_for_current_html(
         style_selector_candidates,
     ) if is_title_text_edit else []
 
+    # Pre-scan the edit plan to know which (selector, property) pairs the LLM
+    # explicitly targets.  This prevents the parent-child correction from
+    # redirecting a child edit to a parent that already has its own edit for
+    # the same property (which would overwrite the correct value during dedup).
+    explicit_edit_targets: set[tuple[str, str]] = set()
+    for raw_edit in edits:
+        if isinstance(raw_edit, dict):
+            sel = str(raw_edit.get("selector") or "").strip().lower()
+            prop = str(raw_edit.get("property") or "").strip().lower()
+            if sel and prop:
+                explicit_edit_targets.add((sel, prop))
+
     for raw_edit in edits:
         if not isinstance(raw_edit, dict):
             continue
@@ -3322,6 +3334,8 @@ def rewrite_artifact_patch_plan_for_current_html(
         # When the LLM targets a child selector (e.g. ".lego-brick .stud")
         # but the user's request clearly refers to the parent element
         # (e.g. "the bricks"), redirect to the parent selector.
+        # GUARD: skip if the parent already has an explicit edit for the same
+        # property — redirecting would overwrite the correct value during dedup.
         css_property = str(edit.get("property") or "").strip()
         if selector and css_property:
             correction = correct_parent_child_selector(
@@ -3331,7 +3345,12 @@ def rewrite_artifact_patch_plan_for_current_html(
                 selector_property_map=selector_property_map,
             )
             if correction.was_corrected:
-                edit["selector"] = correction.corrected_selector
+                parent_key = (
+                    correction.corrected_selector.lower(),
+                    css_property.lower(),
+                )
+                if parent_key not in explicit_edit_targets:
+                    edit["selector"] = correction.corrected_selector
 
         rewritten.append(edit)
     compacted = compact_artifact_patch_plan_edits(

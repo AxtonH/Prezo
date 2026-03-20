@@ -260,6 +260,13 @@ def correct_parent_child_selector(
         # Parent doesn't own this property — the child target is likely correct.
         return SelectorCorrectionResult(selector, False, "")
 
+    # Only redirect for properties the user actually requested.
+    # If the user says "increase width" but the edit is for "height" or "top",
+    # it's a supplementary adjustment the LLM chose — not something we should
+    # redirect to the parent.
+    if not _property_mentioned_in_request(css_property, user_request):
+        return SelectorCorrectionResult(selector, False, "")
+
     # Score how well the user's request matches the parent vs the child.
     user_tokens = _tokenise_user_request(user_request)
     if not user_tokens:
@@ -355,6 +362,60 @@ def _selector_has_property(
     if not declarations:
         return False
     return any(name.strip().lower() == target_prop for name, _value in declarations)
+
+
+# Maps CSS property names to natural-language synonyms that users might use.
+# Only properties where parent-child confusion is common need entries here.
+_PROPERTY_SYNONYMS: dict[str, set[str]] = {
+    "width": {"width", "wider", "wide", "narrow", "narrower", "thin", "thinner"},
+    "height": {"height", "tall", "taller", "shorter", "short"},
+    "min-width": {"width", "wider", "wide"},
+    "max-width": {"width", "wider", "wide"},
+    "min-height": {"height", "tall", "taller"},
+    "max-height": {"height", "tall", "taller"},
+    "font-size": {"font", "text", "size", "bigger", "smaller", "larger"},
+    "padding": {"padding", "spacing", "space"},
+    "margin": {"margin", "spacing", "space", "gap"},
+    "gap": {"gap", "spacing", "space"},
+    "border-radius": {"radius", "rounded", "round", "corner", "corners"},
+    "opacity": {"opacity", "transparent", "transparency", "fade", "faded"},
+    "transform": {"size", "scale", "bigger", "smaller", "larger", "grow", "shrink"},
+    "scale": {"size", "scale", "bigger", "smaller", "larger", "grow", "shrink"},
+}
+
+
+def _property_mentioned_in_request(css_property: str, user_request: str) -> bool:
+    """Check if the CSS property (or a natural-language synonym) appears in
+    the user's request.  Returns True for generic sizing words like
+    'bigger'/'increase'/'50%' which imply the primary sizing properties."""
+    lowered = user_request.lower()
+    prop_lower = css_property.strip().lower()
+
+    # Direct mention of the property name (e.g. "width", "font-size").
+    bare_prop = prop_lower.replace("-", " ").replace("_", " ")
+    for word in bare_prop.split():
+        if word and word in lowered:
+            return True
+
+    # Check synonyms.
+    synonyms = _PROPERTY_SYNONYMS.get(prop_lower, set())
+    for syn in synonyms:
+        if syn in lowered:
+            return True
+
+    # Generic sizing intent covers width/height/transform/scale.
+    if prop_lower in {"width", "height", "transform", "scale", "min-width",
+                       "max-width", "min-height", "max-height", "font-size"}:
+        if re.search(
+            r"\b(?:increase|decrease|bigger|smaller|larger|grow|shrink|expand|reduce|enlarge|size|resize|50%|percent)\b",
+            lowered,
+        ):
+            # Only match if the SPECIFIC property is also mentioned or this
+            # is a primary dimension (width/height).
+            if prop_lower in {"width", "height"}:
+                return True
+
+    return False
 
 
 _USER_REQUEST_TOKEN_RE = re.compile(r"[a-zA-Z]+")
