@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .artifact_selector_match import find_best_selector_match
+
 
 @dataclass(slots=True, frozen=True)
 class CssRuleBlock:
@@ -23,12 +25,78 @@ def set_css_property_in_css_tree(
     if not normalized_selector or not normalized_property_name:
         return css_text, False, "not_found"
 
-    target_selector = normalized_selector.lower()
     target_property = _normalize_property_name(normalized_property_name)
+
+    # --- Pseudo-selector path (::before / ::after) ---
+    # Must be checked BEFORE fuzzy resolution, because fuzzy matching would
+    # collapse ".title::before" → ".title" and apply to the wrong rule.
+    if _is_insertable_pseudo_selector(normalized_selector):
+        # First, try an exact match for the full pseudo-selector (it may
+        # already exist in the CSS from a previous edit in the same plan).
+        result = _apply_property_to_selector(
+            css_text, normalized_selector, target_property,
+            normalized_property_name, normalized_value,
+        )
+        if result is not None:
+            return result
+
+        # The full pseudo-selector rule doesn't exist yet — append it if
+        # the base selector can be found (exact or fuzzy).
+        base_selector = _strip_terminal_pseudo_selector(normalized_selector)
+        resolved_base = _resolve_selector(css_text, base_selector) if base_selector else ""
+        if resolved_base and _css_selector_exists(css_text, resolved_base):
+            pseudo_suffix = normalized_selector[len(base_selector):]
+            full_pseudo = resolved_base + pseudo_suffix
+            appended_css = _append_css_rule(
+                css_text,
+                selector=full_pseudo,
+                property_name=normalized_property_name,
+                value=normalized_value,
+            )
+            return appended_css, True, "changed"
+
+        return css_text, False, "not_found"
+
+    # --- Normal selector path (with fuzzy resolution) ---
+    resolved_selector = _resolve_selector(css_text, normalized_selector)
+    result = _apply_property_to_selector(
+        css_text, resolved_selector, target_property,
+        normalized_property_name, normalized_value,
+    )
+    if result is not None:
+        return result
+
+    return css_text, False, "not_found"
+
+
+def _resolve_selector(css_text: str, selector: str) -> str:
+    """Return the best matching real selector from *css_text*, or *selector* as-is.
+
+    Uses layered fuzzy matching when an exact hit isn't found.
+    """
+    if not selector:
+        return selector
+    all_selectors = [block.selector for block in _iter_css_rule_blocks(css_text)]
+    match_result = find_best_selector_match(selector, all_selectors)
+    if match_result.strategy != "none" and match_result.matched_selector:
+        return match_result.matched_selector
+    return selector
+
+
+def _apply_property_to_selector(
+    css_text: str,
+    selector: str,
+    target_property: str,
+    raw_property_name: str,
+    raw_value: str,
+) -> tuple[str, bool, str] | None:
+    """Try to set a CSS property on *selector*.  Returns None if the selector
+    is not found at all (so the caller can try other fallbacks)."""
+    target_lower = selector.lower()
     saw_no_change = False
 
     for block in _iter_css_rule_blocks(css_text):
-        if block.selector.lower() != target_selector:
+        if block.selector.lower() != target_lower:
             continue
 
         body = css_text[block.body_start : block.body_end]
@@ -42,15 +110,15 @@ def set_css_property_in_css_tree(
                 next_declarations.append((decl_name, decl_value))
                 continue
             replaced = True
-            if decl_value.strip() == normalized_value:
+            if decl_value.strip() == raw_value:
                 next_declarations.append((decl_name, decl_value))
                 saw_no_change = True
                 continue
-            next_declarations.append((normalized_property_name, normalized_value))
+            next_declarations.append((raw_property_name, raw_value))
             changed = True
 
         if not replaced:
-            next_declarations.append((normalized_property_name, normalized_value))
+            next_declarations.append((raw_property_name, raw_value))
             changed = True
 
         if not changed:
@@ -63,20 +131,9 @@ def set_css_property_in_css_tree(
             "changed",
         )
 
-    if _is_insertable_pseudo_selector(normalized_selector):
-        base_selector = _strip_terminal_pseudo_selector(normalized_selector)
-        if base_selector and _css_selector_exists(css_text, base_selector):
-            appended_css = _append_css_rule(
-                css_text,
-                selector=normalized_selector,
-                property_name=normalized_property_name,
-                value=normalized_value,
-            )
-            return appended_css, True, "changed"
-
     if saw_no_change:
         return css_text, False, "no_change"
-    return css_text, False, "not_found"
+    return None
 
 
 def _iter_css_rule_blocks(

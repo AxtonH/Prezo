@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(wc -l /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/public/poc/poll-game-poc.*)",
-      "Bash(xargs basename -a)"
+      "Bash(xargs basename -a)",
+      "Bash(xargs wc:*)",
+      "WebSearch",
+      "Bash(ls c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/artifact_*.py)",
+      "Bash(python -m pytest backend/tests/test_ai_routing.py -v)",
+      "Bash(python -m pytest backend/tests/test_ai_routing.py::AiRoutingTests::test_apply_artifact_patch_plan_can_add_pseudo_rule_when_base_selector_exists -v)",
+      "Bash(python -m pytest backend/tests/test_ai_routing.py::AiRoutingTests::test_apply_artifact_patch_plan_can_add_pseudo_rule_when_base_selector_exists backend/tests/test_ai_routing.py::AiRoutingTests::test_oversized_title_patch_plan_is_compacted_instead_of_blocked backend/tests/test_ai_routing.py::AiRoutingTests::test_rewrite_artifact_patch_plan_compacts_oversized_title_studs_plan -v)",
+      "Bash(python -m pytest backend/tests/ -v)"
     ]
   }
 }

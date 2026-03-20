@@ -128,9 +128,18 @@ ARTIFACT_FEEDBACK_FOLLOWUP_RE = re.compile(
     re.IGNORECASE,
 )
 ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE = re.compile(
-    r"\b(?:image|photo|picture|texture|asset|logo|svg|illustration|replace|swap|convert|turn into|add|remove|insert|delete|layout|rearrange|reposition|restructure|scene element|track image)\b",
+    r"\b(?:photo|picture|texture|asset|logo|svg|illustration|swap|convert|turn into|insert|delete|rearrange|reposition|restructure|scene element|track image)\b",
     re.IGNORECASE,
 )
+# Detects when a seemingly-structural verb ("add", "remove", "replace",
+# "image", "layout") is actually targeting a CSS-patchable property.
+# When this matches, the structural classification is overridden and the
+# request is allowed into the patch pipeline.
+ARTIFACT_STRUCTURAL_CSS_OVERRIDE_RE = re.compile(
+    r"\b(?:add|remove|replace|change|image|layout)\b[\s\S]{0,40}\b(?:gradient|color|colour|shadow|glow|border|radius|opacity|background|font|padding|margin|spacing|filter|blur|brightness|contrast|saturate|animation|transition|style|effect|theme|tone|hue|tint|shade)\b",
+    re.IGNORECASE,
+)
+_PSEUDO_SELECTOR_RE = re.compile(r":{1,2}(?:before|after)\s*$", re.IGNORECASE)
 ARTIFACT_LAYOUT_ORIENTATION_EDIT_REQUEST_RE = re.compile(
     r"\b(?:align|alignment|horizontal|vertical|column|columns|stack|stacked|orientation|left-align|right-align|center-align|centre-align|side by side|top to bottom|flip to vertical|flip to horizontal)\b",
     re.IGNORECASE,
@@ -2037,7 +2046,10 @@ def is_patch_only_artifact_edit_request(request_text: str) -> bool:
     if is_layout_orientation_artifact_edit_request(normalized):
         return True
     if ARTIFACT_STRUCTURAL_LOCAL_EDIT_REQUEST_RE.search(normalized):
-        return False
+        # A structural word was found, but check whether it's actually
+        # targeting a CSS property (e.g. "add a gradient", "remove the border").
+        if not ARTIFACT_STRUCTURAL_CSS_OVERRIDE_RE.search(normalized):
+            return False
     return bool(ARTIFACT_PATCH_ONLY_EDIT_REQUEST_RE.search(normalized))
 
 
@@ -3122,6 +3134,8 @@ def rewrite_artifact_patch_plan_for_current_html(
     current_html: str,
     original_edit_request: str,
 ) -> dict[str, Any]:
+    from ..artifact_selector_match import find_best_selector_match
+
     assistant_message = (
         plan.get("assistantMessage") if isinstance(plan.get("assistantMessage"), str) else ""
     )
@@ -3138,26 +3152,22 @@ def rewrite_artifact_patch_plan_for_current_html(
     should_remap_layout_selectors = (
         is_layout_orientation_edit or is_title_overlap_spacing_edit
     )
-    if (
-        not is_background_edit
-        and not should_remap_layout_selectors
-        and not is_title_text_edit
-    ):
-        return {"assistantMessage": assistant_message, "edits": edits}
 
     style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
+    style_selector_set = set(style_selector_candidates)
     background_candidates = prefer_selectors_with_existing_css_rule(
         extract_artifact_background_selector_candidates(current_html),
         style_selector_candidates,
-    )
+    ) if is_background_edit else []
     layout_candidates = prefer_selectors_with_existing_css_rule(
         extract_artifact_layout_selector_candidates(current_html),
         style_selector_candidates,
-    )
+    ) if should_remap_layout_selectors else []
     title_candidates = prefer_selectors_with_existing_css_rule(
         extract_artifact_title_selector_candidates(current_html),
         style_selector_candidates,
-    )
+    ) if is_title_text_edit else []
+
     for raw_edit in edits:
         if not isinstance(raw_edit, dict):
             continue
@@ -3167,6 +3177,8 @@ def rewrite_artifact_patch_plan_for_current_html(
             rewritten.append(edit)
             continue
         selector = str(edit.get("selector") or "").strip()
+
+        # --- Domain-specific remapping (background / layout / title) ---
         if (
             is_background_edit
             and selector
@@ -3198,6 +3210,25 @@ def rewrite_artifact_patch_plan_for_current_html(
             replacement = choose_title_selector_candidate(selector, title_candidates)
             if replacement:
                 edit["selector"] = replacement
+                selector = replacement
+
+        # --- General fuzzy fallback for ANY unresolved selector ---
+        # If after domain-specific remapping the selector still doesn't exist
+        # in the stylesheet, try fuzzy matching against all real selectors.
+        # Skip pseudo-selectors (::before, ::after) — those are handled by the
+        # CSS tree's dedicated insertion path and must not be collapsed to
+        # their base selector.
+        if (
+            selector
+            and selector not in style_selector_set
+            and not _PSEUDO_SELECTOR_RE.search(selector)
+        ):
+            match_result = find_best_selector_match(
+                selector, style_selector_candidates
+            )
+            if match_result.strategy != "none" and match_result.matched_selector:
+                edit["selector"] = match_result.matched_selector
+
         rewritten.append(edit)
     compacted = compact_artifact_patch_plan_edits(
         rewritten,
