@@ -3217,56 +3217,21 @@ def rewrite_artifact_patch_plan_for_current_html(
     current_html: str,
     original_edit_request: str,
 ) -> dict[str, Any]:
-    from ..artifact_selector_match import (
-        correct_parent_child_selector,
-        find_best_selector_match,
-    )
+    """Thin safety-net that fixes hallucinated selectors, deduplicates, and
+    caps the edit count.  Intentionally does NOT reclassify the request or
+    remap selectors by domain — the LLM's plan is trusted as-is, with only
+    fuzzy matching to recover from selector typos / hallucinations.
+    """
+    from ..artifact_selector_match import find_best_selector_match
 
     assistant_message = (
         plan.get("assistantMessage") if isinstance(plan.get("assistantMessage"), str) else ""
     )
     edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
     rewritten: list[dict[str, Any]] = []
-    is_background_edit = is_background_visual_edit_request(original_edit_request)
-    is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
-        original_edit_request
-    )
-    is_title_text_edit = is_title_text_artifact_edit_request(original_edit_request)
-    is_title_overlap_spacing_edit = is_title_overlap_spacing_artifact_edit_request(
-        original_edit_request
-    )
-    should_remap_layout_selectors = (
-        is_layout_orientation_edit or is_title_overlap_spacing_edit
-    )
 
     style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
     style_selector_set = set(style_selector_candidates)
-    # Build a selector → property map for parent-child correction.
-    selector_property_map = _extract_css_property_map_from_html(current_html)
-    background_candidates = prefer_selectors_with_existing_css_rule(
-        extract_artifact_background_selector_candidates(current_html),
-        style_selector_candidates,
-    ) if is_background_edit else []
-    layout_candidates = prefer_selectors_with_existing_css_rule(
-        extract_artifact_layout_selector_candidates(current_html),
-        style_selector_candidates,
-    ) if should_remap_layout_selectors else []
-    title_candidates = prefer_selectors_with_existing_css_rule(
-        extract_artifact_title_selector_candidates(current_html),
-        style_selector_candidates,
-    ) if is_title_text_edit else []
-
-    # Pre-scan the edit plan to know which (selector, property) pairs the LLM
-    # explicitly targets.  This prevents the parent-child correction from
-    # redirecting a child edit to a parent that already has its own edit for
-    # the same property (which would overwrite the correct value during dedup).
-    explicit_edit_targets: set[tuple[str, str]] = set()
-    for raw_edit in edits:
-        if isinstance(raw_edit, dict):
-            sel = str(raw_edit.get("selector") or "").strip().lower()
-            prop = str(raw_edit.get("property") or "").strip().lower()
-            if sel and prop:
-                explicit_edit_targets.add((sel, prop))
 
     for raw_edit in edits:
         if not isinstance(raw_edit, dict):
@@ -3278,46 +3243,12 @@ def rewrite_artifact_patch_plan_for_current_html(
             continue
         selector = str(edit.get("selector") or "").strip()
 
-        # --- Domain-specific remapping (background / layout / title) ---
-        if (
-            is_background_edit
-            and selector
-            and selector not in background_candidates
-            and is_background_like_selector(selector)
-        ):
-            replacement = choose_background_selector_candidate(
-                selector, background_candidates
-            )
-            if replacement:
-                edit["selector"] = replacement
-                selector = replacement
-        if (
-            should_remap_layout_selectors
-            and selector
-            and selector not in layout_candidates
-            and is_layout_like_selector(selector)
-        ):
-            replacement = choose_layout_selector_candidate(selector, layout_candidates)
-            if replacement:
-                edit["selector"] = replacement
-                selector = replacement
-        if (
-            is_title_text_edit
-            and selector
-            and selector not in title_candidates
-            and is_title_like_selector(selector)
-        ):
-            replacement = choose_title_selector_candidate(selector, title_candidates)
-            if replacement:
-                edit["selector"] = replacement
-                selector = replacement
-
-        # --- General fuzzy fallback for ANY unresolved selector ---
-        # If after domain-specific remapping the selector still doesn't exist
-        # in the stylesheet, try fuzzy matching against all real selectors.
-        # Skip pseudo-selectors (::before, ::after) — those are handled by the
-        # CSS tree's dedicated insertion path and must not be collapsed to
-        # their base selector.
+        # --- Fuzzy selector matching ---
+        # If the LLM hallucinated a selector that doesn't exist in the
+        # stylesheet, try to find the closest real selector.
+        # Skip pseudo-selectors (::before, ::after) — those are handled by
+        # the CSS tree's dedicated insertion path and must not be collapsed
+        # to their base selector.
         if (
             selector
             and selector not in style_selector_set
@@ -3328,37 +3259,9 @@ def rewrite_artifact_patch_plan_for_current_html(
             )
             if match_result.strategy != "none" and match_result.matched_selector:
                 edit["selector"] = match_result.matched_selector
-                selector = match_result.matched_selector
-
-        # --- Parent-child selector correction ---
-        # When the LLM targets a child selector (e.g. ".lego-brick .stud")
-        # but the user's request clearly refers to the parent element
-        # (e.g. "the bricks"), redirect to the parent selector.
-        # GUARD: when the correction says the user meant the parent, but the
-        # parent already has an explicit edit for the same property, the child
-        # edit is a duplicate echo — drop it instead of letting it through.
-        css_property = str(edit.get("property") or "").strip()
-        if selector and css_property:
-            correction = correct_parent_child_selector(
-                selector=selector,
-                css_property=css_property,
-                user_request=original_edit_request,
-                selector_property_map=selector_property_map,
-            )
-            if correction.was_corrected:
-                parent_key = (
-                    correction.corrected_selector.lower(),
-                    css_property.lower(),
-                )
-                if parent_key not in explicit_edit_targets:
-                    edit["selector"] = correction.corrected_selector
-                else:
-                    # Parent already has an explicit edit for this property
-                    # and the user clearly meant the parent — drop the
-                    # redundant child edit.
-                    continue
 
         rewritten.append(edit)
+
     compacted = compact_artifact_patch_plan_edits(
         rewritten,
         original_edit_request=original_edit_request,
@@ -3373,6 +3276,12 @@ def compact_artifact_patch_plan_edits(
     original_edit_request: str,
     max_edits: int,
 ) -> list[dict[str, Any]]:
+    """Normalise, deduplicate, and cap the edit list.
+
+    Deduplication keeps the *last* edit for each (file, selector, property)
+    triple.  When the list exceeds *max_edits*, earlier edits are kept
+    (preserving the LLM's intended order).
+    """
     if not edits:
         return []
     if max_edits <= 0:
@@ -3413,26 +3322,8 @@ def compact_artifact_patch_plan_edits(
         dedup_index_by_key[dedup_key] = len(normalized_edits)
         normalized_edits.append(normalized_edit)
 
-    if len(normalized_edits) <= max_edits:
-        return normalized_edits
-
-    is_title_request = is_title_text_artifact_edit_request(original_edit_request)
-    scored_edits: list[tuple[int, int, dict[str, Any]]] = []
-    for index, edit in enumerate(normalized_edits):
-        scored_edits.append(
-            (
-                score_artifact_patch_edit_priority(
-                    edit,
-                    original_edit_request=original_edit_request,
-                    is_title_request=is_title_request,
-                ),
-                index,
-                edit,
-            )
-        )
-    scored_edits.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    selected = [item[2] for item in scored_edits[:max_edits]]
-    return selected
+    # Truncate to max_edits, preserving original order.
+    return normalized_edits[:max_edits]
 
 
 def score_artifact_patch_edit_priority(

@@ -987,7 +987,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Do not invent selectors", prompt)
         self.assertIn("Keep it CSS-only", prompt)
 
-    def test_rewrite_artifact_patch_plan_remaps_invented_city_selector(self) -> None:
+    def test_rewrite_artifact_patch_plan_preserves_unmatched_selector(self) -> None:
+        """Hallucinated selectors that don't fuzzy-match are preserved as-is.
+        The CSS application layer will report 'not_found' — safer than
+        silently applying to the wrong selector."""
         rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
             plan={
                 "assistantMessage": "Updated the city background.",
@@ -1004,9 +1007,10 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             original_edit_request="Edit the background so it is a city.",
         )
 
-        self.assertEqual(rewritten["edits"][0]["selector"], "#track-bg")
+        # No domain-specific remapping — selector stays unchanged.
+        self.assertEqual(rewritten["edits"][0]["selector"], "#city-bg")
 
-    def test_rewrite_artifact_patch_plan_remaps_invented_layout_selector(self) -> None:
+    def test_rewrite_artifact_patch_plan_preserves_unmatched_layout_selector(self) -> None:
         rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
             plan={
                 "assistantMessage": "Switched to vertical alignment.",
@@ -1023,9 +1027,9 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             original_edit_request="Change the alignment so horizontal polls become vertical polls.",
         )
 
-        self.assertEqual(rewritten["edits"][0]["selector"], ".poll-options")
+        self.assertEqual(rewritten["edits"][0]["selector"], "#poll-grid")
 
-    def test_rewrite_artifact_patch_plan_remaps_invented_header_selector_for_title_edit(self) -> None:
+    def test_rewrite_artifact_patch_plan_preserves_unmatched_header_selector(self) -> None:
         rewritten = ai_api.rewrite_artifact_patch_plan_for_current_html(
             plan={
                 "assistantMessage": "Added spacing above the poll rows.",
@@ -1042,7 +1046,7 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
             original_edit_request="Increase title spacing so it is not hidden behind the blocks.",
         )
 
-        self.assertEqual(rewritten["edits"][0]["selector"], ".poll-header")
+        self.assertEqual(rewritten["edits"][0]["selector"], "#header")
 
     def test_rewrite_artifact_patch_plan_compacts_oversized_title_studs_plan(self) -> None:
         oversized_edits = [
