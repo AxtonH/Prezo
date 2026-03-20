@@ -2693,6 +2693,20 @@ def build_selector_context_map(html: str, *, max_selectors: int = 40) -> str:
     return "\n".join(lines)
 
 
+def _extract_css_property_map_from_html(
+    html: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Extract a selector → [(property, value), ...] map from all ``<style>``
+    blocks in *html*.  Used by the parent-child correction logic to check
+    whether a parent selector owns a given CSS property."""
+    css_chunks: list[str] = []
+    for style_match in ARTIFACT_STYLE_TAG_RE.finditer(html):
+        css_chunks.append(style_match.group("body") or "")
+    if not css_chunks:
+        return {}
+    return extract_selector_property_map("\n".join(css_chunks))
+
+
 def prefer_selectors_with_existing_css_rule(
     candidates: list[str], style_selectors: list[str]
 ) -> list[str]:
@@ -3203,7 +3217,10 @@ def rewrite_artifact_patch_plan_for_current_html(
     current_html: str,
     original_edit_request: str,
 ) -> dict[str, Any]:
-    from ..artifact_selector_match import find_best_selector_match
+    from ..artifact_selector_match import (
+        correct_parent_child_selector,
+        find_best_selector_match,
+    )
 
     assistant_message = (
         plan.get("assistantMessage") if isinstance(plan.get("assistantMessage"), str) else ""
@@ -3224,6 +3241,8 @@ def rewrite_artifact_patch_plan_for_current_html(
 
     style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
     style_selector_set = set(style_selector_candidates)
+    # Build a selector → property map for parent-child correction.
+    selector_property_map = _extract_css_property_map_from_html(current_html)
     background_candidates = prefer_selectors_with_existing_css_rule(
         extract_artifact_background_selector_candidates(current_html),
         style_selector_candidates,
@@ -3297,6 +3316,22 @@ def rewrite_artifact_patch_plan_for_current_html(
             )
             if match_result.strategy != "none" and match_result.matched_selector:
                 edit["selector"] = match_result.matched_selector
+                selector = match_result.matched_selector
+
+        # --- Parent-child selector correction ---
+        # When the LLM targets a child selector (e.g. ".lego-brick .stud")
+        # but the user's request clearly refers to the parent element
+        # (e.g. "the bricks"), redirect to the parent selector.
+        css_property = str(edit.get("property") or "").strip()
+        if selector and css_property:
+            correction = correct_parent_child_selector(
+                selector=selector,
+                css_property=css_property,
+                user_request=original_edit_request,
+                selector_property_map=selector_property_map,
+            )
+            if correction.was_corrected:
+                edit["selector"] = correction.corrected_selector
 
         rewritten.append(edit)
     compacted = compact_artifact_patch_plan_edits(

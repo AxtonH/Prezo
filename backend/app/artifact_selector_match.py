@@ -194,3 +194,211 @@ def _selector_similarity(target: str, candidate: str) -> float:
     token_score = _token_overlap_score(target, candidate)
     edit_score = _levenshtein_ratio(target, candidate)
     return 0.6 * token_score + 0.4 * edit_score
+
+
+# ---------------------------------------------------------------------------
+# Parent-selector correction
+# ---------------------------------------------------------------------------
+
+# CSS combinators that separate parent from child in a compound selector.
+_DESCENDANT_SPLIT_RE = re.compile(r"\s+(?![^(]*\))")  # space not inside ()
+
+
+@dataclass(slots=True, frozen=True)
+class SelectorCorrectionResult:
+    """Outcome of a parent-vs-child selector correction check."""
+
+    corrected_selector: str
+    """The selector to use (may be the original or the parent)."""
+
+    was_corrected: bool
+    """True if the selector was redirected to the parent."""
+
+    reason: str
+    """Human-readable explanation (for logging / debugging)."""
+
+
+def correct_parent_child_selector(
+    selector: str,
+    css_property: str,
+    user_request: str,
+    selector_property_map: dict[str, list[tuple[str, str]]],
+) -> SelectorCorrectionResult:
+    """Detect when the LLM targeted a child selector but the user's intent
+    refers to the parent element, and redirect accordingly.
+
+    Parameters
+    ----------
+    selector:
+        The CSS selector the LLM chose (e.g. ``.lego-brick .stud``).
+    css_property:
+        The CSS property being set (e.g. ``width``).
+    user_request:
+        The original user edit request text.
+    selector_property_map:
+        Mapping of selector → [(property, value), ...] from the current CSS.
+        Used to check whether the parent selector owns the same property.
+
+    Returns
+    -------
+    SelectorCorrectionResult indicating whether the selector was corrected.
+    """
+    if not selector or not user_request:
+        return SelectorCorrectionResult(selector, False, "")
+
+    # Only act on descendant/child selectors (those with spaces or >).
+    parent, child_tail = _split_parent_child(selector)
+    if not parent or not child_tail:
+        # Not a compound selector — nothing to correct.
+        return SelectorCorrectionResult(selector, False, "")
+
+    # Check: does the parent selector exist in the CSS with the same property?
+    parent_has_property = _selector_has_property(
+        parent, css_property, selector_property_map
+    )
+    if not parent_has_property:
+        # Parent doesn't own this property — the child target is likely correct.
+        return SelectorCorrectionResult(selector, False, "")
+
+    # Score how well the user's request matches the parent vs the child.
+    user_tokens = _tokenise_user_request(user_request)
+    if not user_tokens:
+        return SelectorCorrectionResult(selector, False, "")
+
+    parent_score = _request_selector_affinity(user_tokens, parent)
+    child_score = _request_selector_affinity(user_tokens, child_tail)
+
+    if parent_score > child_score:
+        return SelectorCorrectionResult(
+            parent,
+            True,
+            f"redirected from `{selector}` to parent `{parent}` "
+            f"(parent affinity {parent_score:.2f} > child affinity {child_score:.2f})",
+        )
+
+    return SelectorCorrectionResult(selector, False, "")
+
+
+# ---------------------------------------------------------------------------
+# Internals for parent-selector correction
+# ---------------------------------------------------------------------------
+
+def _split_parent_child(selector: str) -> tuple[str, str]:
+    """Split a compound selector into its parent and final child segment.
+
+    Examples::
+
+        ".lego-brick .stud"      → (".lego-brick", ".stud")
+        ".lego-brick > .stud"    → (".lego-brick", ".stud")
+        ".lego-brick"            → ("", "")   (not compound)
+        "body .wrap .lego-brick .stud" → ("body .wrap .lego-brick", ".stud")
+    """
+    normalized = selector.strip()
+    if not normalized:
+        return ("", "")
+
+    # Try splitting on " > " (child combinator) or plain space.
+    # We want the LAST segment as the child, everything before as the parent.
+    # Handle ">" combinator: normalise to space-separated first.
+    working = re.sub(r"\s*>\s*", " > ", normalized)
+
+    # Find the last top-level space (not inside brackets/parens).
+    last_space = _find_last_top_level_space(working)
+    if last_space < 0:
+        return ("", "")
+
+    parent = working[:last_space].rstrip(" >").strip()
+    child_tail = working[last_space:].lstrip(" >").strip()
+
+    if not parent or not child_tail:
+        return ("", "")
+
+    return (parent, child_tail)
+
+
+def _find_last_top_level_space(selector: str) -> int:
+    """Find the index of the last space that isn't inside () or []."""
+    depth_paren = 0
+    depth_bracket = 0
+    last_space = -1
+
+    for i, ch in enumerate(selector):
+        if ch == "(":
+            depth_paren += 1
+        elif ch == ")" and depth_paren > 0:
+            depth_paren -= 1
+        elif ch == "[":
+            depth_bracket += 1
+        elif ch == "]" and depth_bracket > 0:
+            depth_bracket -= 1
+        elif ch == " " and depth_paren == 0 and depth_bracket == 0:
+            last_space = i
+
+    return last_space
+
+
+def _selector_has_property(
+    selector: str,
+    css_property: str,
+    prop_map: dict[str, list[tuple[str, str]]],
+) -> bool:
+    """Check if *selector* has *css_property* declared in the property map."""
+    target_prop = css_property.strip().lower()
+    # Try exact match first, then case-insensitive.
+    declarations = prop_map.get(selector)
+    if declarations is None:
+        selector_lower = selector.lower()
+        for key, value in prop_map.items():
+            if key.lower() == selector_lower:
+                declarations = value
+                break
+    if not declarations:
+        return False
+    return any(name.strip().lower() == target_prop for name, _value in declarations)
+
+
+_USER_REQUEST_TOKEN_RE = re.compile(r"[a-zA-Z]+")
+
+
+def _tokenise_user_request(text: str) -> set[str]:
+    """Extract meaningful word tokens from a user's edit request.
+
+    Applies basic stemming (strip trailing 's', 'es', 'ed') so that
+    "bricks" matches "brick" and "increased" matches "increase".
+    """
+    raw_tokens = _USER_REQUEST_TOKEN_RE.findall(text.lower())
+    # Filter out very short / stop words.
+    stop_words = {
+        "the", "a", "an", "of", "by", "to", "in", "on", "and", "or", "it",
+        "is", "be", "do", "at", "for", "with", "from", "as", "its", "make",
+        "set", "css", "px", "rem", "em", "vh", "vw",
+    }
+    tokens: set[str] = set()
+    for word in raw_tokens:
+        if len(word) < 2 or word in stop_words:
+            continue
+        tokens.add(word)
+        # Basic plural/tense stemming for matching.
+        if word.endswith("es") and len(word) > 3:
+            tokens.add(word[:-2])
+        elif word.endswith("s") and len(word) > 2:
+            tokens.add(word[:-1])
+        elif word.endswith("ed") and len(word) > 3:
+            tokens.add(word[:-2])
+    return tokens
+
+
+def _request_selector_affinity(
+    user_tokens: set[str], selector: str
+) -> float:
+    """Score how well a user's request tokens match a CSS selector.
+
+    Returns a 0–1 score: proportion of *selector* tokens that appear in
+    *user_tokens*.  A higher score means the user is more likely referring
+    to this selector.
+    """
+    selector_tokens = _tokenise_selector(selector)
+    if not selector_tokens:
+        return 0.0
+    hits = sum(1 for t in selector_tokens if t in user_tokens)
+    return hits / len(selector_tokens)
