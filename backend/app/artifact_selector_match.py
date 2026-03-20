@@ -303,6 +303,99 @@ def correct_parent_child_selector(
     return SelectorCorrectionResult(selector, False, "")
 
 
+def should_drop_child_echo_edit(
+    selector: str,
+    css_property: str,
+    user_request: str,
+    explicit_edit_targets: set[tuple[str, str]],
+) -> bool:
+    """Return ``True`` if this edit targets a child selector that should be
+    silently dropped because it is an "echo" of a parent edit the user
+    actually intended.
+
+    Two conditions trigger a drop:
+
+    1. **Same-property echo** – the parent selector already has an explicit
+       edit for the *same* CSS property (e.g. both ``.lego-brick`` and
+       ``.lego-brick .stud`` have ``width`` edits) and the user's request
+       language refers to the parent, not the child.
+    2. **Derivative child edit** – the parent has an explicit edit for *any*
+       property, the child's property is not mentioned in the user request,
+       and affinity scoring strongly favours the parent (child affinity ≤ 0).
+
+    Parameters
+    ----------
+    selector:
+        The CSS selector of the edit being evaluated.
+    css_property:
+        The CSS property being set.
+    user_request:
+        The original user edit request text.
+    explicit_edit_targets:
+        Set of ``(selector_lower, property_lower)`` pairs representing all
+        edits the LLM explicitly included in the plan.
+    """
+    if not selector or not css_property or not user_request:
+        return False
+
+    parent, child_tail = _split_parent_child(selector)
+    if not parent or not child_tail:
+        return False  # Not a compound selector — nothing to filter.
+
+    parent_lower = parent.lower()
+    prop_lower = css_property.strip().lower()
+
+    parent_has_same_prop = (parent_lower, prop_lower) in explicit_edit_targets
+    parent_has_any_edit = any(
+        sel == parent_lower for sel, _ in explicit_edit_targets
+    )
+
+    if not parent_has_same_prop and not parent_has_any_edit:
+        return False  # Parent has no explicit edits — not an echo.
+
+    # Score how well the user's request matches the parent vs the child.
+    user_tokens = _tokenise_user_request(user_request)
+    if not user_tokens:
+        return False
+
+    parent_score = _request_selector_affinity(user_tokens, parent)
+    child_score = _request_selector_affinity(user_tokens, child_tail)
+
+    # Apply negation penalties (same logic as correct_parent_child_selector).
+    negated_tokens = _extract_negated_tokens(user_request)
+    if negated_tokens:
+        parent_sel_tokens = _tokenise_selector(parent)
+        if parent_sel_tokens:
+            hits = sum(1 for t in parent_sel_tokens if t in negated_tokens)
+            if hits:
+                parent_score -= hits / len(parent_sel_tokens)
+        child_sel_tokens = _tokenise_selector(child_tail)
+        if child_sel_tokens:
+            hits = sum(1 for t in child_sel_tokens if t in negated_tokens)
+            if hits:
+                child_score -= hits / len(child_sel_tokens)
+
+    # Condition 1: parent already has the same property edit and the user
+    # meant the parent — this child edit is a duplicate / echo.
+    if parent_has_same_prop and parent_score > child_score:
+        return True
+
+    # Condition 2: parent has some other edit, the child's property isn't
+    # mentioned in the request, and affinity strongly favours the parent.
+    # This catches derivative adjustments (e.g. stud `left` repositioning
+    # when user only asked to change the brick `width`).
+    if (
+        parent_has_any_edit
+        and not parent_has_same_prop
+        and not _property_mentioned_in_request(css_property, user_request)
+        and parent_score > 0
+        and child_score <= 0
+    ):
+        return True
+
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Internals for parent-selector correction
 # ---------------------------------------------------------------------------
