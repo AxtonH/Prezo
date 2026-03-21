@@ -1738,6 +1738,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
     state.artifact.rollbackHtml = ''
     state.artifact.rollbackPackage = null
+    state.artifact.activeEditRequest = ''
     state.artifact.pendingSuccessMessage = ''
     state.artifact.pendingRequestKind = ''
     if (successMessage) {
