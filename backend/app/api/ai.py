@@ -291,11 +291,11 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
         '- { "type":"reset_positions" }',
         '- { "type":"reset_theme" }',
         "Allowed theme keys: bgA, bgB, overlayColor, panelColor, panelBorder, textMain, textSub, "
-        "trackColor, fillA, fillB, raceTrackColor, bgImageOpacity, overlayOpacity, gridOpacity, "
-        "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, raceCarSize, "
-        "raceTrackOpacity, raceSpeed, logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
-        "gridVisible, visualMode, artifactLayout, raceCar, raceCarImageUrl, logoUrl, assetUrl, fontFamily.",
-        "visualMode values: classic, race, artifact.",
+        "trackColor, fillA, fillB, bgImageOpacity, overlayOpacity, gridOpacity, "
+        "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, "
+        "logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
+        "gridVisible, visualMode, artifactLayout, logoUrl, assetUrl, fontFamily.",
+        "visualMode values: classic, artifact.",
         "artifactLayout values: horizontal, vertical.",
         "Allowed move targets: panel, eyebrow, question, meta, footer, options, logo, asset, bgImage, overlay, grid.",
         "Allowed resize targets: panel, eyebrow, question, meta, footer, logo, asset, bgImage, overlay, grid.",

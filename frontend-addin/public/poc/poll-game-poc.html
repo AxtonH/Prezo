@@ -26,7 +26,7 @@
         <div class="ribbon-tabs" role="tablist" aria-label="Editor sections">
           <button class="ribbon-tab active" role="tab" data-ribbon-tab="home" type="button">Home</button>
           <button class="ribbon-tab" role="tab" data-ribbon-tab="look" type="button">Design</button>
-          <button class="ribbon-tab" role="tab" data-ribbon-tab="motion" type="button">Motion</button>
+
           <button class="ribbon-tab" role="tab" data-ribbon-tab="assets" type="button">Assets</button>
         </div>
         <div class="ribbon-actions">
@@ -127,7 +127,6 @@
                   <label for="theme-visual-mode">Visual mode</label>
                   <select id="theme-visual-mode">
                     <option value="classic">Classic bars</option>
-                    <option value="race">Race mode</option>
                     <option value="artifact">Artifact mode</option>
                   </select>
                 </div>
@@ -234,23 +233,6 @@
                   <label class="advanced-control">Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
                   <label class="advanced-control">Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
                   <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <section class="ribbon-pane" data-ribbon-pane="motion">
-            <div class="ribbon-pane-grid">
-              <article class="ribbon-group group-medium">
-                <h3>Race Animation</h3>
-                <label>Car icon<input id="theme-race-car" type="text" maxlength="4" placeholder="car emoji" /></label>
-                <label class="advanced-control">Car image URL<input id="theme-race-car-image-url" type="text" placeholder="https://..." /></label>
-                <label>Upload car image<input id="theme-race-car-upload" type="file" accept="image/*" /></label>
-                <div class="grid">
-                  <label>Car size<input id="theme-race-car-size" type="range" min="20" max="56" step="1" /></label>
-                  <label>Race speed<input id="theme-race-speed" type="range" min="0.35" max="1.8" step="0.01" /></label>
-                  <label class="advanced-control">Track color<input id="theme-race-track-color" type="color" /></label>
-                  <label class="advanced-control">Track opacity<input id="theme-race-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
                 </div>
               </article>
             </div>
@@ -477,9 +459,6 @@
         <div id="ai-chat-queue" class="ai-chat-queue hidden"></div>
         <div id="ai-chat-messages" class="ai-chat-messages"></div>
         <div class="ai-chat-quick-actions">
-          <button type="button" class="ai-quick-action" data-ai-prompt="Use race mode with a bright modern style.">
-            Race Look
-          </button>
           <button type="button" class="ai-quick-action" data-ai-prompt="Make the design cleaner and improve text readability.">
             Improve Readability
           </button>

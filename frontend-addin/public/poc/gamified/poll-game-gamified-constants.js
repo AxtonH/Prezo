@@ -29,9 +29,6 @@ export const AI_THEME_NUMBER_RANGES = Object.freeze({
   barRadius: [0, 999],
   questionSize: [42, 90],
   labelSize: [14, 36],
-  raceCarSize: [20, 56],
-  raceTrackOpacity: [0, 1],
-  raceSpeed: [0.35, 1.8],
   logoWidth: [40, 280],
   logoOpacity: [0, 1],
   assetWidth: [60, 720],
@@ -49,7 +46,6 @@ export const AI_THEME_COLOR_KEYS = new Set([
   'trackColor',
   'fillA',
   'fillB',
-  'raceTrackColor'
 ])
 
 export const AI_THEME_ALLOWED_KEYS = new Set([
@@ -59,8 +55,6 @@ export const AI_THEME_ALLOWED_KEYS = new Set([
   'gridVisible',
   'visualMode',
   'artifactLayout',
-  'raceCar',
-  'raceCarImageUrl',
   'logoUrl',
   'assetUrl',
   'fontFamily'

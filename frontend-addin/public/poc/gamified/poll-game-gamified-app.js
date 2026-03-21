@@ -122,10 +122,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     fetchPromise: null,
     isUnloading: false,
     lastRenderKey: '',
-    raceRows: new Map(),
-    racePollId: null,
-    raceAnimFrameId: null,
-    raceAnimLastTs: 0,
     textOverrides: loadTextOverrides(),
     activeTextHost: null,
     selectionToolbarRafId: null,
@@ -324,12 +320,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     labelSize: 24,
     visualMode: 'classic',
     artifactLayout: ARTIFACT_LAYOUT_HORIZONTAL,
-    raceCar: 'car',
-    raceCarImageUrl: '',
-    raceCarSize: 30,
-    raceTrackColor: '#d7e6f6',
-    raceTrackOpacity: 0.88,
-    raceSpeed: 0.78,
     logoUrl: '',
     logoWidth: 140,
     logoOpacity: 1,
@@ -413,12 +403,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     { id: 'theme-question-size', key: 'questionSize', type: 'number' },
     { id: 'theme-label-size', key: 'labelSize', type: 'number' },
     { id: 'theme-visual-mode', key: 'visualMode', type: 'select' },
-    { id: 'theme-race-car', key: 'raceCar', type: 'text' },
-    { id: 'theme-race-car-image-url', key: 'raceCarImageUrl', type: 'text' },
-    { id: 'theme-race-car-size', key: 'raceCarSize', type: 'number' },
-    { id: 'theme-race-track-color', key: 'raceTrackColor', type: 'color' },
-    { id: 'theme-race-track-opacity', key: 'raceTrackOpacity', type: 'number' },
-    { id: 'theme-race-speed', key: 'raceSpeed', type: 'number' },
     { id: 'theme-logo-url', key: 'logoUrl', type: 'text' },
     { id: 'theme-logo-width', key: 'logoWidth', type: 'number' },
     { id: 'theme-logo-opacity', key: 'logoOpacity', type: 'number' },
@@ -938,8 +922,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         updateTheme({ [spec.key]: value }, { historyLabel: 'Update design' })
         if (
           state.snapshot &&
-          (spec.key === 'visualMode' ||
-            (currentTheme.visualMode === 'race' && spec.key.startsWith('race')))
+          spec.key === 'visualMode'
         ) {
           renderFromSnapshot(true)
         }
@@ -975,7 +958,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     window.addEventListener('keydown', handleResetPositionsModalKeydown, true)
 
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
-    bindImageUpload('theme-race-car-upload', 'raceCarImageUrl', 'Race car image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
   }
@@ -3203,13 +3185,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (key === 'artifactLayout') {
       return sanitizeArtifactLayout(value, currentTheme.artifactLayout)
     }
-    if (key === 'raceCar') {
-      return normalizeRaceCar(value)
-    }
     if (key === 'fontFamily') {
       return sanitizeFontFamily(value, currentTheme.fontFamily)
     }
-    if (key === 'bgImageUrl' || key === 'raceCarImageUrl' || key === 'logoUrl' || key === 'assetUrl') {
+    if (key === 'bgImageUrl' || key === 'logoUrl' || key === 'assetUrl') {
       return sanitizeUrl(value, currentTheme[key])
     }
     return null
@@ -3606,16 +3585,16 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (part === 'label' || part === 'stats' || part === 'bar' || part === 'row') {
       return part
     }
-    if (node.classList.contains('label') || node.classList.contains('race-label')) {
+    if (node.classList.contains('label')) {
       return 'label'
     }
     if (node.classList.contains('stats')) {
       return 'stats'
     }
-    if (node.classList.contains('track') || node.classList.contains('race-track')) {
+    if (node.classList.contains('track')) {
       return 'bar'
     }
-    if (node.classList.contains('option') || node.classList.contains('race-option')) {
+    if (node.classList.contains('option')) {
       return 'row'
     }
     return ''
@@ -6867,44 +6846,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     })
   }
 
-  function registerRaceOptionDragTarget(row) {
-    if (!row || !row.optionId || row.root.dataset.dragRegistered === '1') {
-      return
-    }
-    row.root.dataset.dragRegistered = '1'
-    row.root.classList.add('drag-target')
-    attachDragBehavior(row.root, null, null, {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false,
-      getPosition: () => ({
-        x: row.dragOffsetX,
-        y: row.dragOffsetY
-      }),
-      setPosition: (x, y) => {
-        row.dragOffsetX = x
-        row.dragOffsetY = y
-        setOptionDragOffset(row.optionId, x, y, 'row')
-        applyRaceRowTransform(row)
-      }
-    })
-    registerOptionResizeTarget(row.root, row.optionId, 'row', {
-      resizeMode: 'box',
-      minWidth: 180,
-      maxWidth: 2600,
-      minHeight: 42,
-      maxHeight: 900,
-      adjustPositionOnResize: false
-    })
-  }
-
-  function applyRaceRowTransform(row) {
-    row.root.style.transform = `translate(${row.dragOffsetX}px, ${row.currentY + row.dragOffsetY}px)`
-  }
-
   function isPointerNearNodeEdge(node, event, edgePadding = 0) {
     if (!(node instanceof Element)) {
       return false
@@ -7244,11 +7185,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
       renderArtifactExperience(poll, totalVotes)
     } else if (!editingWithinOptions) {
-      if (currentTheme.visualMode === 'race') {
-        renderRaceOptions(poll, totalVotes)
-      } else {
-        renderClassicOptions(poll, totalVotes)
-      }
+      renderClassicOptions(poll, totalVotes)
     }
     updateMeta(poll, totalVotes)
     updateFooter()
@@ -7273,9 +7210,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function renderArtifactExperience(poll, totalVotes) {
-    if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
-      clearRaceRows()
-    }
     clearArtifactModeClasses()
     if (state.artifact.busy) {
       showArtifactStageLoader('Generating artifact canvas...')
@@ -7305,9 +7239,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function renderClassicOptions(poll, totalVotes) {
-    if (el.options.classList.contains('race-mode') || state.raceRows.size > 0) {
-      clearRaceRows()
-    }
     clearArtifactModeClasses()
     const fragment = document.createDocumentFragment()
     const renderedNodes = []
@@ -7393,222 +7324,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
   }
 
-  function renderRaceOptions(poll, totalVotes) {
-    clearArtifactModeClasses()
-    const pollId = asText(poll?.id)
-    if (state.racePollId && pollId && state.racePollId !== pollId) {
-      clearRaceRows()
-      el.options.replaceChildren()
-    }
-    if (!el.options.classList.contains('race-mode')) {
-      el.options.replaceChildren()
-      state.raceRows.clear()
-    }
-
-    el.options.classList.add('race-mode')
-    state.racePollId = pollId || state.racePollId
-
-    const foreignNodes = [...el.options.children].filter(
-      (node) => !(node instanceof HTMLElement) || !node.classList.contains('race-option')
-    )
-    for (const node of foreignNodes) {
-      node.remove()
-    }
-
-    const options = Array.isArray(poll.options) ? poll.options : []
-    const sorted = [...options].sort((left, right) => {
-      const voteDiff = toInt(right.votes) - toInt(left.votes)
-      if (voteDiff !== 0) {
-        return voteDiff
-      }
-      return asText(left.label).localeCompare(asText(right.label))
-    })
-    const rowHeight = Math.max(74, currentTheme.raceCarSize + 46)
-
-    const liveIds = new Set()
-    for (let index = 0; index < sorted.length; index += 1) {
-      const option = sorted[index]
-      const optionId = asText(option.id) || `option-${index}`
-      liveIds.add(optionId)
-      const votes = toInt(option.votes)
-      const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
-
-      let row = state.raceRows.get(optionId)
-      if (!row) {
-        row = createRaceRow(index * rowHeight, pct, optionId)
-        state.raceRows.set(optionId, row)
-        el.options.appendChild(row.root)
-        registerRaceOptionDragTarget(row)
-      }
-      const dragOffset = getOptionDragOffset(optionId, 'row')
-      row.dragOffsetX = dragOffset.x
-      row.dragOffsetY = dragOffset.y
-      renderRichText(
-        row.label,
-        getOptionTextKey(poll, option, index),
-        asText(option.label) || 'Option'
-      )
-      renderRichText(
-        row.stats,
-        getOptionStatsTextKey(poll, option, index),
-        `${votes} (${pct}%)`
-      )
-      row.targetY = index * rowHeight
-      row.targetProgress = pct
-      row.root.classList.toggle('leading', index === 0)
-      row.root.style.zIndex = `${sorted.length - index}`
-      applyDeletedOptionTarget(row.root, poll, optionId, 'row')
-      applyDeletedOptionTarget(row.label, poll, optionId, 'label')
-      applyDeletedOptionTarget(row.stats, poll, optionId, 'stats')
-      applyDeletedOptionTarget(row.track, poll, optionId, 'bar')
-      applyRaceRowTransform(row)
-      applyOptionBoxSize(row.root, optionId, 'row')
-      applyRaceCarContent(row.car)
-    }
-
-    for (const [optionId, row] of state.raceRows) {
-      if (liveIds.has(optionId)) {
-        continue
-      }
-      row.root.remove()
-      state.raceRows.delete(optionId)
-    }
-
-    el.options.style.height = `${rowHeight * sorted.length}px`
-    startRaceAnimationLoop()
-  }
-
-  function createRaceRow(initialY = 0, initialProgress = 0, optionId = '') {
-    const root = document.createElement('article')
-    root.className = 'race-option'
-    root.style.transform = `translateY(${initialY}px)`
-    root.style.opacity = '1'
-    if (optionId) {
-      root.dataset.optionDragId = optionId
-    }
-
-    const top = document.createElement('div')
-    top.className = 'race-top'
-
-    const label = document.createElement('span')
-    label.className = 'race-label'
-
-    const stats = document.createElement('span')
-    stats.className = 'stats'
-
-    const track = document.createElement('div')
-    track.className = 'race-track'
-
-    const fill = document.createElement('div')
-    fill.className = 'race-fill'
-
-    const car = document.createElement('div')
-    car.className = 'race-car'
-    car.style.left = `${initialProgress}%`
-
-    fill.style.width = `${initialProgress}%`
-
-    top.append(label, stats)
-    track.append(fill, car)
-    root.append(top, track)
-
-    return {
-      root,
-      label,
-      stats,
-      track,
-      fill,
-      car,
-      optionId,
-      dragOffsetX: 0,
-      dragOffsetY: 0,
-      currentY: initialY,
-      targetY: initialY,
-      currentProgress: initialProgress,
-      targetProgress: initialProgress
-    }
-  }
-
-  function startRaceAnimationLoop() {
-    if (state.raceAnimFrameId != null) {
-      return
-    }
-    state.raceAnimLastTs = 0
-    state.raceAnimFrameId = requestAnimationFrame(stepRaceAnimation)
-  }
-
-  function stopRaceAnimationLoop() {
-    if (state.raceAnimFrameId == null) {
-      return
-    }
-    cancelAnimationFrame(state.raceAnimFrameId)
-    state.raceAnimFrameId = null
-    state.raceAnimLastTs = 0
-  }
-
-  function stepRaceAnimation(ts) {
-    if (state.raceRows.size === 0 || currentTheme.visualMode !== 'race') {
-      stopRaceAnimationLoop()
-      return
-    }
-
-    const prevTs = state.raceAnimLastTs || ts
-    const dt = Math.min(0.05, Math.max(0.001, (ts - prevTs) / 1000))
-    state.raceAnimLastTs = ts
-
-    const speed = clamp(currentTheme.raceSpeed, 0.35, 1.8, defaultTheme.raceSpeed)
-    const yAlpha = 1 - Math.exp(-(9.5 * speed) * dt)
-    const pAlpha = 1 - Math.exp(-(10.5 * speed) * dt)
-
-    let hasMotion = false
-    for (const row of state.raceRows.values()) {
-      row.currentY += (row.targetY - row.currentY) * yAlpha
-      row.currentProgress += (row.targetProgress - row.currentProgress) * pAlpha
-
-      if (Math.abs(row.targetY - row.currentY) < 0.2) {
-        row.currentY = row.targetY
-      } else {
-        hasMotion = true
-      }
-      if (Math.abs(row.targetProgress - row.currentProgress) < 0.15) {
-        row.currentProgress = row.targetProgress
-      } else {
-        hasMotion = true
-      }
-
-      applyRaceRowTransform(row)
-      row.fill.style.width = `${row.currentProgress}%`
-      row.car.style.left = `${row.currentProgress}%`
-    }
-
-    if (hasMotion) {
-      state.raceAnimFrameId = requestAnimationFrame(stepRaceAnimation)
-      return
-    }
-
-    state.raceAnimFrameId = null
-    state.raceAnimLastTs = 0
-  }
-
-  function clearRaceRows() {
-    stopRaceAnimationLoop()
-    for (const row of state.raceRows.values()) {
-      row.root.remove()
-    }
-    state.raceRows.clear()
-    state.racePollId = null
-    const orphanRows = el.options.querySelectorAll('.race-option')
-    for (const row of orphanRows) {
-      row.remove()
-    }
-    el.options.classList.remove('race-mode')
-    el.options.style.height = ''
-    if (!getActiveRichTextHost()) {
-      refreshTextToolStates()
-    }
-    scheduleResizeSelectionUpdate()
-  }
-
   function clearArtifactModeClasses() {
     for (const className of [...el.options.classList]) {
       if (className === 'artifact-mode' || className.startsWith('artifact-')) {
@@ -7618,7 +7333,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function renderMissingSession() {
-    clearRaceRows()
     clearArtifactModeClasses()
     syncArtifactComposerVisibility()
     state.currentPoll = null
@@ -7642,7 +7356,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function renderMissingPoll() {
-    clearRaceRows()
     clearArtifactModeClasses()
     syncArtifactComposerVisibility()
     const message =
@@ -7667,7 +7380,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function renderError(message) {
-    clearRaceRows()
     clearArtifactModeClasses()
     syncArtifactComposerVisibility()
     state.currentPoll = null
@@ -8469,13 +8181,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
           labelRow.dataset.optionRowFlowLocked = '0'
         }
       }
-      for (const row of state.raceRows.values()) {
-        row.dragOffsetX = 0
-        row.dragOffsetY = 0
-        row.root.style.removeProperty('width')
-        row.root.style.removeProperty('height')
-        applyRaceRowTransform(row)
-      }
     }
     showThemeFeedback('All object positions reset to defaults.', 'success')
   }
@@ -8549,9 +8254,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     root.setProperty('--label-size', `${theme.labelSize}px`)
     root.setProperty('--artifact-layout', theme.artifactLayout)
     root.setProperty('--grid-opacity', `${theme.gridOpacity}`)
-    root.setProperty('--race-track', hexToRgba(theme.raceTrackColor, theme.raceTrackOpacity))
-    root.setProperty('--race-car-size', `${theme.raceCarSize}px`)
-    root.setProperty('--race-speed-ms', `${Math.round(theme.raceSpeed * 1000)}ms`)
     root.setProperty('--wrap-offset-x', '0px')
     root.setProperty('--wrap-offset-y', '0px')
     root.setProperty('--panel-offset-x', `${clamp(theme.panelX, -2400, 2400, 0)}px`)
@@ -8610,7 +8312,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       scaleY: theme.assetScaleY
     })
     applyDeletedStaticTargets(theme)
-    syncRaceThemeVisuals()
     syncArtifactComposerVisibility()
     scheduleResizeSelectionUpdate()
   }
@@ -8799,26 +8500,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const scaleX = clamp(options.scaleX, 0.25, 5, 1)
     const scaleY = clamp(options.scaleY, 0.25, 5, 1)
     node.style.transform = `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`
-  }
-
-  function syncRaceThemeVisuals() {
-    const cars = el.options.querySelectorAll('.race-car')
-    for (const car of cars) {
-      applyRaceCarContent(car)
-    }
-  }
-
-  function applyRaceCarContent(carNode) {
-    const imageUrl = asText(currentTheme.raceCarImageUrl)
-    if (imageUrl) {
-      carNode.textContent = ''
-      carNode.style.backgroundImage = `url("${imageUrl.replace(/"/g, '\\"')}")`
-      carNode.classList.add('image-car')
-      return
-    }
-    carNode.style.backgroundImage = 'none'
-    carNode.classList.remove('image-car')
-    carNode.textContent = normalizeRaceCar(currentTheme.raceCar)
   }
 
   function syncThemeControls() {
@@ -9326,12 +9007,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       labelSize: clamp(incoming.labelSize, 14, 36, defaultTheme.labelSize),
       visualMode: sanitizeVisualMode(incoming.visualMode, defaultTheme.visualMode),
       artifactLayout: sanitizeArtifactLayout(incoming.artifactLayout, defaultTheme.artifactLayout),
-      raceCar: normalizeRaceCar(incoming.raceCar),
-      raceCarImageUrl: sanitizeUrl(incoming.raceCarImageUrl, defaultTheme.raceCarImageUrl),
-      raceCarSize: clamp(incoming.raceCarSize, 20, 56, defaultTheme.raceCarSize),
-      raceTrackColor: sanitizeHex(incoming.raceTrackColor, defaultTheme.raceTrackColor),
-      raceTrackOpacity: clamp(incoming.raceTrackOpacity, 0, 1, defaultTheme.raceTrackOpacity),
-      raceSpeed: clamp(incoming.raceSpeed, 0.35, 1.8, defaultTheme.raceSpeed),
       logoUrl: sanitizeUrl(incoming.logoUrl, defaultTheme.logoUrl),
       logoWidth: clamp(incoming.logoWidth, 40, 280, defaultTheme.logoWidth),
       logoOpacity: clamp(incoming.logoOpacity, 0, 1, defaultTheme.logoOpacity),
@@ -9547,18 +9222,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 
   function sanitizeVisualMode(value, fallback) {
     const mode = asText(value).toLowerCase()
-    if (mode === 'race' || mode === 'classic' || mode === ARTIFACT_VISUAL_MODE) {
+    if (mode === 'classic' || mode === ARTIFACT_VISUAL_MODE) {
       return mode
     }
     return fallback
-  }
-
-  function normalizeRaceCar(value) {
-    const text = asText(value)
-    if (!text) {
-      return defaultTheme.raceCar
-    }
-    return Array.from(text).slice(0, 2).join('')
   }
 
   function sanitizeUrl(value, fallback) {
