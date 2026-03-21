@@ -2425,5 +2425,254 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Do not preserve malformed script bodies", prompt)
 
 
+    # ------------------------------------------------------------------
+    # insert_html tests
+    # ------------------------------------------------------------------
+
+    def test_apply_patch_plan_insert_html_beforeend(self) -> None:
+        """insert_html with position=beforeend adds content inside the target."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added a cloud.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "beforeend",
+                        "html": '<div class="cloud">☁</div>',
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('<div class="cloud">☁</div>', patched_html)
+        # The cloud should appear before the closing </div> of artifact-root.
+        root_close = patched_html.index("</div>")
+        cloud_pos = patched_html.index('<div class="cloud">')
+        self.assertLess(cloud_pos, root_close)
+
+    def test_apply_patch_plan_insert_html_afterbegin(self) -> None:
+        """insert_html with position=afterbegin adds content at the start of the target."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added stars.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "afterbegin",
+                        "html": '<div class="stars">★</div>',
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('<div class="stars">★</div>', patched_html)
+
+    def test_apply_patch_plan_insert_html_strips_script_tags(self) -> None:
+        """insert_html must strip <script> tags from the snippet."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added element.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "beforeend",
+                        "html": '<div class="safe">ok</div><script>alert("xss")</script>',
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('<div class="safe">ok</div>', patched_html)
+        self.assertNotIn("alert", patched_html)
+
+    def test_apply_patch_plan_insert_html_strips_event_handlers(self) -> None:
+        """insert_html must strip on* event attributes."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added element.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "beforeend",
+                        "html": '<div class="ok" onclick="alert(1)">hi</div>',
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn("ok", patched_html)
+        self.assertNotIn("onclick", patched_html)
+
+    def test_apply_patch_plan_insert_html_target_not_found(self) -> None:
+        """insert_html with a non-existent target reports an issue."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Tried to add.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#nonexistent",
+                        "position": "beforeend",
+                        "html": '<div>nope</div>',
+                    }
+                ],
+            },
+        )
+        self.assertTrue(len(issues) > 0)
+
+    def test_apply_patch_plan_insert_html_with_class_selector(self) -> None:
+        """insert_html works with .class selectors."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            LAYOUT_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added decoration.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": ".poll-options",
+                        "position": "beforeend",
+                        "html": '<div class="decoration">✨</div>',
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('<div class="decoration">✨</div>', patched_html)
+
+    def test_apply_patch_plan_insert_html_with_svg(self) -> None:
+        """insert_html supports inline SVG snippets."""
+        svg_cloud = '<svg class="cloud" viewBox="0 0 100 50"><ellipse cx="50" cy="30" rx="40" ry="20" fill="white"/></svg>'
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added cloud SVG.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "beforeend",
+                        "html": svg_cloud,
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('class="cloud"', patched_html)
+        self.assertIn("<ellipse", patched_html)
+
+    # ------------------------------------------------------------------
+    # insert_css_rule tests
+    # ------------------------------------------------------------------
+
+    def test_apply_patch_plan_insert_css_rule_new(self) -> None:
+        """insert_css_rule appends a new rule to the stylesheet."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added cloud style.",
+                "edits": [
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".cloud",
+                        "css": "position: absolute; top: 10%; width: 80px; height: 30px; background: white; border-radius: 50px",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn(".cloud {", patched_html)
+        self.assertIn("border-radius: 50px;", patched_html)
+        self.assertIn("position: absolute;", patched_html)
+
+    def test_apply_patch_plan_insert_css_rule_merge_existing(self) -> None:
+        """insert_css_rule merges new properties into an existing rule."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Extended car style.",
+                "edits": [
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".car",
+                        "css": "opacity: 0.8; transform: rotate(5deg)",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn("opacity: 0.8;", patched_html)
+        self.assertIn("transform: rotate(5deg);", patched_html)
+        # Original fill should still be there.
+        self.assertIn("fill: #ff4d4f;", patched_html)
+
+    def test_apply_patch_plan_insert_css_rule_rejects_braces(self) -> None:
+        """insert_css_rule rejects css bodies containing braces (injection attempt)."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Bad rule.",
+                "edits": [
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".evil",
+                        "css": "color: red } .other { color: blue",
+                    }
+                ],
+            },
+        )
+        self.assertTrue(len(issues) > 0)
+
+    # ------------------------------------------------------------------
+    # Combined insert_html + insert_css_rule tests
+    # ------------------------------------------------------------------
+
+    def test_apply_patch_plan_combined_html_and_css_inserts(self) -> None:
+        """insert_html + insert_css_rule work together in the same plan."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added floating clouds with styles.",
+                "edits": [
+                    {
+                        "type": "insert_html",
+                        "target": "#artifact-root",
+                        "position": "afterbegin",
+                        "html": '<div class="cloud c1"></div><div class="cloud c2"></div>',
+                    },
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".cloud",
+                        "css": "position: absolute; background: white; border-radius: 50px; width: 60px; height: 25px",
+                    },
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".c1",
+                        "css": "top: 10%; left: 20%",
+                    },
+                    {
+                        "type": "insert_css_rule",
+                        "selector": ".c2",
+                        "css": "top: 15%; left: 60%",
+                    },
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn('class="cloud c1"', patched_html)
+        self.assertIn('class="cloud c2"', patched_html)
+        self.assertIn(".cloud {", patched_html)
+        self.assertIn(".c1 {", patched_html)
+        self.assertIn(".c2 {", patched_html)
+
+
 if __name__ == "__main__":
     unittest.main()

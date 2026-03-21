@@ -5,7 +5,9 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from .artifact_css_insert import insert_css_rule_in_stylesheet
 from .artifact_css_tree import set_css_property_in_css_tree
+from .artifact_html_insert import insert_html_in_artifact
 from .artifact_package import (
     ARTIFACT_PACKAGE_ENTRY_FILE,
     ARTIFACT_PACKAGE_RENDERER_FILE,
@@ -18,6 +20,8 @@ from .artifact_package import (
 
 SUPPORTED_PATCH_EDIT_TYPES = {
     "set_css_property",
+    "insert_html",
+    "insert_css_rule",
 }
 
 SUPPORTED_PATCH_TARGET_FILES = {
@@ -31,6 +35,8 @@ SUPPORTED_PATCH_TARGET_FILE_MAP = {
 
 DEFAULT_PATCH_TARGET_FILE_BY_EDIT_TYPE = {
     "set_css_property": ARTIFACT_PACKAGE_STYLES_FILE,
+    "insert_css_rule": ARTIFACT_PACKAGE_STYLES_FILE,
+    "insert_html": ARTIFACT_PACKAGE_ENTRY_FILE,
 }
 
 
@@ -129,6 +135,80 @@ def apply_artifact_patch_plan_to_package(
                     path=target_file,
                     content=updated_css,
                     language="css",
+                )
+                any_change = True
+            continue
+
+        if edit_type == "insert_css_rule":
+            css_selector = edit.get("selector")
+            css_body = edit.get("css")
+            if not all(
+                isinstance(item, str) and item.strip()
+                for item in (css_selector, css_body)
+            ):
+                issues.append(f"patch edit #{index + 1} is missing selector/css.")
+                continue
+            target_file = normalize_patch_target_file(edit.get("file"), edit_type=edit_type)
+            if target_file != ARTIFACT_PACKAGE_STYLES_FILE:
+                issues.append(
+                    f"patch edit #{index + 1} insert_css_rule only supports `{ARTIFACT_PACKAGE_STYLES_FILE}`."
+                )
+                continue
+            css_text = get_artifact_package_file_content(working_package, target_file)
+            updated_css, changed, status = insert_css_rule_in_stylesheet(
+                css_text,
+                selector=css_selector.strip(),
+                css=css_body.strip(),
+            )
+            if status == "invalid":
+                issues.append(
+                    f"patch edit #{index + 1} insert_css_rule has invalid selector or css."
+                )
+                continue
+            if changed:
+                working_package = upsert_artifact_package_file_content(
+                    working_package,
+                    path=target_file,
+                    content=updated_css,
+                    language="css",
+                )
+                any_change = True
+            continue
+
+        if edit_type == "insert_html":
+            target_selector = edit.get("target")
+            position = edit.get("position", "beforeend")
+            snippet = edit.get("html")
+            if not all(
+                isinstance(item, str) and item.strip()
+                for item in (target_selector, snippet)
+            ):
+                issues.append(f"patch edit #{index + 1} is missing target/html.")
+                continue
+            target_file = ARTIFACT_PACKAGE_ENTRY_FILE
+            entry_html = get_artifact_package_file_content(working_package, target_file)
+            updated_html, changed, status = insert_html_in_artifact(
+                entry_html,
+                target=target_selector.strip(),
+                position=position.strip().lower() if isinstance(position, str) else "beforeend",
+                snippet=snippet,
+            )
+            if status == "not_found":
+                issues.append(
+                    f"patch edit #{index + 1} could not find target `{target_selector.strip()}` in `{target_file}`."
+                )
+                continue
+            if status == "invalid":
+                issues.append(
+                    f"patch edit #{index + 1} insert_html has invalid target/position/html."
+                )
+                continue
+            if changed:
+                working_package = upsert_artifact_package_file_content(
+                    working_package,
+                    path=target_file,
+                    content=updated_html,
+                    language="html",
                 )
                 any_change = True
             continue

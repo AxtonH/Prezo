@@ -407,7 +407,10 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         'Response shape: { "assistantMessage": string, "edits": PatchEdit[] }',
         "Allowed PatchEdit objects:",
         '- { "type":"set_css_property", "file":"styles.css", "selector": string, "property": string, "value": string }',
+        '- { "type":"insert_css_rule", "file":"styles.css", "selector": string, "css": string }  — adds a new CSS rule. "css" is the declarations body (no braces). If the selector already exists, new properties are merged.',
+        '- { "type":"insert_html", "target": string, "position": "beforeend"|"afterbegin"|"beforebegin"|"afterend", "html": string }  — inserts HTML snippet relative to the first element matching "target" (a simple CSS selector: tag, #id, .class, or [attr]). No <script> tags or on* attributes allowed. Use this to add new visual elements (clouds, stars, decorations, SVG shapes, etc.).',
         "Rules:",
+        "- You CAN create new visual elements using insert_html + insert_css_rule. Build shapes from simple HTML/CSS (divs with border-radius, box-shadow, gradients) or inline SVGs. Do NOT require external image URLs for simple shapes.",
         "- Prefer 1-12 edits for focused requests. If the request needs richer styling, emit the edits needed to satisfy the request while staying concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
@@ -440,12 +443,18 @@ POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "enum": [
                             "set_css_property",
+                            "insert_css_rule",
+                            "insert_html",
                         ],
                     },
                     "file": {"type": "string"},
                     "selector": {"type": "string"},
                     "property": {"type": "string"},
                     "value": {"type": "string"},
+                    "css": {"type": "string"},
+                    "target": {"type": "string"},
+                    "position": {"type": "string"},
+                    "html": {"type": "string"},
                 },
                 "required": ["type"],
                 "additionalProperties": False,
@@ -3311,34 +3320,56 @@ def compact_artifact_patch_plan_edits(
         if not isinstance(raw_edit, dict):
             continue
         edit_type = str(raw_edit.get("type") or "").strip().lower()
-        selector = str(raw_edit.get("selector") or "").strip()
-        property_name = str(raw_edit.get("property") or "").strip()
-        value = str(raw_edit.get("value") or "").strip()
-        if (
-            edit_type != "set_css_property"
-            or not selector
-            or not property_name
-            or not value
-        ):
+
+        if edit_type == "set_css_property":
+            selector = str(raw_edit.get("selector") or "").strip()
+            property_name = str(raw_edit.get("property") or "").strip()
+            value = str(raw_edit.get("value") or "").strip()
+            if not selector or not property_name or not value:
+                continue
+            normalized_edit = dict(raw_edit)
+            normalized_edit["type"] = "set_css_property"
+            normalized_edit["selector"] = selector
+            normalized_edit["property"] = property_name
+            normalized_edit["value"] = value
+            file_name = str(raw_edit.get("file") or ARTIFACT_PACKAGE_STYLES_FILE).strip()
+            normalized_edit["file"] = file_name or ARTIFACT_PACKAGE_STYLES_FILE
+            dedup_key = (
+                normalized_edit["file"].lower(),
+                selector.lower(),
+                property_name.lower(),
+            )
+            existing_index = dedup_index_by_key.get(dedup_key)
+            if existing_index is not None:
+                normalized_edits[existing_index] = normalized_edit
+                continue
+            dedup_index_by_key[dedup_key] = len(normalized_edits)
+            normalized_edits.append(normalized_edit)
+
+        elif edit_type == "insert_css_rule":
+            selector = str(raw_edit.get("selector") or "").strip()
+            css_body = str(raw_edit.get("css") or "").strip()
+            if not selector or not css_body:
+                continue
+            normalized_edit = dict(raw_edit)
+            normalized_edit["type"] = "insert_css_rule"
+            normalized_edit["selector"] = selector
+            normalized_edit["css"] = css_body
+            normalized_edits.append(normalized_edit)
+
+        elif edit_type == "insert_html":
+            target = str(raw_edit.get("target") or "").strip()
+            snippet = str(raw_edit.get("html") or "").strip()
+            if not target or not snippet:
+                continue
+            normalized_edit = dict(raw_edit)
+            normalized_edit["type"] = "insert_html"
+            normalized_edit["target"] = target
+            normalized_edit["html"] = snippet
+            normalized_edits.append(normalized_edit)
+
+        else:
             continue
-        normalized_edit = dict(raw_edit)
-        normalized_edit["type"] = "set_css_property"
-        normalized_edit["selector"] = selector
-        normalized_edit["property"] = property_name
-        normalized_edit["value"] = value
-        file_name = str(raw_edit.get("file") or ARTIFACT_PACKAGE_STYLES_FILE).strip()
-        normalized_edit["file"] = file_name or ARTIFACT_PACKAGE_STYLES_FILE
-        dedup_key = (
-            normalized_edit["file"].lower(),
-            selector.lower(),
-            property_name.lower(),
-        )
-        existing_index = dedup_index_by_key.get(dedup_key)
-        if existing_index is not None:
-            normalized_edits[existing_index] = normalized_edit
-            continue
-        dedup_index_by_key[dedup_key] = len(normalized_edits)
-        normalized_edits.append(normalized_edit)
 
     # Truncate to max_edits, preserving original order.
     return normalized_edits[:max_edits]
@@ -3445,6 +3476,20 @@ def score_artifact_patch_edit_priority(
     return score
 
 
+def _format_debug_edit(edit: dict[str, Any]) -> str:
+    """Format a single edit for debug output."""
+    edit_type = edit.get("type", "")
+    if edit_type == "set_css_property":
+        return f"{edit_type} | {edit.get('selector','')} | {edit.get('property','')} = {edit.get('value','')}"
+    if edit_type == "insert_css_rule":
+        css_preview = str(edit.get("css", ""))[:80]
+        return f"{edit_type} | {edit.get('selector','')} | {css_preview}"
+    if edit_type == "insert_html":
+        html_preview = str(edit.get("html", ""))[:80]
+        return f"{edit_type} | target={edit.get('target','')} pos={edit.get('position','beforeend')} | {html_preview}"
+    return f"{edit_type} | {edit}"
+
+
 def _build_debug_patch_plan(
     raw_text: str,
     raw_plan: dict[str, Any],
@@ -3463,13 +3508,13 @@ def _build_debug_patch_plan(
     parts.append("")
     parts.append(f"=== PARSED PLAN ({len(raw_edits)} edits) ===")
     for i, edit in enumerate(raw_edits):
-        parts.append(f"  #{i+1}: {edit.get('type','')} | {edit.get('selector','')} | {edit.get('property','')} = {edit.get('value','')}")
+        parts.append(f"  #{i+1}: {_format_debug_edit(edit)}")
 
     if raw_edits != rewritten_edits:
         parts.append("")
         parts.append(f"=== REWRITTEN PLAN ({len(rewritten_edits)} edits) ===")
         for i, edit in enumerate(rewritten_edits):
-            parts.append(f"  #{i+1}: {edit.get('type','')} | {edit.get('selector','')} | {edit.get('property','')} = {edit.get('value','')}")
+            parts.append(f"  #{i+1}: {_format_debug_edit(edit)}")
     else:
         parts.append("")
         parts.append("=== REWRITTEN PLAN: (no changes from parsed) ===")
