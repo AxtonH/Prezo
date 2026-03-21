@@ -41,7 +41,13 @@ def insert_css_rule_in_stylesheet(
     if not normalized_selector or not normalized_css:
         return css_text, False, "invalid"
 
-    # Sanitise: strip any nested braces / @-rules to prevent injection.
+    # --- @-rule path (e.g. @keyframes, @media) ---
+    # These legitimately contain braces in their body, so they bypass the
+    # normal declaration-parsing logic and are appended as raw blocks.
+    if normalized_selector.startswith("@"):
+        return _insert_at_rule(css_text, normalized_selector, normalized_css)
+
+    # Sanitise: reject braces in regular rule bodies to prevent injection.
     if re.search(r"[{}]", normalized_css):
         return css_text, False, "invalid"
 
@@ -102,3 +108,32 @@ def insert_css_rule_in_stylesheet(
         updated = f"{normalized}{separator}{rule}\n"
 
     return updated, True, "changed"
+
+
+# ---------------------------------------------------------------------------
+# @-rule support (keyframes, media, etc.)
+# ---------------------------------------------------------------------------
+
+# Matches a <script> tag or javascript: URI that could be injected via
+# CSS content / url() values.
+_CSS_SCRIPT_RE = re.compile(r"<script|javascript\s*:", re.IGNORECASE)
+
+
+def _insert_at_rule(
+    css_text: str,
+    selector: str,
+    css_body: str,
+) -> tuple[str, bool, str]:
+    """Append an @-rule block (e.g. ``@keyframes floatCloud``) to the stylesheet.
+
+    The *css_body* is the inner content of the block (including nested ``{}``
+    for keyframe stops / media queries).  Basic sanitisation rejects
+    ``<script`` and ``javascript:`` patterns but allows braces.
+    """
+    if _CSS_SCRIPT_RE.search(css_body):
+        return css_text, False, "invalid"
+
+    normalized = css_text.rstrip()
+    separator = "\n\n" if normalized else ""
+    rule = f"{selector} {{\n  {css_body}\n}}"
+    return f"{normalized}{separator}{rule}\n", True, "changed"

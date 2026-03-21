@@ -2614,6 +2614,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         # Original fill should still be there.
         self.assertIn("fill: #ff4d4f;", patched_html)
 
+    def test_apply_patch_plan_insert_css_rule_keyframes(self) -> None:
+        """insert_css_rule supports @keyframes with nested braces."""
+        patched_html, issues = ai_api.apply_artifact_patch_plan(
+            PATCHABLE_ARTIFACT_HTML,
+            {
+                "assistantMessage": "Added cloud animation.",
+                "edits": [
+                    {
+                        "type": "set_css_property",
+                        "selector": ".car",
+                        "property": "animation",
+                        "value": "floatCloud 15s ease-in-out infinite alternate",
+                    },
+                    {
+                        "type": "insert_css_rule",
+                        "selector": "@keyframes floatCloud",
+                        "css": '0% { transform: translateX(0); } 50% { transform: translateX(20px); } 100% { transform: translateX(0); }',
+                    },
+                ],
+            },
+        )
+        self.assertEqual(issues, [])
+        self.assertIn("@keyframes floatCloud {", patched_html)
+        self.assertIn("translateX(20px)", patched_html)
+        self.assertIn("floatCloud 15s ease-in-out infinite alternate", patched_html)
+
     def test_apply_patch_plan_insert_css_rule_rejects_braces(self) -> None:
         """insert_css_rule rejects css bodies containing braces (injection attempt)."""
         patched_html, issues = ai_api.apply_artifact_patch_plan(
