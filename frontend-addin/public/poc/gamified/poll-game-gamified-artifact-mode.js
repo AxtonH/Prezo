@@ -117,6 +117,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'Preserve detailed SVG or illustration markup, decorative assets, cars, characters, icons, labels, and non-targeted motion logic unless the edit request explicitly asks to change them.',
     'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
     'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
+    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
     backgroundEdit
       ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
       : '',
@@ -162,6 +163,7 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     'Do not keep the broken selector logic from the failed edited artifact.',
     'Prefer the smallest viable CSS/text/layout change over structural DOM rewrites.',
     'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
+    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
     backgroundEdit
       ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
       : '',
@@ -250,6 +252,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     isEditLike
       ? 'Prefer minimal diffs. Preserve most of the existing HTML, CSS, and JavaScript byte-for-byte where possible, especially non-targeted SVG and artwork.'
       : '',
+    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
     backgroundEdit
       ? 'This is a background/time-of-day/lighting style request. Modify only the background, sky, ambient lighting, backdrop layers, and closely related color tokens. Do not redesign cars, characters, icons, labels, vote chips, or other foreground gameplay visuals unless explicitly requested.'
       : '',
