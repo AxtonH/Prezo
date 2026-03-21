@@ -420,9 +420,13 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "target the selector that directly owns the sizing properties (width, height, font-size, etc.) for that element. "
         "Do NOT target child/decoration sub-elements (e.g. studs, icons, labels) unless the user specifically asks for those. "
         "A parent selector like `.lego-brick` controls the whole brick; `.lego-brick .stud` is just the stud decoration on top.",
-        "- For local visual edits such as background, time-of-day, lighting, or atmosphere, modify only background/backdrop/ambient layers and closely related color tokens.",
-        "- Do not redesign cars, avatars, icons, labels, vote chips, foreground gameplay visuals, or unrelated decorative detail unless the user explicitly asks.",
-        "- Prefer set_css_property for color, lighting, spacing, and timing tweaks.",
+        "- For simple color/gradient background changes, use set_css_property on background/backdrop layers.",
+        "- For visual additions (decorations, particles, effects, atmosphere — e.g. stars, nebulas, rain, snow, confetti, fireflies), "
+        "use insert_html to create new DOM elements and insert_css_rule to style and animate them. "
+        "Build from simple HTML/CSS shapes (divs with border-radius, box-shadow, gradients, opacity) or inline SVGs. "
+        "Do NOT try to encode complex visuals into base64 data-URIs or background-image hacks — create real elements instead.",
+        "- Do not redesign or modify existing foreground gameplay visuals (cars, avatars, icons, labels, vote chips, bricks) unless the user explicitly asks.",
+        "- Prefer set_css_property for color, lighting, spacing, and timing tweaks on existing elements.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- Never invent, guess, or fabricate third-party asset URLs.",
         "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL, return an empty edits array and explain that a direct asset URL is required.",
