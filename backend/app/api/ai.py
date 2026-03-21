@@ -424,8 +424,10 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "- For visual additions (decorations, particles, effects, atmosphere — e.g. stars, nebulas, rain, snow, confetti, fireflies), "
         "use insert_html to create new DOM elements and insert_css_rule to style and animate them. "
         "Build from simple HTML/CSS shapes (divs with border-radius, box-shadow, gradients, opacity) or inline SVGs. "
-        "Do NOT try to encode complex visuals into base64 data-URIs or background-image hacks — create real elements instead.",
-        "- Do not redesign or modify existing foreground gameplay visuals (cars, avatars, icons, labels, vote chips, bricks) unless the user explicitly asks.",
+        "Do NOT encode visuals into base64 data-URIs or background-image hacks — ALWAYS create real DOM elements instead.",
+        "- Do NOT hide or remove existing elements (display:none, visibility:hidden, opacity:0) unless the user explicitly asks to remove them. "
+        "When changing themes, restyle existing elements to fit the new look rather than hiding them.",
+        "- Do not redesign or modify existing gameplay visuals (cars, avatars, icons, labels, vote chips, bricks, background decorations) unless the user explicitly asks.",
         "- Prefer set_css_property for color, lighting, spacing, and timing tweaks on existing elements.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- Never invent, guess, or fabricate third-party asset URLs.",
