@@ -228,69 +228,30 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
   return [
     'Artifact mode is active.',
     isEditLike
-      ? 'Artifact edit mode is active. Revise the existing artifact conservatively instead of inventing a new one.'
-      : 'Generate a full creative artifact experience with complete control over layout, visuals, and motion.',
-    isEditLike
-      ? 'Preserve the existing concept, composition, foreground art, detailed SVG or illustration markup, typography, palette, motion style, and live poll behavior unless the user explicitly asks to change them.'
-      : 'Do not constrain output to existing poll game shape/label templates.',
-    isEditLike
-      ? 'Treat context.artifact.originalEditRequest as the source of truth for what should change. Keep unrelated parts of the artifact as close to the current version as possible.'
-      : 'Assume default poll chrome can be ignored; render your own complete poll visuals from live state.',
-    'Output should be raw HTML that can render from live poll state updates.',
-    'Prefer calling window.prezoSetPollRenderer(function (state) { ... }) to register your renderer.',
-    'You may also define window.prezoRenderPoll(state), but do not rebuild host messaging yourself.',
-    'Use state.poll.question, state.poll.options, state.totalVotes, state.meta, and window.prezoGetPollState() when needed.',
-    'Do not fetch live poll data yourself. Do not open WebSockets, EventSource connections, or additional network requests for poll state.',
-    'Treat host-delivered state updates as the only live data source.',
-    'Use a stable main scene container marked with data-prezo-scene-root="true".',
-    'If the scene has a dedicated backdrop/background layer, mark it with data-prezo-background-layer="true".',
-    'When feasible, keep the main foreground gameplay content inside data-prezo-foreground-layer="true".',
-    'Build around a stable scene root and persistent option nodes keyed by option id.',
-    'Poll option elements (cards, rows, bars, labels, vote counts) are typically created dynamically by the renderer JavaScript at runtime — they do not exist in the static index.html. If an edit adds, removes, or changes per-option markup (e.g. adding decorations, badges, icons, or structural elements to each option), modify the renderer JS where option nodes are built (e.g. ensureOptionNode or equivalent), not insert_html targeting selectors that only exist in the live DOM. insert_html only operates on the static index.html and will silently fail on JS-generated selectors. New CSS rules for dynamically created elements are fine in the stylesheet.',
-    'On poll updates, never clear and rebuild the whole scene, never blank the stage, and never use hard resets, flicker, hide-then-show, or blackout transitions as the normal update path.',
-    'Never use document.body.innerHTML, document.documentElement.innerHTML, root.innerHTML, replaceChildren, or replaceWith as your poll-update strategy.',
-    'Animate in place with CSS transitions, Web Animations API, or requestAnimationFrame; keep existing cars, bars, rows, and labels mounted and move them smoothly from prior state.',
-    'If option ordering changes, reconcile existing nodes by option id instead of destroying and recreating the full list.',
-    'Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.',
-    isEditLike
-      ? 'Prefer minimal diffs. Preserve most of the existing HTML, CSS, and JavaScript byte-for-byte where possible, especially non-targeted SVG and artwork.'
-      : '',
-    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
+      ? 'Edit mode: revise the existing artifact conservatively. Treat context.artifact.originalEditRequest as the source of truth. Keep unrelated parts unchanged. Preserve concept, composition, SVG, typography, palette, motion, and live poll behavior unless explicitly asked to change them. Prefer minimal diffs.'
+      : 'Generate a full creative artifact experience with complete control over layout, visuals, and motion. Do not constrain to existing poll game templates.',
+    'Output raw HTML. Register your renderer via window.prezoSetPollRenderer(function(state){...}). Use state.poll.question, state.poll.options, state.totalVotes, state.meta, and window.prezoGetPollState(). Do not fetch poll data yourself or open WebSockets/EventSource.',
+    'Use data-prezo-scene-root="true" on the main container, data-prezo-background-layer="true" on backdrops, data-prezo-foreground-layer="true" on foreground content.',
+    'Build around persistent option nodes keyed by option id. On updates, never clear/rebuild the scene or use innerHTML/replaceChildren/replaceWith resets. Animate in place with CSS transitions or requestAnimationFrame. Reconcile by option id; use transforms for rank changes.',
+    'Poll option elements (cards, rows, bars, labels) are created dynamically by the renderer JS at runtime, not in static index.html. To add or change per-option markup (decorations, badges, icons), modify the renderer JS where option nodes are built, not static HTML.',
+    'Layout direction changes (vertical/horizontal) are CSS-only: change flex-direction or grid-template on the options container. Keep all option nodes intact.',
     backgroundEdit
-      ? 'This is a background/time-of-day/lighting style request. Modify only the background, sky, ambient lighting, backdrop layers, and closely related color tokens. Do not redesign cars, characters, icons, labels, vote chips, or other foreground gameplay visuals unless explicitly requested.'
-      : '',
-    hasExistingArtifact
-      ? 'If context.artifact.currentArtifactHtml is provided, treat it as the current artifact to revise and return a full updated version rather than a brand-new unrelated concept.'
+      ? 'Background/atmosphere request: modify only backdrop layers and color tokens. Do not redesign foreground gameplay visuals.'
       : '',
     requestMode === 'edit'
-      ? 'Edit mode is active. Apply the latest request as a targeted refinement. Do not redesign the full artifact unless the user explicitly asks for that.'
-      : '',
-    requestMode === 'edit'
-      ? 'In edit mode, preserve the current document/body/root structure and keep existing nodes mounted during live updates. Prefer transforms, style updates, and text changes over rebuilding sections.'
+      ? 'Apply the request as a targeted refinement. Preserve document structure and keep nodes mounted.'
       : '',
     requestMode === 'repair'
-      ? 'Repair mode is active. The previous edited artifact failed at runtime. Start from context.artifact.currentArtifactHtml as the last stable working artifact, satisfy the latest edit request, and avoid the reported runtime failure.'
-      : '',
-    requestMode === 'repair'
-      ? 'In repair mode, preserve the current document/body/root structure and keep existing nodes mounted during live updates. Prefer transforms, style updates, and text changes over rebuilding sections.'
+      ? 'Repair mode: the previous edit failed at runtime. Start from context.artifact.currentArtifactHtml, satisfy the edit request, and avoid the reported failure.'
       : '',
     requestMode === 'repair' && hasFailedArtifact
-      ? 'If context.artifact.failedArtifactHtml is provided, use it only as a reference for what broke. Do not preserve its broken selector or mutation logic.'
+      ? 'Use context.artifact.failedArtifactHtml only as reference for what broke. Do not preserve its broken logic.'
       : '',
     hasExistingArtifact
-      ? 'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, or replaceWith as your live-update strategy.'
+      ? 'Revise context.artifact.currentArtifactHtml rather than creating a new unrelated concept. The result must be immediately usable: visible poll scene, readable labels, no empty overlays.'
       : '',
-    hasExistingArtifact
-      ? 'The returned artifact must stay usable immediately after load: visible poll scene, readable labels, and no near-empty full-screen overlay obscuring the content.'
-      : '',
-    'Never strip all poll content. The artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failure.',
-    'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
-    'Keep all primary UI fully inside the viewport with safe padding (about 6-10%); no vertical or horizontal clipping.',
-    'Treat the 16:9 frame as a hard boundary, not a suggestion.',
-    'After the scene settles, the full composition including the lowest poll row, vote chips, labels, title, and decorative elements must remain fully visible inside the frame.',
-    'If the concept would overflow, reduce scale, simplify, or reposition elements instead of allowing any part of the scene to be clipped.',
-    'Poll updates must be smooth and flicker-free (200ms-500ms easing) without re-mounting the whole scene.',
-    'Use keyed reconciliation by option id and update only changed nodes when possible.',
+    'The artifact must always contain visible poll question/title, option labels/rows, and vote visuals. An empty or background-only artifact is a failure.',
+    'Viewport is fixed 16:9 widescreen. Keep all UI inside with 6-10% safe padding. No clipping. Poll updates must be smooth (200-500ms easing).',
     'Avoid markdown fences and explanations; return artifact HTML only.',
     pollTitle ? `Live poll title: ${pollTitle}` : '',
     selector ? `Poll selector: ${selector}` : '',

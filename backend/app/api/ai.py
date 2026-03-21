@@ -558,7 +558,7 @@ POLL_GAME_ARTIFACT_BACKGROUND_TREATMENT_JSON_SCHEMA: dict[str, Any] = {
 
 
 class PollGameEditPlanRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=12000)
+    prompt: str = Field(min_length=1, max_length=16000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
 
@@ -569,7 +569,7 @@ class PollGameEditPlanResponse(BaseModel):
 
 
 class PollGameArtifactBuildRequest(BaseModel):
-    prompt: str = Field(min_length=1, max_length=12000)
+    prompt: str = Field(min_length=1, max_length=16000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
 

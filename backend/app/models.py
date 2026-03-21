@@ -156,7 +156,7 @@ class SavedArtifact(BaseModel):
 class SavedArtifactUpsert(BaseModel):
     html: str = Field(default="")
     artifact_package: ArtifactPackage | None = None
-    last_prompt: str | None = Field(default=None, max_length=4000)
+    last_prompt: str | None = Field(default=None, max_length=16000)
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
 
