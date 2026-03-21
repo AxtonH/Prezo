@@ -1902,6 +1902,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     ) {
       return true
     }
+    if (!hasMeaningfulArtifactScene(renderHealth)) {
+      return true
+    }
     return false
   }
 
@@ -1937,6 +1940,13 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         'The updated artifact rendered a washed-out light frame instead of a meaningful scene. ' +
         `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
         `Text length: ${textLength}. Pale full-frame layers: ${paleCoverCount}.`
+      )
+    }
+    if (!hasMeaningfulArtifactScene(renderHealth)) {
+      return (
+        'The updated artifact rendered without meaningful content (no poll labels, options, or media). ' +
+        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
+        `Text length: ${textLength}.`
       )
     }
     return (

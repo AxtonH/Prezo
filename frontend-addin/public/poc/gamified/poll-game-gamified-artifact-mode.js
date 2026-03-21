@@ -126,6 +126,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the current render logic may depend on unless you safely update that logic too.',
     'The result must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed edit.',
     'If you are unsure, keep more of the stable artifact and make a smaller change.',
     'Prefer surgical refinements over reinterpretation.',
     'Return the full updated artifact HTML.'
@@ -170,6 +171,7 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the stable artifact depends on unless you safely update that logic too.',
     'Do not simply return the unchanged stable artifact unless the request is already satisfied.',
     'The repaired artifact must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed repair.',
     'Make the smallest viable change that satisfies the edit request and avoids the runtime error.',
     'Return the full updated artifact HTML.'
   ]
@@ -275,6 +277,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     hasExistingArtifact
       ? 'The returned artifact must stay usable immediately after load: visible poll scene, readable labels, and no near-empty full-screen overlay obscuring the content.'
       : '',
+    'Never strip all poll content. The artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failure.',
     'Assume the render viewport is fixed 16:9 widescreen (PowerPoint standard) and compose safely inside it.',
     'Keep all primary UI fully inside the viewport with safe padding (about 6-10%); no vertical or horizontal clipping.',
     'Treat the 16:9 frame as a hard boundary, not a suggestion.',
