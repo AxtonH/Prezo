@@ -1609,6 +1609,34 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("glowing windows", assistant_message.lower())
         self.assertNotIn("antenna", assistant_message.lower())
 
+    def test_set_css_property_targets_correct_selector_with_comment_before_rule(self) -> None:
+        """When a CSS comment precedes a rule (e.g. /* comment */ .lego-brick),
+        the edit must target .lego-brick, NOT a child like .lego-brick .stud."""
+        from app.artifact_css_tree import set_css_property_in_css_tree
+
+        css_text = (
+            "  /* Individual LEGO brick in the stack */\n"
+            "  .lego-brick {\n"
+            "    width: 66px;\n"
+            "    height: 40px;\n"
+            "  }\n"
+            "  .lego-brick .stud {\n"
+            "    width: 12px;\n"
+            "    height: 12px;\n"
+            "  }\n"
+        )
+        updated_css, changed, status = set_css_property_in_css_tree(
+            css_text, ".lego-brick", "width", "99px",
+        )
+        self.assertTrue(changed)
+        self.assertEqual(status, "changed")
+        # .lego-brick must have width: 99px
+        self.assertIn("width: 99px;", updated_css)
+        # .lego-brick .stud must still have width: 12px (not 99px)
+        stud_idx = updated_css.index(".lego-brick .stud")
+        stud_block = updated_css[stud_idx:updated_css.index("}", stud_idx)]
+        self.assertIn("width: 12px", stud_block)
+
     def test_set_css_property_in_css_can_update_rule_inside_media_block(self) -> None:
         css_text = """
 @media (min-width: 600px) {

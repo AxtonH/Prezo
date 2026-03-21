@@ -192,6 +192,10 @@ def _iter_css_rule_blocks(
             continue
 
         prelude = css_text[token_start:index].strip()
+        # Strip CSS comments that may have been captured as part of the
+        # prelude (e.g. "/* comment */\n  .selector").  Without this,
+        # selectors preceded by comments won't match during editing.
+        prelude = re.sub(r"/\*.*?\*/", "", prelude, flags=re.DOTALL).strip()
         block_end = _find_matching_delimiter(css_text, index, "{", "}", final_end)
         if block_end < 0:
             break

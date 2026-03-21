@@ -2317,11 +2317,16 @@ def build_artifact_patch_edit_prompt(
             "Do not rename or remove live poll hooks, ids, classes, or data attributes relied on by the existing artifact.",
             "If patch mode is not suitable for this request, return an empty edits array.",
             (
-                "IMPORTANT: Below is a selector reference map showing each CSS selector and its current sizing/layout properties. "
+                "IMPORTANT: Below is a selector reference map showing each CSS selector and its CURRENT sizing/layout properties. "
                 "Use this to identify the CORRECT selector for the user's request. "
                 "A child selector (e.g. `.lego-brick .stud`) is a sub-element, NOT the parent. "
                 "When the user refers to an element (e.g. 'the bricks', 'the polls', 'the title'), "
                 "target the selector that owns the primary sizing properties for that element, not its children or decorations.\n"
+                "CRITICAL for percentage/scaling edits: The values below are the CURRENT live values. "
+                "When the user asks to 'increase by 50%', compute the new value from the CURRENT value shown here, "
+                "NOT from any original or default value. For example, if width is currently 99px and user says 'increase by 50%', "
+                "the new value must be 148.5px (99 * 1.5), NOT 99px. "
+                "Never send a value that equals the current value — that would be a no-op.\n"
                 "Selector reference map:\n" + selector_context_map
                 if selector_context_map
                 else ""
