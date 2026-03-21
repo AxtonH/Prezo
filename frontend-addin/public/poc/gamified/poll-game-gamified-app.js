@@ -1159,12 +1159,14 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const shouldShowArtifactShell = isArtifactMode && shouldFloatComposer
     el.aiChatShell.classList.toggle('artifact-shell-active', shouldShowArtifactShell)
     el.aiChatShell.classList.toggle('hidden', isArtifactMode ? !shouldShowArtifactShell : false)
-    if (shouldShowArtifactShell) {
+    if (isArtifactMode) {
       el.aiChatPanel.classList.add('hidden')
       el.aiChatFab.classList.add('hidden')
-      el.aiChatShell.classList.toggle('is-open', state.artifact.floatingOpen)
-      el.aiChatShell.classList.toggle('is-collapsed', !state.artifact.floatingOpen)
-    } else if (!isArtifactMode) {
+      if (shouldShowArtifactShell) {
+        el.aiChatShell.classList.toggle('is-open', state.artifact.floatingOpen)
+        el.aiChatShell.classList.toggle('is-collapsed', !state.artifact.floatingOpen)
+      }
+    } else {
       setAiChatOpen(state.ai.open, { persist: false })
     }
     el.artifactComposer.classList.toggle('is-floating', shouldFloatComposer)
