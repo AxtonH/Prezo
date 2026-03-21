@@ -15,7 +15,8 @@
       "Bash(python -m pytest backend/tests/test_ai_routing.py -x -q)",
       "Bash(python -m pytest backend/tests/test_ai_routing.py -x -v)",
       "Bash(python -m pytest backend/tests/test_ai_routing.py -x -v -k \"insert\")",
-      "Bash(grep -r \"Visible elements\\\\|Media elements\\\\|Dark full-frame\" /c/Users/Geeks/Desktop/SlidoTest/repo/backend --include=*.py)"
+      "Bash(grep -r \"Visible elements\\\\|Media elements\\\\|Dark full-frame\" /c/Users/Geeks/Desktop/SlidoTest/repo/backend --include=*.py)",
+      "Bash(python -m pytest tests/ -x -q)"
     ]
   }
 }
