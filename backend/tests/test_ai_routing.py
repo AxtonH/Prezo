@@ -2700,5 +2700,32 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(".c2 {", patched_html)
 
 
+    # ------------------------------------------------------------------
+    # @keyframes deduplication tests
+    # ------------------------------------------------------------------
+
+    def test_insert_css_rule_replaces_duplicate_keyframes(self) -> None:
+        """insert_css_rule replaces an existing @keyframes instead of appending a duplicate."""
+        from app.artifact_css_insert import insert_css_rule_in_stylesheet
+
+        css = (
+            ".star { opacity: 1; }\n\n"
+            "@keyframes shoot {\n  0% { opacity: 0; } 100% { opacity: 1; }\n}\n"
+        )
+        updated, changed, status = insert_css_rule_in_stylesheet(
+            css,
+            selector="@keyframes shoot",
+            css="0% { transform: translateX(0); } 100% { transform: translateX(100px); }",
+        )
+        self.assertTrue(changed)
+        self.assertEqual(status, "changed")
+        # Only one @keyframes shoot should exist.
+        self.assertEqual(updated.count("@keyframes shoot"), 1)
+        # New content should be present.
+        self.assertIn("translateX(100px)", updated)
+        # Old content should be gone.
+        self.assertNotIn("opacity: 0", updated)
+
+
 if __name__ == "__main__":
     unittest.main()

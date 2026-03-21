@@ -119,12 +119,47 @@ def insert_css_rule_in_stylesheet(
 _CSS_SCRIPT_RE = re.compile(r"<script|javascript\s*:", re.IGNORECASE)
 
 
+_AT_RULE_BLOCK_RE = re.compile(
+    r"(?P<prelude>@[\w-]+\s+[\w-]+)\s*\{",
+    re.IGNORECASE,
+)
+
+
+def _find_at_rule_block(css_text: str, selector: str) -> tuple[int, int] | None:
+    """Find the start and end (after closing ``}``) of an existing @-rule
+    whose prelude matches *selector* (e.g. ``@keyframes shoot``).
+
+    Returns ``(start, end)`` or ``None`` if not found.
+    """
+    target = selector.strip().lower()
+    for m in _AT_RULE_BLOCK_RE.finditer(css_text):
+        if m.group("prelude").strip().lower() != target:
+            continue
+        # Walk forward from the opening brace to find its matching close.
+        open_pos = m.end() - 1  # position of '{'
+        depth = 0
+        idx = open_pos
+        while idx < len(css_text):
+            ch = css_text[idx]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return m.start(), idx + 1
+            idx += 1
+    return None
+
+
 def _insert_at_rule(
     css_text: str,
     selector: str,
     css_body: str,
 ) -> tuple[str, bool, str]:
-    """Append an @-rule block (e.g. ``@keyframes floatCloud``) to the stylesheet.
+    """Insert or replace an @-rule block (e.g. ``@keyframes floatCloud``).
+
+    If a rule with the same prelude already exists, it is **replaced** in-place
+    to prevent duplicate @keyframes from accumulating.
 
     The *css_body* is the inner content of the block (including nested ``{}``
     for keyframe stops / media queries).  Basic sanitisation rejects
@@ -133,7 +168,17 @@ def _insert_at_rule(
     if _CSS_SCRIPT_RE.search(css_body):
         return css_text, False, "invalid"
 
+    new_rule = f"{selector} {{\n  {css_body}\n}}"
+
+    # Replace existing @-rule with the same name if found.
+    existing = _find_at_rule_block(css_text, selector)
+    if existing is not None:
+        start, end = existing
+        # Preserve surrounding whitespace.
+        updated = css_text[:start] + new_rule + css_text[end:]
+        return updated, True, "changed"
+
+    # No existing rule — append.
     normalized = css_text.rstrip()
     separator = "\n\n" if normalized else ""
-    rule = f"{selector} {{\n  {css_body}\n}}"
-    return f"{normalized}{separator}{rule}\n", True, "changed"
+    return f"{normalized}{separator}{new_rule}\n", True, "changed"
