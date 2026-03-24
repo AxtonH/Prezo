@@ -80,6 +80,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   const EDITOR_DOCK_BREAKPOINT_PX = 900
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
+  const IS_EMBEDDED_FRAME = (() => {
+    try { return window.self !== window.top } catch { return true }
+  })()
   const ARTIFACT_LOADER_RING_COUNT = 4
   const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
   const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
@@ -1011,6 +1014,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   async function requestPresentModeFullscreen() {
+    if (IS_EMBEDDED_FRAME) {
+      return false
+    }
     const target = document.documentElement
     if (typeof target.requestFullscreen === 'function') {
       try {
@@ -1031,6 +1037,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   async function exitPresentModeFullscreen() {
+    if (IS_EMBEDDED_FRAME) {
+      return false
+    }
     if (typeof document.exitFullscreen === 'function') {
       await document.exitFullscreen()
       return true
@@ -1047,7 +1056,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     state.presentModeUsingFullscreen = isFullscreen
     syncPresentModeUi()
     scheduleArtifactLayoutRefit()
-    if (!isFullscreen && state.presentMode) {
+    if (!isFullscreen && state.presentMode && !IS_EMBEDDED_FRAME) {
       applyPresentModeState(false)
     }
   }
@@ -1062,7 +1071,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 
   function syncPresentModeUi() {
     document.body.classList.toggle('present-mode', state.presentMode)
-    document.body.classList.toggle('present-mode-fullscreen', state.presentModeUsingFullscreen)
+    document.body.classList.toggle('present-mode-fullscreen', state.presentModeUsingFullscreen || (IS_EMBEDDED_FRAME && state.presentMode))
     document.body.classList.toggle('present-mode-artifact', isArtifactPresentModeActive())
     el.presentModeToggle.classList.toggle('is-active', state.presentMode)
     el.presentModeToggle.setAttribute('aria-pressed', state.presentMode ? 'true' : 'false')
