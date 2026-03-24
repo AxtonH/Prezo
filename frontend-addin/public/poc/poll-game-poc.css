@@ -972,7 +972,7 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 190ms ease, margin 190ms ease, width 190ms ease;
 }
 
-body.artifact-stage-active:not(.editor-docked) .wrap {
+body.artifact-mode-active:not(.editor-docked) .wrap {
   width: min(75vw, var(--wrap-width-limit));
 }
 

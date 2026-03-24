@@ -1215,6 +1215,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const shouldShowStage =
       isArtifactMode && state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
     el.artifactStage.classList.toggle('hidden', !shouldShowStage)
+    document.body.classList.toggle('artifact-mode-active', isArtifactMode)
     document.body.classList.toggle('artifact-stage-active', shouldShowStage)
     applyEditorDockLayout()
     syncPresentModeUi()
