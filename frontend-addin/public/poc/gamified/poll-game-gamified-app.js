@@ -1223,6 +1223,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.footer.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.customLogo.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.customAsset.classList.toggle('hidden-by-artifact', isArtifactMode)
+    if (isArtifactMode && dragState.enabled) {
+      setDragMode(false, { announce: false })
+    } else if (!isArtifactMode && !dragState.enabled) {
+      setDragMode(true, { announce: false })
+    }
     if (!shouldShowStage) {
       stopArtifactLoaderAnimation()
     }
