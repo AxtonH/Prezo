@@ -3247,6 +3247,100 @@ def choose_background_selector_candidate(
     return ranked[0] if ranked else ""
 
 
+def _inject_overflow_visible_for_clipped_elements(
+    edits: list[dict[str, Any]],
+    current_html: str,
+) -> list[dict[str, Any]]:
+    """When the LLM sets z-index on element X, but X's CSS parent has
+    ``overflow: hidden``, the z-index change won't help — the element is
+    clipped.  Detect this and auto-inject ``overflow: visible`` on the
+    ancestor that's doing the clipping.
+
+    Uses simple CSS selector nesting heuristics: if selector ``.pot-lid``
+    is targeted with a z-index edit and ``.option-row`` has
+    ``overflow: hidden``, we check whether ``.pot-lid`` is likely a child
+    of ``.option-row`` by looking at the HTML for nesting.
+    """
+    zindex_selectors: set[str] = set()
+    for edit in edits:
+        if not isinstance(edit, dict):
+            continue
+        if str(edit.get("type") or "").strip().lower() != "set_css_property":
+            continue
+        if str(edit.get("property") or "").strip().lower() == "z-index":
+            zindex_selectors.add(str(edit.get("selector") or "").strip())
+
+    if not zindex_selectors:
+        return edits
+
+    prop_map = _extract_css_property_map_from_html(current_html)
+    overflow_hidden_selectors: dict[str, str] = {}
+    for selector, declarations in prop_map.items():
+        for prop_name, prop_value in declarations:
+            if (
+                prop_name.strip().lower() == "overflow"
+                and prop_value.strip().lower() == "hidden"
+            ):
+                overflow_hidden_selectors[selector] = selector
+                break
+
+    if not overflow_hidden_selectors:
+        return edits
+
+    injected: list[dict[str, Any]] = []
+    already_injected: set[str] = set()
+    lower_html = current_html.lower()
+
+    for zindex_sel in zindex_selectors:
+        zindex_class = _extract_first_class(zindex_sel)
+        if not zindex_class:
+            continue
+        for overflow_sel in overflow_hidden_selectors:
+            overflow_class = _extract_first_class(overflow_sel)
+            if not overflow_class or overflow_class == zindex_class:
+                continue
+            if _html_suggests_parent_child(
+                lower_html, overflow_class, zindex_class
+            ):
+                if overflow_sel not in already_injected:
+                    injected.append(
+                        {
+                            "type": "set_css_property",
+                            "file": "styles.css",
+                            "selector": overflow_sel,
+                            "property": "overflow",
+                            "value": "visible",
+                        }
+                    )
+                    already_injected.add(overflow_sel)
+
+    if not injected:
+        return edits
+    return injected + edits
+
+
+def _extract_first_class(selector: str) -> str:
+    """Extract the first class name from a CSS selector, e.g. '.option-row' → 'option-row'."""
+    match = re.search(r"\.([a-zA-Z_][\w-]*)", selector)
+    return match.group(1) if match else ""
+
+
+def _html_suggests_parent_child(
+    lower_html: str, parent_class: str, child_class: str
+) -> bool:
+    """Rough heuristic: check if any element with *parent_class* contains
+    an element with *child_class* within ~2000 characters.  Not precise,
+    but good enough for common cases.
+    """
+    parent_pattern = f'class="[^"]*{re.escape(parent_class)}[^"]*"'
+    for match in re.finditer(parent_pattern, lower_html):
+        start = match.end()
+        window = lower_html[start : start + 2000]
+        if child_class in window:
+            return True
+    return False
+
+
 def rewrite_artifact_patch_plan_for_current_html(
     *,
     plan: dict[str, Any],
@@ -3297,6 +3391,10 @@ def rewrite_artifact_patch_plan_for_current_html(
                 edit["selector"] = match_result.matched_selector
 
         rewritten.append(edit)
+
+    rewritten = _inject_overflow_visible_for_clipped_elements(
+        rewritten, current_html
+    )
 
     compacted = compact_artifact_patch_plan_edits(
         rewritten,
