@@ -972,6 +972,10 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 190ms ease, margin 190ms ease, width 190ms ease;
 }
 
+body.artifact-stage-active:not(.editor-docked) .wrap {
+  width: min(75vw, var(--wrap-width-limit));
+}
+
 .present-mode-toggle {
   position: absolute;
   left: auto;
@@ -990,8 +994,8 @@ body.ribbon-advanced .advanced-control.note {
   color: transparent;
   font-size: 0;
   cursor: pointer;
-  appearance: none;
   -webkit-appearance: none;
+  appearance: none;
   opacity: 0.38;
   transition:
     transform 140ms ease,
