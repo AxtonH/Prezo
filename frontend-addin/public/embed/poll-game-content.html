@@ -146,6 +146,16 @@
       .overlay.visible {
         display: flex;
       }
+
+      .app.present-mode .bar {
+        display: none;
+      }
+
+      .app.present-mode .frame-wrap {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   </head>
@@ -180,7 +190,7 @@
         </div>
       </header>
       <section class="frame-wrap">
-        <iframe id="game-frame" title="Prezo game surface"></iframe>
+        <iframe id="game-frame" title="Prezo game surface" allowfullscreen></iframe>
         <div class="overlay visible" id="overlay">
           <div>
             Enter a Session ID or Join Code, or run the Prezo Host add-in first so this
@@ -439,6 +449,13 @@
           }
           const message = event.data
           if (!message || typeof message !== "object") {
+            return
+          }
+          if (message.type === "prezo:present-mode") {
+            const app = document.querySelector(".app")
+            if (app) {
+              app.classList.toggle("present-mode", Boolean(message.active))
+            }
             return
           }
           if (message.type !== PREZO_LIBRARY_SYNC_REQUEST_MESSAGE) {
