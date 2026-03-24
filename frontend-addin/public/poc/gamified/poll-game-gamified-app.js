@@ -689,11 +689,14 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   function applyEditorDockLayout() {
     const rootStyle = document.documentElement.style
     const isDocked = document.body.classList.contains('editor-docked')
+    const isArtifactActive = currentTheme.visualMode === ARTIFACT_VISUAL_MODE &&
+      state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
+    const baseWidthLimit = isArtifactActive ? 2400 : 1100
     if (!isDocked || window.innerWidth <= EDITOR_DOCK_BREAKPOINT_PX) {
       rootStyle.setProperty('--editor-sidebar-width', '0px')
       rootStyle.setProperty('--editor-dock-reserve', '0px')
       rootStyle.setProperty('--editor-dock-shift', '0px')
-      rootStyle.setProperty('--wrap-width-limit', '1100px')
+      rootStyle.setProperty('--wrap-width-limit', `${baseWidthLimit}px`)
       if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
         scheduleArtifactLayoutRefit({ includeSettledPass: false })
       }
@@ -724,7 +727,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const reserve = Math.round(shellWidth + EDITOR_DOCK_GAP_PX)
     const widthLimit = Math.max(
       320,
-      Math.min(1100, Math.round(window.innerWidth - reserve - EDITOR_DOCK_SIDE_PADDING_PX))
+      Math.min(baseWidthLimit, Math.round(window.innerWidth - reserve - EDITOR_DOCK_SIDE_PADDING_PX))
     )
     const shift = 0
     rootStyle.setProperty('--editor-sidebar-width', `${Math.round(shellWidth)}px`)
@@ -1209,6 +1212,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const shouldShowStage =
       isArtifactMode && state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
     el.artifactStage.classList.toggle('hidden', !shouldShowStage)
+    document.body.classList.toggle('artifact-stage-active', shouldShowStage)
+    applyEditorDockLayout()
     syncPresentModeUi()
     el.options.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.pollHead.classList.toggle('hidden-by-artifact', isArtifactMode)
