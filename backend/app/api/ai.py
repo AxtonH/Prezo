@@ -429,6 +429,9 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "When changing themes, restyle existing elements to fit the new look rather than hiding them.",
         "- Do not redesign or modify existing gameplay visuals (cars, avatars, icons, labels, vote chips, bricks, background decorations) unless the user explicitly asks.",
         "- Prefer set_css_property for color, lighting, spacing, and timing tweaks on existing elements.",
+        "- If an element is visually clipped or hidden behind its parent, check for `overflow: hidden` on ancestor containers before adjusting z-index. "
+        "Elements positioned outside their parent bounds (e.g. negative top/left) will be clipped by `overflow: hidden` regardless of z-index. "
+        "Fix by setting `overflow: visible` on the clipping ancestor, or reposition the element within bounds.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- Never invent, guess, or fabricate third-party asset URLs.",
         "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL, return an empty edits array and explain that a direct asset URL is required.",
