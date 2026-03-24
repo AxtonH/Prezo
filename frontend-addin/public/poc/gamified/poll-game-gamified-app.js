@@ -689,9 +689,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   function applyEditorDockLayout() {
     const rootStyle = document.documentElement.style
     const isDocked = document.body.classList.contains('editor-docked')
-    const isArtifactActive = currentTheme.visualMode === ARTIFACT_VISUAL_MODE &&
-      state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_HIDDEN
-    const baseWidthLimit = isArtifactActive ? 2400 : 1100
+    const baseWidthLimit = 2400
     if (!isDocked || window.innerWidth <= EDITOR_DOCK_BREAKPOINT_PX) {
       rootStyle.setProperty('--editor-sidebar-width', '0px')
       rootStyle.setProperty('--editor-dock-reserve', '0px')

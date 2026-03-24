@@ -28,7 +28,7 @@
   --editor-sidebar-width: 0px;
   --editor-dock-reserve: 0px;
   --editor-dock-shift: 0px;
-  --wrap-width-limit: 1100px;
+  --wrap-width-limit: 2400px;
   --panel-offset-x: 0px;
   --panel-offset-y: 0px;
   --panel-scale-x: 1;
@@ -2499,7 +2499,7 @@ body.present-mode .present-mode-toggle {
     --editor-dock-reserve: 0px;
     --editor-sidebar-width: 0px;
     --editor-dock-shift: 0px;
-    --wrap-width-limit: 1100px;
+    --wrap-width-limit: 2400px;
     padding: 0;
   }
 
