@@ -379,6 +379,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
         "- If you need the literal text </script> inside inline JavaScript, emit <\\/script> instead.",
+        "- When outputting a segmented artifact package with separate renderer.js or styles.css files, do not include <script>, </script>, <style>, or </style> tags in those file contents. Those tags are only needed for inline scripts and styles in HTML. The package materializer wraps file contents in the appropriate tags automatically.",
         "- In window.prezoRenderPoll(state) or the function passed to window.prezoSetPollRenderer(fn), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "- Never read from or write to .innerText, .textContent, .innerHTML, .style, or similar properties on the result of querySelector/getElementById without first checking that the element exists.",
         "- Never call appendChild, removeChild, replaceChildren, insertBefore, insertAdjacentElement, insertAdjacentHTML, setAttribute, removeAttribute, or classList mutations on a queried element unless the queried element was first stored and null-checked.",
