@@ -225,6 +225,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     artifactName: must('artifact-name'),
     artifactSelect: must('artifact-select'),
     saveArtifact: must('save-artifact'),
+    newArtifact: must('new-artifact'),
     loadArtifact: must('load-artifact'),
     deleteArtifact: must('delete-artifact'),
     artifactVersionSelect: must('artifact-version-select'),
@@ -940,6 +941,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.importTheme.addEventListener('change', importThemeFromFile)
     el.resetTheme.addEventListener('click', resetThemeDraft)
     el.saveArtifact.addEventListener('click', saveArtifactToLibrary)
+    el.newArtifact.addEventListener('click', startNewArtifact)
     el.loadArtifact.addEventListener('click', loadArtifactFromSelect)
     el.deleteArtifact.addEventListener('click', deleteArtifactFromSelect)
     el.artifactSelect.addEventListener('change', handleArtifactSelectChange)
@@ -7759,6 +7761,27 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     const syncResult = await deleteThemeFromAccount(name)
     showThemeFeedback(syncResult.message || `Theme "${name}" deleted.`, syncResult.type)
     reflectLibrarySyncResult(syncResult)
+  }
+
+  function startNewArtifact() {
+    if (state.artifact.busy) {
+      return
+    }
+    state.artifact.lastPrompt = ''
+    state.artifact.lastAnswers = createEmptyArtifactAnswers()
+    state.artifact.activeEditRequest = ''
+    state.artifact.autoRepairInFlight = false
+    state.artifact.repairAttemptCount = 0
+    state.artifact.lastRuntimeError = ''
+    clearArtifactMarkup()
+    resetArtifactConversation({ preserveInput: false })
+    hideArtifactStage()
+    showArtifactStagePlaceholder(
+      'Artifact editor is ready. Answer the questions to generate your artifact.',
+      'pending'
+    )
+    el.artifactName.value = ''
+    setArtifactComposerStatus(ARTIFACT_WAITING_STATUS, 'success')
   }
 
   async function saveArtifactToLibrary() {
