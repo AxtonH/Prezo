@@ -11,6 +11,7 @@ from typing import Any
 
 from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
+    BrandProfile,
     Event,
     Poll,
     PollOption,
@@ -105,6 +106,19 @@ class QnaPromptData:
 
 
 @dataclass(slots=True)
+class BrandProfileData:
+    id: str
+    user_id: str
+    name: str
+    source_type: str
+    source_filename: str
+    guidelines: dict[str, Any]
+    raw_summary: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
 class SavedThemeData:
     id: str
     user_id: str
@@ -161,6 +175,7 @@ class InMemoryStore:
         self._session_hosts: dict[str, set[str]] = defaultdict(set)
         self._saved_themes_by_user: dict[str, dict[str, SavedThemeData]] = defaultdict(dict)
         self._saved_artifacts_by_user: dict[str, dict[str, SavedArtifactData]] = defaultdict(dict)
+        self._brand_profiles_by_user: dict[str, dict[str, BrandProfileData]] = defaultdict(dict)
         self._saved_artifact_versions_by_user: dict[
             str, dict[str, list[SavedArtifactVersionData]]
         ] = defaultdict(lambda: defaultdict(list))
@@ -508,6 +523,52 @@ class InMemoryStore:
                 raise NotFoundError("saved theme not found")
             return self._to_saved_theme(existing)
 
+    async def list_brand_profiles(self, user_id: str) -> list[BrandProfile]:
+        async with self._lock:
+            profiles = list(self._brand_profiles_by_user.get(user_id, {}).values())
+            profiles.sort(key=lambda item: item.updated_at, reverse=True)
+            return [self._to_brand_profile(item) for item in profiles]
+
+    async def save_brand_profile(
+        self,
+        user_id: str,
+        name: str,
+        source_type: str,
+        source_filename: str,
+        guidelines: dict[str, Any],
+        raw_summary: str,
+    ) -> BrandProfile:
+        async with self._lock:
+            existing = self._brand_profiles_by_user[user_id].get(name)
+            now = utc_now()
+            if existing:
+                existing.source_type = source_type
+                existing.source_filename = source_filename
+                existing.guidelines = clone_dict(guidelines)
+                existing.raw_summary = raw_summary
+                existing.updated_at = now
+                return self._to_brand_profile(existing)
+            created = BrandProfileData(
+                id=uuid.uuid4().hex,
+                user_id=user_id,
+                name=name,
+                source_type=source_type,
+                source_filename=source_filename,
+                guidelines=clone_dict(guidelines),
+                raw_summary=raw_summary,
+                created_at=now,
+                updated_at=now,
+            )
+            self._brand_profiles_by_user[user_id][name] = created
+            return self._to_brand_profile(created)
+
+    async def delete_brand_profile(self, user_id: str, name: str) -> BrandProfile:
+        async with self._lock:
+            existing = self._brand_profiles_by_user.get(user_id, {}).pop(name, None)
+            if not existing:
+                raise NotFoundError("brand profile not found")
+            return self._to_brand_profile(existing)
+
     async def list_saved_artifacts(self, user_id: str) -> list[SavedArtifact]:
         async with self._lock:
             artifacts = list(self._saved_artifacts_by_user.get(user_id, {}).values())
@@ -731,6 +792,18 @@ class InMemoryStore:
             id=data.id,
             name=data.name,
             theme=clone_dict(data.theme),
+            created_at=data.created_at,
+            updated_at=data.updated_at,
+        )
+
+    def _to_brand_profile(self, data: BrandProfileData) -> BrandProfile:
+        return BrandProfile(
+            id=data.id,
+            name=data.name,
+            source_type=data.source_type,
+            source_filename=data.source_filename,
+            guidelines=clone_dict(data.guidelines),
+            raw_summary=data.raw_summary,
             created_at=data.created_at,
             updated_at=data.updated_at,
         )

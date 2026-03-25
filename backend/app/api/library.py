@@ -6,6 +6,8 @@ from ..artifact_package import resolve_saved_artifact_html
 from ..auth import AuthUser, get_current_user, get_library_user, issue_library_sync_token
 from ..deps import get_store
 from ..models import (
+    BrandProfile,
+    BrandProfileUpsert,
     LibrarySyncToken,
     SavedArtifact,
     SavedArtifactVersion,
@@ -154,3 +156,45 @@ async def create_library_sync_token(
 ) -> LibrarySyncToken:
     token, expires_at = issue_library_sync_token(user)
     return LibrarySyncToken(token=token, expires_at=expires_at)
+
+
+# ── Brand Profiles ──────────────────────────────────────────────────
+
+
+@router.get("/brand-profiles", response_model=list[BrandProfile])
+async def list_brand_profiles(
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> list[BrandProfile]:
+    return await store.list_brand_profiles(user.id)
+
+
+@router.put("/brand-profiles/{name}", response_model=BrandProfile)
+async def save_brand_profile(
+    name: str,
+    payload: BrandProfileUpsert,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> BrandProfile:
+    normalized_name = normalize_library_name(name)
+    return await store.save_brand_profile(
+        user.id,
+        normalized_name,
+        payload.source_type,
+        payload.source_filename,
+        payload.guidelines,
+        payload.raw_summary,
+    )
+
+
+@router.delete("/brand-profiles/{name}", response_model=BrandProfile)
+async def delete_brand_profile(
+    name: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> BrandProfile:
+    normalized_name = normalize_library_name(name)
+    try:
+        return await store.delete_brand_profile(user.id, normalized_name)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

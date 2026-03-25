@@ -194,6 +194,24 @@ class QnaConfigUpdate(BaseModel):
     prompt: str | None = Field(default=None, max_length=200)
 
 
+class BrandProfile(BaseModel):
+    id: str
+    name: str
+    source_type: str = ""
+    source_filename: str = ""
+    guidelines: dict[str, Any] = Field(default_factory=dict)
+    raw_summary: str = ""
+    created_at: datetime
+    updated_at: datetime
+
+
+class BrandProfileUpsert(BaseModel):
+    source_type: str = ""
+    source_filename: str = ""
+    guidelines: dict[str, Any] = Field(default_factory=dict)
+    raw_summary: str = ""
+
+
 class HostJoinRequest(BaseModel):
     code: str = Field(min_length=1, max_length=32)
 

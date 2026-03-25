@@ -135,6 +135,32 @@ begin
   end if;
 end $$;
 
+create table if not exists brand_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  source_type text not null default '',
+  source_filename text not null default '',
+  guidelines jsonb not null default '{}'::jsonb,
+  raw_summary text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, name)
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'brand_profiles_set_updated_at'
+  ) then
+    create trigger brand_profiles_set_updated_at
+      before update on public.brand_profiles
+      for each row execute function public.set_updated_at();
+  end if;
+end $$;
+
 create table if not exists qna_prompts (
   id uuid primary key,
   session_id uuid not null references sessions(id) on delete cascade,
@@ -364,6 +390,8 @@ create index if not exists saved_poll_game_artifacts_user_id_idx on saved_poll_g
 create index if not exists saved_poll_game_artifacts_updated_at_idx on saved_poll_game_artifacts (updated_at desc);
 create index if not exists saved_poll_game_artifact_versions_artifact_id_idx on saved_poll_game_artifact_versions (artifact_id, version desc);
 create index if not exists saved_poll_game_artifact_versions_user_name_idx on saved_poll_game_artifact_versions (user_id, name, created_at desc);
+create index if not exists brand_profiles_user_id_idx on brand_profiles (user_id);
+create index if not exists brand_profiles_updated_at_idx on brand_profiles (updated_at desc);
 create index if not exists questions_session_id_idx on questions (session_id);
 create index if not exists questions_prompt_id_idx on questions (prompt_id);
 create index if not exists qna_prompts_session_id_idx on qna_prompts (session_id);
@@ -377,6 +405,7 @@ alter table public.session_hosts enable row level security;
 alter table public.saved_poll_game_themes enable row level security;
 alter table public.saved_poll_game_artifacts enable row level security;
 alter table public.saved_poll_game_artifact_versions enable row level security;
+alter table public.brand_profiles enable row level security;
 alter table public.qna_prompts enable row level security;
 alter table public.questions enable row level security;
 alter table public.question_votes enable row level security;
@@ -518,6 +547,35 @@ create policy saved_poll_game_artifact_versions_insert_own
 drop policy if exists saved_poll_game_artifact_versions_delete_own on public.saved_poll_game_artifact_versions;
 create policy saved_poll_game_artifact_versions_delete_own
   on public.saved_poll_game_artifact_versions
+  for delete
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists brand_profiles_select_own on public.brand_profiles;
+create policy brand_profiles_select_own
+  on public.brand_profiles
+  for select
+  to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists brand_profiles_insert_own on public.brand_profiles;
+create policy brand_profiles_insert_own
+  on public.brand_profiles
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists brand_profiles_update_own on public.brand_profiles;
+create policy brand_profiles_update_own
+  on public.brand_profiles
+  for update
+  to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+
+drop policy if exists brand_profiles_delete_own on public.brand_profiles;
+create policy brand_profiles_delete_own
+  on public.brand_profiles
   for delete
   to authenticated
   using ((select auth.uid()) = user_id);

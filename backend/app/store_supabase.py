@@ -15,6 +15,7 @@ SUPABASE_TRANSPORT_BACKOFF_SECONDS = 15.0
 
 from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
+    BrandProfile,
     Poll,
     PollOption,
     PollStatus,
@@ -304,6 +305,10 @@ class SupabaseStore:
     def _to_saved_theme(self, data: dict[str, Any]) -> SavedTheme:
         payload = {key: value for key, value in data.items() if key != "user_id"}
         return SavedTheme(**payload)
+
+    def _to_brand_profile(self, data: dict[str, Any]) -> BrandProfile:
+        payload = {key: value for key, value in data.items() if key != "user_id"}
+        return BrandProfile(**payload)
 
     def _to_saved_artifact(self, data: dict[str, Any]) -> SavedArtifact:
         payload = {key: value for key, value in data.items() if key != "user_id"}
@@ -904,6 +909,57 @@ class SupabaseStore:
         if not data:
             raise NotFoundError("saved theme not found")
         return self._to_saved_theme(data[0])
+
+    async def list_brand_profiles(self, user_id: str) -> list[BrandProfile]:
+        rows = await self._select(
+            "brand_profiles",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "order": "updated_at.desc",
+            },
+        )
+        return [self._to_brand_profile(row) for row in rows]
+
+    async def save_brand_profile(
+        self,
+        user_id: str,
+        name: str,
+        source_type: str,
+        source_filename: str,
+        guidelines: dict[str, Any],
+        raw_summary: str,
+    ) -> BrandProfile:
+        response = await self._request(
+            "POST",
+            "brand_profiles",
+            params={"on_conflict": "user_id,name"},
+            json={
+                "user_id": user_id,
+                "name": name,
+                "source_type": source_type,
+                "source_filename": source_filename,
+                "guidelines": guidelines,
+                "raw_summary": raw_summary,
+            },
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise SupabaseError(500, "failed to save brand profile")
+        return self._to_brand_profile(data[0])
+
+    async def delete_brand_profile(self, user_id: str, name: str) -> BrandProfile:
+        response = await self._request(
+            "DELETE",
+            "brand_profiles",
+            params={"user_id": f"eq.{user_id}", "name": f"eq.{name}"},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("brand profile not found")
+        return self._to_brand_profile(data[0])
 
     async def list_saved_artifacts(self, user_id: str) -> list[SavedArtifact]:
         rows = await self._select(
