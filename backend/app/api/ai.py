@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import colorsys
 from typing import Any, Callable
+
+logger = logging.getLogger("prezo.ai")
 
 import httpx
 from fastapi import APIRouter, HTTPException, status
@@ -665,6 +668,7 @@ async def request_anthropic_text(
                 json=body,
             )
     except httpx.TimeoutException as exc:
+        logger.error("Anthropic timeout: %s stage=%s timeout=%.1fs", exc.__class__.__name__, request_stage, timeout_seconds)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=build_provider_timeout_detail(
@@ -678,6 +682,7 @@ async def request_anthropic_text(
         ) from exc
     except httpx.RequestError as exc:
         detail = str(exc).strip() or exc.__class__.__name__
+        logger.error("Anthropic request error: %s stage=%s", detail, request_stage)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=build_provider_request_error_detail(
@@ -697,6 +702,10 @@ async def request_anthropic_text(
     if response.status_code >= 400:
         detail = extract_anthropic_error(raw_payload) or (
             f"Anthropic request failed ({response.status_code})"
+        )
+        logger.error(
+            "Anthropic API error: status=%s detail=%s model=%s stage=%s",
+            response.status_code, detail, model, request_stage,
         )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
@@ -772,6 +781,7 @@ async def request_gemini_text(
                 json=body,
             )
     except httpx.TimeoutException as exc:
+        logger.error("Gemini timeout: %s stage=%s timeout=%.1fs", exc.__class__.__name__, request_stage, timeout_seconds)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=build_provider_timeout_detail(
@@ -785,6 +795,7 @@ async def request_gemini_text(
         ) from exc
     except httpx.RequestError as exc:
         detail = str(exc).strip() or exc.__class__.__name__
+        logger.error("Gemini request error: %s stage=%s", detail, request_stage)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=build_provider_request_error_detail(
@@ -803,6 +814,10 @@ async def request_gemini_text(
             raw_payload = {}
     if response.status_code >= 400:
         detail = extract_gemini_error(raw_payload) or f"Gemini request failed ({response.status_code})"
+        logger.error(
+            "Gemini API error: status=%s detail=%s model=%s stage=%s",
+            response.status_code, detail, model, request_stage,
+        )
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
     text = extract_gemini_text(raw_payload)
