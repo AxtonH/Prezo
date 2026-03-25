@@ -436,6 +436,11 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   padding: 8px 14px 8px;
 }
 
+.ribbon-group.artifact-library-group .row button {
+  min-width: 52px;
+  text-align: center;
+}
+
 .artifact-version-row select {
   flex: 1 1 auto;
   min-width: 0;
