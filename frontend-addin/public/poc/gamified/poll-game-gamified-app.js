@@ -7767,6 +7767,10 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     if (state.artifact.busy) {
       return
     }
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      updateTheme({ visualMode: ARTIFACT_VISUAL_MODE }, { historyLabel: 'New artifact' })
+      return
+    }
     state.artifact.lastPrompt = ''
     state.artifact.lastAnswers = createEmptyArtifactAnswers()
     state.artifact.activeEditRequest = ''
