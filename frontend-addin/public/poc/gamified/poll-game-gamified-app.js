@@ -85,6 +85,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
   const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
   const SNAPSHOT_POLL_DISCONNECTED_MS = 15000
+  const BRAND_ATTACH_STEP_INDEX = 2 // Q3 — design guidelines
 
   const query = new URLSearchParams(window.location.search)
 
@@ -1704,8 +1705,6 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   // ── Brand attach zone ─────────────────────────────────────────────────────
-
-  const BRAND_ATTACH_STEP_INDEX = 2 // Q3 — design guidelines
 
   function syncBrandAttachZoneVisibility() {
     const onBrandStep =
