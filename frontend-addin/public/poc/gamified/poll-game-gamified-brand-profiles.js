@@ -11,6 +11,8 @@ export function createBrandProfileExtractor({ getApiBase, getAccessToken, errorT
    * POST a file or URL to the extract endpoint and return the raw payload.
    * Throws with a human-readable message on any failure.
    */
+  const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024 // 50 MB
+
   async function extract({ file, url }) {
     const token = getAccessToken()
     if (!token) {
@@ -18,6 +20,9 @@ export function createBrandProfileExtractor({ getApiBase, getAccessToken, errorT
     }
     if (!file && !url) {
       throw new Error('Provide a file or URL to extract brand guidelines from.')
+    }
+    if (file && file.size > MAX_FILE_SIZE_BYTES) {
+      throw new Error(`File too large (max 50 MB). Your file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`)
     }
 
     const formData = new FormData()
