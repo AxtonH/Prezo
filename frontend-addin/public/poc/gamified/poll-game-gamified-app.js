@@ -54,6 +54,7 @@ import {
   sanitizeArtifactPackage
 } from './poll-game-gamified-artifact-package.js'
 import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
+import { createBrandProfileExtractor } from './poll-game-gamified-brand-profiles.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 
@@ -255,6 +256,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
+    brandAttachZone: must('brand-attach-zone'),
+    brandAttachFile: must('brand-attach-file'),
+    brandAttachUrl: must('brand-attach-url'),
+    brandAttachExtract: must('brand-attach-extract'),
+    brandAttachStatus: must('brand-attach-status'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -474,6 +480,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     listArtifactVersionsFromAccount,
     restoreArtifactVersionInAccount,
     reflectLibrarySyncResult,
+    getLibraryAccessToken,
     dispose: disposeLibrarySyncManager
   } = librarySyncManager
   const artifactBridge = createPollGameArtifactBridge({
@@ -499,6 +506,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         'The updated artifact never confirmed a successful render after the edit.'
       )
     }
+  })
+  const brandExtractor = createBrandProfileExtractor({
+    getApiBase: () => state.apiBase,
+    getAccessToken: getLibraryAccessToken,
+    errorToMessage
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
@@ -1156,6 +1168,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.addEventListener('click', handleArtifactEditQuickActionClick)
+    el.brandAttachFile.addEventListener('change', handleBrandAttachFileChange)
+    el.brandAttachExtract.addEventListener('click', handleBrandAttachExtractClick)
   }
 
   function syncArtifactComposerVisibility() {
@@ -1312,6 +1326,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     renderArtifactConversation()
     renderArtifactEditQuickActions()
     syncArtifactComposerBusyState()
+    syncBrandAttachZoneVisibility()
     if (state.artifact.busy) {
       return
     }
@@ -1687,6 +1702,74 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
     setArtifactComposerFloatingOpen(false)
   }
+
+  // ── Brand attach zone ─────────────────────────────────────────────────────
+
+  const BRAND_ATTACH_STEP_INDEX = 2 // Q3 — design guidelines
+
+  function syncBrandAttachZoneVisibility() {
+    const onBrandStep =
+      !isArtifactConversationComplete() &&
+      state.artifact.conversationStepIndex === BRAND_ATTACH_STEP_INDEX
+    el.brandAttachZone.classList.toggle('hidden', !onBrandStep)
+    if (!onBrandStep) {
+      setBrandAttachStatus('')
+    }
+  }
+
+  function setBrandAttachStatus(text, tone = '') {
+    el.brandAttachStatus.textContent = text || ''
+    el.brandAttachStatus.classList.remove('status-error', 'status-success')
+    if (tone === 'error') el.brandAttachStatus.classList.add('status-error')
+    if (tone === 'success') el.brandAttachStatus.classList.add('status-success')
+  }
+
+  function setBrandAttachBusy(busy) {
+    el.brandAttachExtract.disabled = busy
+    el.brandAttachFile.disabled = busy
+    el.brandAttachUrl.disabled = busy
+  }
+
+  async function runBrandExtract({ file, url }) {
+    setBrandAttachBusy(true)
+    setBrandAttachStatus(file ? `Extracting from ${file.name}…` : 'Extracting from URL…')
+    try {
+      const payload = await brandExtractor.extract({ file, url })
+      const text = brandExtractor.formatGuidelinesText(payload)
+      if (text) {
+        el.artifactPromptInput.value = text
+        el.artifactPromptInput.focus()
+        setBrandAttachStatus('Guidelines extracted. Review and press Send.', 'success')
+      } else {
+        setBrandAttachStatus('No guidelines found in the provided source.', 'error')
+      }
+    } catch (error) {
+      setBrandAttachStatus(errorToMessage(error), 'error')
+    } finally {
+      setBrandAttachBusy(false)
+      // Reset file input so the same file can be re-selected if needed
+      el.brandAttachFile.value = ''
+    }
+  }
+
+  function handleBrandAttachFileChange() {
+    const file = el.brandAttachFile.files?.[0]
+    if (!file) {
+      return
+    }
+    void runBrandExtract({ file, url: null })
+  }
+
+  function handleBrandAttachExtractClick() {
+    const url = asText(el.brandAttachUrl.value).trim()
+    if (!url) {
+      setBrandAttachStatus('Enter a URL to extract guidelines from.', 'error')
+      return
+    }
+    void runBrandExtract({ file: null, url })
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   function handleArtifactFrameLoad() {
     artifactBridge.handleFrameLoad()
@@ -9484,6 +9567,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
+    el.brandAttachFile.removeEventListener('change', handleBrandAttachFileChange)
+    el.brandAttachExtract.removeEventListener('click', handleBrandAttachExtractClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('resize', handleEditorDockViewportResize)

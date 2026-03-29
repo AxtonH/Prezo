@@ -75,11 +75,26 @@ export function buildArtifactConversationPrompt(answers = {}) {
   return [
     artifactType ? `Artifact type: ${artifactType}` : '',
     audienceSize ? `Expected audience size: ${audienceSize}` : '',
-    designGuidelines ? `Design guidelines: ${designGuidelines}` : '',
+    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     'Build a complete artifact experience that satisfies all of these requirements.'
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+/**
+ * Wraps design guidelines text in a clearly delimited block so the AI model
+ * treats it as an authoritative brand constraint, not a casual suggestion.
+ */
+function formatDesignGuidelinesBlock(text) {
+  if (!text) {
+    return ''
+  }
+  return [
+    '--- BRAND / DESIGN GUIDELINES (apply these as hard constraints) ---',
+    text,
+    '--- END GUIDELINES ---'
+  ].join('\n')
 }
 
 function isBackgroundAtmosphereEditRequest(value) {
@@ -105,7 +120,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
     audienceSize ? `Expected audience size: ${audienceSize}` : '',
-    designGuidelines ? `Current design guidelines: ${designGuidelines}` : '',
+    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     'Revise the current artifact instead of starting from scratch.',
     'This is edit mode, not rebuild mode.',
@@ -151,7 +166,7 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
     audienceSize ? `Expected audience size: ${audienceSize}` : '',
-    designGuidelines ? `Current design guidelines: ${designGuidelines}` : '',
+    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     errorText ? `Runtime failure to fix: ${errorText}` : '',
     'Repair the failed edit against the last stable working artifact.',

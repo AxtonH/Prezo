@@ -1582,6 +1582,103 @@ h1 {
   cursor: wait;
 }
 
+.brand-attach-zone {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed rgba(140, 180, 225, 0.65);
+  border-radius: 8px;
+  background: rgba(240, 247, 255, 0.55);
+}
+
+.brand-attach-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #4e6f96;
+}
+
+.brand-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.brand-attach-file-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border: 1px solid rgba(140, 180, 222, 0.72);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 11px;
+  color: #2d5f8e;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.brand-attach-file-btn:hover {
+  background: #eaf3ff;
+}
+
+.brand-attach-or {
+  font-size: 11px;
+  color: #7a9abf;
+  flex-shrink: 0;
+}
+
+.brand-attach-url {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid rgba(140, 180, 222, 0.72);
+  border-radius: 7px;
+  font-size: 11px;
+  color: #1a3650;
+  background: #fff;
+  outline: none;
+}
+
+.brand-attach-url:focus-visible {
+  border-color: rgba(72, 140, 223, 0.9);
+}
+
+.brand-attach-extract {
+  padding: 5px 12px;
+  border: 1px solid rgba(100, 155, 215, 0.72);
+  border-radius: 7px;
+  background: #e8f2ff;
+  font-size: 11px;
+  color: #1d4d82;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.brand-attach-extract:hover {
+  background: #d4e8ff;
+}
+
+.brand-attach-extract:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.brand-attach-status {
+  margin: 5px 0 0;
+  min-height: 14px;
+  font-size: 11px;
+  color: #4e6f96;
+}
+
+.brand-attach-status.status-error {
+  color: #b53a4e;
+}
+
+.brand-attach-status.status-success {
+  color: #1e7040;
+}
+
 .artifact-prompt-status {
   margin: 7px 0 0;
   min-height: 17px;

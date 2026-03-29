@@ -432,6 +432,7 @@ export function createPollGameLibrarySyncManager({
     listArtifactVersionsFromAccount,
     restoreArtifactVersionInAccount,
     reflectLibrarySyncResult,
+    getLibraryAccessToken,
     dispose
   }
 }

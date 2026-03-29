@@ -393,11 +393,37 @@
             class="artifact-prompt-input"
             placeholder="Type your answer here."
             rows="3"
-            maxlength="900"
+            maxlength="2000"
             aria-label="Describe artifact editor request"
           ></textarea>
           <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Send</button>
         </form>
+        <div id="brand-attach-zone" class="brand-attach-zone hidden" aria-label="Attach brand guidelines">
+          <p class="brand-attach-label">Or extract guidelines from a file or website:</p>
+          <div class="brand-attach-row">
+            <label id="brand-attach-file-label" class="brand-attach-file-btn" title="Upload PDF, PPTX, or image">
+              <input
+                id="brand-attach-file"
+                type="file"
+                accept=".pdf,.pptx,.png,.jpg,.jpeg,.webp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
+                class="hidden"
+                tabindex="-1"
+                aria-label="Upload brand guidelines file"
+              />
+              Attach file
+            </label>
+            <span class="brand-attach-or">or</span>
+            <input
+              id="brand-attach-url"
+              type="url"
+              class="brand-attach-url"
+              placeholder="https://brand.example.com"
+              aria-label="Brand website URL"
+            />
+            <button id="brand-attach-extract" type="button" class="brand-attach-extract">Extract</button>
+          </div>
+          <p id="brand-attach-status" class="brand-attach-status" aria-live="polite"></p>
+        </div>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
           Artifact editor is ready. Answer the first question to begin.
         </p>

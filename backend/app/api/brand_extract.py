@@ -183,13 +183,49 @@ async def extract_brand_profile(
 
     else:
         assert url is not None
-        parts.append({
-            "text": (
-                f"I want you to analyse the brand identity of the website at: {url}\n"
-                "Based on the URL, describe the likely visual identity, colours, fonts, "
-                "and brand style. Extract brand guidelines as best you can."
-            )
-        })
+        # Fetch the actual website HTML so Gemini can analyse real content
+        page_snippet = ""
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=5.0),
+                follow_redirects=True,
+                max_redirects=5,
+            ) as client:
+                page_response = await client.get(url, headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; PrezoBot/1.0)",
+                    "Accept": "text/html,application/xhtml+xml",
+                })
+                if page_response.status_code < 400:
+                    raw_html = page_response.text[:60000]
+                    # Strip script/style blocks to reduce noise, keep structure
+                    import re
+                    raw_html = re.sub(
+                        r"<(script|style)[^>]*>[\s\S]*?</\1>",
+                        "",
+                        raw_html,
+                        flags=re.IGNORECASE,
+                    )
+                    page_snippet = raw_html[:30000]
+        except Exception as exc:
+            logger.info("Could not fetch URL %s for brand extraction: %s", url, exc)
+
+        if page_snippet:
+            parts.append({
+                "text": (
+                    f"Analyse the brand identity of the website at {url}.\n"
+                    "Below is the page HTML. Extract colours, fonts, visual style, "
+                    "and brand guidelines from the actual content.\n\n"
+                    f"{page_snippet}"
+                )
+            })
+        else:
+            parts.append({
+                "text": (
+                    f"I want you to analyse the brand identity of the website at: {url}\n"
+                    "Based on the URL, describe the likely visual identity, colours, fonts, "
+                    "and brand style. Extract brand guidelines as best you can."
+                )
+            })
         source_type = "url"
         source_filename = url
 
