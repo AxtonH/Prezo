@@ -250,6 +250,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     'Build around persistent option nodes keyed by option id. On updates, never clear/rebuild the scene or use innerHTML/replaceChildren/replaceWith resets. Animate in place with CSS transitions or requestAnimationFrame. Reconcile by option id; use transforms for rank changes.',
     'Poll option elements (cards, rows, bars, labels) are created dynamically by the renderer JS at runtime, not in static index.html. To add or change per-option markup (decorations, badges, icons), modify the renderer JS where option nodes are built, not static HTML.',
     'Layout direction changes (vertical/horizontal) are CSS-only: change flex-direction or grid-template on the options container. Keep all option nodes intact.',
+    'Poll option columns must be distributed symmetrically across the full container width. Use CSS grid with grid-template-columns: repeat(auto, 1fr) or flexbox with flex: 1 on each option column so every option gets equal width regardless of label length. All option stacks, bars, or visual elements must share a common bottom baseline — use align-items: flex-end or equivalent on the options row. Center labels, vote counts, and visual elements within each equal-width column. Never use absolute positioning or manual pixel/percentage offsets for individual option placement.',
     backgroundEdit
       ? 'Background/atmosphere request: modify only backdrop layers and color tokens. Do not redesign foreground gameplay visuals.'
       : '',
