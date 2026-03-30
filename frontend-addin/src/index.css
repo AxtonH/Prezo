@@ -464,7 +464,14 @@ button.danger:hover {
 .poll-preview-actions button,
 .poll-preview-actions a.btn {
   flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  justify-content: center;
   text-align: center;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .prompt-item {
