@@ -25,6 +25,7 @@ import {
   updatePollWidget,
   updateQnaWidget
 } from './office/widgetShapes'
+import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
 const HOST_BASE_URL =
@@ -642,6 +643,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
 
   const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
+  const editorLink = session
+    ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
+    : null
   const hasMoreSessions =
     sessionsLimit < maxSessionsLimit && recentSessions.length >= sessionsLimit
   const hasLessSessions = sessionsLimit > defaultSessionsLimit
@@ -666,6 +670,16 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           <a className="nav-link active" href={HOST_BASE_URL}>
             Host
           </a>
+          {editorLink ? (
+            <a
+              className="nav-link"
+              href={editorLink}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Editor
+            </a>
+          ) : null}
           {!isAddinHost ? (
             <a className="nav-link" href={joinLink}>
               Join
@@ -843,6 +857,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                 onOpen={openPoll}
                 onClose={closePoll}
                 onBindWidget={bindPollWidget}
+                sessionId={session.id}
+                sessionCode={session.code}
               />
             )}
           </>

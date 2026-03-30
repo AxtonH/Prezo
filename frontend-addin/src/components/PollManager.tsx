@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { Poll } from '../api/types'
+import { buildEditingStationUrl } from '../utils/editingStationUrl'
 
 interface PollManagerProps {
   polls: Poll[]
@@ -8,6 +9,8 @@ interface PollManagerProps {
   onOpen: (pollId: string) => Promise<void>
   onClose: (pollId: string) => Promise<void>
   onBindWidget?: (pollId: string | null) => Promise<void>
+  sessionId?: string
+  sessionCode?: string | null
 }
 
 export function PollManager({
@@ -15,7 +18,9 @@ export function PollManager({
   onCreate,
   onOpen,
   onClose,
-  onBindWidget
+  onBindWidget,
+  sessionId,
+  sessionCode
 }: PollManagerProps) {
   const [isCollapsed, setIsCollapsed] = useState(true)
   const [question, setQuestion] = useState('')
@@ -69,6 +74,17 @@ export function PollManager({
     } catch (err) {
       setBindingError(err instanceof Error ? err.message : 'Failed to update poll widget binding.')
     }
+  }
+
+  const getCustomizeUrl = (pollId?: string) => {
+    if (!sessionId) {
+      return null
+    }
+    return buildEditingStationUrl({
+      sessionId,
+      code: sessionCode,
+      pollId: pollId ?? null
+    })
   }
 
   return (
@@ -142,6 +158,7 @@ export function PollManager({
               <ul className="list">
                 {polls.map((poll) => {
                   const totalVotes = poll.options.reduce((sum, option) => sum + option.votes, 0)
+                  const customizeUrl = getCustomizeUrl(poll.id)
                   return (
                     <li key={poll.id} className="list-item poll-preview-item">
                       <div className="poll-preview-main">
@@ -177,6 +194,16 @@ export function PollManager({
                         ) : (
                           <button onClick={() => onOpen(poll.id)}>Open</button>
                         )}
+                        {customizeUrl ? (
+                          <a
+                            className="btn ghost"
+                            href={customizeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Customize
+                          </a>
+                        ) : null}
                         {onBindWidget ? (
                           <button className="ghost" onClick={() => handleBind(poll.id)}>
                             Bind widget

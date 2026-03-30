@@ -19,7 +19,13 @@
       "Bash(python -m pytest tests/ -x -q)",
       "Bash(git push:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -r \"Editing Station\\\\|poll-game-poc\\\\|artifact\" /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/src --include=*.ts --include=*.tsx)",
+      "Bash(find /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/public -name *entry* -o -name *gamified*)",
+      "Bash(grep -r \"showModalDialog\\\\|displayDialogAsync\\\\|open.*poll\\\\|sessionId.*pollId\\\\|apiBase\" /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/src --include=*.ts --include=*.tsx)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -r \"poll-game-poc\\\\|Editing Station\" /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-audience --include=*.ts --include=*.tsx --include=*.html)"
     ]
   }
 }
