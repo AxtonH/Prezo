@@ -455,22 +455,20 @@ button.danger:hover {
 }
 
 .poll-preview-actions {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   align-self: center;
-  align-items: center;
-  justify-content: flex-end;
+  gap: 8px;
 }
 
 .poll-preview-actions button,
 .poll-preview-actions a.btn {
-  flex: 1 1 0;
-  min-width: 0;
   box-sizing: border-box;
-  justify-content: center;
+  width: 100%;
   text-align: center;
-  padding: 10px 12px;
-  font-size: 14px;
-  line-height: 1.25;
+  justify-content: center;
+  padding: 10px 8px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -783,11 +781,7 @@ button.danger:hover {
 
   .poll-preview-actions {
     width: 100%;
-    justify-content: flex-start;
-  }
-
-  .poll-preview-actions button {
-    flex: 1 1 120px;
+    grid-template-columns: repeat(3, 1fr);
   }
 
 }
