@@ -851,8 +851,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   function applyRibbonLayoutMode() {
     const isHidden = ribbonState.hidden
     const isEditing = !isHidden && !ribbonState.collapsed
-    const offset = isHidden ? 0 : isEditing ? 197 : 42
-    const canvasScale = isEditing ? 0.85 : 1
+    const headerHeight = 56
+    const offset = isHidden ? 0 : headerHeight
+    const canvasScale = 1
 
     document.body.classList.toggle('ribbon-editing', isEditing)
     document.documentElement.style.setProperty('--ribbon-offset', `${offset}px`)

@@ -20,14 +20,25 @@
     <div id="settings-ribbon" class="settings-ribbon">
       <div class="ribbon-strip">
         <div class="ribbon-brand">
-          <p class="ribbon-kicker">Prezo Editing Station</p>
-          <strong>Prezo Ribbon</strong>
+          <svg class="ribbon-logo" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect width="24" height="24" rx="6" fill="#6366f1"/>
+            <path d="M7 8h10M7 12h7M7 16h10" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <strong>Prezo Editor</strong>
         </div>
         <div class="ribbon-tabs" role="tablist" aria-label="Editor sections">
-          <button class="ribbon-tab active" role="tab" data-ribbon-tab="home" type="button">Home</button>
-          <button class="ribbon-tab" role="tab" data-ribbon-tab="look" type="button">Design</button>
-
-          <button class="ribbon-tab" role="tab" data-ribbon-tab="assets" type="button">Assets</button>
+          <button class="ribbon-tab active" role="tab" data-ribbon-tab="home" type="button">
+            <svg class="ribbon-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 6l6-4 6 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 14V8h4v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Home
+          </button>
+          <button class="ribbon-tab" role="tab" data-ribbon-tab="look" type="button">
+            <svg class="ribbon-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 4v4l3 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Design
+          </button>
+          <button class="ribbon-tab" role="tab" data-ribbon-tab="assets" type="button">
+            <svg class="ribbon-tab-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="5" cy="7" r="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M1.5 11l3.5-3 3 2.5 2-1.5 4.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Assets
+          </button>
         </div>
         <div class="ribbon-actions">
           <button
@@ -38,6 +49,7 @@
             aria-label="Undo"
             disabled
           >
+            <svg class="ribbon-btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 7h7a3 3 0 010 6H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 4L3 7l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Undo
           </button>
           <button
@@ -48,6 +60,7 @@
             aria-label="Redo"
             disabled
           >
+            <svg class="ribbon-btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 7H6a3 3 0 000 6h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 4l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Redo
           </button>
           <button
@@ -57,208 +70,223 @@
             title="Delete selected object (Delete)"
             aria-label="Delete selected object"
           >
+            <svg class="ribbon-btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4m2 0v9.33a1.33 1.33 0 01-1.34 1.34H4.67a1.33 1.33 0 01-1.34-1.34V4h9.34z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Delete
           </button>
-          <button id="settings-toggle" class="ribbon-btn" type="button">Collapse</button>
-          <button id="settings-close" class="ribbon-btn ghost" type="button">Hide</button>
+          <button id="settings-toggle" class="ribbon-btn" type="button">
+            <svg class="ribbon-btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Collapse
+          </button>
+          <button id="settings-close" class="ribbon-btn ghost" type="button">
+            <svg class="ribbon-btn-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Hide
+          </button>
         </div>
       </div>
+    </div>
 
-      <div id="settings-panel" class="settings-panel open">
-        <div class="panel-body">
-          <section class="ribbon-pane active" data-ribbon-pane="home">
-            <div class="ribbon-pane-grid">
-              <article class="ribbon-group group-medium themes-group">
-                <h3>Themes</h3>
-                <div class="row">
-                  <input id="theme-name" type="text" placeholder="Theme name" />
-                  <button id="save-theme" type="button">Save</button>
-                </div>
-                <div class="row">
-                  <select id="theme-select" aria-label="Saved themes"></select>
-                  <button id="load-theme" type="button">Load</button>
-                  <button id="delete-theme" type="button" class="danger">Delete</button>
-                </div>
-                <div class="row advanced-control">
-                  <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
-                  <button id="import-theme-button" type="button" class="ghost theme-transfer-btn">Import</button>
-                  <button id="reset-theme" type="button" class="ghost theme-transfer-btn">Reset</button>
-                </div>
-                <input
-                  id="import-theme"
-                  class="hidden"
-                  type="file"
-                  accept=".json,application/json"
-                  tabindex="-1"
-                  aria-label="Import theme file"
-                />
-                <p id="theme-feedback" class="note"></p>
-              </article>
+    <div id="settings-panel" class="settings-panel open">
+      <div class="panel-body">
+        <section class="ribbon-pane active" data-ribbon-pane="home">
+          <article class="ribbon-group themes-group">
+            <h3 class="sidebar-section-title">Themes</h3>
+            <div class="sidebar-section-body">
+              <div class="row">
+                <input id="theme-name" type="text" placeholder="Theme name" />
+                <button id="save-theme" type="button">Save</button>
+              </div>
+              <div class="row">
+                <select id="theme-select" aria-label="Saved themes"></select>
+                <button id="load-theme" type="button">Load</button>
+                <button id="delete-theme" type="button" class="danger">Delete</button>
+              </div>
+              <div class="row advanced-control">
+                <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
+                <button id="import-theme-button" type="button" class="ghost theme-transfer-btn">Import</button>
+                <button id="reset-theme" type="button" class="ghost theme-transfer-btn">Reset</button>
+              </div>
+              <input
+                id="import-theme"
+                class="hidden"
+                type="file"
+                accept=".json,application/json"
+                tabindex="-1"
+                aria-label="Import theme file"
+              />
+              <p id="theme-feedback" class="note"></p>
+            </div>
+          </article>
 
-              <article class="ribbon-group group-medium artifact-library-group">
-                <h3>Artifacts</h3>
+          <article class="ribbon-group artifact-library-group">
+            <h3 class="sidebar-section-title">Artifacts</h3>
+            <div class="sidebar-section-body">
+              <button
+                id="library-sync-status"
+                class="library-sync-status status-pending"
+                type="button"
+                title="Checking whether saved themes and artifacts are synced with your account."
+              >
+                <span class="library-sync-dot" aria-hidden="true"></span>
+                <span id="library-sync-status-text" aria-live="polite">Checking library sync…</span>
+              </button>
+              <div class="row">
+                <input id="artifact-name" type="text" placeholder="Artifact name" />
+                <button id="save-artifact" type="button">Save</button>
+                <button id="new-artifact" type="button">New</button>
+              </div>
+              <div class="row">
+                <select id="artifact-select" aria-label="Saved artifacts"></select>
+                <button id="load-artifact" type="button">Load</button>
+                <button id="delete-artifact" type="button" class="danger">Delete</button>
+              </div>
+              <div class="row artifact-version-row">
+                <select id="artifact-version-select" aria-label="Artifact version history"></select>
+                <button id="restore-artifact-version" type="button" class="ghost">Restore</button>
+              </div>
+              <p id="artifact-feedback" class="note"></p>
+            </div>
+          </article>
+
+          <article class="ribbon-group">
+            <h3 class="sidebar-section-title">Game Mode</h3>
+            <div class="sidebar-section-body">
+              <div class="game-mode-visual">
+                <label for="theme-visual-mode">Visual mode</label>
+                <select id="theme-visual-mode">
+                  <option value="classic">Classic bars</option>
+                  <option value="artifact">Artifact mode</option>
+                </select>
+              </div>
+            </div>
+          </article>
+
+          <article class="ribbon-group">
+            <h3 class="sidebar-section-title">Text Edit</h3>
+            <div class="sidebar-section-body">
+              <p class="note">Click question/option text, then highlight words to format.</p>
+              <div class="row text-tools" role="toolbar" aria-label="Text formatting">
                 <button
-                  id="library-sync-status"
-                  class="library-sync-status status-pending"
+                  id="text-tool-bold"
+                  class="text-tool"
                   type="button"
-                  title="Checking whether saved themes and artifacts are synced with your account."
+                  data-text-control="true"
+                  aria-label="Bold (Ctrl+B)"
                 >
-                  <span class="library-sync-dot" aria-hidden="true"></span>
-                  <span id="library-sync-status-text" aria-live="polite">Checking library sync…</span>
+                  <strong>B</strong>
                 </button>
-                <div class="row">
-                  <input id="artifact-name" type="text" placeholder="Artifact name" />
-                  <button id="save-artifact" type="button">Save</button>
-                  <button id="new-artifact" type="button">New</button>
-                </div>
-                <div class="row">
-                  <select id="artifact-select" aria-label="Saved artifacts"></select>
-                  <button id="load-artifact" type="button">Load</button>
-                  <button id="delete-artifact" type="button" class="danger">Delete</button>
-                </div>
-                <div class="row artifact-version-row">
-                  <select id="artifact-version-select" aria-label="Artifact version history"></select>
-                  <button id="restore-artifact-version" type="button" class="ghost">Restore</button>
-                </div>
-                <p id="artifact-feedback" class="note"></p>
-              </article>
-
-              <article class="ribbon-group group-compact">
-                <h3>Game Mode</h3>
-                <div class="game-mode-visual">
-                  <label for="theme-visual-mode">Visual mode</label>
-                  <select id="theme-visual-mode">
-                    <option value="classic">Classic bars</option>
-                    <option value="artifact">Artifact mode</option>
-                  </select>
-                </div>
-              </article>
-
-              <article class="ribbon-group group-compact">
-                <h3>Text Edit</h3>
-                <p class="note">Click question/option text, then highlight words to format.</p>
-                <div class="row text-tools" role="toolbar" aria-label="Text formatting">
-                  <button
-                    id="text-tool-bold"
-                    class="text-tool"
-                    type="button"
-                    data-text-control="true"
-                    aria-label="Bold (Ctrl+B)"
-                  >
-                    <strong>B</strong>
-                  </button>
-                  <button
-                    id="text-tool-italic"
-                    class="text-tool"
-                    type="button"
-                    data-text-control="true"
-                    aria-label="Italic (Ctrl+I)"
-                  >
-                    <em>I</em>
-                  </button>
-                  <button
-                    id="text-tool-underline"
-                    class="text-tool"
-                    type="button"
-                    data-text-control="true"
-                    aria-label="Underline (Ctrl+U)"
-                  >
-                    <u>U</u>
-                  </button>
-                  <button
-                    id="text-tool-clear"
-                    class="text-tool ghost"
-                    type="button"
-                    data-text-control="true"
-                    aria-label="Clear formatting"
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div class="row text-style-row">
-                  <select
-                    id="text-font-family"
-                    class="text-style-select text-font-family"
-                    data-text-control="true"
-                    aria-label="Font family"
-                  ></select>
-                  <select
-                    id="text-font-size"
-                    class="text-style-select text-font-size"
-                    data-text-control="true"
-                    aria-label="Font size"
-                  ></select>
-                  <input
-                    id="text-font-color"
-                    class="text-style-color"
-                    data-text-control="true"
-                    type="color"
-                    aria-label="Font color"
-                    value="#16375e"
-                  />
-                </div>
-                <p id="text-edit-feedback" class="note">Rich text editing is on for all canvas text elements.</p>
-              </article>
+                <button
+                  id="text-tool-italic"
+                  class="text-tool"
+                  type="button"
+                  data-text-control="true"
+                  aria-label="Italic (Ctrl+I)"
+                >
+                  <em>I</em>
+                </button>
+                <button
+                  id="text-tool-underline"
+                  class="text-tool"
+                  type="button"
+                  data-text-control="true"
+                  aria-label="Underline (Ctrl+U)"
+                >
+                  <u>U</u>
+                </button>
+                <button
+                  id="text-tool-clear"
+                  class="text-tool ghost"
+                  type="button"
+                  data-text-control="true"
+                  aria-label="Clear formatting"
+                >
+                  Clear
+                </button>
+              </div>
+              <div class="row text-style-row">
+                <select
+                  id="text-font-family"
+                  class="text-style-select text-font-family"
+                  data-text-control="true"
+                  aria-label="Font family"
+                ></select>
+                <select
+                  id="text-font-size"
+                  class="text-style-select text-font-size"
+                  data-text-control="true"
+                  aria-label="Font size"
+                ></select>
+                <input
+                  id="text-font-color"
+                  class="text-style-color"
+                  data-text-control="true"
+                  type="color"
+                  aria-label="Font color"
+                  value="#16375e"
+                />
+              </div>
+              <p id="text-edit-feedback" class="note">Rich text editing is on for all canvas text elements.</p>
             </div>
-          </section>
+          </article>
+        </section>
 
-          <section class="ribbon-pane" data-ribbon-pane="look">
-            <div class="ribbon-pane-grid">
-              <article class="ribbon-group group-wide">
-                <h3>Background</h3>
-                <label>Image URL<input id="theme-bg-image-url" type="text" placeholder="https://..." /></label>
-                <label>Upload image<input id="theme-bg-image-upload" type="file" accept="image/*" /></label>
-                <div class="grid">
-                  <label class="advanced-control">Gradient A<input id="theme-bg-a" type="color" /></label>
-                  <label class="advanced-control">Gradient B<input id="theme-bg-b" type="color" /></label>
-                  <label class="advanced-control">Overlay color<input id="theme-overlay-color" type="color" /></label>
-                  <label>Image opacity<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label>Overlay opacity<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label class="advanced-control">Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
-                  <label class="check">Show grid<input id="theme-grid-visible" type="checkbox" /></label>
-                </div>
-              </article>
-
-              <article class="ribbon-group group-wide">
-                <h3>Poll Style</h3>
-                <div class="grid">
-                  <label>Panel color<input id="theme-panel-color" type="color" /></label>
-                  <label class="advanced-control">Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label class="advanced-control">Panel border<input id="theme-panel-border" type="color" /></label>
-                  <label>Main text<input id="theme-text-main" type="color" /></label>
-                  <label class="advanced-control">Muted text<input id="theme-text-sub" type="color" /></label>
-                  <label class="advanced-control">Track color<input id="theme-track-color" type="color" /></label>
-                  <label class="advanced-control">Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label>Fill A<input id="theme-fill-a" type="color" /></label>
-                  <label>Fill B<input id="theme-fill-b" type="color" /></label>
-                  <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
-                  <label class="advanced-control">Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
-                  <label class="advanced-control">Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
-                  <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
-                </div>
-              </article>
+        <section class="ribbon-pane" data-ribbon-pane="look">
+          <article class="ribbon-group">
+            <h3 class="sidebar-section-title">Background</h3>
+            <div class="sidebar-section-body">
+              <label>Image URL<input id="theme-bg-image-url" type="text" placeholder="https://..." /></label>
+              <label>Upload image<input id="theme-bg-image-upload" type="file" accept="image/*" /></label>
+              <div class="sidebar-controls-grid">
+                <label class="advanced-control">Gradient A<input id="theme-bg-a" type="color" /></label>
+                <label class="advanced-control">Gradient B<input id="theme-bg-b" type="color" /></label>
+                <label class="advanced-control">Overlay color<input id="theme-overlay-color" type="color" /></label>
+                <label>Image opacity<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label>Overlay opacity<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label class="advanced-control">Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
+                <label class="check">Show grid<input id="theme-grid-visible" type="checkbox" /></label>
+              </div>
             </div>
-          </section>
+          </article>
 
-          <section class="ribbon-pane" data-ribbon-pane="assets">
-            <div class="ribbon-pane-grid">
-              <article class="ribbon-group group-assets">
-                <h3>Scene Assets</h3>
-                <label class="advanced-control">Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
-                <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
-                <label class="advanced-control">Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
-                <label class="advanced-control">Upload overlay asset<input id="theme-asset-upload" type="file" accept="image/*" /></label>
-                <div class="grid grid-assets">
-                  <label>Logo width<input id="theme-logo-width" type="range" min="40" max="280" step="1" /></label>
-                  <label class="advanced-control">Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label class="advanced-control">Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
-                  <label class="advanced-control">Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                  <label class="advanced-control">Font family<input id="theme-font-family" type="text" /></label>
-                </div>
-              </article>
+          <article class="ribbon-group">
+            <h3 class="sidebar-section-title">Poll Style</h3>
+            <div class="sidebar-section-body">
+              <div class="sidebar-controls-grid">
+                <label>Panel color<input id="theme-panel-color" type="color" /></label>
+                <label class="advanced-control">Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label class="advanced-control">Panel border<input id="theme-panel-border" type="color" /></label>
+                <label>Main text<input id="theme-text-main" type="color" /></label>
+                <label class="advanced-control">Muted text<input id="theme-text-sub" type="color" /></label>
+                <label class="advanced-control">Track color<input id="theme-track-color" type="color" /></label>
+                <label class="advanced-control">Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label>Fill A<input id="theme-fill-a" type="color" /></label>
+                <label>Fill B<input id="theme-fill-b" type="color" /></label>
+                <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
+                <label class="advanced-control">Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
+                <label class="advanced-control">Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
+                <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
+              </div>
             </div>
-          </section>
-        </div>
+          </article>
+        </section>
+
+        <section class="ribbon-pane" data-ribbon-pane="assets">
+          <article class="ribbon-group">
+            <h3 class="sidebar-section-title">Scene Assets</h3>
+            <div class="sidebar-section-body">
+              <label class="advanced-control">Logo URL<input id="theme-logo-url" type="text" placeholder="https://..." /></label>
+              <label>Upload logo<input id="theme-logo-upload" type="file" accept="image/*" /></label>
+              <label class="advanced-control">Overlay asset URL<input id="theme-asset-url" type="text" placeholder="https://..." /></label>
+              <label class="advanced-control">Upload overlay asset<input id="theme-asset-upload" type="file" accept="image/*" /></label>
+              <div class="sidebar-controls-grid sidebar-controls-grid-assets">
+                <label>Logo width<input id="theme-logo-width" type="range" min="40" max="280" step="1" /></label>
+                <label class="advanced-control">Logo opacity<input id="theme-logo-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label class="advanced-control">Asset width<input id="theme-asset-width" type="range" min="60" max="720" step="1" /></label>
+                <label class="advanced-control">Asset opacity<input id="theme-asset-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                <label class="advanced-control">Font family<input id="theme-font-family" type="text" /></label>
+              </div>
+            </div>
+          </article>
+        </section>
       </div>
     </div>
 
