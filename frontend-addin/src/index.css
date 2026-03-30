@@ -461,6 +461,12 @@ button.danger:hover {
   justify-content: flex-end;
 }
 
+.poll-preview-actions button,
+.poll-preview-actions a.btn {
+  min-width: 110px;
+  text-align: center;
+}
+
 .prompt-item {
   flex-direction: column;
   align-items: stretch;
