@@ -463,7 +463,7 @@ button.danger:hover {
 
 .poll-preview-actions button,
 .poll-preview-actions a.btn {
-  min-width: 110px;
+  flex: 1 1 0;
   text-align: center;
 }
 
