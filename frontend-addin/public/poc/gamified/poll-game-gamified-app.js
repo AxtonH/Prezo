@@ -1205,10 +1205,8 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function syncArtifactComposerDocking(shouldDock) {
-    const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     const inlineParent = el.artifactComposerAnchor.parentElement
-    // Always dock into the sidebar shell in artifact mode so it appears in the AI tab
-    if (shouldDock || isArtifactMode) {
+    if (shouldDock) {
       if (el.artifactComposer.parentElement !== el.aiChatShell) {
         el.aiChatShell.insertBefore(el.artifactComposer, el.artifactComposerFab)
       }
