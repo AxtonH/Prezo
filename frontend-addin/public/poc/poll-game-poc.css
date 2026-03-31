@@ -2756,7 +2756,11 @@ body.present-mode .settings-panel,
 body.present-mode .settings-minimized,
 body.present-mode .settings-backdrop,
 body.present-mode .selection-toolbar,
-body.present-mode .ai-chat-shell {
+body.present-mode .ai-chat-shell,
+body.present-mode-artifact .settings-ribbon,
+body.present-mode-artifact .settings-panel,
+body.present-mode-artifact .settings-minimized,
+body.present-mode-artifact .ai-chat-shell {
   display: none !important;
 }
 
