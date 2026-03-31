@@ -16,7 +16,7 @@ logger = logging.getLogger("prezo.brand_extract")
 
 router = APIRouter(prefix="/library/poll-game/brand-profiles", tags=["brand-extract"])
 
-EXTRACT_TIMEOUT_SECONDS = 120.0
+EXTRACT_TIMEOUT_SECONDS = 180.0
 EXTRACT_MAX_FILE_SIZE = 50 * 1024 * 1024   # 50 MB hard cap
 INLINE_MAX_FILE_SIZE = 14 * 1024 * 1024    # >14 MB → use File API (base64 would exceed 20 MB limit)
 
@@ -27,18 +27,46 @@ SUPPORTED_UPLOAD_TYPES = SUPPORTED_IMAGE_TYPES | {
 }
 
 BRAND_EXTRACT_SYSTEM = (
-    "You are a brand identity analyst. Given the uploaded content (brand guidelines PDF, "
-    "presentation slides, logo image, or website screenshot), extract and summarise the "
-    "brand's visual identity.\n\n"
+    "You are a meticulous brand identity analyst. Given the uploaded content (brand "
+    "guidelines PDF, presentation slides, logo image, or website screenshot), perform "
+    "an exhaustive extraction of the brand's complete identity system.\n\n"
+    "You MUST be thorough — extract EVERY detail you can find. For a multi-page brand "
+    "guide, your output should be extensive and comprehensive. Do NOT summarise or "
+    "abbreviate; capture the full depth of the source material.\n\n"
     "Return a JSON object (and nothing else) with these keys:\n"
-    "- primary_colors: array of hex colour strings (e.g. [\"#1A2B3C\", \"#FF6600\"])\n"
-    "- secondary_colors: array of hex colour strings\n"
-    "- fonts: array of font family names\n"
-    "- logo_description: one-sentence description of the logo\n"
-    "- visual_style: one-sentence summary of the brand's visual tone (e.g. \"clean "
-    "and modern with bold geometric shapes\")\n"
-    "- key_principles: array of 2-5 short brand guidelines principles\n"
-    "- raw_notes: any other relevant brand details in free text\n\n"
+    "- primary_colors: array of hex colour strings with usage notes "
+    "(e.g. [\"#1A2B3C – primary brand blue, used for headlines and CTAs\"])\n"
+    "- secondary_colors: array of hex colour strings with usage notes\n"
+    "- accent_colors: array of hex colour strings for any accent/highlight colours\n"
+    "- gradient_styles: array of gradient definitions if present "
+    "(e.g. [\"linear-gradient from #1A2B3C to #FF6600, used on hero banners\"])\n"
+    "- fonts: array of objects with family name, weight, and usage "
+    "(e.g. [{\"family\": \"Inter\", \"weights\": [\"400\", \"700\"], \"usage\": \"body text\"}])\n"
+    "- typography_hierarchy: description of heading/body/caption size and weight relationships\n"
+    "- logo_description: detailed description of the logo including variations, "
+    "clear space rules, minimum sizes, and any do's/don'ts\n"
+    "- logo_colors: hex colours used in the logo specifically\n"
+    "- visual_style: detailed summary of the brand's visual tone, aesthetic, and design "
+    "philosophy (multiple sentences encouraged)\n"
+    "- key_principles: array of ALL brand guidelines principles found (not limited to 5)\n"
+    "- tone_of_voice: description of the brand's communication style, voice, and "
+    "messaging tone (formal/casual, playful/serious, etc.)\n"
+    "- messaging_framework: key messages, taglines, slogans, or value propositions\n"
+    "- iconography_style: description of icon style, line weight, and approach\n"
+    "- illustration_style: description of illustration approach if present\n"
+    "- photography_style: description of photography direction, mood, and treatment\n"
+    "- patterns_and_textures: description of any brand patterns, scribbles, textures, "
+    "or decorative elements (e.g. \"hand-drawn scribble borders\", \"dot grid overlay\")\n"
+    "- spacing_and_layout: layout grid rules, spacing principles, whitespace usage\n"
+    "- brand_shapes: any signature shapes or geometric elements used in the brand\n"
+    "- background_styles: preferred background treatments (solid, gradient, image, etc.)\n"
+    "- animation_motion: any motion/animation guidelines if present\n"
+    "- dos_and_donts: array of explicit do's and don'ts from the guidelines\n"
+    "- raw_notes: any other relevant brand details not captured above — be generous "
+    "and include everything remaining. For a large brand guide, this should be extensive.\n\n"
+    "IMPORTANT: Extract MAXIMUM detail. A 100+ page brand guide should produce a very "
+    "long, thorough response. Never truncate or omit details to save space. Every colour "
+    "swatch, every font pairing, every layout rule matters.\n\n"
     "If a field cannot be determined from the content, use an empty array or empty string."
 )
 
@@ -147,8 +175,8 @@ async def _extract_with_gemini(parts: list[dict[str, Any]]) -> dict[str, Any]:
         "contents": [{"parts": parts}],
         "systemInstruction": {"parts": [{"text": BRAND_EXTRACT_SYSTEM}]},
         "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 4096,
+            "temperature": 0.3,
+            "maxOutputTokens": 16384,
             "responseMimeType": "application/json",
         },
     }

@@ -58,49 +58,78 @@ export function createBrandProfileExtractor({ getApiBase, getAccessToken, errorT
   }
 
   /**
-   * Convert an extraction payload into a compact plain-text string suitable
-   * for the design-guidelines textarea.
+   * Convert an extraction payload into a comprehensive plain-text string
+   * suitable for the design-guidelines textarea.
    */
   function formatGuidelinesText(payload) {
     if (!payload || typeof payload !== 'object') {
       return ''
     }
     const g = payload.guidelines || {}
-    const lines = []
+    const sections = []
 
-    const primaryColors = Array.isArray(g.primary_colors) ? g.primary_colors : []
-    if (primaryColors.length) {
-      lines.push(`Primary colors: ${primaryColors.join(', ')}`)
+    function addColorArray(label, key) {
+      const arr = Array.isArray(g[key]) ? g[key] : []
+      if (arr.length) {
+        sections.push(`${label}:\n${arr.map(c => `  ${typeof c === 'string' ? c : JSON.stringify(c)}`).join('\n')}`)
+      }
     }
 
-    const secondaryColors = Array.isArray(g.secondary_colors) ? g.secondary_colors : []
-    if (secondaryColors.length) {
-      lines.push(`Secondary colors: ${secondaryColors.join(', ')}`)
+    function addStringField(label, key, source) {
+      const obj = source || g
+      const val = typeof obj[key] === 'string' ? obj[key].trim() : ''
+      if (val) sections.push(`${label}:\n${val}`)
     }
+
+    function addArrayField(label, key) {
+      const arr = Array.isArray(g[key]) ? g[key] : []
+      if (arr.length) {
+        sections.push(`${label}:\n${arr.map(item => `  - ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n')}`)
+      }
+    }
+
+    addColorArray('Primary colors', 'primary_colors')
+    addColorArray('Secondary colors', 'secondary_colors')
+    addColorArray('Accent colors', 'accent_colors')
+    addArrayField('Gradient styles', 'gradient_styles')
 
     const fonts = Array.isArray(g.fonts) ? g.fonts : []
     if (fonts.length) {
-      lines.push(`Fonts: ${fonts.join(', ')}`)
+      const formatted = fonts.map(f => {
+        if (typeof f === 'string') return `  - ${f}`
+        if (f && typeof f === 'object') {
+          const parts = [f.family || 'Unknown']
+          if (f.weights) parts.push(`weights: ${Array.isArray(f.weights) ? f.weights.join(', ') : f.weights}`)
+          if (f.usage) parts.push(`usage: ${f.usage}`)
+          return `  - ${parts.join(' | ')}`
+        }
+        return `  - ${JSON.stringify(f)}`
+      })
+      sections.push(`Fonts:\n${formatted.join('\n')}`)
     }
 
-    if (typeof g.visual_style === 'string' && g.visual_style.trim()) {
-      lines.push(`Visual style: ${g.visual_style.trim()}`)
-    }
-
-    const principles = Array.isArray(g.key_principles) ? g.key_principles : []
-    if (principles.length) {
-      lines.push(`Key principles: ${principles.join('; ')}`)
-    }
-
-    if (typeof g.logo_description === 'string' && g.logo_description.trim()) {
-      lines.push(`Logo: ${g.logo_description.trim()}`)
-    }
+    addStringField('Typography hierarchy', 'typography_hierarchy')
+    addStringField('Logo', 'logo_description')
+    addColorArray('Logo colors', 'logo_colors')
+    addStringField('Visual style', 'visual_style')
+    addArrayField('Key principles', 'key_principles')
+    addStringField('Tone of voice', 'tone_of_voice')
+    addStringField('Messaging framework', 'messaging_framework')
+    addStringField('Iconography style', 'iconography_style')
+    addStringField('Illustration style', 'illustration_style')
+    addStringField('Photography style', 'photography_style')
+    addStringField('Patterns and textures', 'patterns_and_textures')
+    addStringField('Spacing and layout', 'spacing_and_layout')
+    addStringField('Brand shapes', 'brand_shapes')
+    addStringField('Background styles', 'background_styles')
+    addStringField('Animation and motion', 'animation_motion')
+    addArrayField("Do's and Don'ts", 'dos_and_donts')
 
     if (typeof payload.raw_summary === 'string' && payload.raw_summary.trim()) {
-      lines.push(`Notes: ${payload.raw_summary.trim()}`)
+      sections.push(`Additional brand notes:\n${payload.raw_summary.trim()}`)
     }
 
-    return lines.join('\n')
+    return sections.join('\n\n')
   }
 
   return { extract, formatGuidelinesText }
