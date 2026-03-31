@@ -1537,6 +1537,27 @@ async def validate_and_repair_artifact_html_candidate(
     next_html = restore_artifact_live_hooks_if_missing(html, request_context)
     next_html = attempt_artifact_structural_autorepair(next_html)
     validation_issues = validate_poll_game_artifact_html(next_html)
+
+    # In edit/repair mode, don't block on validation issues that already existed
+    # in the source artifact — the user's edit shouldn't be rejected for
+    # pre-existing problems they didn't introduce.
+    if request_mode in {"edit", "repair"} and validation_issues:
+        source_artifact = (
+            request_context.get("artifact", {}).get("currentArtifactHtml")
+            if isinstance(request_context.get("artifact"), dict)
+            else None
+        )
+        if isinstance(source_artifact, str) and source_artifact.strip():
+            pre_existing_issues = set(
+                validate_poll_game_artifact_html(source_artifact)
+            )
+            if pre_existing_issues:
+                validation_issues = [
+                    issue
+                    for issue in validation_issues
+                    if issue not in pre_existing_issues
+                ]
+
     if stop_reason in {"max_tokens", "model_context_window_exceeded"}:
         validation_issues.insert(
             0,
@@ -1649,6 +1670,10 @@ def build_artifact_repair_prompt(
         "truncated" in issue.lower() or "unbalanced <script>" in issue.lower()
         for issue in validation_issues
     )
+    has_reconciliation_issue = any(
+        "append option rows" in issue.lower() or "keyed reconciliation" in issue.lower()
+        for issue in validation_issues
+    )
     is_background_edit = bool(
         re.search(
             r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b)\b",
@@ -1678,6 +1703,20 @@ def build_artifact_repair_prompt(
             "- Preserve or restore the live poll contract: window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), or equivalent approved host wiring.",
             "- The artifact must render visible usable content on first load.",
             "",
+            *(
+                [
+                    "Reconciliation fix (CRITICAL — this is why the artifact failed):",
+                    "The renderer uses options.forEach + appendChild without clearing or keying, which duplicates rows on each poll update.",
+                    "You MUST use one of these two approaches inside the poll renderer function:",
+                    "  Approach A — Clear before appending: Before the options.forEach loop, add:  while (container.firstChild) container.removeChild(container.firstChild);",
+                    "  Approach B — Key by option id: On each option row element, set data-option-id=option.id. Before creating a new row, check if one with that id already exists and reuse it.",
+                    "Do NOT use replaceChildren() or innerHTML='' on the scene root as that would destroy the whole scene.",
+                    "Apply the fix to the options container element only.",
+                    "",
+                ]
+                if has_reconciliation_issue
+                else []
+            ),
             "Repair strategy",
             "- If a script block is malformed, truncated, or hard to salvage, rewrite the entire affected script block cleanly instead of trying to patch a fragment.",
             "- Keep the existing scene root and stable mounted nodes whenever possible.",
@@ -6051,11 +6090,22 @@ def detect_append_only_option_render_issue(script_body: str) -> str | None:
         r"\.textContent\s*=\s*['\"]\s*['\"]",
         r"data-option-id",
         r"data-prezo-option-id",
+        r"data-id",
         r"\browsById\b",
         r"\browById\b",
         r"\boptionNodesById\b",
         r"\bmountedRows\b",
         r"\bnew Map\s*\(",
+        r"while\s*\([^)]*(?:firstChild|lastChild|childNodes)",
+        r"\.forEach\s*\(\s*(?:function\s*\([^)]*\)|[^=)]+=>)\s*[^)]*\.remove\s*\(",
+        r"\bexistingOptions\b",
+        r"\bexistingRows\b",
+        r"\boptionElements\b",
+        r"\boptionMap\b",
+        r"\boptionById\b",
+        r"\boptionNodes\b",
+        r"\.children\.length",
+        r"\.childNodes\.length",
     )
     if any(
         re.search(marker, normalized, re.IGNORECASE)
