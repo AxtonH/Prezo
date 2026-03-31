@@ -1112,6 +1112,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
     }
     hideSelectionToolbar()
     clearActiveResizeTarget()
+    if (state.presentMode) {
+      el.settingsPanel.classList.remove('open')
+    } else {
+      el.settingsPanel.classList.toggle('open', !ribbonState.collapsed)
+    }
     syncPresentModeUi()
     syncEditorDockingState()
     scheduleArtifactLayoutRefit()

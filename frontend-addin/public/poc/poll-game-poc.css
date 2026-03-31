@@ -2762,6 +2762,10 @@ body.present-mode-artifact .settings-panel,
 body.present-mode-artifact .settings-minimized,
 body.present-mode-artifact .ai-chat-shell {
   display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  right: calc(-1 * var(--sidebar-width) - 10px) !important;
 }
 
 body.present-mode .panel-bg-drag,
