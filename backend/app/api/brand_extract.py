@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import hashlib
 import io
+import json as _json
 import logging
 import re
 import uuid
@@ -32,58 +35,157 @@ SUPPORTED_UPLOAD_TYPES = SUPPORTED_IMAGE_TYPES | {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
-BRAND_EXTRACT_SYSTEM = (
-    "You are a meticulous brand identity analyst. Given the uploaded content (brand "
-    "guidelines PDF, presentation slides, logo image, or website screenshot), perform "
-    "an exhaustive extraction of the brand's complete identity system.\n\n"
-    "You MUST be thorough — extract EVERY detail you can find. For a multi-page brand "
-    "guide, your output should be extensive and comprehensive. Do NOT summarise or "
-    "abbreviate; capture the full depth of the source material.\n\n"
-    "Return a JSON object (and nothing else) with these keys:\n"
-    "- primary_colors: array of hex colour strings with usage notes "
-    "(e.g. [\"#1A2B3C – primary brand blue, used for headlines and CTAs\"])\n"
-    "- secondary_colors: array of hex colour strings with usage notes\n"
-    "- accent_colors: array of hex colour strings for any accent/highlight colours\n"
-    "- gradient_styles: array of gradient definitions if present "
-    "(e.g. [\"linear-gradient from #1A2B3C to #FF6600, used on hero banners\"])\n"
-    "- fonts: array of objects with family name, weight, and usage "
-    "(e.g. [{\"family\": \"Inter\", \"weights\": [\"400\", \"700\"], \"usage\": \"body text\"}])\n"
-    "- typography_hierarchy: description of heading/body/caption size and weight relationships\n"
-    "- logo_description: detailed description of the logo including variations, "
-    "clear space rules, minimum sizes, and any do's/don'ts\n"
-    "- logo_colors: hex colours used in the logo specifically\n"
-    "- visual_style: detailed summary of the brand's visual tone, aesthetic, and design "
-    "philosophy (multiple sentences encouraged)\n"
-    "- key_principles: array of ALL brand guidelines principles found (not limited to 5)\n"
-    "- tone_of_voice: description of the brand's communication style, voice, and "
-    "messaging tone (formal/casual, playful/serious, etc.)\n"
-    "- messaging_framework: key messages, taglines, slogans, or value propositions\n"
-    "- iconography_style: description of icon style, line weight, and approach\n"
-    "- illustration_style: description of illustration approach if present\n"
-    "- photography_style: description of photography direction, mood, and treatment\n"
-    "- patterns_and_textures: description of any brand patterns, scribbles, textures, "
-    "or decorative elements (e.g. \"hand-drawn scribble borders\", \"dot grid overlay\")\n"
-    "- spacing_and_layout: layout grid rules, spacing principles, whitespace usage\n"
-    "- brand_shapes: any signature shapes or geometric elements used in the brand\n"
-    "- background_styles: preferred background treatments (solid, gradient, image, etc.)\n"
-    "- animation_motion: any motion/animation guidelines if present\n"
-    "- dos_and_donts: array of explicit do's and don'ts from the guidelines\n"
-    "- raw_notes: ONLY include brand details that do NOT fit any of the above fields. "
-    "Do NOT repeat or summarise anything already captured in the structured fields above. "
-    "If everything has been captured, set this to an empty string.\n\n"
-    "IMPORTANT: Extract MAXIMUM detail into the structured fields. Every colour swatch, "
-    "font pairing, and layout rule belongs in its dedicated field — not in raw_notes. "
-    "raw_notes is strictly for overflow that has no matching field.\n\n"
-    "If a field cannot be determined from the content, use an empty array or empty string."
+# ---------------------------------------------------------------------------
+# Pass 1 — Visual Identity
+# Focused on: colours, typography, patterns, shapes, asset styles
+# ---------------------------------------------------------------------------
+
+PASS1_SYSTEM = (
+    "You are a meticulous brand identity analyst. Given the uploaded content "
+    "(brand guidelines PDF, presentation slides, logo image, or website screenshot), "
+    "extract the brand's VISUAL IDENTITY SYSTEM.\n\n"
+    "Focus ONLY on visual/design elements:\n"
+    "- Colours (primary, secondary, accent) with hex values, names, and usage\n"
+    "- Gradients with definitions and usage\n"
+    "- Fonts with family names, weights, and usage roles\n"
+    "- Typography hierarchy (heading/body/caption relationships)\n"
+    "- Logo description, variations, rules, and colours\n"
+    "- Patterns, textures, scribbles, and decorative elements\n"
+    "- Brand shapes and geometric elements\n"
+    "- Background treatment styles\n"
+    "- Iconography style and rules\n"
+    "- Illustration style and approach\n"
+    "- Photography style and treatment\n"
+    "- Spacing and layout grid rules\n"
+    "- Animation/motion guidelines\n\n"
+    "Be EXHAUSTIVE. Extract every colour swatch with its hex, RGB, CMYK, and "
+    "Pantone values if provided. List every font weight. Describe every pattern. "
+    "For a 100+ page brand guide, your response should be very detailed.\n\n"
+    "Return a JSON object matching the required schema."
 )
 
+PASS1_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "primary_colors": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Hex colour strings with usage notes, e.g. '#1A2B3C – Navy, for headlines'",
+        },
+        "secondary_colors": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "accent_colors": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "gradient_styles": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Gradient definitions with usage",
+        },
+        "fonts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "family": {"type": "string"},
+                    "weights": {"type": "array", "items": {"type": "string"}},
+                    "usage": {"type": "string"},
+                },
+                "required": ["family"],
+                "additionalProperties": False,
+            },
+        },
+        "typography_hierarchy": {"type": "string"},
+        "logo_description": {"type": "string"},
+        "logo_colors": {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+        "patterns_and_textures": {"type": "string"},
+        "brand_shapes": {"type": "string"},
+        "background_styles": {"type": "string"},
+        "iconography_style": {"type": "string"},
+        "illustration_style": {"type": "string"},
+        "photography_style": {"type": "string"},
+        "spacing_and_layout": {"type": "string"},
+        "animation_motion": {"type": "string"},
+    },
+    "required": [
+        "primary_colors", "secondary_colors", "accent_colors",
+        "gradient_styles", "fonts", "typography_hierarchy",
+        "logo_description", "logo_colors",
+        "patterns_and_textures", "brand_shapes", "background_styles",
+        "iconography_style", "illustration_style", "photography_style",
+        "spacing_and_layout", "animation_motion",
+    ],
+    "additionalProperties": False,
+}
+
+# ---------------------------------------------------------------------------
+# Pass 2 — Brand Voice & Strategy
+# Focused on: tone, messaging, principles, dos/don'ts, visual style philosophy
+# ---------------------------------------------------------------------------
+
+PASS2_SYSTEM = (
+    "You are a meticulous brand identity analyst. Given the uploaded content "
+    "(brand guidelines PDF, presentation slides, logo image, or website screenshot), "
+    "extract the brand's VOICE, STRATEGY, AND DESIGN PHILOSOPHY.\n\n"
+    "Focus ONLY on:\n"
+    "- Overall visual style philosophy and aesthetic direction\n"
+    "- Tone of voice (personality, communication style, formality level)\n"
+    "- Key brand principles and values\n"
+    "- Messaging framework (taglines, slogans, key messages, value propositions)\n"
+    "- Do's and Don'ts (explicit rules from the guidelines)\n\n"
+    "Be EXHAUSTIVE. Extract every principle, every do/don't, every messaging "
+    "example. Quote directly from the guidelines where possible. For a 100+ page "
+    "brand guide, your response should be very detailed.\n\n"
+    "Return a JSON object matching the required schema."
+)
+
+PASS2_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "visual_style": {
+            "type": "string",
+            "description": "Detailed summary of the brand's visual tone, aesthetic, and design philosophy",
+        },
+        "tone_of_voice": {
+            "type": "string",
+            "description": "Communication style, personality traits, formality level",
+        },
+        "key_principles": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "ALL brand guidelines principles found",
+        },
+        "messaging_framework": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Key messages, taglines, slogans, value propositions",
+        },
+        "dos_and_donts": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Explicit do's and don'ts from the guidelines",
+        },
+    },
+    "required": [
+        "visual_style", "tone_of_voice", "key_principles",
+        "messaging_framework", "dos_and_donts",
+    ],
+    "additionalProperties": False,
+}
+
+
+# ---------------------------------------------------------------------------
+# Image extraction from PDF / PPTX
+# ---------------------------------------------------------------------------
 
 def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
-    """Extract embedded images from a PDF, returning them as data URL candidates.
-
-    Each result: {"data_url": "data:image/png;base64,...", "width": int, "height": int, "page": int}
-    Sorted by area descending (largest first — logos on title/cover pages tend to be prominent).
-    """
+    """Extract embedded images from a PDF as data URL candidates."""
     try:
         import fitz  # PyMuPDF
     except ImportError:
@@ -100,7 +202,7 @@ def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
         return []
 
     try:
-        for page_num in range(min(len(doc), 30)):  # scan first 30 pages max
+        for page_num in range(min(len(doc), 30)):
             page = doc[page_num]
             for img_info in page.get_images(full=True):
                 xref = img_info[0]
@@ -117,8 +219,6 @@ def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
                     continue
 
                 img_bytes = base_image["image"]
-                # Deduplicate by content hash
-                import hashlib
                 img_hash = hashlib.md5(img_bytes).hexdigest()
                 if img_hash in seen_hashes:
                     continue
@@ -139,7 +239,6 @@ def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
     finally:
         doc.close()
 
-    # Sort by area descending, take top N
     candidates.sort(key=lambda c: c["width"] * c["height"], reverse=True)
     return candidates[:IMAGE_MAX_CANDIDATES]
 
@@ -162,8 +261,6 @@ def _extract_images_from_pptx(file_bytes: bytes) -> list[dict[str, Any]]:
         logger.warning("Failed to open PPTX for image extraction: %s", exc)
         return []
 
-    import hashlib
-
     for slide_num, slide in enumerate(prs.slides, 1):
         for shape in slide.shapes:
             if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
@@ -182,8 +279,7 @@ def _extract_images_from_pptx(file_bytes: bytes) -> list[dict[str, Any]]:
                 if len(b64) > IMAGE_MAX_DATA_URL_BYTES:
                     continue
 
-                # Try to get dimensions from the shape
-                width = int(shape.width / 9525) if shape.width else 0   # EMU → px approx
+                width = int(shape.width / 9525) if shape.width else 0
                 height = int(shape.height / 9525) if shape.height else 0
                 if width < IMAGE_MIN_DIMENSION or height < IMAGE_MIN_DIMENSION:
                     continue
@@ -200,27 +296,24 @@ def _extract_images_from_pptx(file_bytes: bytes) -> list[dict[str, Any]]:
 
 
 def _extract_images_from_upload(
-    file_bytes: bytes, content_type: str
+    file_bytes: bytes, content_type: str,
 ) -> list[dict[str, Any]]:
-    """Extract candidate logo/brand images from an uploaded file.
-
-    For direct image uploads, returns the image itself.
-    For PDFs/PPTX, extracts embedded images.
-    """
+    """Extract candidate logo/brand images from an uploaded file."""
     if content_type in SUPPORTED_IMAGE_TYPES:
         b64 = base64.standard_b64encode(file_bytes).decode("ascii")
         if len(b64) <= IMAGE_MAX_DATA_URL_BYTES:
             return [{"data_url": f"data:{content_type};base64,{b64}", "width": 0, "height": 0, "page": 1}]
         return []
-
     if content_type == "application/pdf":
         return _extract_images_from_pdf(file_bytes)
-
     if content_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
         return _extract_images_from_pptx(file_bytes)
-
     return []
 
+
+# ---------------------------------------------------------------------------
+# Gemini helpers
+# ---------------------------------------------------------------------------
 
 def _gemini_base_url() -> str:
     return settings.gemini_base_url.rstrip("/")
@@ -300,7 +393,6 @@ async def _upload_to_gemini_files_api(
 async def _delete_gemini_file(file_uri: str, api_key: str) -> None:
     """Best-effort deletion of an uploaded Gemini file."""
     try:
-        # URI format: https://generativelanguage.googleapis.com/v1beta/files/{name}
         file_name = file_uri.rstrip("/").rsplit("/", 1)[-1]
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.delete(
@@ -311,7 +403,19 @@ async def _delete_gemini_file(file_uri: str, api_key: str) -> None:
         logger.warning("Could not delete Gemini file %s: %s", file_uri, exc)
 
 
-async def _extract_with_gemini(parts: list[dict[str, Any]]) -> dict[str, Any]:
+async def _gemini_extract_pass(
+    *,
+    parts: list[dict[str, Any]],
+    system_instruction: str,
+    response_schema: dict[str, Any],
+    pass_name: str,
+) -> dict[str, Any]:
+    """Run a single schema-enforced Gemini extraction pass.
+
+    Uses `responseJsonSchema` to force Gemini to populate every field
+    in the schema, preventing the raw_notes dumping problem.
+    Falls back to non-schema mode if the schema exceeds Gemini's state limit.
+    """
     api_key = settings.gemini_api_key
     if not api_key:
         raise HTTPException(
@@ -319,40 +423,58 @@ async def _extract_with_gemini(parts: list[dict[str, Any]]) -> dict[str, Any]:
             detail="Gemini API key is not configured",
         )
 
-    model = settings.gemini_model
+    model = settings.gemini_brand_extract_model or settings.gemini_model
     url = _gemini_generate_url(model)
 
-    body = {
+    body: dict[str, Any] = {
         "contents": [{"parts": parts}],
-        "systemInstruction": {"parts": [{"text": BRAND_EXTRACT_SYSTEM}]},
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
         "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 16384,
+            "temperature": 0.2,
+            "maxOutputTokens": 12000,
             "responseMimeType": "application/json",
+            "responseJsonSchema": response_schema,
         },
     }
 
+    result = await _call_gemini(url, api_key, body, pass_name)
+    if result is not None:
+        return result
+
+    # Fallback: retry without schema if schema caused a state overflow error
+    logger.warning("Pass %s: retrying without responseJsonSchema", pass_name)
+    body["generationConfig"].pop("responseJsonSchema", None)
+    result = await _call_gemini(url, api_key, body, pass_name)
+    if result is not None:
+        return result
+
+    return {}
+
+
+async def _call_gemini(
+    url: str,
+    api_key: str,
+    body: dict[str, Any],
+    pass_name: str,
+) -> dict[str, Any] | None:
+    """Execute a Gemini generateContent call. Returns parsed JSON or None on failure."""
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(EXTRACT_TIMEOUT_SECONDS, connect=10.0)
         ) as client:
-            response = await client.post(
-                url,
-                params={"key": api_key},
-                json=body,
-            )
-    except httpx.TimeoutException as exc:
-        logger.error("Gemini brand extract timeout: %s", exc.__class__.__name__)
+            response = await client.post(url, params={"key": api_key}, json=body)
+    except httpx.TimeoutException:
+        logger.error("Gemini brand extract timeout: pass=%s", pass_name)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Brand extraction timed out",
-        ) from exc
+            detail=f"Brand extraction timed out ({pass_name})",
+        )
     except httpx.RequestError as exc:
-        logger.error("Gemini brand extract request error: %s", exc)
+        logger.error("Gemini brand extract request error: pass=%s error=%s", pass_name, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Brand extraction request failed",
-        ) from exc
+            detail=f"Brand extraction request failed ({pass_name})",
+        )
 
     if response.status_code >= 400:
         detail = ""
@@ -360,31 +482,33 @@ async def _extract_with_gemini(parts: list[dict[str, Any]]) -> dict[str, Any]:
             detail = response.json().get("error", {}).get("message", "")
         except Exception:
             pass
-        logger.error(
-            "Gemini brand extract error: status=%d detail=%s", response.status_code, detail
-        )
+        # If schema caused a "too many states" error, return None so caller can retry
+        if "too many" in detail.lower() or "state" in detail.lower():
+            logger.warning("Gemini schema overflow in pass %s: %s", pass_name, detail)
+            return None
+        logger.error("Gemini brand extract error: pass=%s status=%d detail=%s", pass_name, response.status_code, detail)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Brand extraction failed: {detail or response.status_code}",
+            detail=f"Brand extraction failed ({pass_name}): {detail or response.status_code}",
         )
 
     try:
         data = response.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError) as exc:
-        logger.error("Gemini brand extract: unexpected response shape")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Brand extraction returned an unexpected response",
-        ) from exc
-
-    import json as _json
+    except (KeyError, IndexError, TypeError):
+        logger.error("Gemini brand extract: unexpected response shape in pass %s", pass_name)
+        return None
 
     try:
         return _json.loads(text)
     except _json.JSONDecodeError:
-        return {"raw_notes": text}
+        logger.warning("Gemini brand extract: invalid JSON in pass %s", pass_name)
+        return None
 
+
+# ---------------------------------------------------------------------------
+# Main endpoint
+# ---------------------------------------------------------------------------
 
 @router.post("/extract")
 async def extract_brand_profile(
@@ -392,7 +516,15 @@ async def extract_brand_profile(
     file: UploadFile | None = File(default=None),
     url: str | None = Form(default=None),
 ) -> dict[str, Any]:
-    """Extract brand guidelines from an uploaded file or a website URL."""
+    """Extract brand guidelines from an uploaded file or a website URL.
+
+    Uses a 2-pass parallel extraction strategy:
+      Pass 1 — Visual Identity (colours, fonts, patterns, asset styles)
+      Pass 2 — Brand Voice & Strategy (tone, principles, messaging, dos/don'ts)
+
+    Both passes run concurrently with schema enforcement so Gemini is forced
+    to populate every field instead of dumping into raw_notes.
+    """
 
     if file and url:
         raise HTTPException(
@@ -406,7 +538,9 @@ async def extract_brand_profile(
             detail="Provide a file upload or a URL",
         )
 
+    # --- Build the content parts (shared by both passes) ---
     parts: list[dict[str, Any]] = []
+    extracted_images: list[dict[str, Any]] = []
 
     if file:
         content_type = file.content_type or "application/octet-stream"
@@ -433,13 +567,12 @@ async def extract_brand_profile(
                 detail="Gemini API key is not configured",
             )
 
-        # Extract embedded images (logos, assets) from the file in parallel
+        # Extract embedded images (logos, assets) — runs synchronously, fast
         extracted_images = _extract_images_from_upload(file_bytes, content_type)
 
         file_uri: str | None = None
         try:
             if file_size > INLINE_MAX_FILE_SIZE:
-                # Large file — upload via Gemini File API to avoid base64 size limit
                 logger.info(
                     "Uploading large file (%d MB) via Gemini File API",
                     file_size // (1024 * 1024),
@@ -451,7 +584,6 @@ async def extract_brand_profile(
                     "fileData": {"mimeType": content_type, "fileUri": file_uri}
                 })
             else:
-                # Small file — inline base64
                 b64 = base64.standard_b64encode(file_bytes).decode("ascii")
                 parts.append({
                     "inlineData": {"mimeType": content_type, "data": b64}
@@ -464,14 +596,27 @@ async def extract_brand_profile(
             source_type = "file"
             source_filename = file.filename or ""
 
-            guidelines = await _extract_with_gemini(parts)
+            # --- Run both passes in parallel ---
+            pass1_result, pass2_result = await asyncio.gather(
+                _gemini_extract_pass(
+                    parts=parts,
+                    system_instruction=PASS1_SYSTEM,
+                    response_schema=PASS1_SCHEMA,
+                    pass_name="visual",
+                ),
+                _gemini_extract_pass(
+                    parts=parts,
+                    system_instruction=PASS2_SYSTEM,
+                    response_schema=PASS2_SCHEMA,
+                    pass_name="voice",
+                ),
+            )
         finally:
             if file_uri:
                 await _delete_gemini_file(file_uri, api_key)
 
     else:
         assert url is not None
-        # Fetch the actual website HTML so Gemini can analyse real content
         page_snippet = ""
         try:
             async with httpx.AsyncClient(
@@ -512,22 +657,40 @@ async def extract_brand_profile(
                     "and brand style. Extract brand guidelines as best you can."
                 )
             })
+
         source_type = "url"
         source_filename = url
 
-        guidelines = await _extract_with_gemini(parts)
+        pass1_result, pass2_result = await asyncio.gather(
+            _gemini_extract_pass(
+                parts=parts,
+                system_instruction=PASS1_SYSTEM,
+                response_schema=PASS1_SCHEMA,
+                pass_name="visual",
+            ),
+            _gemini_extract_pass(
+                parts=parts,
+                system_instruction=PASS2_SYSTEM,
+                response_schema=PASS2_SCHEMA,
+                pass_name="voice",
+            ),
+        )
 
-    raw_summary = guidelines.pop("raw_notes", "") if isinstance(guidelines, dict) else ""
+    # --- Merge both pass results into a single guidelines object ---
+    guidelines: dict[str, Any] = {}
+    if isinstance(pass1_result, dict):
+        guidelines.update(pass1_result)
+    if isinstance(pass2_result, dict):
+        guidelines.update(pass2_result)
 
     result: dict[str, Any] = {
         "source_type": source_type,
         "source_filename": source_filename,
         "guidelines": guidelines,
-        "raw_summary": raw_summary,
+        "raw_summary": "",
     }
 
-    # Include extracted images as logo/asset candidates for the frontend picker
-    if file and extracted_images:
+    if extracted_images:
         result["extracted_images"] = extracted_images
 
     return result

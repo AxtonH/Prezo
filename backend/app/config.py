@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     gemini_artifact_edit_model: str = "gemini-2.5-flash"
     gemini_artifact_repair_model: str = "gemini-2.5-flash"
     gemini_artifact_answer_model: str = "gemini-2.5-flash-lite"
+    gemini_brand_extract_model: str = "gemini-2.5-flash"
     gemini_plan_timeout_seconds: float = 60.0
     gemini_artifact_build_timeout_seconds: float = 180.0
     gemini_artifact_edit_timeout_seconds: float = 240.0
