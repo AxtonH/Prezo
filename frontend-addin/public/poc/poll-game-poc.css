@@ -422,9 +422,9 @@ body.ribbon-hidden .settings-panel {
   box-shadow: none;
 }
 
-.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel,
-.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
-  display: grid !important;
+/* Let JS control ai-chat-panel visibility (hidden in artifact mode) */
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel {
+  display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   gap: 8px;
   width: 100%;
@@ -436,6 +436,10 @@ body.ribbon-hidden .settings-panel {
   background: transparent;
   box-shadow: none;
   padding: 12px 14px 14px;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
+  display: none;
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-fab,
