@@ -68,11 +68,12 @@ BRAND_EXTRACT_SYSTEM = (
     "- background_styles: preferred background treatments (solid, gradient, image, etc.)\n"
     "- animation_motion: any motion/animation guidelines if present\n"
     "- dos_and_donts: array of explicit do's and don'ts from the guidelines\n"
-    "- raw_notes: any other relevant brand details not captured above — be generous "
-    "and include everything remaining. For a large brand guide, this should be extensive.\n\n"
-    "IMPORTANT: Extract MAXIMUM detail. A 100+ page brand guide should produce a very "
-    "long, thorough response. Never truncate or omit details to save space. Every colour "
-    "swatch, every font pairing, every layout rule matters.\n\n"
+    "- raw_notes: ONLY include brand details that do NOT fit any of the above fields. "
+    "Do NOT repeat or summarise anything already captured in the structured fields above. "
+    "If everything has been captured, set this to an empty string.\n\n"
+    "IMPORTANT: Extract MAXIMUM detail into the structured fields. Every colour swatch, "
+    "font pairing, and layout rule belongs in its dedicated field — not in raw_notes. "
+    "raw_notes is strictly for overflow that has no matching field.\n\n"
     "If a field cannot be determined from the content, use an empty array or empty string."
 )
 

@@ -57,45 +57,43 @@ export function createBrandProfileExtractor({ getApiBase, getAccessToken, errorT
     return payload
   }
 
+  // Max characters for the design-guidelines text sent to the artifact builder
+  const GUIDELINES_MAX_CHARS = 12000
+
   /**
    * Convert an extraction payload into a comprehensive plain-text string
-   * suitable for the design-guidelines textarea.
+   * suitable for the design-guidelines textarea, capped at GUIDELINES_MAX_CHARS.
+   *
+   * Logo fields are intentionally omitted — the logo image is handled separately
+   * via the extracted image picker.
+   *
+   * Sections are ordered by priority so the most critical brand info is kept
+   * if truncation is needed.
    */
   function formatGuidelinesText(payload) {
     if (!payload || typeof payload !== 'object') {
       return ''
     }
     const g = payload.guidelines || {}
-    const sections = []
 
-    function addColorArray(label, key) {
+    function colorArray(key) {
       const arr = Array.isArray(g[key]) ? g[key] : []
-      if (arr.length) {
-        sections.push(`${label}:\n${arr.map(c => `  ${typeof c === 'string' ? c : JSON.stringify(c)}`).join('\n')}`)
-      }
+      return arr.map(c => `  ${typeof c === 'string' ? c : JSON.stringify(c)}`).join('\n')
     }
 
-    function addStringField(label, key, source) {
-      const obj = source || g
-      const val = typeof obj[key] === 'string' ? obj[key].trim() : ''
-      if (val) sections.push(`${label}:\n${val}`)
+    function stringField(key) {
+      const val = typeof g[key] === 'string' ? g[key].trim() : ''
+      return val
     }
 
-    function addArrayField(label, key) {
+    function arrayField(key) {
       const arr = Array.isArray(g[key]) ? g[key] : []
-      if (arr.length) {
-        sections.push(`${label}:\n${arr.map(item => `  - ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n')}`)
-      }
+      return arr.map(item => `  - ${typeof item === 'string' ? item : JSON.stringify(item)}`).join('\n')
     }
 
-    addColorArray('Primary colors', 'primary_colors')
-    addColorArray('Secondary colors', 'secondary_colors')
-    addColorArray('Accent colors', 'accent_colors')
-    addArrayField('Gradient styles', 'gradient_styles')
-
-    const fonts = Array.isArray(g.fonts) ? g.fonts : []
-    if (fonts.length) {
-      const formatted = fonts.map(f => {
+    function fontsField() {
+      const fonts = Array.isArray(g.fonts) ? g.fonts : []
+      return fonts.map(f => {
         if (typeof f === 'string') return `  - ${f}`
         if (f && typeof f === 'object') {
           const parts = [f.family || 'Unknown']
@@ -104,29 +102,53 @@ export function createBrandProfileExtractor({ getApiBase, getAccessToken, errorT
           return `  - ${parts.join(' | ')}`
         }
         return `  - ${JSON.stringify(f)}`
-      })
-      sections.push(`Fonts:\n${formatted.join('\n')}`)
+      }).join('\n')
     }
 
-    addStringField('Typography hierarchy', 'typography_hierarchy')
-    addStringField('Logo', 'logo_description')
-    addColorArray('Logo colors', 'logo_colors')
-    addStringField('Visual style', 'visual_style')
-    addArrayField('Key principles', 'key_principles')
-    addStringField('Tone of voice', 'tone_of_voice')
-    addStringField('Messaging framework', 'messaging_framework')
-    addStringField('Iconography style', 'iconography_style')
-    addStringField('Illustration style', 'illustration_style')
-    addStringField('Photography style', 'photography_style')
-    addStringField('Patterns and textures', 'patterns_and_textures')
-    addStringField('Spacing and layout', 'spacing_and_layout')
-    addStringField('Brand shapes', 'brand_shapes')
-    addStringField('Background styles', 'background_styles')
-    addStringField('Animation and motion', 'animation_motion')
-    addArrayField("Do's and Don'ts", 'dos_and_donts')
+    // Sections in priority order — highest priority first
+    // Logo description and logo colors are excluded (handled by image picker)
+    const candidates = [
+      { label: 'Primary colors',       body: colorArray('primary_colors') },
+      { label: 'Secondary colors',     body: colorArray('secondary_colors') },
+      { label: 'Accent colors',        body: colorArray('accent_colors') },
+      { label: 'Fonts',                body: fontsField() },
+      { label: 'Visual style',         body: stringField('visual_style') },
+      { label: 'Tone of voice',        body: stringField('tone_of_voice') },
+      { label: 'Gradient styles',      body: arrayField('gradient_styles') },
+      { label: 'Typography hierarchy', body: stringField('typography_hierarchy') },
+      { label: 'Patterns and textures',body: stringField('patterns_and_textures') },
+      { label: 'Brand shapes',         body: stringField('brand_shapes') },
+      { label: 'Iconography style',    body: stringField('iconography_style') },
+      { label: 'Illustration style',   body: stringField('illustration_style') },
+      { label: 'Photography style',    body: stringField('photography_style') },
+      { label: 'Background styles',    body: stringField('background_styles') },
+      { label: 'Spacing and layout',   body: stringField('spacing_and_layout') },
+      { label: 'Key principles',       body: arrayField('key_principles') },
+      { label: 'Messaging framework',  body: arrayField('messaging_framework') },
+      { label: "Do's and Don'ts",      body: arrayField('dos_and_donts') },
+      { label: 'Animation and motion', body: stringField('animation_motion') },
+      {
+        label: 'Additional brand notes',
+        body: typeof payload.raw_summary === 'string' ? payload.raw_summary.trim() : ''
+      },
+    ]
 
-    if (typeof payload.raw_summary === 'string' && payload.raw_summary.trim()) {
-      sections.push(`Additional brand notes:\n${payload.raw_summary.trim()}`)
+    // Build the output, stopping before we exceed the character cap
+    const sections = []
+    let total = 0
+    for (const { label, body } of candidates) {
+      if (!body) continue
+      const chunk = `${label}:\n${body}`
+      if (total + chunk.length + 2 > GUIDELINES_MAX_CHARS) {
+        // Try to fit a truncated version for the current section
+        const remaining = GUIDELINES_MAX_CHARS - total - label.length - 20
+        if (remaining > 80) {
+          sections.push(`${label}:\n${body.slice(0, remaining)}…`)
+        }
+        break
+      }
+      sections.push(chunk)
+      total += chunk.length + 2 // +2 for the \n\n separator
     }
 
     return sections.join('\n\n')
