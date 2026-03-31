@@ -209,34 +209,31 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
 }
 
 /* ----------------------------------------------------------------
-   Header tab buttons
+   Sidebar tab icons (top of sidebar)
    ---------------------------------------------------------------- */
 
 .ribbon-tabs {
   display: flex;
-  flex-wrap: nowrap;
-  flex-shrink: 1;
+  align-items: center;
+  justify-content: center;
   gap: 2px;
-  overflow-x: auto;
-  margin-left: 4px;
-}
-
-.ribbon-tabs::-webkit-scrollbar {
-  display: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  flex-shrink: 0;
 }
 
 .ribbon-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--chrome-text-secondary);
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
+  color: var(--chrome-text-muted);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 0;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -248,7 +245,6 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
 .ribbon-tab.active {
   background: var(--chrome-active-bg);
   color: var(--chrome-active-border);
-  font-weight: 600;
 }
 
 .ribbon-tab:hover:not(.active) {
@@ -2799,18 +2795,13 @@ body.present-mode .present-mode-toggle {
     font-size: 12px;
   }
 
-  .ribbon-tab {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-
-  .ribbon-tab-icon {
-    display: none;
-  }
-
   .ribbon-tabs {
-    flex-shrink: 1;
-    overflow-x: auto;
+    padding: 6px 10px;
+  }
+
+  .ribbon-tab {
+    width: 32px;
+    height: 32px;
   }
 
   .ribbon-btn {
