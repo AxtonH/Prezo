@@ -1225,15 +1225,7 @@ body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked) .wrap {
   margin-right: calc(var(--sidebar-width) + 20px);
 }
 
-body.artifact-mode-active:not(.editor-docked) .wrap {
-  width: min(75vw, var(--wrap-width-limit));
-}
-
-/* When sidebar is open AND artifact mode, also shift */
-body.artifact-mode-active:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked) .wrap {
-  width: min(calc(75vw - var(--sidebar-width)), var(--wrap-width-limit));
-  margin-right: calc(var(--sidebar-width) + 20px);
-}
+/* Artifact mode uses the same inline layout as classic mode (no 75vw cap) */
 
 /* ----------------------------------------------------------------
    Present mode toggle
