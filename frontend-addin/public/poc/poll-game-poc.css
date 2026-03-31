@@ -347,9 +347,23 @@ body.ribbon-hidden .settings-panel {
 
 .panel-body {
   flex: 1 1 auto;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Non-AI panes scroll normally; AI pane fills remaining height */
+.panel-body > .ribbon-pane.active:not([data-ribbon-pane="ai"]) {
+  flex: 0 0 auto;
+}
+
+.panel-body > .ribbon-pane.active[data-ribbon-pane="ai"] {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel-body::-webkit-scrollbar {
@@ -379,6 +393,92 @@ body.ribbon-hidden .settings-panel {
 
 .ribbon-pane.active {
   display: block;
+}
+
+/* AI pane: stretch to fill sidebar, force content visible */
+.ribbon-pane[data-ribbon-pane="ai"] {
+  height: 100%;
+}
+
+.ribbon-pane.active[data-ribbon-pane="ai"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-shell,
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-shell.hidden {
+  display: flex !important;
+  flex-direction: column;
+  position: static;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel,
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
+  display: grid !important;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 14px 14px;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-fab,
+.ribbon-pane[data-ribbon-pane="ai"] .artifact-composer-fab {
+  display: none !important;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-collapse {
+  display: none;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-messages {
+  min-height: 0;
+}
+
+/* Artifact composer when floating inside AI pane */
+.ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating,
+.ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating.hidden {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 14px 14px;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating .artifact-composer-collapse {
+  display: none;
+}
+
+.ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating .artifact-chat-log {
+  max-height: none;
 }
 
 /* ----------------------------------------------------------------

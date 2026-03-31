@@ -1142,17 +1142,9 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   }
 
   function syncEditorDockingState() {
-    const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-    const hasDockedAiEditor = !state.presentMode && !isArtifactMode && state.ai.open
-    const hasDockedArtifactEditor =
-      !state.presentMode &&
-      isArtifactMode &&
-      Boolean(state.artifact.html) &&
-      state.artifact.floatingOpen
-    document.body.classList.toggle('editor-docked', hasDockedAiEditor || hasDockedArtifactEditor)
-    document.body.classList.toggle('ai-editor-docked', hasDockedAiEditor)
-    document.body.classList.toggle('artifact-editor-docked', hasDockedArtifactEditor)
-    scheduleEditorDockLayoutRefresh()
+    /* Editor now lives inside the right sidebar pane, so left-side docking
+       is no longer needed. Keep the function as a no-op to preserve callers. */
+    document.body.classList.remove('editor-docked', 'ai-editor-docked', 'artifact-editor-docked')
   }
 
   function setupArtifactMode() {
