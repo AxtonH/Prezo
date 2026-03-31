@@ -22,6 +22,7 @@ SUPPORTED_PATCH_EDIT_TYPES = {
     "set_css_property",
     "insert_html",
     "insert_css_rule",
+    "replace_text",
 }
 
 SUPPORTED_PATCH_TARGET_FILES = {
@@ -37,6 +38,7 @@ DEFAULT_PATCH_TARGET_FILE_BY_EDIT_TYPE = {
     "set_css_property": ARTIFACT_PACKAGE_STYLES_FILE,
     "insert_css_rule": ARTIFACT_PACKAGE_STYLES_FILE,
     "insert_html": ARTIFACT_PACKAGE_ENTRY_FILE,
+    "replace_text": ARTIFACT_PACKAGE_RENDERER_FILE,
 }
 
 
@@ -209,6 +211,46 @@ def apply_artifact_patch_plan_to_package(
                     path=target_file,
                     content=updated_html,
                     language="html",
+                )
+                any_change = True
+            continue
+
+        if edit_type == "replace_text":
+            old_text = edit.get("old")
+            new_text = edit.get("new")
+            if not isinstance(old_text, str) or not old_text:
+                issues.append(f"patch edit #{index + 1} is missing 'old' text.")
+                continue
+            if not isinstance(new_text, str):
+                issues.append(f"patch edit #{index + 1} is missing 'new' text.")
+                continue
+            if old_text == new_text:
+                issues.append(f"patch edit #{index + 1} replace_text old and new are identical.")
+                continue
+            target_file = normalize_patch_target_file(edit.get("file"), edit_type=edit_type)
+            if target_file not in SUPPORTED_PATCH_TARGET_FILES:
+                issues.append(
+                    f"patch edit #{index + 1} replace_text targets unsupported file `{target_file}`."
+                )
+                continue
+            file_content = get_artifact_package_file_content(working_package, target_file)
+            if old_text not in file_content:
+                issues.append(
+                    f"patch edit #{index + 1} replace_text could not find the 'old' text in `{target_file}`."
+                )
+                continue
+            file_language = (
+                "css" if target_file == ARTIFACT_PACKAGE_STYLES_FILE
+                else "html" if target_file == ARTIFACT_PACKAGE_ENTRY_FILE
+                else "javascript"
+            )
+            updated_content = file_content.replace(old_text, new_text, 1)
+            if updated_content != file_content:
+                working_package = upsert_artifact_package_file_content(
+                    working_package,
+                    path=target_file,
+                    content=updated_content,
+                    language=file_language,
                 )
                 any_change = True
             continue
