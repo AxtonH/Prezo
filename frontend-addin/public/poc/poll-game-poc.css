@@ -1220,7 +1220,7 @@ body.ribbon-advanced .advanced-control.note {
 }
 
 /* When sidebar is open, shift canvas left to account for sidebar */
-body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked) .wrap {
+body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--sidebar-width) - 40px));
   margin-right: calc(var(--sidebar-width) + 20px);
 }
@@ -2735,7 +2735,7 @@ body.editor-docked .wrap {
 }
 
 /* When both editor sidebar and settings sidebar are open */
-body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed) .wrap {
+body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed):not(.present-mode) .wrap {
   margin-right: calc(var(--sidebar-width) + 20px);
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - var(--sidebar-width) - 60px));
 }
@@ -2937,7 +2937,7 @@ body.present-mode .present-mode-toggle {
     border-radius: 16px;
   }
 
-  body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked) .wrap {
+  body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
     width: min(1160px, calc(95vw - var(--sidebar-width)));
     margin-right: calc(var(--sidebar-width) + 8px);
   }
