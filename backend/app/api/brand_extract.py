@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import re
 import uuid
@@ -19,6 +20,11 @@ router = APIRouter(prefix="/library/poll-game/brand-profiles", tags=["brand-extr
 EXTRACT_TIMEOUT_SECONDS = 180.0
 EXTRACT_MAX_FILE_SIZE = 50 * 1024 * 1024   # 50 MB hard cap
 INLINE_MAX_FILE_SIZE = 14 * 1024 * 1024    # >14 MB → use File API (base64 would exceed 20 MB limit)
+
+# Image extraction settings
+IMAGE_MIN_DIMENSION = 40      # skip tiny images (icons, bullets)
+IMAGE_MAX_CANDIDATES = 10     # return at most N candidate images
+IMAGE_MAX_DATA_URL_BYTES = 500_000  # skip images whose base64 exceeds ~500 KB
 
 SUPPORTED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 SUPPORTED_UPLOAD_TYPES = SUPPORTED_IMAGE_TYPES | {
@@ -69,6 +75,150 @@ BRAND_EXTRACT_SYSTEM = (
     "swatch, every font pairing, every layout rule matters.\n\n"
     "If a field cannot be determined from the content, use an empty array or empty string."
 )
+
+
+def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
+    """Extract embedded images from a PDF, returning them as data URL candidates.
+
+    Each result: {"data_url": "data:image/png;base64,...", "width": int, "height": int, "page": int}
+    Sorted by area descending (largest first — logos on title/cover pages tend to be prominent).
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.info("PyMuPDF not installed — skipping PDF image extraction")
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception as exc:
+        logger.warning("Failed to open PDF for image extraction: %s", exc)
+        return []
+
+    try:
+        for page_num in range(min(len(doc), 30)):  # scan first 30 pages max
+            page = doc[page_num]
+            for img_info in page.get_images(full=True):
+                xref = img_info[0]
+                try:
+                    base_image = doc.extract_image(xref)
+                except Exception:
+                    continue
+                if not base_image or not base_image.get("image"):
+                    continue
+
+                width = base_image.get("width", 0)
+                height = base_image.get("height", 0)
+                if width < IMAGE_MIN_DIMENSION or height < IMAGE_MIN_DIMENSION:
+                    continue
+
+                img_bytes = base_image["image"]
+                # Deduplicate by content hash
+                import hashlib
+                img_hash = hashlib.md5(img_bytes).hexdigest()
+                if img_hash in seen_hashes:
+                    continue
+                seen_hashes.add(img_hash)
+
+                ext = base_image.get("ext", "png")
+                mime = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+                b64 = base64.standard_b64encode(img_bytes).decode("ascii")
+                if len(b64) > IMAGE_MAX_DATA_URL_BYTES:
+                    continue
+
+                candidates.append({
+                    "data_url": f"data:{mime};base64,{b64}",
+                    "width": width,
+                    "height": height,
+                    "page": page_num + 1,
+                })
+    finally:
+        doc.close()
+
+    # Sort by area descending, take top N
+    candidates.sort(key=lambda c: c["width"] * c["height"], reverse=True)
+    return candidates[:IMAGE_MAX_CANDIDATES]
+
+
+def _extract_images_from_pptx(file_bytes: bytes) -> list[dict[str, Any]]:
+    """Extract embedded images from a PPTX file."""
+    try:
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+    except ImportError:
+        logger.info("python-pptx not installed — skipping PPTX image extraction")
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+
+    try:
+        prs = Presentation(io.BytesIO(file_bytes))
+    except Exception as exc:
+        logger.warning("Failed to open PPTX for image extraction: %s", exc)
+        return []
+
+    import hashlib
+
+    for slide_num, slide in enumerate(prs.slides, 1):
+        for shape in slide.shapes:
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                try:
+                    img_blob = shape.image.blob
+                    content_type = shape.image.content_type or "image/png"
+                except Exception:
+                    continue
+
+                img_hash = hashlib.md5(img_blob).hexdigest()
+                if img_hash in seen_hashes:
+                    continue
+                seen_hashes.add(img_hash)
+
+                b64 = base64.standard_b64encode(img_blob).decode("ascii")
+                if len(b64) > IMAGE_MAX_DATA_URL_BYTES:
+                    continue
+
+                # Try to get dimensions from the shape
+                width = int(shape.width / 9525) if shape.width else 0   # EMU → px approx
+                height = int(shape.height / 9525) if shape.height else 0
+                if width < IMAGE_MIN_DIMENSION or height < IMAGE_MIN_DIMENSION:
+                    continue
+
+                candidates.append({
+                    "data_url": f"data:{content_type};base64,{b64}",
+                    "width": width,
+                    "height": height,
+                    "page": slide_num,
+                })
+
+    candidates.sort(key=lambda c: c["width"] * c["height"], reverse=True)
+    return candidates[:IMAGE_MAX_CANDIDATES]
+
+
+def _extract_images_from_upload(
+    file_bytes: bytes, content_type: str
+) -> list[dict[str, Any]]:
+    """Extract candidate logo/brand images from an uploaded file.
+
+    For direct image uploads, returns the image itself.
+    For PDFs/PPTX, extracts embedded images.
+    """
+    if content_type in SUPPORTED_IMAGE_TYPES:
+        b64 = base64.standard_b64encode(file_bytes).decode("ascii")
+        if len(b64) <= IMAGE_MAX_DATA_URL_BYTES:
+            return [{"data_url": f"data:{content_type};base64,{b64}", "width": 0, "height": 0, "page": 1}]
+        return []
+
+    if content_type == "application/pdf":
+        return _extract_images_from_pdf(file_bytes)
+
+    if content_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        return _extract_images_from_pptx(file_bytes)
+
+    return []
 
 
 def _gemini_base_url() -> str:
@@ -282,6 +432,9 @@ async def extract_brand_profile(
                 detail="Gemini API key is not configured",
             )
 
+        # Extract embedded images (logos, assets) from the file in parallel
+        extracted_images = _extract_images_from_upload(file_bytes, content_type)
+
         file_uri: str | None = None
         try:
             if file_size > INLINE_MAX_FILE_SIZE:
@@ -365,9 +518,15 @@ async def extract_brand_profile(
 
     raw_summary = guidelines.pop("raw_notes", "") if isinstance(guidelines, dict) else ""
 
-    return {
+    result: dict[str, Any] = {
         "source_type": source_type,
         "source_filename": source_filename,
         "guidelines": guidelines,
         "raw_summary": raw_summary,
     }
+
+    # Include extracted images as logo/asset candidates for the frontend picker
+    if file and extracted_images:
+        result["extracted_images"] = extracted_images
+
+    return result

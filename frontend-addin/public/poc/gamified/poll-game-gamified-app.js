@@ -1736,7 +1736,18 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       if (text) {
         el.artifactPromptInput.value = text
         el.artifactPromptInput.focus()
-        setBrandAttachStatus('Guidelines extracted. Review and press Send.', 'success')
+
+        // Show extracted images as logo candidates for the user to pick
+        const images = Array.isArray(payload.extracted_images) ? payload.extracted_images : []
+        if (images.length > 0) {
+          showExtractedImagePicker(images)
+          setBrandAttachStatus(
+            `Guidelines extracted. ${images.length} image(s) found — pick a logo below.`,
+            'success'
+          )
+        } else {
+          setBrandAttachStatus('Guidelines extracted. Review and press Send.', 'success')
+        }
       } else {
         setBrandAttachStatus('No guidelines found in the provided source.', 'error')
       }
@@ -1747,6 +1758,58 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       // Reset file input so the same file can be re-selected if needed
       el.brandAttachFile.value = ''
     }
+  }
+
+  function showExtractedImagePicker(images) {
+    // Remove any existing picker
+    const existing = document.getElementById('brand-image-picker')
+    if (existing) existing.remove()
+
+    const picker = document.createElement('div')
+    picker.id = 'brand-image-picker'
+    picker.className = 'brand-image-picker'
+
+    const header = document.createElement('div')
+    header.className = 'brand-image-picker-header'
+    header.textContent = 'Select a logo to apply:'
+    picker.appendChild(header)
+
+    const grid = document.createElement('div')
+    grid.className = 'brand-image-picker-grid'
+
+    for (const img of images) {
+      const thumb = document.createElement('button')
+      thumb.className = 'brand-image-thumb'
+      thumb.type = 'button'
+      thumb.title = img.page ? `Page ${img.page}` : 'Extracted image'
+
+      const image = document.createElement('img')
+      image.src = img.data_url
+      image.alt = thumb.title
+      thumb.appendChild(image)
+
+      thumb.addEventListener('click', () => {
+        updateTheme({ logoUrl: img.data_url }, { historyLabel: 'Apply extracted brand logo' })
+        // Highlight the selected thumb
+        grid.querySelectorAll('.brand-image-thumb').forEach(t => t.classList.remove('selected'))
+        thumb.classList.add('selected')
+      })
+      grid.appendChild(thumb)
+    }
+
+    picker.appendChild(grid)
+
+    const skipBtn = document.createElement('button')
+    skipBtn.type = 'button'
+    skipBtn.className = 'brand-image-skip'
+    skipBtn.textContent = 'Skip — no logo'
+    skipBtn.addEventListener('click', () => {
+      picker.remove()
+    })
+    picker.appendChild(skipBtn)
+
+    // Insert the picker into the brand attach zone
+    el.brandAttachZone.appendChild(picker)
   }
 
   function handleBrandAttachFileChange() {
