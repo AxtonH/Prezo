@@ -4050,6 +4050,16 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
 
   // ── Artifact iframe text style toolbar ──────────────────────────
 
+  let artifactToolbarInteractionUntil = 0
+
+  function markArtifactToolbarInteraction() {
+    artifactToolbarInteractionUntil = Date.now() + 2000
+  }
+
+  function isArtifactToolbarInteractionActive() {
+    return Date.now() < artifactToolbarInteractionUntil
+  }
+
   function setupArtifactTextToolbar() {
     fillSelectOptions(
       [el.artifactTextFontFamily],
@@ -4067,27 +4077,46 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       }))
     )
 
+    const toolbarControls = [
+      el.artifactTextFontFamily,
+      el.artifactTextFontSize,
+      el.artifactTextFontColor,
+      el.artifactTextToolBold,
+      el.artifactTextToolItalic,
+      el.artifactTextToolClear
+    ]
+    for (const ctrl of toolbarControls) {
+      ctrl.addEventListener('pointerdown', () => markArtifactToolbarInteraction())
+      ctrl.addEventListener('focus', () => markArtifactToolbarInteraction())
+    }
+
     el.artifactTextFontFamily.addEventListener('change', () => {
       sendArtifactTextStyleCmd('fontFamily', normalizeFontFamilyChoice(el.artifactTextFontFamily.value))
+      artifactToolbarInteractionUntil = 0
     })
     el.artifactTextFontSize.addEventListener('change', () => {
       const px = normalizeFontSizeCss(el.artifactTextFontSize.value)
       if (px) sendArtifactTextStyleCmd('fontSize', px)
+      artifactToolbarInteractionUntil = 0
     })
     el.artifactTextFontColor.addEventListener('input', () => {
       sendArtifactTextStyleCmd('color', sanitizeHex(el.artifactTextFontColor.value, ''))
     })
     el.artifactTextFontColor.addEventListener('change', () => {
       sendArtifactTextStyleCmd('color', sanitizeHex(el.artifactTextFontColor.value, ''))
+      artifactToolbarInteractionUntil = 0
     })
     el.artifactTextToolBold.addEventListener('click', () => {
       sendArtifactTextStyleCmd('bold', '')
+      artifactToolbarInteractionUntil = 0
     })
     el.artifactTextToolItalic.addEventListener('click', () => {
       sendArtifactTextStyleCmd('italic', '')
+      artifactToolbarInteractionUntil = 0
     })
     el.artifactTextToolClear.addEventListener('click', () => {
       sendArtifactTextStyleCmd('clear', '')
+      artifactToolbarInteractionUntil = 0
     })
   }
 
@@ -4154,7 +4183,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
   function handleArtifactTextFocusMessage(message) {
     if (message.active) {
       showArtifactTextToolbar(message)
-    } else {
+    } else if (!isArtifactToolbarInteractionActive()) {
       hideArtifactTextToolbar()
     }
   }
