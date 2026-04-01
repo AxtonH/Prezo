@@ -434,6 +434,26 @@ class InMemoryStore:
             poll.status = status
             return self._to_poll(poll)
 
+    async def update_poll(
+        self,
+        session_id: str,
+        poll_id: str,
+        user_id: str,
+        *,
+        question: str | None = None,
+        option_labels: dict[str, str] | None = None,
+    ) -> Poll:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            poll = self._get_poll(session_id, poll_id)
+            if question is not None:
+                poll.question = question
+            if option_labels:
+                for opt in poll.options:
+                    if opt.id in option_labels:
+                        opt.label = option_labels[opt.id]
+            return self._to_poll(poll)
+
     async def vote_poll(
         self,
         session_id: str,

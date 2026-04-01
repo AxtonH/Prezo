@@ -513,6 +513,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
   const artifactTextEdit = createArtifactTextEditHandler({
     getState: () => state,
     getQuestionEl: () => el.question,
+    getApiBase: () => state.apiBase,
+    getAccessToken: () => getLibraryAccessToken(),
     renderFromSnapshot: (force) => renderFromSnapshot(force)
   })
   const brandExtractor = createBrandProfileExtractor({

@@ -3,18 +3,33 @@
  *
  * The bridge script (in poll-game-gamified-artifact-runtime.js) makes text
  * elements inside the artifact contenteditable and posts `prezo-text-edit`
- * messages back to the host whenever the user changes text. This module
- * receives those messages and keeps the host-side poll state in sync.
+ * messages back to the host whenever the user changes text.
+ *
+ * This module:
+ *  1. Immediately updates local poll state so the UI stays responsive.
+ *  2. Debounces a PATCH request to persist the edit on the backend.
+ *  3. The backend broadcasts a `poll_updated` WebSocket event so every
+ *     connected client (including the host console) picks up the change.
  */
+
+const PERSIST_DEBOUNCE_MS = 600
 
 export function createArtifactTextEditHandler({
   getState,
   getQuestionEl,
+  getApiBase,
+  getAccessToken,
   renderFromSnapshot
 }) {
+  /** Pending PATCH payload keyed by poll id. */
+  let pendingPatch = null
+  let debounceTimerId = null
+
+  // ── Public API ──────────────────────────────────────────────────
+
   /**
-   * Entry point — called from handleArtifactFrameMessage when the message
-   * type is `prezo-text-edit`.
+   * Entry point — called from handleArtifactFrameMessage when the
+   * message type is `prezo-text-edit`.
    */
   function handleTextEdit(message) {
     const field = typeof message.field === 'string' ? message.field : ''
@@ -30,71 +45,165 @@ export function createArtifactTextEditHandler({
     }
   }
 
+  // ── Local state updates (immediate) ─────────────────────────────
+
   function applyQuestionEdit(newText) {
     const state = getState()
     const poll = state.currentPoll
-    if (poll) {
-      poll.question = newText
-      if (poll.title !== undefined) {
-        poll.title = newText
-      }
+    if (!poll) {
+      return
     }
-    // Keep the snapshot polls array in sync so future renders use the edit
-    if (state.snapshot && Array.isArray(state.snapshot.polls)) {
-      for (let i = 0; i < state.snapshot.polls.length; i++) {
-        const p = state.snapshot.polls[i]
-        if (p && p.id === (poll && poll.id)) {
-          p.question = newText
-          if (p.title !== undefined) {
-            p.title = newText
-          }
-        }
-      }
+    poll.question = newText
+    if (poll.title !== undefined) {
+      poll.title = newText
     }
-    // Update the host-side question heading
+    updateSnapshotPoll(state, poll.id, (p) => {
+      p.question = newText
+      if (p.title !== undefined) {
+        p.title = newText
+      }
+    })
     const questionEl = getQuestionEl()
     if (questionEl) {
       questionEl.textContent = newText
     }
+    schedulePersist(poll.id, { question: newText })
   }
 
   function applyOptionLabelEdit(optionId, newText) {
     const state = getState()
     const poll = state.currentPoll
-    const options = poll && Array.isArray(poll.options) ? poll.options : []
-    const indexMatch = /^option-(\d+)$/.exec(optionId)
-    let matched = false
+    if (!poll) {
+      return
+    }
+    const resolvedId = resolveOptionId(poll, optionId)
+    if (!resolvedId) {
+      return
+    }
+    updateOptionLabel(poll.options, resolvedId, newText)
+    updateSnapshotPoll(state, poll.id, (p) => {
+      if (Array.isArray(p.options)) {
+        updateOptionLabel(p.options, resolvedId, newText)
+      }
+    })
+    renderFromSnapshot(false)
+    schedulePersist(poll.id, { optionId: resolvedId, label: newText })
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────
+
+  function updateSnapshotPoll(state, pollId, mutator) {
+    if (!state.snapshot || !Array.isArray(state.snapshot.polls)) {
+      return
+    }
+    for (let i = 0; i < state.snapshot.polls.length; i++) {
+      if (state.snapshot.polls[i] && state.snapshot.polls[i].id === pollId) {
+        mutator(state.snapshot.polls[i])
+      }
+    }
+  }
+
+  function updateOptionLabel(options, targetId, newText) {
+    if (!Array.isArray(options)) {
+      return
+    }
     for (let i = 0; i < options.length; i++) {
-      const opt = options[i]
-      if (opt.id === optionId || (indexMatch && i === Number(indexMatch[1]))) {
-        opt.label = newText
-        if (opt.text !== undefined) {
-          opt.text = newText
+      if (options[i] && options[i].id === targetId) {
+        options[i].label = newText
+        if (options[i].text !== undefined) {
+          options[i].text = newText
         }
-        matched = true
         break
       }
     }
-    // Keep the snapshot polls array in sync
-    if (matched && state.snapshot && Array.isArray(state.snapshot.polls)) {
-      for (let p = 0; p < state.snapshot.polls.length; p++) {
-        const snap = state.snapshot.polls[p]
-        if (snap && snap.id === (poll && poll.id) && Array.isArray(snap.options)) {
-          for (let j = 0; j < snap.options.length; j++) {
-            const sOpt = snap.options[j]
-            if (sOpt && (sOpt.id === optionId || (indexMatch && j === Number(indexMatch[1])))) {
-              sOpt.label = newText
-              if (sOpt.text !== undefined) {
-                sOpt.text = newText
-              }
-              break
-            }
-          }
-        }
+  }
+
+  /**
+   * Resolves an optionId that may be a positional key ("option-0") to
+   * the real option id from the poll data.
+   */
+  function resolveOptionId(poll, rawId) {
+    const options = Array.isArray(poll.options) ? poll.options : []
+    // Direct id match
+    for (let i = 0; i < options.length; i++) {
+      if (options[i] && options[i].id === rawId) {
+        return rawId
       }
     }
-    if (matched) {
-      renderFromSnapshot(false)
+    // Positional match (option-N)
+    const indexMatch = /^option-(\d+)$/.exec(rawId)
+    if (indexMatch) {
+      const idx = Number(indexMatch[1])
+      if (idx >= 0 && idx < options.length && options[idx]) {
+        return options[idx].id
+      }
+    }
+    return null
+  }
+
+  // ── Persistence (debounced PATCH) ───────────────────────────────
+
+  function schedulePersist(pollId, change) {
+    if (!pendingPatch || pendingPatch.pollId !== pollId) {
+      pendingPatch = { pollId, question: null, options: {} }
+    }
+    if (change.question !== undefined) {
+      pendingPatch.question = change.question
+    }
+    if (change.optionId && change.label !== undefined) {
+      pendingPatch.options[change.optionId] = change.label
+    }
+    if (debounceTimerId) {
+      clearTimeout(debounceTimerId)
+    }
+    debounceTimerId = setTimeout(flushPersist, PERSIST_DEBOUNCE_MS)
+  }
+
+  async function flushPersist() {
+    debounceTimerId = null
+    const patch = pendingPatch
+    if (!patch) {
+      return
+    }
+    pendingPatch = null
+
+    const state = getState()
+    const sessionId = state.sessionId
+    if (!sessionId || !patch.pollId) {
+      return
+    }
+
+    const body = {}
+    if (patch.question !== null) {
+      body.question = patch.question
+    }
+    if (Object.keys(patch.options).length > 0) {
+      body.options = patch.options
+    }
+    if (Object.keys(body).length === 0) {
+      return
+    }
+
+    const apiBase = typeof getApiBase === 'function' ? getApiBase() : ''
+    const token = typeof getAccessToken === 'function' ? getAccessToken() : ''
+    const url = `${apiBase}/sessions/${encodeURIComponent(sessionId)}/polls/${encodeURIComponent(patch.pollId)}`
+
+    const headers = { 'Content-Type': 'application/json' }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(body)
+      })
+      if (!response.ok) {
+        console.warn('[prezo-text-edit] persist failed:', response.status)
+      }
+    } catch (error) {
+      console.warn('[prezo-text-edit] persist error:', error)
     }
   }
 

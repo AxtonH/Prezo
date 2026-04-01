@@ -93,6 +93,14 @@ class Poll(BaseModel):
     created_at: datetime
 
 
+class PollUpdate(BaseModel):
+    question: str | None = Field(default=None, max_length=200)
+    options: dict[str, str] | None = Field(
+        default=None,
+        description="Map of option_id → new label text",
+    )
+
+
 class PollVote(BaseModel):
     option_id: str
     client_id: str | None = Field(default=None, max_length=64)

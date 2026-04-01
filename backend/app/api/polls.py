@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth import AuthUser, get_current_user
 from ..deps import get_manager, get_store
-from ..models import Event, Poll, PollCreate, PollStatus, PollVote
+from ..models import Event, Poll, PollCreate, PollStatus, PollUpdate, PollVote
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
@@ -70,6 +70,31 @@ async def close_poll(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     event = make_event("poll_closed", {"poll": poll.model_dump(mode="json")})
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)
+    return poll
+
+
+@router.patch("/{poll_id}", response_model=Poll)
+async def update_poll(
+    session_id: str,
+    poll_id: str,
+    payload: PollUpdate,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> Poll:
+    try:
+        poll = await store.update_poll(
+            session_id,
+            poll_id,
+            user.id,
+            question=payload.question,
+            option_labels=payload.options,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    event = make_event("poll_updated", {"poll": poll.model_dump(mode="json")})
     await store.record_event(session_id, event)
     await manager.broadcast(session_id, event)
     return poll

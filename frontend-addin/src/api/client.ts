@@ -149,6 +149,15 @@ export const api = {
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/close`, {
       method: 'POST'
     }, true),
+  updatePoll: (
+    sessionId: string,
+    pollId: string,
+    update: { question?: string; options?: Record<string, string> }
+  ) =>
+    request<Poll>(`/sessions/${sessionId}/polls/${pollId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update)
+    }, true),
   votePoll: (sessionId: string, pollId: string, optionId: string, clientId?: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote`, {
       method: 'POST',
