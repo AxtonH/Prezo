@@ -23,6 +23,9 @@ export function createArtifactTextEditHandler({
   /** Pending PATCH payload keyed by poll id. */
   let pendingPatch = null
   let debounceTimerId = null
+  let patchInFlight = false
+  /** Timestamp of the last text edit message — used to suppress echo renders. */
+  let lastEditTs = 0
 
   // ── Public API ──────────────────────────────────────────────────
 
@@ -39,6 +42,7 @@ export function createArtifactTextEditHandler({
       console.warn('[prezo-text-edit] no field, ignoring')
       return
     }
+    lastEditTs = Date.now()
     if (field === 'question') {
       applyQuestionEdit(text)
     } else if (field === 'option-label' && optionId) {
@@ -205,6 +209,7 @@ export function createArtifactTextEditHandler({
       console.warn('[prezo-text-edit] flushPersist: NO AUTH TOKEN — request will likely fail')
     }
 
+    patchInFlight = true
     try {
       const response = await fetch(url, {
         method: 'PATCH',
@@ -219,8 +224,25 @@ export function createArtifactTextEditHandler({
       }
     } catch (error) {
       console.warn('[prezo-text-edit] persist error:', error)
+    } finally {
+      patchInFlight = false
     }
   }
 
-  return { handleTextEdit }
+  /**
+   * Returns true while an inline edit is actively in progress — the user is
+   * typing, a debounced PATCH is pending, or a PATCH is in flight.  The host
+   * should suppress WebSocket-driven re-renders of the artifact iframe while
+   * this is true so the contenteditable text doesn't flutter.
+   */
+  function isEditing() {
+    if (debounceTimerId || patchInFlight) {
+      return true
+    }
+    // Short grace window after the last keystroke so the echo render from the
+    // PATCH broadcast doesn't sneak through between debounce and in-flight.
+    return Date.now() - lastEditTs < PERSIST_DEBOUNCE_MS + 400
+  }
+
+  return { handleTextEdit, isEditing }
 }

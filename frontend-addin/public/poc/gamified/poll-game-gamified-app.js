@@ -7291,13 +7291,23 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       }
       hasPatch = true
     }
+    let isPollPatch = false
     if (eventPayload.poll && typeof eventPayload.poll === 'object') {
       ensureSnapshotContainer()
       mergePoll(eventPayload.poll)
       hasPatch = true
+      isPollPatch = true
     }
 
     if (hasPatch) {
+      // When an inline text edit is in progress, skip the render so the
+      // echo from our own PATCH broadcast doesn't cause the artifact to
+      // flutter between old and new text.  The data is already merged
+      // into the snapshot — the next render after editing ends will
+      // pick it up.
+      if (isPollPatch && artifactTextEdit.isEditing()) {
+        return
+      }
       scheduleSnapshotRender()
       return
     }
