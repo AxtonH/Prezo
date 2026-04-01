@@ -7053,7 +7053,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
   function renderInitialState() {
     clearArtifactModeClasses()
     syncArtifactComposerVisibility()
-    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Game Mode PoC')
+    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Visual Mode PoC')
     renderRichText(
       el.question,
       getQuestionStateTextKey('loading'),
@@ -7320,7 +7320,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 
   function renderFromSnapshot(forceRender) {
     flushRichTextHostsToOverrides()
-    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Game Mode PoC')
+    renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Visual Mode PoC')
     syncArtifactComposerVisibility()
 
     const polls = Array.isArray(state.snapshot?.polls) ? state.snapshot.polls : []
