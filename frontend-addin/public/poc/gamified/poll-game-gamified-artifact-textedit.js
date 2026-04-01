@@ -18,8 +18,7 @@ export function createArtifactTextEditHandler({
   getState,
   getQuestionEl,
   getApiBase,
-  getAccessToken,
-  renderFromSnapshot
+  getAccessToken
 }) {
   /** Pending PATCH payload keyed by poll id. */
   let pendingPatch = null
@@ -92,7 +91,6 @@ export function createArtifactTextEditHandler({
         updateOptionLabel(p.options, resolvedId, newText)
       }
     })
-    renderFromSnapshot(false)
     schedulePersist(poll.id, { optionId: resolvedId, label: newText })
   }
 
