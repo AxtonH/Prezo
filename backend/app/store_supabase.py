@@ -804,6 +804,51 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_poll(data[0], options)
 
+    async def update_poll(
+        self,
+        session_id: str,
+        poll_id: str,
+        user_id: str,
+        *,
+        question: str | None = None,
+        option_labels: dict[str, str] | None = None,
+    ) -> Poll:
+        await self.get_session(session_id, user_id)
+        if question is not None:
+            response = await self._request(
+                "PATCH",
+                "polls",
+                params={"id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
+                json={"question": question},
+                prefer="return=representation",
+            )
+            data = response.json()
+            if not data:
+                raise NotFoundError("poll not found")
+        else:
+            rows = await self._select(
+                "polls",
+                {"select": "*", "id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
+            )
+            if not rows:
+                raise NotFoundError("poll not found")
+            data = rows
+        if option_labels:
+            for opt_id, label in option_labels.items():
+                await self._request(
+                    "PATCH",
+                    "poll_options",
+                    params={"id": f"eq.{opt_id}", "poll_id": f"eq.{poll_id}"},
+                    json={"label": label},
+                    prefer="return=representation",
+                )
+        options = await self._select(
+            "poll_options",
+            {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},
+        )
+        self._invalidate_session_snapshot(session_id)
+        return self._to_poll(data[0], options)
+
     async def vote_poll(
         self,
         session_id: str,

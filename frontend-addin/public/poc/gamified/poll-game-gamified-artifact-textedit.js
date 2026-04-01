@@ -35,13 +35,17 @@ export function createArtifactTextEditHandler({
     const field = typeof message.field === 'string' ? message.field : ''
     const text = typeof message.text === 'string' ? message.text : ''
     const optionId = typeof message.optionId === 'string' ? message.optionId : ''
+    console.log('[prezo-text-edit] received:', { field, text, optionId })
     if (!field) {
+      console.warn('[prezo-text-edit] no field, ignoring')
       return
     }
     if (field === 'question') {
       applyQuestionEdit(text)
     } else if (field === 'option-label' && optionId) {
       applyOptionLabelEdit(optionId, text)
+    } else {
+      console.warn('[prezo-text-edit] unhandled field:', field, 'optionId:', optionId)
     }
   }
 
@@ -51,8 +55,10 @@ export function createArtifactTextEditHandler({
     const state = getState()
     const poll = state.currentPoll
     if (!poll) {
+      console.warn('[prezo-text-edit] applyQuestionEdit: no currentPoll')
       return
     }
+    console.log('[prezo-text-edit] applyQuestionEdit:', { pollId: poll.id, newText, sessionId: state.sessionId })
     poll.question = newText
     if (poll.title !== undefined) {
       poll.title = newText
@@ -144,6 +150,7 @@ export function createArtifactTextEditHandler({
   // ── Persistence (debounced PATCH) ───────────────────────────────
 
   function schedulePersist(pollId, change) {
+    console.log('[prezo-text-edit] schedulePersist:', { pollId, change })
     if (!pendingPatch || pendingPatch.pollId !== pollId) {
       pendingPatch = { pollId, question: null, options: {} }
     }
@@ -163,6 +170,7 @@ export function createArtifactTextEditHandler({
     debounceTimerId = null
     const patch = pendingPatch
     if (!patch) {
+      console.warn('[prezo-text-edit] flushPersist: no pending patch')
       return
     }
     pendingPatch = null
@@ -170,6 +178,7 @@ export function createArtifactTextEditHandler({
     const state = getState()
     const sessionId = state.sessionId
     if (!sessionId || !patch.pollId) {
+      console.warn('[prezo-text-edit] flushPersist: missing sessionId or pollId', { sessionId, pollId: patch.pollId })
       return
     }
 
@@ -181,6 +190,7 @@ export function createArtifactTextEditHandler({
       body.options = patch.options
     }
     if (Object.keys(body).length === 0) {
+      console.warn('[prezo-text-edit] flushPersist: empty body, nothing to persist')
       return
     }
 
@@ -188,9 +198,13 @@ export function createArtifactTextEditHandler({
     const token = typeof getAccessToken === 'function' ? getAccessToken() : ''
     const url = `${apiBase}/sessions/${encodeURIComponent(sessionId)}/polls/${encodeURIComponent(patch.pollId)}`
 
+    console.log('[prezo-text-edit] PATCH', url, body, { hasToken: !!token })
+
     const headers = { 'Content-Type': 'application/json' }
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
+    } else {
+      console.warn('[prezo-text-edit] flushPersist: NO AUTH TOKEN — request will likely fail')
     }
 
     try {
@@ -200,7 +214,10 @@ export function createArtifactTextEditHandler({
         body: JSON.stringify(body)
       })
       if (!response.ok) {
-        console.warn('[prezo-text-edit] persist failed:', response.status)
+        const errBody = await response.text().catch(() => '')
+        console.warn('[prezo-text-edit] persist failed:', response.status, errBody)
+      } else {
+        console.log('[prezo-text-edit] persist success:', response.status)
       }
     } catch (error) {
       console.warn('[prezo-text-edit] persist error:', error)

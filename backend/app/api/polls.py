@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..auth import AuthUser, get_current_user
+from ..auth import AuthUser, get_current_user, get_library_user
 from ..deps import get_manager, get_store
 from ..models import Event, Poll, PollCreate, PollStatus, PollUpdate, PollVote
 from ..realtime import ConnectionManager
@@ -82,7 +82,7 @@ async def update_poll(
     payload: PollUpdate,
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> Poll:
     try:
         poll = await store.update_poll(
