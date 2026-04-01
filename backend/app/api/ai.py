@@ -6255,6 +6255,11 @@ def prepare_artifact_context_for_model(
         value = artifact_context.get(key)
         if isinstance(value, str):
             artifact_context[key] = trim_artifact_context_text(value, 1200)
+    # Cap design guidelines to avoid overwhelming the model and crowding out
+    # critical instructions (e.g. live poll-state consumption).
+    dg = artifact_context.get("designGuidelines")
+    if isinstance(dg, str) and len(dg) > 3000:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
     return prepared
 
 
@@ -6283,6 +6288,9 @@ def build_stable_artifact_recovery_context(
         combined_runtime_error,
         1200,
     )
+    dg = artifact_context.get("designGuidelines")
+    if isinstance(dg, str) and len(dg) > 3000:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
     return prepared
 
 
@@ -6323,6 +6331,9 @@ def build_artifact_completion_followup_context(
             original_edit_request,
             1200,
         )
+    dg = artifact_context.get("designGuidelines")
+    if isinstance(dg, str) and len(dg) > 3000:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
     return prepared
 
 
