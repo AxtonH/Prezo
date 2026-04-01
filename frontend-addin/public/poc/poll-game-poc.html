@@ -353,6 +353,49 @@
     <button id="settings-minimized" class="settings-minimized hidden" type="button">Show Ribbon</button>
     <div id="settings-backdrop" class="settings-backdrop" aria-hidden="true"></div>
     <div
+      id="artifact-text-toolbar"
+      class="selection-toolbar"
+      role="toolbar"
+      aria-label="Artifact text formatting toolbar"
+      aria-hidden="true"
+    >
+      <select
+        id="artifact-text-font-family"
+        class="selection-tool selection-select selection-font-family"
+        aria-label="Font family"
+      ></select>
+      <select
+        id="artifact-text-font-size"
+        class="selection-tool selection-select selection-font-size"
+        aria-label="Font size"
+      ></select>
+      <input
+        id="artifact-text-font-color"
+        class="selection-tool selection-color"
+        type="color"
+        aria-label="Font color"
+        value="#ffffff"
+      />
+      <button
+        id="artifact-text-tool-bold"
+        class="selection-tool"
+        type="button"
+        aria-label="Bold"
+      ><strong>B</strong></button>
+      <button
+        id="artifact-text-tool-italic"
+        class="selection-tool"
+        type="button"
+        aria-label="Italic"
+      ><em>I</em></button>
+      <button
+        id="artifact-text-tool-clear"
+        class="selection-tool is-wide"
+        type="button"
+        aria-label="Clear formatting"
+      >Clear</button>
+    </div>
+    <div
       id="selection-toolbar"
       class="selection-toolbar"
       role="toolbar"

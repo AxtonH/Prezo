@@ -67,6 +67,9 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
   const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
   const ARTIFACT_RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
   const ARTIFACT_TEXT_EDIT_MESSAGE_TYPE = 'prezo-text-edit'
+  const ARTIFACT_TEXT_STYLE_MESSAGE_TYPE = 'prezo-text-style'
+  const ARTIFACT_TEXT_HTML_MESSAGE_TYPE = 'prezo-text-html'
+  const ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -287,6 +290,13 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     miniTextFontFamily: must('mini-text-font-family'),
     miniTextFontSize: must('mini-text-font-size'),
     miniTextFontColor: must('mini-text-font-color'),
+    artifactTextToolbar: must('artifact-text-toolbar'),
+    artifactTextFontFamily: must('artifact-text-font-family'),
+    artifactTextFontSize: must('artifact-text-font-size'),
+    artifactTextFontColor: must('artifact-text-font-color'),
+    artifactTextToolBold: must('artifact-text-tool-bold'),
+    artifactTextToolItalic: must('artifact-text-tool-italic'),
+    artifactTextToolClear: must('artifact-text-tool-clear'),
     resizeHandles: [...document.querySelectorAll('#resize-selection [data-resize-handle]')],
     question: must('question'),
     eyebrow: must('eyebrow'),
@@ -1857,7 +1867,9 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       message.type === ARTIFACT_SIZE_MESSAGE_TYPE ||
       message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE ||
       message.type === ARTIFACT_RENDER_ERROR_MESSAGE_TYPE ||
-      message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE
+      message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE ||
+      message.type === ARTIFACT_TEXT_HTML_MESSAGE_TYPE ||
+      message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
     }
@@ -1879,6 +1891,14 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     }
     if (message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE) {
       artifactTextEdit.handleTextEdit(message)
+      return
+    }
+    if (message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE) {
+      handleArtifactTextFocusMessage(message)
+      return
+    }
+    if (message.type === ARTIFACT_TEXT_HTML_MESSAGE_TYPE) {
+      handleArtifactTextHtmlMessage(message)
     }
   }
 
@@ -2968,6 +2988,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
+    hideArtifactTextToolbar()
     state.artifact.html = resolvedMarkup
     state.artifact.package = normalizedPackage
     state.artifact.instanceId += 1
@@ -4008,6 +4029,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     }
 
     setupRichTextStyleControls()
+    setupArtifactTextToolbar()
     bindRichTextCommandButtons([el.textToolBold, el.miniTextToolBold], 'bold')
     bindRichTextCommandButtons([el.textToolItalic, el.miniTextToolItalic], 'italic')
     bindRichTextCommandButtons([el.textToolUnderline, el.miniTextToolUnderline], 'underline')
@@ -4024,6 +4046,163 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     window.addEventListener('scroll', scheduleSelectionToolbarUpdate, true)
     refreshTextToolStates()
     syncTextStyleControlsFromSelection()
+  }
+
+  // ── Artifact iframe text style toolbar ──────────────────────────
+
+  function setupArtifactTextToolbar() {
+    fillSelectOptions(
+      [el.artifactTextFontFamily],
+      TEXT_FONT_FAMILIES.map((fontName) => ({
+        label: fontName,
+        value: fontName,
+        style: `font-family: "${fontName}", sans-serif`
+      }))
+    )
+    fillSelectOptions(
+      [el.artifactTextFontSize],
+      TEXT_FONT_SIZES.map((fontSize) => ({
+        label: String(fontSize),
+        value: String(fontSize)
+      }))
+    )
+
+    el.artifactTextFontFamily.addEventListener('change', () => {
+      sendArtifactTextStyleCmd('fontFamily', normalizeFontFamilyChoice(el.artifactTextFontFamily.value))
+    })
+    el.artifactTextFontSize.addEventListener('change', () => {
+      const px = normalizeFontSizeCss(el.artifactTextFontSize.value)
+      if (px) sendArtifactTextStyleCmd('fontSize', px)
+    })
+    el.artifactTextFontColor.addEventListener('input', () => {
+      sendArtifactTextStyleCmd('color', sanitizeHex(el.artifactTextFontColor.value, ''))
+    })
+    el.artifactTextFontColor.addEventListener('change', () => {
+      sendArtifactTextStyleCmd('color', sanitizeHex(el.artifactTextFontColor.value, ''))
+    })
+    el.artifactTextToolBold.addEventListener('click', () => {
+      sendArtifactTextStyleCmd('bold', '')
+    })
+    el.artifactTextToolItalic.addEventListener('click', () => {
+      sendArtifactTextStyleCmd('italic', '')
+    })
+    el.artifactTextToolClear.addEventListener('click', () => {
+      sendArtifactTextStyleCmd('clear', '')
+    })
+  }
+
+  function sendArtifactTextStyleCmd(styleCmd, styleValue) {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_TEXT_STYLE_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        styleCmd,
+        styleValue
+      },
+      '*'
+    )
+  }
+
+  function showArtifactTextToolbar(focusMessage) {
+    const frameRect = el.artifactFrame.getBoundingClientRect()
+    if (!frameRect || frameRect.width === 0) return
+
+    // Sync current computed styles into the toolbar controls
+    if (focusMessage.color) {
+      const hex = normalizeColorToHex(focusMessage.color)
+      if (hex) el.artifactTextFontColor.value = hex
+    }
+    if (focusMessage.fontSize) {
+      const pts = normalizeFontSizeChoice(String(pxToPoints(focusMessage.fontSize)))
+      syncTextSelectOption([el.artifactTextFontSize], pts)
+    }
+    if (focusMessage.fontFamily) {
+      const fam = normalizeFontFamilyChoice(extractFontFamilyName(focusMessage.fontFamily))
+      syncTextSelectOption([el.artifactTextFontFamily], fam)
+    }
+
+    // Position toolbar above the artifact frame, centred
+    const toolbar = el.artifactTextToolbar
+    const toolbarRect = toolbar.getBoundingClientRect()
+    const toolbarW = toolbarRect.width || 360
+    const toolbarH = toolbarRect.height || 42
+    const margin = 8
+    const screenPad = 8
+
+    let left = frameRect.left + frameRect.width / 2 - toolbarW / 2
+    let top = frameRect.top - toolbarH - margin
+
+    if (top < screenPad) {
+      top = frameRect.bottom + margin
+    }
+    left = clamp(left, screenPad, Math.max(screenPad, window.innerWidth - toolbarW - screenPad))
+    top = clamp(top, screenPad, Math.max(screenPad, window.innerHeight - toolbarH - screenPad))
+
+    toolbar.style.left = `${left}px`
+    toolbar.style.top = `${top}px`
+    toolbar.classList.add('visible')
+    toolbar.setAttribute('aria-hidden', 'false')
+  }
+
+  function hideArtifactTextToolbar() {
+    el.artifactTextToolbar.classList.remove('visible')
+    el.artifactTextToolbar.setAttribute('aria-hidden', 'true')
+  }
+
+  function handleArtifactTextFocusMessage(message) {
+    if (message.active) {
+      showArtifactTextToolbar(message)
+    } else {
+      hideArtifactTextToolbar()
+    }
+  }
+
+  function handleArtifactTextHtmlMessage(message) {
+    const field = typeof message.field === 'string' ? message.field : ''
+    const html = typeof message.html === 'string' ? message.html : ''
+    if (!field || !html) return
+
+    // Patch the styled HTML into the artifact package so it persists on save
+    const pkg = state.artifact.package
+    if (!pkg || !Array.isArray(pkg.files)) return
+    const entryFile = pkg.files.find((f) => f.path === (pkg.entry || 'index.html'))
+    if (!entryFile) return
+
+    const optionId = typeof message.optionId === 'string' ? message.optionId : ''
+    patchArtifactNodeHtml(entryFile, field, optionId, html)
+
+    // Rebuild state.artifact.html from the mutated package
+    const newHtml = resolveArtifactHtmlFromPackage(pkg)
+    if (newHtml) {
+      state.artifact.html = newHtml
+    }
+  }
+
+  /**
+   * Patches the innerHTML of a specific [data-prezo-editable] node inside the
+   * artifact entry HTML string using a simple regex approach.  This avoids a
+   * full DOM parse on the host and works reliably for the simple markup that
+   * artifact renderers produce.
+   */
+  function patchArtifactNodeHtml(entryFile, field, optionId, newInnerHtml) {
+    // We look for the data-prezo-editable attribute that the bridge injected.
+    // The node has: data-prezo-editable="<field>" and optionally
+    // data-prezo-editable-option-id="<optionId>"
+    const attr = optionId
+      ? `data-prezo-editable="${field}"[^>]*data-prezo-editable-option-id="${optionId}"`
+      : `data-prezo-editable="${field}"`
+    // Match the opening tag and replace the content up to the matching close tag.
+    // We only handle simple single-element cases (no deeply nested same-tag children).
+    const tagMatch = /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(newInnerHtml)
+    const openTagRe = new RegExp(`(<[a-zA-Z][a-zA-Z0-9]*\\s[^>]*${attr}[^>]*>)([\\s\\S]*?)(</[a-zA-Z][a-zA-Z0-9]*>)`, 'i')
+    const updated = entryFile.content.replace(openTagRe, (_m, open, _old, close) => {
+      return `${open}${newInnerHtml}${close}`
+    })
+    if (updated !== entryFile.content) {
+      entryFile.content = updated
+    }
   }
 
   function setupRichTextStyleControls() {
