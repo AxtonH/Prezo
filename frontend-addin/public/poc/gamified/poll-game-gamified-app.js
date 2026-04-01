@@ -57,6 +57,7 @@ import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-brid
 import { createBrandProfileExtractor } from './poll-game-gamified-brand-profiles.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
+import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
@@ -508,6 +509,11 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
         'The updated artifact never confirmed a successful render after the edit.'
       )
     }
+  })
+  const artifactTextEdit = createArtifactTextEditHandler({
+    getState: () => state,
+    getQuestionEl: () => el.question,
+    renderFromSnapshot: (force) => renderFromSnapshot(force)
   })
   const brandExtractor = createBrandProfileExtractor({
     getApiBase: () => state.apiBase,
@@ -1871,90 +1877,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
       return
     }
     if (message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE) {
-      handleArtifactTextEdit(message)
-    }
-  }
-
-  /* ---------------------------------------------------------------- */
-  /*  Inline text editing — handle edits from artifact iframe         */
-  /* ---------------------------------------------------------------- */
-
-  function handleArtifactTextEdit(message) {
-    const field = typeof message.field === 'string' ? message.field : ''
-    const text = typeof message.text === 'string' ? message.text : ''
-    const optionId = typeof message.optionId === 'string' ? message.optionId : ''
-    if (!field) {
-      return
-    }
-    if (field === 'question') {
-      handleArtifactQuestionTextEdit(text)
-    } else if (field === 'option-label' && optionId) {
-      handleArtifactOptionLabelTextEdit(optionId, text)
-    }
-  }
-
-  function handleArtifactQuestionTextEdit(newText) {
-    // Update poll in snapshot so the edit persists across renders
-    const poll = state.currentPoll
-    if (poll) {
-      poll.question = newText
-      if (poll.title !== undefined) {
-        poll.title = newText
-      }
-    }
-    // Also update the polls array inside the snapshot
-    if (state.snapshot && Array.isArray(state.snapshot.polls)) {
-      for (let i = 0; i < state.snapshot.polls.length; i++) {
-        const p = state.snapshot.polls[i]
-        if (p && p.id === (poll && poll.id)) {
-          p.question = newText
-          if (p.title !== undefined) {
-            p.title = newText
-          }
-        }
-      }
-    }
-    // Update the host-side question heading
-    el.question.textContent = newText
-  }
-
-  function handleArtifactOptionLabelTextEdit(optionId, newText) {
-    const poll = state.currentPoll
-    const options = poll && Array.isArray(poll.options) ? poll.options : []
-    const indexMatch = /^option-(\d+)$/.exec(optionId)
-    let matched = false
-    for (let i = 0; i < options.length; i++) {
-      const opt = options[i]
-      if (opt.id === optionId || (indexMatch && i === Number(indexMatch[1]))) {
-        opt.label = newText
-        if (opt.text !== undefined) {
-          opt.text = newText
-        }
-        matched = true
-        break
-      }
-    }
-    // Also update the snapshot polls array
-    if (matched && state.snapshot && Array.isArray(state.snapshot.polls)) {
-      for (let p = 0; p < state.snapshot.polls.length; p++) {
-        const snap = state.snapshot.polls[p]
-        if (snap && snap.id === (poll && poll.id) && Array.isArray(snap.options)) {
-          for (let j = 0; j < snap.options.length; j++) {
-            const sOpt = snap.options[j]
-            if (sOpt && (sOpt.id === optionId || (indexMatch && j === Number(indexMatch[1])))) {
-              sOpt.label = newText
-              if (sOpt.text !== undefined) {
-                sOpt.text = newText
-              }
-              break
-            }
-          }
-        }
-      }
-    }
-    if (matched) {
-      // Re-render the classic bars side without re-pushing state to artifact (user is editing there)
-      renderFromSnapshot(false)
+      artifactTextEdit.handleTextEdit(message)
     }
   }
 
