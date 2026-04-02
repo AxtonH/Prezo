@@ -787,7 +787,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             listMaxHeightClass={
               isAddinHost
                 ? undefined
-                : 'max-h-[min(36rem,calc(100vh-10rem))]'
+                : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
             }
           />
 

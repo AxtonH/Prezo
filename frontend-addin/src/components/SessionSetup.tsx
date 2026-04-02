@@ -17,7 +17,7 @@ interface SessionSetupProps {
   onRefresh?: () => void
   deletingSessionId?: string | null
   isCompact?: boolean
-  /** Tailwind classes for the scrollable session list max height (default fits ~4 rows). */
+  /** Tailwind classes for the scrollable session list max height (default fits ~6 rows before scroll). */
   listMaxHeightClass?: string
 }
 
@@ -52,7 +52,7 @@ export function SessionSetup({
   onRefresh: _onRefresh,
   deletingSessionId = null,
   isCompact: _isCompact = false,
-  listMaxHeightClass = 'max-h-[min(22rem,calc(100vh-14rem))]'
+  listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]'
 }: SessionSetupProps) {
   void _isCompact; void _onCreate; void _onJoinByCode; void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
