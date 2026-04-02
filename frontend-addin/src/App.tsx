@@ -147,6 +147,9 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newSessionTitle, setNewSessionTitle] = useState('')
+  const [isCreating, setIsCreating] = useState(false)
   const defaultSessionsLimit = 3
   const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -761,13 +764,61 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           />
 
           {!session ? (
-            <button
-              onClick={() => createSession('')}
-              className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 !mt-6"
-            >
-              <span className="material-symbols-outlined text-lg">add</span>
-              <span>Start a new session</span>
-            </button>
+            <div className="mt-6">
+              {!showCreateForm ? (
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
+                >
+                  <span className="material-symbols-outlined text-lg">add</span>
+                  <span>Start a new session</span>
+                </button>
+              ) : (
+                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-card space-y-3">
+                  <input
+                    autoFocus
+                    value={newSessionTitle}
+                    onChange={(e) => setNewSessionTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isCreating) {
+                        setIsCreating(true)
+                        void createSession(newSessionTitle.trim()).then(() => {
+                          setNewSessionTitle('')
+                          setShowCreateForm(false)
+                        }).finally(() => setIsCreating(false))
+                      }
+                      if (e.key === 'Escape') {
+                        setShowCreateForm(false)
+                        setNewSessionTitle('')
+                      }
+                    }}
+                    placeholder="Session name"
+                    className="!w-full !rounded-lg !border-slate-200 !bg-slate-50 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setIsCreating(true)
+                        void createSession(newSessionTitle.trim()).then(() => {
+                          setNewSessionTitle('')
+                          setShowCreateForm(false)
+                        }).finally(() => setIsCreating(false))
+                      }}
+                      disabled={isCreating}
+                      className="!flex-1 !bg-primary !text-white !py-2.5 !rounded-lg !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
+                    >
+                      {isCreating ? 'Starting...' : 'Start session'}
+                    </button>
+                    <button
+                      onClick={() => { setShowCreateForm(false); setNewSessionTitle('') }}
+                      className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-4 !py-2.5 !rounded-lg !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : null}
 
           {/* Q&A, Prompts, Polls — kept with existing styles via .grid/.panel */}

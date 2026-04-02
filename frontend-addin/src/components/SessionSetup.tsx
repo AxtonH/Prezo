@@ -51,7 +51,7 @@ export function SessionSetup({
   loadError,
   onResume,
   onDelete,
-  onRefresh,
+  onRefresh: _onRefresh,
   hasMore = false,
   onShowMore,
   hasLess = false,
@@ -59,7 +59,7 @@ export function SessionSetup({
   deletingSessionId = null,
   isCompact: _isCompact = false
 }: SessionSetupProps) {
-  void _isCompact; void _onCreate; void _onJoinByCode
+  void _isCompact; void _onCreate; void _onJoinByCode; void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -185,17 +185,6 @@ export function SessionSetup({
                 className="!bg-transparent !border-0 !p-0 !shadow-none text-[0.7rem] font-bold uppercase tracking-widest text-muted flex items-center gap-1 hover:opacity-80 transition-opacity"
               >
                 Show less
-              </button>
-            ) : null}
-            {onRefresh ? (
-              <button
-                type="button"
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="!bg-transparent !border-0 !p-1 !shadow-none text-muted hover:text-primary transition-colors ml-auto"
-                title="Refresh"
-              >
-                <span className="material-symbols-outlined text-lg">refresh</span>
               </button>
             ) : null}
           </div>
