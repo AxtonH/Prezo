@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PrezoLogo } from './components/PrezoLogo'
+
 import { api } from './api/client'
 import type { Question, Session, SessionEvent, SessionSnapshot } from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -103,9 +105,12 @@ export function DisplayApp() {
   return (
     <div className="display">
       <header className="display-header">
-        <div className="display-title">
-          <span className="brand-mark">Prezo</span>
-          <span className="display-subtitle">Live Q&amp;A</span>
+        <div className="display-title display-title--with-logo">
+          <PrezoLogo size={28} />
+          <div className="display-title-text">
+            <span className="brand-mark">Prezo</span>
+            <span className="display-subtitle">Live Q&amp;A</span>
+          </div>
         </div>
         <div className="status">
           <span className={`dot ${socketStatus}`}></span>

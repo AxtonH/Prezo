@@ -1,3 +1,5 @@
+import { PrezoLogo } from './PrezoLogo'
+
 interface SideNavProps {
   onLogout: () => void
   editorLink: string | null
@@ -17,9 +19,7 @@ export function SideNav({ onLogout, editorLink, joinLink, isAddinHost }: SideNav
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
       <div className="p-8 pb-10">
         <div className="flex items-center gap-3 mb-1">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white">
-            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>layers</span>
-          </div>
+          <PrezoLogo size={32} />
           <span className="text-xl font-bold tracking-tighter text-slate-900">Prezo</span>
         </div>
         <p className="text-[0.7rem] uppercase tracking-widest text-muted/60 font-medium">Live Sessions</p>

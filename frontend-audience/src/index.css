@@ -54,6 +54,18 @@ body {
   gap: 2px;
 }
 
+.brand--with-logo {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .brand-mark {
   font-weight: 700;
   font-size: 18px;

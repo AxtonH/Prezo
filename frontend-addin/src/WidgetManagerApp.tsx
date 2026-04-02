@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { PrezoLogo } from './components/PrezoLogo'
 import { api } from './api/client'
 import type {
   QnaMode,
@@ -200,9 +201,12 @@ export function WidgetManagerApp() {
   return (
     <div className="manager">
       <header className="display-header">
-        <div className="display-title">
-          <span className="brand-mark">Prezo</span>
-          <span className="display-subtitle">Widgets</span>
+        <div className="display-title display-title--with-logo">
+          <PrezoLogo size={28} />
+          <div className="display-title-text">
+            <span className="brand-mark">Prezo</span>
+            <span className="display-subtitle">Widgets</span>
+          </div>
         </div>
         <div className="status">
           <span className={`dot ${socketStatus}`}></span>

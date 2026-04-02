@@ -15,6 +15,7 @@ import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
 import { HostStatsCards } from './components/HostStatsCards'
+import { PrezoLogo } from './components/PrezoLogo'
 import { SessionSetup } from './components/SessionSetup'
 import { SideNav } from './components/SideNav'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -682,9 +683,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
           {isAddinHost ? (
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-white flex-shrink-0">
-                <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>layers</span>
-              </div>
+              <PrezoLogo size={28} className="flex-shrink-0" />
               <span className="text-base font-bold tracking-tight text-slate-900 truncate">Prezo</span>
             </div>
           ) : (

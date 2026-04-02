@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { signIn, signUp } from '../auth/auth'
+import { PrezoLogo } from './PrezoLogo'
 
 const AUDIENCE_BASE_URL =
   import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
@@ -140,7 +141,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       <div className="login-left">
         <div className="login-brand">
           <div className="login-brand-icon">
-            <img src="/prezo-icon.svg" alt="Prezo" width="32" height="32" />
+            <PrezoLogo size={32} />
           </div>
           <div>
             <div className="login-brand-name">Prezo</div>

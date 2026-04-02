@@ -10,6 +10,7 @@ import type {
   SessionSnapshot
 } from './api/types'
 import { JoinPanel } from './components/JoinPanel'
+import { PrezoLogo } from './components/PrezoLogo'
 import { PollsPanel } from './components/PollsPanel'
 import { QuestionComposer } from './components/QuestionComposer'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -311,9 +312,12 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">Prezo</span>
-          <span className="brand-subtitle">Live sessions</span>
+        <div className="brand brand--with-logo">
+          <PrezoLogo size={28} />
+          <div className="brand-text">
+            <span className="brand-mark">Prezo</span>
+            <span className="brand-subtitle">Live sessions</span>
+          </div>
         </div>
         <nav className="nav">
           <a className="nav-link" href={HOST_BASE_URL}>
