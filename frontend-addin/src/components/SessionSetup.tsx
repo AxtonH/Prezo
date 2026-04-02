@@ -43,8 +43,8 @@ function formatTime(value: string) {
 
 export function SessionSetup({
   session,
-  onCreate,
-  onJoinByCode,
+  onCreate: _onCreate,
+  onJoinByCode: _onJoinByCode,
   onSetHostJoinAccess,
   recentSessions,
   isLoading = false,
@@ -59,33 +59,9 @@ export function SessionSetup({
   deletingSessionId = null,
   isCompact: _isCompact = false
 }: SessionSetupProps) {
-  void _isCompact
-  const [title, setTitle] = useState('')
-  const [joinCode, setJoinCode] = useState('')
-  const [isStarting, setIsStarting] = useState(false)
+  void _isCompact; void _onCreate; void _onJoinByCode
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const isJoinMode = joinCode.trim().length > 0
-
-  const handleStart = async () => {
-    setError(null)
-    setIsStarting(true)
-    try {
-      const normalizedCode = joinCode.trim().toUpperCase()
-      if (normalizedCode) {
-        if (!onJoinByCode) throw new Error('Host join is unavailable.')
-        await onJoinByCode(normalizedCode)
-        setJoinCode('')
-      } else {
-        await onCreate(title.trim())
-        setTitle('')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start session')
-    } finally {
-      setIsStarting(false)
-    }
-  }
 
   const handleHostJoinAccessToggle = async () => {
     if (!session || !onSetHostJoinAccess || session.is_original_host !== true) return
