@@ -436,6 +436,7 @@ def build_saved_artifact_snapshot_signature(
     last_prompt: str | None,
     last_answers: dict[str, Any],
     theme_snapshot: dict[str, Any] | None,
+    style_overrides: dict[str, Any] | None = None,
 ) -> str:
     payload = {
         "html": html,
@@ -443,5 +444,6 @@ def build_saved_artifact_snapshot_signature(
         "last_prompt": last_prompt,
         "last_answers": last_answers,
         "theme_snapshot": theme_snapshot,
+        "style_overrides": style_overrides,
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

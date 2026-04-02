@@ -85,6 +85,7 @@ create table if not exists saved_poll_game_artifacts (
   last_prompt text,
   last_answers jsonb not null default '{}'::jsonb,
   theme_snapshot jsonb,
+  style_overrides jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, name)
@@ -92,6 +93,12 @@ create table if not exists saved_poll_game_artifacts (
 
 alter table if exists saved_poll_game_artifacts
   add column if not exists artifact_package jsonb;
+
+alter table if exists saved_poll_game_artifacts
+  add column if not exists style_overrides jsonb;
+
+alter table if exists saved_poll_game_artifact_versions
+  add column if not exists style_overrides jsonb;
 
 create table if not exists saved_poll_game_artifact_versions (
   id uuid primary key default gen_random_uuid(),
@@ -104,6 +111,7 @@ create table if not exists saved_poll_game_artifact_versions (
   last_prompt text,
   last_answers jsonb not null default '{}'::jsonb,
   theme_snapshot jsonb,
+  style_overrides jsonb,
   source text,
   created_at timestamptz not null default now(),
   unique (artifact_id, version)

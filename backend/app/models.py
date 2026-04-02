@@ -157,6 +157,7 @@ class SavedArtifact(BaseModel):
     last_prompt: str | None = None
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
+    style_overrides: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -167,6 +168,7 @@ class SavedArtifactUpsert(BaseModel):
     last_prompt: str | None = Field(default=None, max_length=16000)
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
+    style_overrides: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def ensure_html_or_package(self) -> SavedArtifactUpsert:
@@ -188,6 +190,7 @@ class SavedArtifactVersion(BaseModel):
     last_prompt: str | None = None
     last_answers: dict[str, Any] = Field(default_factory=dict)
     theme_snapshot: dict[str, Any] | None = None
+    style_overrides: dict[str, Any] | None = None
     source: str | None = None
     created_at: datetime
 

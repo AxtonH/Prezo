@@ -70,6 +70,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
   const ARTIFACT_TEXT_STYLE_MESSAGE_TYPE = 'prezo-text-style'
   const ARTIFACT_TEXT_HTML_MESSAGE_TYPE = 'prezo-text-html'
   const ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
+  const ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -1939,6 +1940,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
         appendArtifactEditMessage('assistant', successMessage)
       }
     }
+    // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
+    setTimeout(pushArtifactStyleOverrides, 300)
   }
 
   function handleArtifactRenderError(message) {
@@ -4188,50 +4191,33 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     }
   }
 
+  /** In-memory style overrides for the current artifact session. Only written to
+   *  localStorage when the user explicitly saves the artifact. */
+  let pendingArtifactStyleOverrides = {}
+
   function handleArtifactTextHtmlMessage(message) {
     const field = typeof message.field === 'string' ? message.field : ''
     const html = typeof message.html === 'string' ? message.html : ''
     if (!field || !html) return
-
-    // Patch the styled HTML into the artifact package so it persists on save
-    const pkg = state.artifact.package
-    if (!pkg || !Array.isArray(pkg.files)) return
-    const entryFile = pkg.files.find((f) => f.path === (pkg.entry || 'index.html'))
-    if (!entryFile) return
-
     const optionId = typeof message.optionId === 'string' ? message.optionId : ''
-    patchArtifactNodeHtml(entryFile, field, optionId, html)
-
-    // Rebuild state.artifact.html from the mutated package
-    const newHtml = resolveArtifactHtmlFromPackage(pkg)
-    if (newHtml) {
-      state.artifact.html = newHtml
-    }
+    const nodeKey = optionId ? `${field}:${optionId}` : field
+    pendingArtifactStyleOverrides[nodeKey] = html
   }
 
-  /**
-   * Patches the innerHTML of a specific [data-prezo-editable] node inside the
-   * artifact entry HTML string using a simple regex approach.  This avoids a
-   * full DOM parse on the host and works reliably for the simple markup that
-   * artifact renderers produce.
-   */
-  function patchArtifactNodeHtml(entryFile, field, optionId, newInnerHtml) {
-    // We look for the data-prezo-editable attribute that the bridge injected.
-    // The node has: data-prezo-editable="<field>" and optionally
-    // data-prezo-editable-option-id="<optionId>"
-    const attr = optionId
-      ? `data-prezo-editable="${field}"[^>]*data-prezo-editable-option-id="${optionId}"`
-      : `data-prezo-editable="${field}"`
-    // Match the opening tag and replace the content up to the matching close tag.
-    // We only handle simple single-element cases (no deeply nested same-tag children).
-    const tagMatch = /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(newInnerHtml)
-    const openTagRe = new RegExp(`(<[a-zA-Z][a-zA-Z0-9]*\\s[^>]*${attr}[^>]*>)([\\s\\S]*?)(</[a-zA-Z][a-zA-Z0-9]*>)`, 'i')
-    const updated = entryFile.content.replace(openTagRe, (_m, open, _old, close) => {
-      return `${open}${newInnerHtml}${close}`
-    })
-    if (updated !== entryFile.content) {
-      entryFile.content = updated
-    }
+  function pushArtifactStyleOverrides() {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    const saved = state.artifact.savedStyleOverrides || {}
+    const overrides = { ...saved, ...pendingArtifactStyleOverrides }
+    if (Object.keys(overrides).length === 0) return
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        overrides
+      },
+      '*'
+    )
   }
 
   function setupRichTextStyleControls() {
@@ -8175,6 +8161,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     }
     artifactLibrary.artifacts[name] = artifactRecord
     artifactLibrary.activeName = name
+    state.artifact.savedStyleOverrides = artifactRecord.styleOverrides || {}
+    pendingArtifactStyleOverrides = {}
     saveArtifactLibrary(artifactLibrary)
     refreshArtifactSelect(name)
     el.artifactName.value = name
@@ -8188,6 +8176,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     if (!name || !artifactRecord) {
       return false
     }
+    pendingArtifactStyleOverrides = {}
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
       visualMode: ARTIFACT_VISUAL_MODE
@@ -8199,6 +8188,10 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     applyTheme(currentTheme)
     syncThemeControls()
     state.artifact.lastPrompt = asText(artifactRecord.lastPrompt)
+    state.artifact.savedStyleOverrides =
+      artifactRecord.styleOverrides && typeof artifactRecord.styleOverrides === 'object'
+        ? artifactRecord.styleOverrides
+        : {}
     state.artifact.lastAnswers = cloneArtifactConversationAnswers(artifactRecord.lastAnswers)
     state.artifact.conversationAnswers = cloneArtifactConversationAnswers(
       artifactRecord.lastAnswers
@@ -8995,6 +8988,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     }
     const artifactPackage = buildSegmentedArtifactPackage(state.artifact.package || html)
     const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
+    const existingOverrides = state.artifact.savedStyleOverrides || {}
+    const styleOverrides = { ...existingOverrides, ...pendingArtifactStyleOverrides }
     return sanitizeSavedArtifactRecord({
       html: materializedHtml,
       package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),
@@ -9003,7 +8998,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       themeSnapshot: {
         ...clone(currentTheme),
         visualMode: ARTIFACT_VISUAL_MODE
-      }
+      },
+      styleOverrides: Object.keys(styleOverrides).length > 0 ? styleOverrides : null
     })
   }
 

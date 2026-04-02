@@ -156,6 +156,16 @@ export function createPollGameLibraryStorage({
         : value.theme_snapshot && typeof value.theme_snapshot === 'object'
           ? value.theme_snapshot
           : null
+    const styleOverridesInput =
+      value.styleOverrides && typeof value.styleOverrides === 'object'
+        ? value.styleOverrides
+        : value.style_overrides && typeof value.style_overrides === 'object'
+          ? value.style_overrides
+          : null
+    const styleOverrides =
+      styleOverridesInput && Object.keys(styleOverridesInput).length > 0
+        ? styleOverridesInput
+        : null
     return {
       html: materializedHtml,
       package: artifactPackage,
@@ -163,7 +173,8 @@ export function createPollGameLibraryStorage({
       lastAnswers: cloneArtifactConversationAnswers(lastAnswersInput),
       themeSnapshot: themeSnapshotInput
         ? sanitizeTheme({ ...themeSnapshotInput, visualMode: artifactVisualMode })
-        : null
+        : null,
+      styleOverrides
     }
   }
 

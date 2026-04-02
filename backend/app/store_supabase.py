@@ -363,6 +363,11 @@ class SupabaseStore:
                     if isinstance(latest.get("theme_snapshot"), dict)
                     else None
                 ),
+                style_overrides=(
+                    latest.get("style_overrides")
+                    if isinstance(latest.get("style_overrides"), dict)
+                    else None
+                ),
             )
 
         next_signature = build_saved_artifact_snapshot_signature(
@@ -375,6 +380,7 @@ class SupabaseStore:
             last_prompt=artifact.last_prompt,
             last_answers=artifact.last_answers,
             theme_snapshot=artifact.theme_snapshot,
+            style_overrides=artifact.style_overrides,
         )
         if latest and next_signature == latest_signature:
             return
@@ -397,6 +403,7 @@ class SupabaseStore:
                 "last_prompt": artifact.last_prompt,
                 "last_answers": artifact.last_answers,
                 "theme_snapshot": artifact.theme_snapshot,
+                "style_overrides": artifact.style_overrides,
                 "source": source,
             },
             prefer="return=representation",
@@ -1026,6 +1033,7 @@ class SupabaseStore:
         last_prompt: str | None,
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
+        style_overrides: dict[str, Any] | None = None,
     ) -> SavedArtifact:
         response = await self._request(
             "POST",
@@ -1039,6 +1047,7 @@ class SupabaseStore:
                 "last_prompt": last_prompt,
                 "last_answers": last_answers,
                 "theme_snapshot": theme_snapshot,
+                "style_overrides": style_overrides,
             },
             prefer="resolution=merge-duplicates,return=representation",
         )

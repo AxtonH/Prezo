@@ -96,6 +96,7 @@ async def save_saved_artifact(
         payload.last_prompt.strip() if payload.last_prompt else None,
         payload.last_answers,
         payload.theme_snapshot,
+        payload.style_overrides,
     )
 
 

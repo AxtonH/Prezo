@@ -138,6 +138,7 @@ class SavedArtifactData:
     last_prompt: str | None
     last_answers: dict[str, Any]
     theme_snapshot: dict[str, Any] | None
+    style_overrides: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
 
@@ -154,6 +155,7 @@ class SavedArtifactVersionData:
     last_prompt: str | None
     last_answers: dict[str, Any]
     theme_snapshot: dict[str, Any] | None
+    style_overrides: dict[str, Any] | None
     source: str | None
     created_at: datetime
 
@@ -604,6 +606,7 @@ class InMemoryStore:
         last_prompt: str | None,
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
+        style_overrides: dict[str, Any] | None = None,
     ) -> SavedArtifact:
         async with self._lock:
             existing = self._saved_artifacts_by_user[user_id].get(name)
@@ -614,6 +617,7 @@ class InMemoryStore:
                 last_prompt=last_prompt,
                 last_answers=clone_dict(last_answers),
                 theme_snapshot=clone_optional_dict(theme_snapshot),
+                style_overrides=clone_optional_dict(style_overrides),
             )
             if existing:
                 existing_signature = build_saved_artifact_snapshot_signature(
@@ -622,6 +626,7 @@ class InMemoryStore:
                     last_prompt=existing.last_prompt,
                     last_answers=clone_dict(existing.last_answers),
                     theme_snapshot=clone_optional_dict(existing.theme_snapshot),
+                    style_overrides=clone_optional_dict(existing.style_overrides),
                 )
                 changed = existing_signature != next_signature
                 existing.html = html
@@ -629,6 +634,7 @@ class InMemoryStore:
                 existing.last_prompt = last_prompt
                 existing.last_answers = clone_dict(last_answers)
                 existing.theme_snapshot = clone_optional_dict(theme_snapshot)
+                existing.style_overrides = clone_optional_dict(style_overrides)
                 existing.updated_at = now
                 if changed:
                     self._append_saved_artifact_version(existing, source="save")
@@ -642,6 +648,7 @@ class InMemoryStore:
                 last_prompt=last_prompt,
                 last_answers=clone_dict(last_answers),
                 theme_snapshot=clone_optional_dict(theme_snapshot),
+                style_overrides=clone_optional_dict(style_overrides),
                 created_at=now,
                 updated_at=now,
             )
