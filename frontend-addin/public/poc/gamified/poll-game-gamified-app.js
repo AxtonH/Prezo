@@ -3066,6 +3066,10 @@ import {
       return
     }
     artifactBridge.queuePayload(payload, { force })
+    // Re-push style overrides after each render so the renderer doesn't
+    // permanently destroy manually styled HTML (subtitle, footer, stats, etc.).
+    // Delay must exceed bridge batch (90ms) + renderer + scan (60ms).
+    setTimeout(pushArtifactStyleOverrides, 250)
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
