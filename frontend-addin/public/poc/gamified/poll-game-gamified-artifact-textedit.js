@@ -50,6 +50,12 @@ export function createArtifactTextEditHandler({
       }
       return
     }
+    // Stat fields (votes, percentage, rank) are style-only — their text content
+    // is overwritten on every poll state update, so we only persist style overrides
+    // (handled by sendTextHtml in the bridge) and skip text-content persistence.
+    if (field === 'option-votes' || field === 'option-percentage' || field === 'option-rank') {
+      return
+    }
     if (field === 'question') {
       applyQuestionEdit(text)
     } else if (field === 'option-label' && optionId) {
