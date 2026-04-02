@@ -13,6 +13,7 @@ from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     BrandProfile,
     Event,
+    HostDashboardStats,
     Poll,
     PollOption,
     PollStatus,
@@ -238,6 +239,63 @@ class InMemoryStore:
             if limit:
                 sessions = sessions[:limit]
             return sessions
+
+    async def host_dashboard_stats(self, user_id: str) -> HostDashboardStats:
+        async with self._lock:
+            session_ids = [
+                sid
+                for sid, hosts in self._session_hosts.items()
+                if user_id in hosts
+            ]
+            if not session_ids:
+                return HostDashboardStats(
+                    active_sessions=0,
+                    active_events=0,
+                    unique_participants=0,
+                )
+
+            active_sessions = 0
+            active_events = 0
+            unique_clients: set[str] = set()
+
+            for session_id in session_ids:
+                session = self._sessions.get(session_id)
+                if not session:
+                    continue
+                if session.status == SessionStatus.active:
+                    active_sessions += 1
+                if session.qna_open:
+                    active_events += 1
+                for pid in self._polls_by_session.get(session_id, []):
+                    poll = self._polls.get(pid)
+                    if poll and poll.status == PollStatus.open:
+                        active_events += 1
+                for prid in self._prompts_by_session.get(session_id, []):
+                    pr = self._prompts.get(prid)
+                    if pr and pr.status == QnaPromptStatus.open:
+                        active_events += 1
+
+            for qid, clients in self._question_votes.items():
+                q = self._questions.get(qid)
+                if not q or q.session_id not in session_ids:
+                    continue
+                for c in clients:
+                    if c:
+                        unique_clients.add(c)
+
+            for poll_id, client_map in self._poll_votes.items():
+                poll = self._polls.get(poll_id)
+                if not poll or poll.session_id not in session_ids:
+                    continue
+                for c in client_map:
+                    if c:
+                        unique_clients.add(c)
+
+            return HostDashboardStats(
+                active_sessions=active_sessions,
+                active_events=active_events,
+                unique_participants=len(unique_clients),
+            )
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         async with self._lock:

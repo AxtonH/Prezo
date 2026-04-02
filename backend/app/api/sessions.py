@@ -10,6 +10,7 @@ from ..deps import get_manager, get_store
 from ..models import (
     Event,
     HostAccessUpdate,
+    HostDashboardStats,
     HostJoinRequest,
     QnaConfigUpdate,
     QnaMode,
@@ -101,6 +102,14 @@ async def list_sessions(
 ) -> list[Session]:
     sessions = await store.list_sessions(user.id, status=status, limit=limit)
     return [with_join_url(session) for session in sessions]
+
+
+@router.get("/dashboard-stats", response_model=HostDashboardStats)
+async def get_host_dashboard_stats(
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> HostDashboardStats:
+    return await store.host_dashboard_stats(user.id)
 
 
 @router.get("/{session_id}", response_model=Session)

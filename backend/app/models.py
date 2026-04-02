@@ -231,6 +231,23 @@ class HostAccessUpdate(BaseModel):
     allow_host_join: bool
 
 
+class HostDashboardStats(BaseModel):
+    """Aggregated metrics for the authenticated host's sessions."""
+
+    active_sessions: int = Field(ge=0)
+    active_events: int = Field(
+        ge=0,
+        description=(
+            "Live interactive surfaces: open audience Q&A (per session), "
+            "open polls, and open Q&A prompts."
+        ),
+    )
+    unique_participants: int = Field(
+        ge=0,
+        description="Distinct audience client_ids across question and poll votes.",
+    )
+
+
 class Event(BaseModel):
     model_config = ConfigDict(extra="allow")
 

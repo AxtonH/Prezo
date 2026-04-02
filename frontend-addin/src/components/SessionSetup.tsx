@@ -17,6 +17,8 @@ interface SessionSetupProps {
   onRefresh?: () => void
   deletingSessionId?: string | null
   isCompact?: boolean
+  /** Tailwind classes for the scrollable session list max height (default fits ~4 rows). */
+  listMaxHeightClass?: string
 }
 
 const SESSION_ICONS = ['rocket_launch', 'palette', 'auto_graph', 'forum', 'interests', 'star']
@@ -49,7 +51,8 @@ export function SessionSetup({
   onDelete,
   onRefresh: _onRefresh,
   deletingSessionId = null,
-  isCompact: _isCompact = false
+  isCompact: _isCompact = false,
+  listMaxHeightClass = 'max-h-[min(22rem,calc(100vh-14rem))]'
 }: SessionSetupProps) {
   void _isCompact; void _onCreate; void _onJoinByCode; void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
@@ -76,7 +79,9 @@ export function SessionSetup({
       <div className="space-y-0">
         {hasRecentSessions ? (
           <div className="rounded-xl border border-slate-100 bg-surface-2/50 overflow-hidden shadow-sm">
-            <div className="max-h-[min(22rem,calc(100vh-14rem))] overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1.5 -mr-0.5">
+            <div
+              className={`${listMaxHeightClass} overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1.5 -mr-0.5 w-full`}
+            >
               {recentSessions?.map((entry, index) => {
                 const sessionTitle = entry.title?.trim() || 'Untitled session'
                 const dateStr = formatDate(entry.created_at)

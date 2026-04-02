@@ -59,6 +59,12 @@ export interface SessionSnapshot {
   prompts: QnaPrompt[]
 }
 
+export interface HostDashboardStats {
+  active_sessions: number
+  active_events: number
+  unique_participants: number
+}
+
 export interface SessionEvent {
   type: string
   payload: Record<string, unknown>

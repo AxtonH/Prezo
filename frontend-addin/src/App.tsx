@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
 import type {
+  HostDashboardStats,
   Poll,
   QnaPrompt,
   Question,
@@ -13,6 +14,7 @@ import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
+import { HostStatsCards } from './components/HostStatsCards'
 import { SessionSetup } from './components/SessionSetup'
 import { SideNav } from './components/SideNav'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -147,6 +149,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [dashboardStats, setDashboardStats] = useState<HostDashboardStats | null>(null)
+  const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -387,9 +391,27 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     }
   }, [])
 
+  const loadDashboardStats = useCallback(async () => {
+    setDashboardStatsLoading(true)
+    try {
+      setDashboardStats(await api.getHostDashboardStats())
+    } catch {
+      setDashboardStats(null)
+    } finally {
+      setDashboardStatsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     void loadSessions(maxSessionsLimit)
   }, [loadSessions])
+
+  useEffect(() => {
+    if (session) {
+      return
+    }
+    void loadDashboardStats()
+  }, [session, loadDashboardStats, recentSessions.length])
 
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
@@ -657,17 +679,17 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
 
       <main className={`flex-1 overflow-y-auto bg-white min-h-screen ${isAddinHost ? '' : 'ml-64'}`}>
         {/* Top App Bar */}
-        <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 ${isAddinHost ? 'px-5' : 'px-12'}`}>
+        <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
           {isAddinHost ? (
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-white">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-white flex-shrink-0">
                 <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>layers</span>
               </div>
-              <span className="text-base font-bold tracking-tight text-slate-900">Prezo</span>
+              <span className="text-base font-bold tracking-tight text-slate-900 truncate">Prezo</span>
             </div>
           ) : (
-            <div className="flex items-center gap-3 flex-1 max-w-md">
-              <span className="material-symbols-outlined text-muted">search</span>
+            <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
+              <span className="material-symbols-outlined text-muted flex-shrink-0">search</span>
               <input
                 className="!bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !w-full !font-medium !tracking-tight !p-0"
                 placeholder="Search sessions or events..."
@@ -675,7 +697,24 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               />
             </div>
           )}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {!session ? (
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(true)}
+                className={`!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all ${
+                  isAddinHost ? '!px-2.5 !py-1.5 !text-xs' : '!px-4 !py-2 !text-sm'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">add</span>
+                {isAddinHost ? (
+                  <span className="max-[380px]:hidden">Start a new session</span>
+                ) : (
+                  <span>Start a new session</span>
+                )}
+                {isAddinHost ? <span className="hidden max-[380px]:inline">New session</span> : null}
+              </button>
+            ) : null}
             {isAddinHost ? (
               <button
                 type="button"
@@ -689,18 +728,22 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
         </header>
 
         {/* Content */}
-        <div className={`${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'} max-w-5xl`}>
+        <div className={`${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'} w-full max-w-[min(96rem,calc(100vw-1.5rem))] mx-auto`}>
           {/* Page Header */}
-          <div className="mb-10">
+          <div className="mb-8">
             <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
               {session ? 'Active Session' : 'All Sessions'}
             </h1>
-            <p className="text-muted max-w-2xl leading-relaxed text-sm">
+            <p className="text-muted max-w-3xl leading-relaxed text-sm">
               {session
                 ? 'Your session is live. Share the join code with your audience and manage interactions below.'
                 : 'Manage your interactive sessions. Create new rooms, view engagement, and run live Q&A and polls.'}
             </p>
           </div>
+
+          {!session ? (
+            <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
+          ) : null}
 
           {/* Filter Tabs (only when no active session) */}
           {!session ? (
@@ -736,19 +779,17 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             onResume={resumeSession}
             onDelete={deleteSession}
             deletingSessionId={deletingSessionId}
-            onRefresh={() => loadSessions(maxSessionsLimit)}
+            onRefresh={() => {
+              void loadSessions(maxSessionsLimit)
+              void loadDashboardStats()
+            }}
             isCompact={isAddinHost}
+            listMaxHeightClass={
+              isAddinHost
+                ? undefined
+                : 'max-h-[min(36rem,calc(100vh-10rem))]'
+            }
           />
-
-          {!session ? (
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 !mt-6"
-            >
-              <span className="material-symbols-outlined text-lg">add</span>
-              <span>Start a new session</span>
-            </button>
-          ) : null}
 
           {showCreateForm ? (
             <div

@@ -16,6 +16,7 @@ SUPABASE_TRANSPORT_BACKOFF_SECONDS = 15.0
 from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     BrandProfile,
+    HostDashboardStats,
     Poll,
     PollOption,
     PollStatus,
@@ -500,6 +501,74 @@ class SupabaseStore:
         if limit:
             rows = rows[:limit]
         return [self._to_session(row, user_id) for row in rows]
+
+    async def host_dashboard_stats(self, user_id: str) -> HostDashboardStats:
+        sessions = await self.list_sessions(user_id, None, None)
+        if not sessions:
+            return HostDashboardStats(
+                active_sessions=0,
+                active_events=0,
+                unique_participants=0,
+            )
+
+        session_ids = [s.id for s in sessions]
+        in_filter = ",".join(f'"{sid}"' for sid in session_ids)
+
+        active_sessions = sum(1 for s in sessions if s.status == SessionStatus.active)
+
+        open_polls = await self._select(
+            "polls",
+            {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
+        )
+        open_prompts = await self._select(
+            "qna_prompts",
+            {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
+        )
+        qna_open_sessions = sum(1 for s in sessions if s.qna_open)
+
+        active_events = (
+            len(open_polls) + len(open_prompts) + qna_open_sessions
+        )
+
+        unique_clients: set[str] = set()
+
+        questions = await self._select(
+            "questions",
+            {"select": "id", "session_id": f"in.({in_filter})"},
+        )
+        qids = [str(q["id"]) for q in questions]
+        if qids:
+            qin = ",".join(f'"{q}"' for q in qids)
+            vote_rows = await self._select(
+                "question_votes",
+                {"select": "client_id", "question_id": f"in.({qin})"},
+            )
+            for row in vote_rows:
+                cid = row.get("client_id")
+                if cid:
+                    unique_clients.add(str(cid))
+
+        polls_all = await self._select(
+            "polls",
+            {"select": "id", "session_id": f"in.({in_filter})"},
+        )
+        pids = [str(p["id"]) for p in polls_all]
+        if pids:
+            pin = ",".join(f'"{p}"' for p in pids)
+            pv_rows = await self._select(
+                "poll_votes",
+                {"select": "client_id", "poll_id": f"in.({pin})"},
+            )
+            for row in pv_rows:
+                cid = row.get("client_id")
+                if cid:
+                    unique_clients.add(str(cid))
+
+        return HostDashboardStats(
+            active_sessions=active_sessions,
+            active_events=active_events,
+            unique_participants=len(unique_clients),
+        )
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         await self._ensure_owner_access(session_id, user_id)
