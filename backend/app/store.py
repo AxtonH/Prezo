@@ -695,6 +695,7 @@ class InMemoryStore:
                 last_prompt=artifact.last_prompt,
                 last_answers=clone_dict(artifact.last_answers),
                 theme_snapshot=clone_optional_dict(artifact.theme_snapshot),
+                style_overrides=clone_optional_dict(artifact.style_overrides),
             )
             target_signature = build_saved_artifact_snapshot_signature(
                 html=target.html,
@@ -702,6 +703,7 @@ class InMemoryStore:
                 last_prompt=target.last_prompt,
                 last_answers=clone_dict(target.last_answers),
                 theme_snapshot=clone_optional_dict(target.theme_snapshot),
+                style_overrides=clone_optional_dict(target.style_overrides),
             )
 
             artifact.html = target.html
@@ -709,6 +711,7 @@ class InMemoryStore:
             artifact.last_prompt = target.last_prompt
             artifact.last_answers = clone_dict(target.last_answers)
             artifact.theme_snapshot = clone_optional_dict(target.theme_snapshot)
+            artifact.style_overrides = clone_optional_dict(target.style_overrides)
             artifact.updated_at = utc_now()
             if existing_signature != target_signature:
                 self._append_saved_artifact_version(artifact, source="restore")
@@ -844,6 +847,7 @@ class InMemoryStore:
             last_prompt=data.last_prompt,
             last_answers=clone_dict(data.last_answers),
             theme_snapshot=clone_optional_dict(data.theme_snapshot),
+            style_overrides=clone_optional_dict(data.style_overrides),
             created_at=data.created_at,
             updated_at=data.updated_at,
         )
@@ -865,6 +869,7 @@ class InMemoryStore:
                 last_prompt=data.last_prompt,
                 last_answers=clone_dict(data.last_answers),
                 theme_snapshot=clone_optional_dict(data.theme_snapshot),
+                style_overrides=clone_optional_dict(data.style_overrides),
                 source=source,
                 created_at=utc_now(),
             )
@@ -883,6 +888,7 @@ class InMemoryStore:
             last_prompt=data.last_prompt,
             last_answers=clone_dict(data.last_answers),
             theme_snapshot=clone_optional_dict(data.theme_snapshot),
+            style_overrides=clone_optional_dict(data.style_overrides),
             source=data.source,
             created_at=data.created_at,
         )

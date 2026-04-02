@@ -1140,6 +1140,11 @@ class SupabaseStore:
                         if isinstance(base.get("theme_snapshot"), dict)
                         else None
                     ),
+                    style_overrides=(
+                        base.get("style_overrides")
+                        if isinstance(base.get("style_overrides"), dict)
+                        else None
+                    ),
                     source="legacy-import",
                     created_at=base.get("updated_at") or base.get("created_at"),
                 )
@@ -1217,6 +1222,11 @@ class SupabaseStore:
                 "theme_snapshot": (
                     version_row.get("theme_snapshot")
                     if isinstance(version_row.get("theme_snapshot"), dict)
+                    else None
+                ),
+                "style_overrides": (
+                    version_row.get("style_overrides")
+                    if isinstance(version_row.get("style_overrides"), dict)
                     else None
                 ),
             },

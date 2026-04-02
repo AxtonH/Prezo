@@ -365,7 +365,8 @@ export function createPollGameLibrarySyncManager({
           artifact_package: artifactRecord.package || null,
           last_prompt: artifactRecord.lastPrompt || null,
           last_answers: artifactRecord.lastAnswers || {},
-          theme_snapshot: artifactRecord.themeSnapshot || null
+          theme_snapshot: artifactRecord.themeSnapshot || null,
+          style_overrides: artifactRecord.styleOverrides || null
         })
       })
       return {
