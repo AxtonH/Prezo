@@ -4231,16 +4231,18 @@ import {
 
   /**
    * Called by the text-edit handler when a subtitle or footer field is edited.
-   * Stores the copy locally and forces a payload push so the bridge reapplies it.
+   * Stores the copy locally — no force push needed because:
+   *  - The user's typed text is already visible in the DOM.
+   *  - The copy will be included in `meta.artifactCopy` on the next natural
+   *    payload push (vote update, etc.) and reapplied after that render.
+   *  - Force-pushing during editing triggers the animation system which can
+   *    cause a full re-render that wipes all styled HTML.
    */
   function handleArtifactCopyEdit(field, text) {
     if (field === 'subtitle') {
       pendingArtifactCopyOverrides.subtitle = text
     } else if (field === 'footer') {
       pendingArtifactCopyOverrides.footerSuffix = normalizeFooterTextToSuffix(text)
-    }
-    if (state.currentPoll) {
-      pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
     }
   }
 
