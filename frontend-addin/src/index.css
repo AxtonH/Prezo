@@ -1,5 +1,5 @@
 :root {
-  font-family: 'Sora', sans-serif;
+  font-family: 'Inter', 'Sora', sans-serif;
   color: #0f172a;
   background-color: #ffffff;
   line-height: 1.5;
@@ -47,6 +47,10 @@ body.login-view #root {
   max-width: 1100px;
   margin: 0 auto;
   padding: 28px 24px 64px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .topbar {
@@ -218,17 +222,20 @@ body.login-view #root {
   margin-top: 12px;
 }
 
-h2 {
+.panel h2,
+.manager h2 {
   margin: 0 0 12px;
   font-size: 18px;
 }
 
-h3 {
+.panel h3,
+.manager h3 {
   margin: 12px 0;
   font-size: 15px;
 }
 
-p {
+.panel p,
+.manager p {
   margin: 8px 0;
 }
 
@@ -262,12 +269,16 @@ p {
   margin: 0;
 }
 
-label {
+.panel label,
+.login-page label,
+.manager label {
   font-size: 13px;
   color: var(--muted);
 }
 
-input {
+.panel input,
+.login-page input,
+.manager input {
   border-radius: 10px;
   border: 1px solid var(--border);
   padding: 10px 12px;
@@ -276,14 +287,18 @@ input {
   background: var(--surface-2);
 }
 
-input:focus {
+.panel input:focus,
+.login-page input:focus,
+.manager input:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
   background: #ffffff;
 }
 
-button {
+.panel button,
+.login-page button,
+.manager button {
   border-radius: 10px;
   border: 1px solid transparent;
   padding: 10px 16px;
@@ -296,38 +311,48 @@ button {
     border-color 0.12s ease, color 0.12s ease;
 }
 
-button:hover {
+.panel button:hover,
+.login-page button:hover,
+.manager button:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
 }
 
-button:active {
+.panel button:active,
+.login-page button:active,
+.manager button:active {
   transform: translateY(0) scale(0.98);
   box-shadow: none;
 }
 
-button:disabled {
+.panel button:disabled,
+.login-page button:disabled,
+.manager button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
   transform: none;
   box-shadow: none;
 }
 
-button.primary {
+.panel button.primary,
+.manager button.primary {
   background: var(--primary);
 }
 
-button.full-width {
+.panel button.full-width,
+.manager button.full-width {
   width: 100%;
 }
 
-button.ghost {
+.panel button.ghost,
+.manager button.ghost {
   background: transparent;
   color: #0f172a;
   border-color: var(--border);
 }
 
-a.btn {
+.panel a.btn,
+.manager a.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -342,24 +367,28 @@ a.btn {
   transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-a.btn.ghost {
+.panel a.btn.ghost,
+.manager a.btn.ghost {
   background: transparent;
   color: #0f172a;
   border-color: var(--border);
 }
 
-a.btn.ghost:hover {
+.panel a.btn.ghost:hover,
+.manager a.btn.ghost:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
 }
 
-button.danger {
+.panel button.danger,
+.manager button.danger {
   background: var(--danger);
   border-color: var(--danger);
   color: #ffffff;
 }
 
-button.danger:hover {
+.panel button.danger:hover,
+.manager button.danger:hover {
   box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25);
 }
 

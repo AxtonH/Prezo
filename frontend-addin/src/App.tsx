@@ -14,6 +14,7 @@ import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
 import { SessionSetup } from './components/SessionSetup'
+import { SideNav } from './components/SideNav'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { writeSessionBinding } from './office/sessionBinding'
@@ -659,211 +660,238 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     setSessionsLimit(defaultSessionsLimit)
   }
 
+  const [sessionFilter, setSessionFilter] = useState<'active' | 'upcoming' | 'past'>('active')
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">Prezo</span>
-          <span className="brand-subtitle">Live sessions</span>
-        </div>
-        <nav className="nav">
-          <a className="nav-link active" href={HOST_BASE_URL}>
-            Host
-          </a>
-          {editorLink ? (
-            <a
-              className="nav-link"
-              href={editorLink}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Editor
-            </a>
-          ) : null}
-          {!isAddinHost ? (
-            <a className="nav-link" href={joinLink}>
-              Join
-            </a>
-          ) : null}
-        </nav>
-        <div className="status">
-          <span className={`dot ${socketStatus}`}></span>
-          <span className="muted">{socketStatus}</span>
-          <button type="button" className="ghost signout-btn" onClick={onLogout}>
-            Sign out
-          </button>
-        </div>
-      </header>
-
-      <div className="page-heading">
-        <h1>Host console</h1>
-        <p className="muted">Manage questions, approve submissions, and run polls.</p>
-      </div>
-
-      {error ? <p className="error">{error}</p> : null}
-
-      <div className="grid">
-        <SessionSetup
-          session={session}
-          onCreate={createSession}
-          onJoinByCode={joinSessionByCode}
-          onSetHostJoinAccess={setHostJoinAccess}
-          recentSessions={visibleSessions}
-          isLoading={sessionsLoading}
-          loadError={sessionsError}
-          onResume={resumeSession}
-          onDelete={deleteSession}
-          deletingSessionId={deletingSessionId}
-          onRefresh={() => loadSessions(sessionsLimit)}
-          hasMore={hasMoreSessions}
-          onShowMore={handleShowMore}
-          hasLess={hasLessSessions}
-          onShowLess={handleShowLess}
+    <div className="flex h-screen overflow-hidden font-sans">
+      {!isAddinHost ? (
+        <SideNav
+          onLogout={onLogout}
+          editorLink={editorLink}
+          joinLink={joinLink}
+          isAddinHost={isAddinHost}
         />
+      ) : null}
 
-        {session ? (
-          <>
-            <div className="panel">
-              <div className="panel-header">
-                <div className="panel-title">
-                  <button
-                    type="button"
-                    className={`collapse-toggle${isQnaCollapsed ? '' : ' is-expanded'}`}
-                    aria-label={isQnaCollapsed ? 'Expand Q&A section' : 'Collapse Q&A section'}
-                    onClick={() => setIsQnaCollapsed((prev) => !prev)}
-                  />
-                  <h2>Q&amp;A</h2>
-                </div>
-                <div className="actions">
-                  {isQnaCollapsed ? (
-                    <span className="badge">{qnaStatusLabel}</span>
-                  ) : session?.qna_open ? (
-                    <button className="ghost" onClick={closeQna}>
-                      Close Q&amp;A
-                    </button>
-                  ) : (
-                    <button onClick={openQna} disabled={!session}>
-                      Open Q&amp;A
-                    </button>
-                  )}
-                </div>
+      <main className={`flex-1 overflow-y-auto bg-white min-h-screen ${isAddinHost ? '' : 'ml-64'}`}>
+        {/* Top App Bar */}
+        <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 ${isAddinHost ? 'px-5' : 'px-12'}`}>
+          {isAddinHost ? (
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center text-white">
+                <span className="material-symbols-outlined text-base" style={{ fontVariationSettings: "'FILL' 1" }}>layers</span>
               </div>
-              {isQnaCollapsed ? null : (
-                <div className="panel-body">
-                  <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
-                  {session.qna_open ? (
-                    <p className="muted">Q&amp;A is open. New questions will appear below.</p>
-                  ) : (
-                    <p className="muted">
-                      Q&amp;A is closed. Open it to start collecting questions.
-                    </p>
-                  )}
-                  <div className="moderation-block">
-                    <div className="panel-header">
-                      <h3>Audience Q&amp;A</h3>
-                      <span className="badge">Pending {audiencePending.length}</span>
-                    </div>
-                    <div className="moderation-columns">
-                      <div>
-                        <div className="section-label">Pending</div>
-                        {renderQuestionList(
-                          audiencePending,
-                          'No questions waiting for approval.',
-                          (question) => (
-                            <>
-                              <button onClick={() => approveQuestion(question.id)}>
-                                Approve
-                              </button>
-                              <button className="ghost" onClick={() => hideQuestion(question.id)}>
-                                Hide
-                              </button>
-                            </>
-                          )
-                        )}
-                      </div>
-                      <div>
-                        <div className="section-label">Approved</div>
-                        {renderQuestionList(
-                          audienceApproved,
-                          'Approved questions will appear here.',
-                          (question) => (
-                            <button className="ghost" onClick={() => hideQuestion(question.id)}>
-                              Hide
-                            </button>
-                          )
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="widget-binding">
-                    <div className="actions">
-                      <button className="ghost" onClick={() => bindQnaWidget(null)}>
-                        Bind to audience Q&amp;A
-                      </button>
-                    </div>
-                    {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
-                    {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
-                  </div>
-                </div>
-              )}
+              <span className="text-base font-bold tracking-tight text-slate-900">Prezo</span>
             </div>
+          ) : (
+            <div className="flex items-center gap-3 flex-1 max-w-md">
+              <span className="material-symbols-outlined text-muted">search</span>
+              <input
+                className="!bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !w-full !font-medium !tracking-tight !p-0"
+                placeholder="Search sessions or events..."
+                type="text"
+              />
+            </div>
+          )}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${socketStatus === 'connected' ? 'bg-emerald-500' : socketStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-300'}`} />
+              <span className="text-xs text-muted hidden sm:inline">{socketStatus}</span>
+            </div>
+            {isAddinHost ? (
+              <button
+                type="button"
+                onClick={onLogout}
+                className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-3 !py-1.5 !rounded-lg !text-xs !font-semibold hover:!border-slate-300 !transition-all !shadow-none"
+              >
+                Sign out
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  const form = document.querySelector('[data-create-session-form]') as HTMLElement
+                  form?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
+                className="!bg-primary !text-white !px-5 !py-2 !rounded-lg !text-sm !font-bold !flex !items-center !gap-2 hover:!bg-primary-dark active:!scale-95 !transition-all !shadow-sm !border-0"
+              >
+                <span className="material-symbols-outlined text-lg">add</span>
+                <span>Create Session</span>
+              </button>
+            )}
+          </div>
+        </header>
 
-            <PromptManager
-              prompts={prompts}
-              questions={questions}
-              onCreate={createPrompt}
-              onOpen={openPrompt}
-              onClose={closePrompt}
-              onApprove={approveQuestion}
-              onHide={hideQuestion}
-              onBindDiscussionWidget={bindDiscussionWidget}
-            />
+        {/* Content */}
+        <div className={`${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'} max-w-5xl`}>
+          {/* Page Header */}
+          <div className="mb-10">
+            <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
+              {session ? 'Active Session' : 'All Sessions'}
+            </h1>
+            <p className="text-muted max-w-2xl leading-relaxed text-sm">
+              {session
+                ? 'Your session is live. Share the join code with your audience and manage interactions below.'
+                : 'Manage your interactive sessions. Create new rooms, view engagement, and run live Q&A and polls.'}
+            </p>
+          </div>
 
-            {!showPolls ? (
+          {/* Filter Tabs (only when no active session) */}
+          {!session ? (
+            <div className="flex gap-8 mb-6 border-b border-slate-100">
+              {(['active', 'upcoming', 'past'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setSessionFilter(tab)}
+                  className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
+                    sessionFilter === tab
+                      ? '!text-primary !border-primary'
+                      : '!text-muted/50 hover:!text-slate-900 !border-transparent'
+                  }`}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
+
+          {/* Session Setup (list or live session) */}
+          <SessionSetup
+            session={session}
+            onCreate={createSession}
+            onJoinByCode={joinSessionByCode}
+            onSetHostJoinAccess={setHostJoinAccess}
+            recentSessions={visibleSessions}
+            isLoading={sessionsLoading}
+            loadError={sessionsError}
+            onResume={resumeSession}
+            onDelete={deleteSession}
+            deletingSessionId={deletingSessionId}
+            onRefresh={() => loadSessions(sessionsLimit)}
+            hasMore={hasMoreSessions}
+            onShowMore={handleShowMore}
+            hasLess={hasLessSessions}
+            onShowLess={handleShowLess}
+            isCompact={isAddinHost}
+          />
+
+          {/* Q&A, Prompts, Polls — kept with existing styles via .grid/.panel */}
+          {session ? (
+            <div className="grid gap-5 mt-6">
               <div className="panel">
                 <div className="panel-header">
                   <div className="panel-title">
                     <button
                       type="button"
-                      className={`collapse-toggle${isPollsCollapsed ? '' : ' is-expanded'}`}
-                      aria-label={
-                        isPollsCollapsed ? 'Expand polls section' : 'Collapse polls section'
-                      }
-                      onClick={() => setIsPollsCollapsed((prev) => !prev)}
+                      className={`collapse-toggle${isQnaCollapsed ? '' : ' is-expanded'}`}
+                      aria-label={isQnaCollapsed ? 'Expand Q&A section' : 'Collapse Q&A section'}
+                      onClick={() => setIsQnaCollapsed((prev) => !prev)}
                     />
-                    <h2>Polls</h2>
+                    <h2>Q&amp;A</h2>
                   </div>
-                  <span className="badge">{pollStatusLabel}</span>
+                  <div className="actions">
+                    {isQnaCollapsed ? (
+                      <span className="badge">{qnaStatusLabel}</span>
+                    ) : session?.qna_open ? (
+                      <button className="ghost" onClick={closeQna}>Close Q&amp;A</button>
+                    ) : (
+                      <button onClick={openQna} disabled={!session}>Open Q&amp;A</button>
+                    )}
+                  </div>
                 </div>
-                {isPollsCollapsed ? null : (
+                {isQnaCollapsed ? null : (
                   <div className="panel-body">
-                    <p className="muted">
-                      Launch a poll and share it instantly with your audience.
-                    </p>
-                    <button
-                      className="primary full-width"
-                      onClick={() => setShowPolls(true)}
-                      disabled={!session}
-                    >
-                      Start poll
-                    </button>
+                    <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
+                    {session.qna_open ? (
+                      <p className="muted">Q&amp;A is open. New questions will appear below.</p>
+                    ) : (
+                      <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
+                    )}
+                    <div className="moderation-block">
+                      <div className="panel-header">
+                        <h3>Audience Q&amp;A</h3>
+                        <span className="badge">Pending {audiencePending.length}</span>
+                      </div>
+                      <div className="moderation-columns">
+                        <div>
+                          <div className="section-label">Pending</div>
+                          {renderQuestionList(audiencePending, 'No questions waiting for approval.', (question) => (
+                            <>
+                              <button onClick={() => approveQuestion(question.id)}>Approve</button>
+                              <button className="ghost" onClick={() => hideQuestion(question.id)}>Hide</button>
+                            </>
+                          ))}
+                        </div>
+                        <div>
+                          <div className="section-label">Approved</div>
+                          {renderQuestionList(audienceApproved, 'Approved questions will appear here.', (question) => (
+                            <button className="ghost" onClick={() => hideQuestion(question.id)}>Hide</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="widget-binding">
+                      <div className="actions">
+                        <button className="ghost" onClick={() => bindQnaWidget(null)}>Bind to audience Q&amp;A</button>
+                      </div>
+                      {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
+                      {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
+                    </div>
                   </div>
                 )}
               </div>
-            ) : (
-              <PollManager
-                polls={polls}
-                onCreate={createPoll}
-                onOpen={openPoll}
-                onClose={closePoll}
-                onBindWidget={bindPollWidget}
-                sessionId={session.id}
-                sessionCode={session.code}
+
+              <PromptManager
+                prompts={prompts}
+                questions={questions}
+                onCreate={createPrompt}
+                onOpen={openPrompt}
+                onClose={closePrompt}
+                onApprove={approveQuestion}
+                onHide={hideQuestion}
+                onBindDiscussionWidget={bindDiscussionWidget}
               />
-            )}
-          </>
-        ) : null}
-      </div>
+
+              {!showPolls ? (
+                <div className="panel">
+                  <div className="panel-header">
+                    <div className="panel-title">
+                      <button
+                        type="button"
+                        className={`collapse-toggle${isPollsCollapsed ? '' : ' is-expanded'}`}
+                        aria-label={isPollsCollapsed ? 'Expand polls section' : 'Collapse polls section'}
+                        onClick={() => setIsPollsCollapsed((prev) => !prev)}
+                      />
+                      <h2>Polls</h2>
+                    </div>
+                    <span className="badge">{pollStatusLabel}</span>
+                  </div>
+                  {isPollsCollapsed ? null : (
+                    <div className="panel-body">
+                      <p className="muted">Launch a poll and share it instantly with your audience.</p>
+                      <button className="primary full-width" onClick={() => setShowPolls(true)} disabled={!session}>
+                        Start poll
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <PollManager
+                  polls={polls}
+                  onCreate={createPoll}
+                  onOpen={openPoll}
+                  onClose={closePoll}
+                  onBindWidget={bindPollWidget}
+                  sessionId={session.id}
+                  sessionCode={session.code}
+                />
+              )}
+            </div>
+          ) : null}
+        </div>
+      </main>
     </div>
   )
 }
