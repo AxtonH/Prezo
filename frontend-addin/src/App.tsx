@@ -29,8 +29,6 @@ import {
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
-const HOST_BASE_URL =
-  import.meta.env.VITE_HOST_BASE_URL?.toString() ?? window.location.origin
 const upsertById = <T extends { id: string }>(items: T[], item: T) => {
   const index = items.findIndex((entry) => entry.id === item.id)
   if (index === -1) {

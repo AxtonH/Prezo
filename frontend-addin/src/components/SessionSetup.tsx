@@ -57,8 +57,9 @@ export function SessionSetup({
   hasLess = false,
   onShowLess,
   deletingSessionId = null,
-  isCompact = false
+  isCompact: _isCompact = false
 }: SessionSetupProps) {
+  void _isCompact
   const [title, setTitle] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [isStarting, setIsStarting] = useState(false)
