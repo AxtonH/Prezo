@@ -227,6 +227,10 @@ export const TEXT_FONT_FAMILIES = [
 ]
 
 export const TEXT_FONT_SIZES = [
+  4,
+  5,
+  6,
+  7,
   8,
   9,
   10,
