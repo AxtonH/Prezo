@@ -1078,6 +1078,12 @@ body.login-view #root {
   color: #ffffff;
 }
 
+.login-brand-name--wordmark {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.15;
+}
+
 .login-brand-tag {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.5);

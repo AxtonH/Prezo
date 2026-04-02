@@ -1,4 +1,4 @@
-import { PrezoLogo } from './PrezoLogo'
+import { PrezoWordmark } from './PrezoWordmark'
 
 interface SideNavProps {
   onLogout: () => void
@@ -18,9 +18,11 @@ export function SideNav({ onLogout, editorLink, joinLink, isAddinHost }: SideNav
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
       <div className="p-8 pb-10">
-        <div className="flex items-center gap-3 mb-1">
-          <PrezoLogo size={32} />
-          <span className="text-xl font-bold tracking-tighter text-slate-900">Prezo</span>
+        <div className="mb-1">
+          <PrezoWordmark
+            logoSize={24}
+            textClassName="text-xl font-bold tracking-tighter text-[#004080]"
+          />
         </div>
         <p className="text-[0.7rem] uppercase tracking-widest text-muted/60 font-medium">Live Sessions</p>
       </div>

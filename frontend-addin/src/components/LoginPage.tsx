@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { signIn, signUp } from '../auth/auth'
-import { PrezoLogo } from './PrezoLogo'
+import { PrezoWordmark } from './PrezoWordmark'
 
 const AUDIENCE_BASE_URL =
   import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
@@ -140,11 +140,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     <div className={`login-page${isPowerPointHost ? ' ppt' : ''}`}>
       <div className="login-left">
         <div className="login-brand">
-          <div className="login-brand-icon">
-            <PrezoLogo size={32} />
-          </div>
           <div>
-            <div className="login-brand-name">Prezo</div>
+            <div className="login-brand-name login-brand-name--wordmark">
+              <PrezoWordmark
+                logoSize={32}
+                textClassName="font-bold text-[22px] text-white tracking-tight"
+              />
+            </div>
             <div className="login-brand-tag">Live Presentation Platform</div>
           </div>
         </div>
