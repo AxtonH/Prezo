@@ -150,8 +150,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
-  const defaultSessionsLimit = 3
-  const [sessionsLimit, setSessionsLimit] = useState(defaultSessionsLimit)
+  /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
+  const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const [showPolls, setShowPolls] = useState(false)
   const [isQnaCollapsed, setIsQnaCollapsed] = useState(true)
@@ -175,7 +175,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     code: null,
     polls: []
   })
-  const maxSessionsLimit = 100
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -389,7 +388,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
   }, [])
 
   useEffect(() => {
-    void loadSessions(defaultSessionsLimit)
+    void loadSessions(maxSessionsLimit)
   }, [loadSessions])
 
   const hydrateSession = async (selected: Session) => {
@@ -413,7 +412,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     setShowPolls(false)
     setRecentSessions((prev) => {
       const next = upsertById(prev, created)
-      const keep = prev.length || sessionsLimit
+      const keep = prev.length || maxSessionsLimit
       return next.slice(0, keep)
     })
   }
@@ -425,7 +424,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
       await hydrateSession(joined)
       setRecentSessions((prev) => {
         const next = upsertById(prev, joined)
-        const keep = prev.length || sessionsLimit
+        const keep = prev.length || maxSessionsLimit
         return next.slice(0, keep)
       })
     } catch (err) {
@@ -638,29 +637,11 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
     )
   }
 
-  const visibleSessions = useMemo(
-    () => recentSessions.slice(0, sessionsLimit),
-    [recentSessions, sessionsLimit]
-  )
-
   const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
     : null
-  const hasMoreSessions =
-    sessionsLimit < maxSessionsLimit && recentSessions.length >= sessionsLimit
-  const hasLessSessions = sessionsLimit > defaultSessionsLimit
-  const handleShowMore = () => {
-    setSessionsLimit(maxSessionsLimit)
-    if (recentSessions.length < maxSessionsLimit) {
-      void loadSessions(maxSessionsLimit)
-    }
-  }
-  const handleShowLess = () => {
-    setSessionsLimit(defaultSessionsLimit)
-  }
-
   const [sessionFilter, setSessionFilter] = useState<'active' | 'upcoming' | 'past'>('active')
 
   return (
@@ -749,17 +730,13 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             onCreate={createSession}
             onJoinByCode={joinSessionByCode}
             onSetHostJoinAccess={setHostJoinAccess}
-            recentSessions={visibleSessions}
+            recentSessions={recentSessions}
             isLoading={sessionsLoading}
             loadError={sessionsError}
             onResume={resumeSession}
             onDelete={deleteSession}
             deletingSessionId={deletingSessionId}
-            onRefresh={() => loadSessions(sessionsLimit)}
-            hasMore={hasMoreSessions}
-            onShowMore={handleShowMore}
-            hasLess={hasLessSessions}
-            onShowLess={handleShowLess}
+            onRefresh={() => loadSessions(maxSessionsLimit)}
             isCompact={isAddinHost}
           />
 

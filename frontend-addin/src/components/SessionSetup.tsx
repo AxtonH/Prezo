@@ -15,10 +15,6 @@ interface SessionSetupProps {
   onResume?: (session: Session) => void
   onDelete?: (session: Session) => void
   onRefresh?: () => void
-  hasMore?: boolean
-  onShowMore?: () => void
-  hasLess?: boolean
-  onShowLess?: () => void
   deletingSessionId?: string | null
   isCompact?: boolean
 }
@@ -52,10 +48,6 @@ export function SessionSetup({
   onResume,
   onDelete,
   onRefresh: _onRefresh,
-  hasMore = false,
-  onShowMore,
-  hasLess = false,
-  onShowLess,
   deletingSessionId = null,
   isCompact: _isCompact = false
 }: SessionSetupProps) {
@@ -78,83 +70,86 @@ export function SessionSetup({
 
   const joinUrl = resolveJoinUrl(session)
   const hasRecentSessions = Boolean(recentSessions?.length)
-  const showResumeSection = Boolean(onResume || onDelete)
 
   if (!session) {
     return (
       <div className="space-y-0">
         {hasRecentSessions ? (
-          recentSessions?.map((entry, index) => {
-            const sessionTitle = entry.title?.trim() || 'Untitled session'
-            const dateStr = formatDate(entry.created_at)
-            const timeStr = formatTime(entry.created_at)
-            const isActive = entry.status === 'active'
-            return (
-              <div
-                key={entry.id}
-                className="group flex items-center justify-between py-5 px-4 -mx-4 hover:bg-surface-2 transition-colors rounded-xl cursor-pointer"
-                onClick={() => onResume?.(entry)}
-              >
-                <div className="flex items-center gap-5 flex-1 min-w-0">
-                  <div className={`w-11 h-11 ${isActive ? 'bg-primary/10' : 'bg-slate-100'} rounded-xl flex items-center justify-center ${isActive ? 'text-primary' : 'text-slate-400'} flex-shrink-0`}>
-                    <span className="material-symbols-outlined text-xl">{getSessionIcon(index)}</span>
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-[15px] font-semibold text-slate-900 truncate">{sessionTitle}</h3>
-                    <p className="text-sm text-muted truncate">
-                      Code: <span className="font-mono font-semibold text-xs tracking-wider">{entry.code}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-8 text-right flex-shrink-0">
-                  {dateStr ? (
-                    <div className="hidden sm:block">
-                      <p className="text-sm font-semibold text-slate-900">{dateStr}</p>
-                      {timeStr ? <p className="text-xs text-muted uppercase tracking-tight">{timeStr}</p> : null}
+          <div className="rounded-xl border border-slate-100 bg-surface-2/50 overflow-hidden shadow-sm">
+            <div className="max-h-[min(22rem,calc(100vh-14rem))] overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1.5 -mr-0.5">
+              {recentSessions?.map((entry, index) => {
+                const sessionTitle = entry.title?.trim() || 'Untitled session'
+                const dateStr = formatDate(entry.created_at)
+                const timeStr = formatTime(entry.created_at)
+                const isActive = entry.status === 'active'
+                return (
+                  <div
+                    key={entry.id}
+                    className="group flex items-center justify-between py-5 px-4 hover:bg-white/80 transition-[background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer border-b border-slate-100/80 last:border-b-0"
+                    onClick={() => onResume?.(entry)}
+                  >
+                    <div className="flex items-center gap-5 flex-1 min-w-0">
+                      <div className={`w-11 h-11 ${isActive ? 'bg-primary/10' : 'bg-slate-100'} rounded-xl flex items-center justify-center ${isActive ? 'text-primary' : 'text-slate-400'} flex-shrink-0 transition-colors duration-300`}>
+                        <span className="material-symbols-outlined text-xl">{getSessionIcon(index)}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-[15px] font-semibold text-slate-900 truncate">{sessionTitle}</h3>
+                        <p className="text-sm text-muted truncate">
+                          Code: <span className="font-mono font-semibold text-xs tracking-wider">{entry.code}</span>
+                        </p>
+                      </div>
                     </div>
-                  ) : null}
-                  <div className="w-20 flex justify-end">
-                    {isActive ? (
-                      <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="bg-slate-100 text-muted px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest">
-                        Ended
-                      </span>
-                    )}
+                    <div className="flex items-center gap-8 text-right flex-shrink-0">
+                      {dateStr ? (
+                        <div className="hidden sm:block">
+                          <p className="text-sm font-semibold text-slate-900">{dateStr}</p>
+                          {timeStr ? <p className="text-xs text-muted uppercase tracking-tight">{timeStr}</p> : null}
+                        </div>
+                      ) : null}
+                      <div className="w-20 flex justify-end">
+                        {isActive ? (
+                          <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                            Active
+                          </span>
+                        ) : (
+                          <span className="bg-slate-100 text-muted px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest">
+                            Ended
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {onResume ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onResume(entry) }}
+                            disabled={deletingSessionId === entry.id}
+                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-primary transition-colors duration-200 ease-out"
+                            title="Resume session"
+                          >
+                            <span className="material-symbols-outlined text-xl">play_arrow</span>
+                          </button>
+                        ) : null}
+                        {onDelete ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
+                            disabled={deletingSessionId === entry.id}
+                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-danger transition-colors duration-200 ease-out"
+                            title={deletingSessionId === entry.id ? 'Deleting...' : 'Delete session'}
+                          >
+                            <span className="material-symbols-outlined text-xl">
+                              {deletingSessionId === entry.id ? 'hourglass_empty' : 'delete'}
+                            </span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {onResume ? (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onResume(entry) }}
-                        disabled={deletingSessionId === entry.id}
-                        className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-primary transition-colors"
-                        title="Resume session"
-                      >
-                        <span className="material-symbols-outlined text-xl">play_arrow</span>
-                      </button>
-                    ) : null}
-                    {onDelete ? (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
-                        disabled={deletingSessionId === entry.id}
-                        className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-danger transition-colors"
-                        title={deletingSessionId === entry.id ? 'Deleting...' : 'Delete session'}
-                      >
-                        <span className="material-symbols-outlined text-xl">
-                          {deletingSessionId === entry.id ? 'hourglass_empty' : 'delete'}
-                        </span>
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            )
-          })
+                )
+              })}
+            </div>
+          </div>
         ) : null}
 
         {isLoading ? (
@@ -163,31 +158,6 @@ export function SessionSetup({
         {loadError ? <p className="text-danger text-sm py-2">{loadError}</p> : null}
         {!isLoading && !loadError && !hasRecentSessions ? (
           <p className="text-muted text-sm py-4">No recent sessions yet. Create your first one above.</p>
-        ) : null}
-
-        {showResumeSection && (hasMore || hasLess) ? (
-          <div className="flex items-center gap-4 pt-2 pb-2">
-            {hasMore && onShowMore ? (
-              <button
-                type="button"
-                onClick={onShowMore}
-                disabled={isLoading}
-                className="!bg-transparent !border-0 !p-0 !shadow-none text-[0.7rem] font-bold uppercase tracking-widest text-primary flex items-center gap-1 hover:opacity-80 transition-opacity"
-              >
-                See more <span className="material-symbols-outlined text-xs">arrow_forward</span>
-              </button>
-            ) : null}
-            {hasLess && onShowLess ? (
-              <button
-                type="button"
-                onClick={onShowLess}
-                disabled={isLoading}
-                className="!bg-transparent !border-0 !p-0 !shadow-none text-[0.7rem] font-bold uppercase tracking-widest text-muted flex items-center gap-1 hover:opacity-80 transition-opacity"
-              >
-                Show less
-              </button>
-            ) : null}
-          </div>
         ) : null}
 
         {error ? <p className="text-danger text-sm">{error}</p> : null}
