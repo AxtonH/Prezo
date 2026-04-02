@@ -18,7 +18,8 @@ export function createArtifactTextEditHandler({
   getState,
   getQuestionEl,
   getApiBase,
-  getAccessToken
+  getAccessToken,
+  onArtifactCopyEdit
 }) {
   /** Pending PATCH payload keyed by poll id. */
   let pendingPatch = null
@@ -43,6 +44,12 @@ export function createArtifactTextEditHandler({
       return
     }
     lastEditTs = Date.now()
+    if (field === 'subtitle' || field === 'footer') {
+      if (typeof onArtifactCopyEdit === 'function') {
+        onArtifactCopyEdit(field, text)
+      }
+      return
+    }
     if (field === 'question') {
       applyQuestionEdit(text)
     } else if (field === 'option-label' && optionId) {

@@ -58,6 +58,12 @@ import { createBrandProfileExtractor } from './poll-game-gamified-brand-profiles
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
+import {
+  isArtifactCopyField,
+  normalizeFooterTextToSuffix,
+  extractCopyFromStyleOverrides,
+  mergeCopyIntoStyleOverrides
+} from './poll-game-gamified-artifact-copy.js'
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
@@ -525,7 +531,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     getState: () => state,
     getQuestionEl: () => el.question,
     getApiBase: () => state.apiBase,
-    getAccessToken: () => getLibraryAccessToken()
+    getAccessToken: () => getLibraryAccessToken(),
+    onArtifactCopyEdit: (field, text) => handleArtifactCopyEdit(field, text)
   })
   const brandExtractor = createBrandProfileExtractor({
     getApiBase: () => state.apiBase,
@@ -2983,10 +2990,12 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = 'build'
+      pendingArtifactCopyOverrides = {}
     } else {
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = ''
+      pendingArtifactCopyOverrides = {}
     }
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
@@ -3036,6 +3045,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = false
+    pendingArtifactCopyOverrides = {}
     artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
     syncArtifactComposerVisibility()
@@ -3073,6 +3083,20 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
         })
       : []
 
+    const meta = {
+      sessionId: asText(state.sessionId),
+      code: asText(state.code),
+      selector: asText(state.pollSelector?.descriptor),
+      socketStatus: asText(state.socketStatus),
+      expectedMaxVotes: voteCapacity.expectedMaxVotes,
+      recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
+      recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
+      avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
+    }
+    const artifactCopy = getMergedArtifactCopyForPayload()
+    if (artifactCopy) {
+      meta.artifactCopy = artifactCopy
+    }
     return {
       poll: {
         id: asText(poll?.id),
@@ -3081,22 +3105,15 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
         options
       },
       totalVotes,
-      meta: {
-        sessionId: asText(state.sessionId),
-        code: asText(state.code),
-        selector: asText(state.pollSelector?.descriptor),
-        socketStatus: asText(state.socketStatus),
-        expectedMaxVotes: voteCapacity.expectedMaxVotes,
-        recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
-        recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
-        avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
-      }
+      meta
     }
   }
 
   function buildArtifactPayloadKey(payload) {
     const poll = payload && typeof payload === 'object' ? payload.poll : {}
     const options = Array.isArray(poll?.options) ? poll.options : []
+    const meta = payload && typeof payload.meta === 'object' ? payload.meta : {}
+    const copy = meta.artifactCopy && typeof meta.artifactCopy === 'object' ? meta.artifactCopy : {}
     const stable = {
       poll: {
         id: asText(poll?.id),
@@ -3109,7 +3126,11 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
           percentage: toInt(option?.percentage)
         }))
       },
-      totalVotes: toInt(payload?.totalVotes)
+      totalVotes: toInt(payload?.totalVotes),
+      artifactCopy: {
+        subtitle: copy.subtitle || '',
+        footerSuffix: copy.footerSuffix || ''
+      }
     }
     return JSON.stringify(stable)
   }
@@ -4195,13 +4216,48 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
    *  localStorage when the user explicitly saves the artifact. */
   let pendingArtifactStyleOverrides = {}
 
+  /** In-memory copy overrides (subtitle / footer suffix) for the current artifact session. */
+  let pendingArtifactCopyOverrides = {}
+
   function handleArtifactTextHtmlMessage(message) {
     const field = typeof message.field === 'string' ? message.field : ''
     const html = typeof message.html === 'string' ? message.html : ''
     if (!field || !html) return
+    if (isArtifactCopyField(field)) return
     const optionId = typeof message.optionId === 'string' ? message.optionId : ''
     const nodeKey = optionId ? `${field}:${optionId}` : field
     pendingArtifactStyleOverrides[nodeKey] = html
+  }
+
+  /**
+   * Called by the text-edit handler when a subtitle or footer field is edited.
+   * Stores the copy locally and forces a payload push so the bridge reapplies it.
+   */
+  function handleArtifactCopyEdit(field, text) {
+    if (field === 'subtitle') {
+      pendingArtifactCopyOverrides.subtitle = text
+    } else if (field === 'footer') {
+      pendingArtifactCopyOverrides.footerSuffix = normalizeFooterTextToSuffix(text)
+    }
+    if (state.currentPoll) {
+      pushArtifactPollState(state.currentPoll, getTotalVotes(state.currentPoll), { force: true })
+    }
+  }
+
+  /**
+   * Build the merged copy object from saved + pending overrides for inclusion
+   * in the artifact payload's `meta.artifactCopy`.
+   */
+  function getMergedArtifactCopyForPayload() {
+    const savedOverrides = state.artifact.savedStyleOverrides || {}
+    const saved = extractCopyFromStyleOverrides(savedOverrides)
+    const subtitle = pendingArtifactCopyOverrides.subtitle ?? saved.subtitle
+    const footerSuffix = pendingArtifactCopyOverrides.footerSuffix ?? saved.footerSuffix
+    if (subtitle === undefined && footerSuffix === undefined) return null
+    const result = {}
+    if (subtitle !== undefined) result.subtitle = subtitle
+    if (footerSuffix !== undefined) result.footerSuffix = footerSuffix
+    return result
   }
 
   function pushArtifactStyleOverrides() {
@@ -8163,6 +8219,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     artifactLibrary.activeName = name
     state.artifact.savedStyleOverrides = artifactRecord.styleOverrides || {}
     pendingArtifactStyleOverrides = {}
+    pendingArtifactCopyOverrides = {}
     saveArtifactLibrary(artifactLibrary)
     refreshArtifactSelect(name)
     el.artifactName.value = name
@@ -8177,6 +8234,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
       return false
     }
     pendingArtifactStyleOverrides = {}
+    pendingArtifactCopyOverrides = {}
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
       visualMode: ARTIFACT_VISUAL_MODE
@@ -8989,7 +9047,8 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
     const artifactPackage = buildSegmentedArtifactPackage(state.artifact.package || html)
     const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
     const existingOverrides = state.artifact.savedStyleOverrides || {}
-    const styleOverrides = { ...existingOverrides, ...pendingArtifactStyleOverrides }
+    const mergedStyle = { ...existingOverrides, ...pendingArtifactStyleOverrides }
+    const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingArtifactCopyOverrides)
     return sanitizeSavedArtifactRecord({
       html: materializedHtml,
       package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),
