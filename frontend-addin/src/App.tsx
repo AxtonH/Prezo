@@ -764,17 +764,34 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           />
 
           {!session ? (
-            <div className="mt-6">
-              {!showCreateForm ? (
-                <button
-                  onClick={() => setShowCreateForm(true)}
-                  className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
-                >
-                  <span className="material-symbols-outlined text-lg">add</span>
-                  <span>Start a new session</span>
-                </button>
-              ) : (
-                <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-card space-y-3">
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 !mt-6"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              <span>Start a new session</span>
+            </button>
+          ) : null}
+
+          {showCreateForm ? (
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center"
+              onClick={(e) => { if (e.target === e.currentTarget) { setShowCreateForm(false); setNewSessionTitle('') } }}
+            >
+              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+              <div className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-w-md mx-4 overflow-hidden">
+                <div className="px-7 pt-7 pb-2">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                      <span className="material-symbols-outlined text-primary text-xl">add_circle</span>
+                    </div>
+                    <h2 className="text-lg font-bold text-slate-900 !m-0">New Session</h2>
+                  </div>
+                  <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
+                    Give your session a name so participants know what it's about.
+                  </p>
+                </div>
+                <div className="px-7 py-5 space-y-4">
                   <input
                     autoFocus
                     value={newSessionTitle}
@@ -793,31 +810,31 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
                       }
                     }}
                     placeholder="Session name"
-                    className="!w-full !rounded-lg !border-slate-200 !bg-slate-50 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none"
+                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all placeholder:!text-slate-400"
                   />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setIsCreating(true)
-                        void createSession(newSessionTitle.trim()).then(() => {
-                          setNewSessionTitle('')
-                          setShowCreateForm(false)
-                        }).finally(() => setIsCreating(false))
-                      }}
-                      disabled={isCreating}
-                      className="!flex-1 !bg-primary !text-white !py-2.5 !rounded-lg !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
-                    >
-                      {isCreating ? 'Starting...' : 'Start session'}
-                    </button>
-                    <button
-                      onClick={() => { setShowCreateForm(false); setNewSessionTitle('') }}
-                      className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-4 !py-2.5 !rounded-lg !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </div>
-              )}
+                <div className="px-7 pb-7 flex gap-3">
+                  <button
+                    onClick={() => {
+                      setIsCreating(true)
+                      void createSession(newSessionTitle.trim()).then(() => {
+                        setNewSessionTitle('')
+                        setShowCreateForm(false)
+                      }).finally(() => setIsCreating(false))
+                    }}
+                    disabled={isCreating}
+                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
+                  >
+                    {isCreating ? 'Starting...' : 'Start session'}
+                  </button>
+                  <button
+                    onClick={() => { setShowCreateForm(false); setNewSessionTitle('') }}
+                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
 
