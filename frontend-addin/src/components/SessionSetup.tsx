@@ -226,39 +226,6 @@ export function SessionSetup({
         ) : null}
 
         {error ? <p className="text-danger text-sm">{error}</p> : null}
-
-        <div className="mt-12 flex flex-col items-center justify-center p-12 border-2 border-dashed border-slate-200/60 rounded-3xl bg-white">
-          <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-5">
-            <span className="material-symbols-outlined text-primary text-2xl">add_circle</span>
-          </div>
-          <h2 className="text-xl font-bold text-slate-900 mb-2">Start a new session</h2>
-          <p className="text-muted text-center max-w-sm mb-6 leading-relaxed text-sm">
-            Create a live Prezo room for Q&A and polls, or join an existing session with a host code.
-          </p>
-          <div className="w-full max-w-sm space-y-3">
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Session title (optional)"
-              className="!w-full !rounded-lg !border-slate-200 !bg-surface-2 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20"
-            />
-            <input
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value)}
-              placeholder="Host join code (optional)"
-              className="!w-full !rounded-lg !border-slate-200 !bg-surface-2 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20"
-            />
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={handleStart}
-                disabled={isStarting}
-                className="!bg-primary !text-white !px-6 !py-2.5 !rounded-lg !text-sm !font-bold !uppercase !tracking-widest hover:!bg-primary-dark active:!scale-95 !transition-all !shadow-sm flex-1"
-              >
-                {isStarting ? (isJoinMode ? 'Joining...' : 'Creating...') : isJoinMode ? 'Join Session' : 'Create Session'}
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     )
   }

@@ -692,10 +692,6 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             </div>
           )}
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${socketStatus === 'connected' ? 'bg-emerald-500' : socketStatus === 'connecting' ? 'bg-amber-400' : 'bg-slate-300'}`} />
-              <span className="text-xs text-muted hidden sm:inline">{socketStatus}</span>
-            </div>
             {isAddinHost ? (
               <button
                 type="button"
@@ -704,18 +700,7 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
               >
                 Sign out
               </button>
-            ) : (
-              <button
-                onClick={() => {
-                  const form = document.querySelector('[data-create-session-form]') as HTMLElement
-                  form?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                }}
-                className="!bg-primary !text-white !px-5 !py-2 !rounded-lg !text-sm !font-bold !flex !items-center !gap-2 hover:!bg-primary-dark active:!scale-95 !transition-all !shadow-sm !border-0"
-              >
-                <span className="material-symbols-outlined text-lg">add</span>
-                <span>Create Session</span>
-              </button>
-            )}
+            ) : null}
           </div>
         </header>
 
@@ -774,6 +759,16 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
             onShowLess={handleShowLess}
             isCompact={isAddinHost}
           />
+
+          {!session ? (
+            <button
+              onClick={() => createSession('')}
+              className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold !flex !items-center !justify-center !gap-2 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 !mt-6"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              <span>Start a new session</span>
+            </button>
+          ) : null}
 
           {/* Q&A, Prompts, Polls — kept with existing styles via .grid/.panel */}
           {session ? (
