@@ -515,16 +515,26 @@ class SupabaseStore:
         in_filter = ",".join(f'"{sid}"' for sid in session_ids)
 
         active_sessions = sum(1 for s in sessions if s.status == SessionStatus.active)
-
-        open_polls = await self._select(
-            "polls",
-            {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
-        )
-        open_prompts = await self._select(
-            "qna_prompts",
-            {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
-        )
         qna_open_sessions = sum(1 for s in sessions if s.qna_open)
+
+        open_polls, open_prompts, questions, polls_all = await asyncio.gather(
+            self._select(
+                "polls",
+                {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
+            ),
+            self._select(
+                "qna_prompts",
+                {"select": "id", "session_id": f"in.({in_filter})", "status": "eq.open"},
+            ),
+            self._select(
+                "questions",
+                {"select": "id", "session_id": f"in.({in_filter})"},
+            ),
+            self._select(
+                "polls",
+                {"select": "id", "session_id": f"in.({in_filter})"},
+            ),
+        )
 
         active_events = (
             len(open_polls) + len(open_prompts) + qna_open_sessions
@@ -532,37 +542,45 @@ class SupabaseStore:
 
         unique_clients: set[str] = set()
 
-        questions = await self._select(
-            "questions",
-            {"select": "id", "session_id": f"in.({in_filter})"},
-        )
         qids = [str(q["id"]) for q in questions]
-        if qids:
+        pids = [str(p["id"]) for p in polls_all]
+
+        vote_rows: list[dict[str, Any]] = []
+        pv_rows: list[dict[str, Any]] = []
+        if qids and pids:
+            qin = ",".join(f'"{q}"' for q in qids)
+            pin = ",".join(f'"{p}"' for p in pids)
+            vote_rows, pv_rows = await asyncio.gather(
+                self._select(
+                    "question_votes",
+                    {"select": "client_id", "question_id": f"in.({qin})"},
+                ),
+                self._select(
+                    "poll_votes",
+                    {"select": "client_id", "poll_id": f"in.({pin})"},
+                ),
+            )
+        elif qids:
             qin = ",".join(f'"{q}"' for q in qids)
             vote_rows = await self._select(
                 "question_votes",
                 {"select": "client_id", "question_id": f"in.({qin})"},
             )
-            for row in vote_rows:
-                cid = row.get("client_id")
-                if cid:
-                    unique_clients.add(str(cid))
-
-        polls_all = await self._select(
-            "polls",
-            {"select": "id", "session_id": f"in.({in_filter})"},
-        )
-        pids = [str(p["id"]) for p in polls_all]
-        if pids:
+        elif pids:
             pin = ",".join(f'"{p}"' for p in pids)
             pv_rows = await self._select(
                 "poll_votes",
                 {"select": "client_id", "poll_id": f"in.({pin})"},
             )
-            for row in pv_rows:
-                cid = row.get("client_id")
-                if cid:
-                    unique_clients.add(str(cid))
+
+        for row in vote_rows:
+            cid = row.get("client_id")
+            if cid:
+                unique_clients.add(str(cid))
+        for row in pv_rows:
+            cid = row.get("client_id")
+            if cid:
+                unique_clients.add(str(cid))
 
         return HostDashboardStats(
             active_sessions=active_sessions,

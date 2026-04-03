@@ -463,16 +463,16 @@ function HostConsole({
     }
   }, [])
 
-  useEffect(() => {
-    void loadSessions(maxSessionsLimit)
-  }, [loadSessions])
-
+  /** Load list + dashboard together; do not key dashboard on session-list length (that refetched stats when sessions arrived and felt out of sync). */
   useEffect(() => {
     if (session) {
       return
     }
-    void loadDashboardStats()
-  }, [session, loadDashboardStats, recentSessions.length])
+    void Promise.all([
+      loadSessions(maxSessionsLimit),
+      loadDashboardStats(),
+    ])
+  }, [session, loadSessions, loadDashboardStats, maxSessionsLimit])
 
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
@@ -553,6 +553,7 @@ function HostConsole({
     try {
       await api.deleteSession(selected.id)
       setRecentSessions((prev) => prev.filter((entry) => entry.id !== selected.id))
+      void loadDashboardStats()
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to delete session')
     } finally {
