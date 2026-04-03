@@ -14,8 +14,9 @@ interface SideNavProps {
   hasLiveSession?: boolean
 }
 
-const NAV_ITEMS = [
-  { icon: 'layers', label: 'My Sessions', active: true },
+const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions', active: true }
+
+const NAV_ITEMS_BELOW = [
   { icon: 'group', label: 'Team' },
   { icon: 'analytics', label: 'Analytics' },
   { icon: 'extension', label: 'Integrations' }
@@ -43,77 +44,88 @@ export function SideNav({
         <p className="text-[0.7rem] uppercase tracking-widest text-muted/60 font-medium">Live Sessions</p>
       </div>
 
-      <nav className="flex-1 px-4 space-y-1">
-        {NAV_ITEMS.map((item) =>
-          item.label === 'My Sessions' && onMySessions ? (
-            <button
-              key={item.label}
-              type="button"
-              onClick={onMySessions}
-              className={
-                item.active
-                  ? 'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
-                  : 'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
-              }
-              title={hasLiveSession ? 'Back to all sessions' : undefined}
-            >
-              <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
-              <span className={item.active ? 'font-medium' : ''}>{item.label}</span>
-            </button>
-          ) : (
-            <a
-              key={item.label}
-              href="#"
-              className={
-                item.active
-                  ? 'flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
-                  : 'flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
-              }
-              onClick={(e) => e.preventDefault()}
-            >
-              <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
-              <span className={item.active ? 'font-medium' : ''}>{item.label}</span>
-            </a>
-          )
+      <nav className="flex-1 px-4 space-y-1 min-h-0">
+        {onMySessions ? (
+          <button
+            type="button"
+            onClick={onMySessions}
+            className={
+              MY_SESSIONS_ITEM.active
+                ? 'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
+                : 'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
+            }
+            title={hasLiveSession ? 'Back to all sessions' : undefined}
+          >
+            <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
+            <span className={MY_SESSIONS_ITEM.active ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+          </button>
+        ) : (
+          <a
+            href="#"
+            className="flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out"
+            onClick={(e) => e.preventDefault()}
+          >
+            <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
+            <span className="font-medium">{MY_SESSIONS_ITEM.label}</span>
+          </a>
         )}
+
+        {!isAddinHost ? (
+          <a
+            href={joinLink}
+            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+          >
+            <span className="material-symbols-outlined text-[1.25rem]">login</span>
+            <span>Join a session</span>
+          </a>
+        ) : null}
+
+        {NAV_ITEMS_BELOW.map((item) => (
+          <a
+            key={item.label}
+            href="#"
+            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+            onClick={(e) => e.preventDefault()}
+          >
+            <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
+            <span>{item.label}</span>
+          </a>
+        ))}
       </nav>
 
-      <div className="mt-auto p-4 border-t border-border/30">
+      <div className="mt-auto p-4 border-t border-border/30 flex flex-col">
         {editorLink ? (
           <a
             href={editorLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out mb-1"
+            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1"
           >
             <span className="material-symbols-outlined text-[1.25rem]">edit</span>
             <span>Editor</span>
           </a>
         ) : null}
-        {!isAddinHost ? (
+
+        <div className="space-y-1 mt-1">
           <a
-            href={joinLink}
-            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out mb-1"
+            href="#"
+            className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+            onClick={(e) => e.preventDefault()}
           >
-            <span className="material-symbols-outlined text-[1.25rem]">login</span>
-            <span>Join</span>
+            <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+            <span>Settings</span>
           </a>
-        ) : null}
-        <a
-          href="#"
-          className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out mb-1"
-        >
-          <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-          <span>Settings</span>
-        </a>
-        <a
-          href="#"
-          className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
-        >
-          <span className="material-symbols-outlined text-[1.25rem]">help</span>
-          <span>Help</span>
-        </a>
-        <div className="mt-6 px-4 py-4 bg-slate-100/50 rounded-xl flex items-center gap-3">
+          <a
+            href="#"
+            className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+            onClick={(e) => e.preventDefault()}
+          >
+            <span className="material-symbols-outlined text-[1.25rem]">help</span>
+            <span>Help</span>
+          </a>
+        </div>
+
+        <div className="mt-3 px-4 py-4 bg-slate-100/50 rounded-xl flex items-center gap-3">
           <ProfileAvatar avatarUrl={avatarUrl} displayName={displayName} />
           <div className="overflow-hidden flex-1 min-w-0">
             <p className="text-sm font-semibold truncate text-slate-900">{displayName}</p>
