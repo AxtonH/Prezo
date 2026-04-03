@@ -17,6 +17,7 @@ import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
 import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
+import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { OnboardingModal } from './components/OnboardingModal'
 import { SessionSetup } from './components/SessionSetup'
 import { SideNav } from './components/SideNav'
@@ -159,24 +160,15 @@ export default function App() {
     void signOut()
   }
 
-  if (!authReady) {
-    return (
-      <div className="app">
-        <p className="muted">Loading...</p>
-      </div>
-    )
+  const isBootstrapping =
+    !authReady || (Boolean(authSession?.user) && !profileReady)
+
+  if (isBootstrapping) {
+    return <HostConsoleBootstrap />
   }
 
   if (!authSession) {
     return <LoginPage />
-  }
-
-  if (!profileReady) {
-    return (
-      <div className="app">
-        <p className="muted">Loading...</p>
-      </div>
-    )
   }
 
   const resolvedProfile: HostProfile =
