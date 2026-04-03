@@ -163,7 +163,7 @@ export function SessionSetup({
         {loadError ? <p className="text-danger text-sm py-2">{loadError}</p> : null}
         {!isLoading && !loadError && !hasRecentSessions ? (
           <p className="text-muted text-sm py-4">
-            Ops looks like you dont have any active sessions yet! click &quot;Start a new session&quot; to start one!
+            Ops looks like you dont have any active sessions yet, click &quot;Start a new session&quot; to start one!
           </p>
         ) : null}
 
