@@ -13,9 +13,13 @@ interface SideNavProps {
   hasLiveSession?: boolean
   /** Opens join-by-code modal (same pattern as Start a new session). */
   onJoinSession?: () => void
+  /** Which primary area is shown — drives sidebar highlight. */
+  activeSection?: 'sessions' | 'settings'
+  /** Opens full-page settings (host profile, account). */
+  onOpenSettings?: () => void
 }
 
-const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions', active: true }
+const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
 
 const NAV_ITEMS_BELOW = [
   { icon: 'group', label: 'Team' },
@@ -31,8 +35,17 @@ export function SideNav({
   avatarUrl,
   onMySessions,
   hasLiveSession = false,
-  onJoinSession
+  onJoinSession,
+  activeSection = 'sessions',
+  onOpenSettings
 }: SideNavProps) {
+  const sessionsActive = activeSection === 'sessions'
+  const settingsActive = activeSection === 'settings'
+  const navActiveClass =
+    'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
+  const navIdleClass =
+    'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
+
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
       <div className="p-8 pb-10">
@@ -50,15 +63,11 @@ export function SideNav({
           <button
             type="button"
             onClick={onMySessions}
-            className={
-              MY_SESSIONS_ITEM.active
-                ? 'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
-                : 'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
-            }
+            className={sessionsActive ? navActiveClass : navIdleClass}
             title={hasLiveSession ? 'Back to all sessions' : undefined}
           >
             <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-            <span className={MY_SESSIONS_ITEM.active ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+            <span className={sessionsActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
           </button>
         ) : (
           <a
@@ -109,14 +118,29 @@ export function SideNav({
         ) : null}
 
         <div className="space-y-1 mt-1">
-          <a
-            href="#"
-            className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
-            onClick={(e) => e.preventDefault()}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-            <span>Settings</span>
-          </a>
+          {onOpenSettings ? (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className={`w-full text-left rounded-lg flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ease-in-out ${
+                settingsActive
+                  ? 'bg-white text-primary border border-primary/30 shadow-sm'
+                  : 'text-slate-900/70 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+              <span className={settingsActive ? 'font-medium' : ''}>Settings</span>
+            </button>
+          ) : (
+            <a
+              href="#"
+              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+              onClick={(e) => e.preventDefault()}
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+              <span>Settings</span>
+            </a>
+          )}
           <a
             href="#"
             className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"

@@ -122,6 +122,77 @@ export async function completeHostOnboarding(
   return mapProfileRow(data as Record<string, unknown>)
 }
 
+export type UpdateHostProfileInput = {
+  displayName: string
+  /** New image to upload; omit or null to keep existing photo unless `removeAvatar` is true. */
+  avatarFile?: File | null
+  /** When true, clears `avatar_url` in the database. */
+  removeAvatar?: boolean
+}
+
+/** Updates profile name and/or avatar from the settings page (after onboarding). */
+export async function updateHostProfile(
+  input: UpdateHostProfileInput
+): Promise<HostProfile> {
+  const trimmed = input.displayName.trim()
+  if (!trimmed) {
+    throw new Error('Please enter your name')
+  }
+
+  const {
+    data: { user },
+    error: userErr
+  } = await supabase.auth.getUser()
+  if (userErr || !user) {
+    throw new Error('Not signed in')
+  }
+
+  const existing = await fetchHostProfile()
+  let avatarUrl: string | null = existing?.avatar_url ?? null
+
+  if (input.removeAvatar) {
+    avatarUrl = null
+  } else if (input.avatarFile && input.avatarFile.size > 0) {
+    if (input.avatarFile.size > MAX_BYTES) {
+      throw new Error('Image must be 2 MB or smaller')
+    }
+    const rawExt = input.avatarFile.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const ext = ALLOWED_EXT.has(rawExt) ? rawExt : 'jpg'
+    const path = `${user.id}/avatar.${ext}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('avatars')
+      .upload(path, input.avatarFile, {
+        upsert: true,
+        contentType:
+          input.avatarFile.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`
+      })
+
+    if (uploadErr) {
+      throw new Error(uploadErr.message)
+    }
+
+    const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
+    avatarUrl = pub.publicUrl
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      display_name: trimmed,
+      avatar_url: avatarUrl
+    })
+    .eq('id', user.id)
+    .select('id, email, display_name, avatar_url, onboarding_completed')
+    .single()
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return mapProfileRow(data as Record<string, unknown>)
+}
+
 /** Marks onboarding complete without changing name or avatar (sidebar stays “Host” / placeholder). */
 export async function skipHostOnboarding(): Promise<HostProfile> {
   const {

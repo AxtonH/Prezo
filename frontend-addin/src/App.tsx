@@ -20,6 +20,7 @@ import { PrezoWordmark } from './components/PrezoWordmark'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { OnboardingModal } from './components/OnboardingModal'
 import { SessionSetup } from './components/SessionSetup'
+import { SettingsPage } from './components/settings'
 import { SideNav } from './components/SideNav'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
@@ -228,7 +229,11 @@ export default function App() {
 
   return (
     <>
-      <HostConsole onLogout={handleLogout} hostProfile={resolvedProfile} />
+      <HostConsole
+        onLogout={handleLogout}
+        hostProfile={resolvedProfile}
+        onHostProfileChange={setHostProfile}
+      />
       {!resolvedProfile.onboarding_completed ? (
         <OnboardingModal
           onCompleted={(next) => {
@@ -242,10 +247,12 @@ export default function App() {
 
 function HostConsole({
   onLogout,
-  hostProfile
+  hostProfile,
+  onHostProfileChange
 }: {
   onLogout: () => void
   hostProfile: HostProfile
+  onHostProfileChange: (profile: HostProfile) => void
 }) {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
@@ -264,6 +271,8 @@ function HostConsole({
   const [joinCodeInput, setJoinCodeInput] = useState('')
   const [isJoiningByCode, setIsJoiningByCode] = useState(false)
   const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
+  /** `'host'` = sessions dashboard; `'settings'` = full-page settings. */
+  const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings'>('host')
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -365,6 +374,13 @@ function HostConsole({
     clearLiveSessionState()
     safeReplaceState({ prezoHost: 'list' } as HostHistoryState)
   }, [session, clearLiveSessionState])
+
+  const navigateToSessionsHome = useCallback(() => {
+    setHostConsoleView('host')
+    if (session) {
+      goToAllSessions()
+    }
+  }, [session, goToAllSessions])
 
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
@@ -867,8 +883,10 @@ function HostConsole({
           isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
-          onMySessions={goToAllSessions}
+          onMySessions={navigateToSessionsHome}
           hasLiveSession={Boolean(session)}
+          activeSection={hostConsoleView === 'settings' ? 'settings' : 'sessions'}
+          onOpenSettings={() => setHostConsoleView('settings')}
           onJoinSession={() => {
             setJoinByCodeError(null)
             setJoinCodeInput('')
@@ -884,7 +902,17 @@ function HostConsole({
         <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
           {isAddinHost ? (
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              {session ? (
+              {hostConsoleView === 'settings' ? (
+                <button
+                  type="button"
+                  onClick={() => setHostConsoleView('host')}
+                  className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
+                  title="Back to workspace"
+                  aria-label="Back to workspace"
+                >
+                  <span className="material-symbols-outlined text-xl">arrow_back</span>
+                </button>
+              ) : session ? (
                 <button
                   type="button"
                   onClick={goToAllSessions}
@@ -900,19 +928,43 @@ function HostConsole({
                 textClassName="text-base font-bold tracking-tight text-[#004080]"
                 className="min-w-0 truncate"
               />
+              {hostConsoleView === 'host' ? (
+                <button
+                  type="button"
+                  onClick={() => setHostConsoleView('settings')}
+                  className="!inline-flex !items-center !gap-1 !ml-auto !shrink-0 !bg-transparent !border-0 !p-1.5 !rounded-lg !text-slate-600 hover:!bg-slate-100 hover:!text-primary !shadow-none"
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <span className="material-symbols-outlined text-xl">settings</span>
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
-              <span className="material-symbols-outlined text-muted flex-shrink-0">search</span>
-              <input
-                className="!bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !w-full !font-medium !tracking-tight !p-0"
-                placeholder="Search sessions or events..."
-                type="text"
-              />
+              {hostConsoleView === 'settings' ? (
+                <button
+                  type="button"
+                  onClick={() => setHostConsoleView('host')}
+                  className="!inline-flex !items-center !gap-2 !shrink-0 !bg-transparent !border-0 !p-0 !shadow-none !text-primary !font-semibold !text-sm"
+                >
+                  <span className="material-symbols-outlined text-xl">arrow_back</span>
+                  Workspace
+                </button>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-muted flex-shrink-0">search</span>
+                  <input
+                    className="!bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !w-full !font-medium !tracking-tight !p-0"
+                    placeholder="Search sessions or events..."
+                    type="text"
+                  />
+                </>
+              )}
             </div>
           )}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {!session ? (
+            {!session && hostConsoleView !== 'settings' ? (
               <button
                 type="button"
                 onClick={() => setShowCreateForm(true)}
@@ -943,67 +995,78 @@ function HostConsole({
 
         {/* Content */}
         <div className={`${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'} w-full max-w-[min(96rem,calc(100vw-1.5rem))] mx-auto`}>
-          {/* Page Header */}
-          <div className="mb-8">
-            <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
-              {session ? 'Active Session' : 'All Sessions'}
-            </h1>
-            <p className="text-muted max-w-3xl leading-relaxed text-sm">
-              {session
-                ? 'Your session is live. Share the join code with your audience and manage interactions below.'
-                : 'Manage your interactive sessions. Create new rooms, view engagement, and run live Q&A and polls.'}
-            </p>
-          </div>
+          {hostConsoleView === 'settings' ? (
+            <SettingsPage
+              profile={hostProfile}
+              onBack={() => setHostConsoleView('host')}
+              onProfileSaved={onHostProfileChange}
+              onSignOut={onLogout}
+            />
+          ) : (
+            <>
+              {/* Page Header */}
+              <div className="mb-8">
+                <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
+                  {session ? 'Active Session' : 'All Sessions'}
+                </h1>
+                <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                  {session
+                    ? 'Your session is live. Share the join code with your audience and manage interactions below.'
+                    : 'Manage your interactive sessions. Create new rooms, view engagement, and run live Q&A and polls.'}
+                </p>
+              </div>
 
-          {!session ? (
-            <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
-          ) : null}
+              {!session ? (
+                <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
+              ) : null}
 
-          {/* Filter Tabs (only when no active session) */}
-          {!session ? (
-            <div className="flex gap-8 mb-6 border-b border-slate-100">
-              {(['active', 'upcoming', 'past'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setSessionFilter(tab)}
-                  className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
-                    sessionFilter === tab
-                      ? '!text-primary !border-primary'
-                      : '!text-muted/50 hover:!text-slate-900 !border-transparent'
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-          ) : null}
+              {/* Filter Tabs (only when no active session) */}
+              {!session ? (
+                <div className="flex gap-8 mb-6 border-b border-slate-100">
+                  {(['active', 'upcoming', 'past'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setSessionFilter(tab)}
+                      className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
+                        sessionFilter === tab
+                          ? '!text-primary !border-primary'
+                          : '!text-muted/50 hover:!text-slate-900 !border-transparent'
+                      }`}
+                    >
+                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-          {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
+              {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
 
-          {/* Session Setup (list or live session) */}
-          <SessionSetup
-            session={session}
-            onCreate={createSession}
-            onJoinByCode={joinSessionByCode}
-            onSetHostJoinAccess={setHostJoinAccess}
-            recentSessions={recentSessions}
-            isLoading={sessionsLoading}
-            loadError={sessionsError}
-            onResume={resumeSession}
-            onDelete={deleteSession}
-            deletingSessionId={deletingSessionId}
-            onRefresh={() => {
-              void loadSessions(maxSessionsLimit)
-              void loadDashboardStats()
-            }}
-            isCompact={isAddinHost}
-            listMaxHeightClass={
-              isAddinHost
-                ? undefined
-                : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
-            }
-          />
+              {/* Session Setup (list or live session) */}
+              <SessionSetup
+                session={session}
+                onCreate={createSession}
+                onJoinByCode={joinSessionByCode}
+                onSetHostJoinAccess={setHostJoinAccess}
+                recentSessions={recentSessions}
+                isLoading={sessionsLoading}
+                loadError={sessionsError}
+                onResume={resumeSession}
+                onDelete={deleteSession}
+                deletingSessionId={deletingSessionId}
+                onRefresh={() => {
+                  void loadSessions(maxSessionsLimit)
+                  void loadDashboardStats()
+                }}
+                isCompact={isAddinHost}
+                listMaxHeightClass={
+                  isAddinHost
+                    ? undefined
+                    : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
+                }
+              />
+            </>
+          )}
 
           {showCreateForm ? (
             <div
@@ -1176,7 +1239,7 @@ function HostConsole({
           ) : null}
 
           {/* Q&A, Prompts, Polls — kept with existing styles via .grid/.panel */}
-          {session ? (
+          {session && hostConsoleView === 'host' ? (
             <div className="grid gap-5 mt-6">
               <div className="panel">
                 <div className="panel-header">
