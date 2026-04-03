@@ -241,6 +241,93 @@ function HostConsole({
     polls: []
   })
 
+  type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
+
+  const clearLiveSessionState = useCallback(() => {
+    setSession(null)
+    setQuestions([])
+    setPolls([])
+    setPrompts([])
+    setShowPolls(false)
+    setError(null)
+  }, [])
+
+  /** Single history entry for "all sessions" so back from a live session returns to the list. */
+  useEffect(() => {
+    window.history.replaceState({ prezoHost: 'list' } as HostHistoryState, '', '')
+  }, [])
+
+  const prevSessionIdForHistoryRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = session?.id ?? null
+    const prev = prevSessionIdForHistoryRef.current
+    if (id && !prev) {
+      const st = window.history.state as HostHistoryState | null
+      /** Forward navigation already left us on the session entry — do not push again. */
+      if (st?.prezoHost === 'session' && st.sessionId === id) {
+        prevSessionIdForHistoryRef.current = id
+        return
+      }
+      window.history.pushState(
+        { prezoHost: 'session', sessionId: id } as HostHistoryState,
+        '',
+        ''
+      )
+    }
+    prevSessionIdForHistoryRef.current = id
+  }, [session?.id])
+
+  useEffect(() => {
+    const onPop = (event: PopStateEvent) => {
+      const st = event.state as HostHistoryState | null
+      if (st?.prezoHost === 'list') {
+        clearLiveSessionState()
+        return
+      }
+      if (st?.prezoHost === 'session' && st.sessionId) {
+        const sessionId = st.sessionId
+        void (async () => {
+          try {
+            setError(null)
+            const snapshot = await api.getSnapshot(sessionId)
+            setSession((previous) =>
+              withPreservedHostRole(snapshot.session, previous ?? undefined)
+            )
+            setQuestions(snapshot.questions)
+            setPolls(snapshot.polls)
+            setPrompts(snapshot.prompts ?? [])
+            setShowPolls(snapshot.polls.length > 0)
+          } catch (err) {
+            setError(
+              err instanceof Error ? err.message : 'Failed to restore session'
+            )
+            window.history.replaceState(
+              { prezoHost: 'list' } as HostHistoryState,
+              '',
+              ''
+            )
+            clearLiveSessionState()
+          }
+        })()
+      }
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [clearLiveSessionState])
+
+  const goToAllSessions = useCallback(() => {
+    if (!session) {
+      return
+    }
+    const st = window.history.state as HostHistoryState | null
+    if (st?.prezoHost === 'session') {
+      window.history.back()
+    } else {
+      clearLiveSessionState()
+      window.history.replaceState({ prezoHost: 'list' } as HostHistoryState, '', '')
+    }
+  }, [session, clearLiveSessionState])
+
   const handleEvent = useCallback((event: SessionEvent) => {
     if (event.type === 'session_snapshot') {
       const snapshot = event.payload.snapshot as SessionSnapshot
@@ -738,6 +825,8 @@ function HostConsole({
           isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
+          onMySessions={goToAllSessions}
+          hasLiveSession={Boolean(session)}
         />
       ) : null}
 
@@ -745,7 +834,18 @@ function HostConsole({
         {/* Top App Bar */}
         <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
           {isAddinHost ? (
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {session ? (
+                <button
+                  type="button"
+                  onClick={goToAllSessions}
+                  className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
+                  title="Back to all sessions"
+                  aria-label="Back to all sessions"
+                >
+                  <span className="material-symbols-outlined text-xl">arrow_back</span>
+                </button>
+              ) : null}
               <PrezoWordmark
                 logoSize={20}
                 textClassName="text-base font-bold tracking-tight text-[#004080]"
