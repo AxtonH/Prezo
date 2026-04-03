@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { signIn, signUp } from '../auth/auth'
 import { PrezoWordmark } from './PrezoWordmark'
+import { isPowerPointAddinHost } from '../utils/officeHost'
 
 const AUDIENCE_BASE_URL =
   import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
@@ -18,7 +19,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [loadingAction, setLoadingAction] = useState<'sign-in' | 'sign-up' | null>(null)
   const isLoading = loadingAction !== null
   const isPowerPointHost =
-    window.Office?.context?.host === window.Office?.HostType?.PowerPoint ||
+    isPowerPointAddinHost() ||
     new URLSearchParams(window.location.search).has('_host_Info')
 
   useEffect(() => {

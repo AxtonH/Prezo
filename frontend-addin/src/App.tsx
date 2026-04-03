@@ -33,6 +33,7 @@ import {
   updateQnaWidget
 } from './office/widgetShapes'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
+import { isPowerPointAddinHost } from './utils/officeHost'
 import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
 /** Office / embedded WebViews sometimes omit History API methods; guard every use. */
@@ -842,7 +843,7 @@ function HostConsole({
     )
   }
 
-  const isAddinHost = window.Office?.context?.host === window.Office?.HostType?.PowerPoint
+  const isAddinHost = isPowerPointAddinHost()
   const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
