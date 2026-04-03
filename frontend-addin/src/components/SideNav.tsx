@@ -1,10 +1,13 @@
 import { PrezoWordmark } from './PrezoWordmark'
+import { ProfileAvatar } from './ProfileAvatar'
 
 interface SideNavProps {
   onLogout: () => void
   editorLink: string | null
   joinLink: string
   isAddinHost: boolean
+  displayName: string
+  avatarUrl: string | null
 }
 
 const NAV_ITEMS = [
@@ -14,7 +17,14 @@ const NAV_ITEMS = [
   { icon: 'extension', label: 'Integrations' }
 ]
 
-export function SideNav({ onLogout, editorLink, joinLink, isAddinHost }: SideNavProps) {
+export function SideNav({
+  onLogout,
+  editorLink,
+  joinLink,
+  isAddinHost,
+  displayName,
+  avatarUrl
+}: SideNavProps) {
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
       <div className="p-8 pb-10">
@@ -80,11 +90,9 @@ export function SideNav({ onLogout, editorLink, joinLink, isAddinHost }: SideNav
           <span>Help</span>
         </a>
         <div className="mt-6 px-4 py-4 bg-slate-100/50 rounded-xl flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined">person</span>
-          </div>
-          <div className="overflow-hidden flex-1">
-            <p className="text-sm font-semibold truncate text-slate-900">Host</p>
+          <ProfileAvatar avatarUrl={avatarUrl} displayName={displayName} />
+          <div className="overflow-hidden flex-1 min-w-0">
+            <p className="text-sm font-semibold truncate text-slate-900">{displayName}</p>
             <p className="text-xs text-muted truncate">Prezo Workspace</p>
           </div>
           <button

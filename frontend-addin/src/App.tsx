@@ -11,11 +11,13 @@ import type {
   SessionSnapshot
 } from './api/types'
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
+import { fetchHostProfile, type HostProfile } from './auth/profile'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
 import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
+import { OnboardingModal } from './components/OnboardingModal'
 import { SessionSetup } from './components/SessionSetup'
 import { SideNav } from './components/SideNav'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -61,6 +63,8 @@ const withPreservedHostRole = (
 export default function App() {
   const [authSession, setAuthSession] = useState<Awaited<ReturnType<typeof getSession>>>(null)
   const [authReady, setAuthReady] = useState(false)
+  const [hostProfile, setHostProfile] = useState<HostProfile | null>(null)
+  const [profileReady, setProfileReady] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -89,6 +93,35 @@ export default function App() {
       data.subscription.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!authSession?.user) {
+      setHostProfile(null)
+      setProfileReady(true)
+      return
+    }
+    let cancelled = false
+    setProfileReady(false)
+    fetchHostProfile()
+      .then((p) => {
+        if (!cancelled) {
+          setHostProfile(p)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHostProfile(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProfileReady(true)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authSession?.user?.id])
 
   useEffect(() => {
     let active = true
@@ -138,10 +171,45 @@ export default function App() {
     return <LoginPage />
   }
 
-  return <HostConsole onLogout={handleLogout} />
+  if (!profileReady) {
+    return (
+      <div className="app">
+        <p className="muted">Loading...</p>
+      </div>
+    )
+  }
+
+  const resolvedProfile: HostProfile =
+    hostProfile ??
+    ({
+      id: authSession.user.id,
+      email: authSession.user.email ?? null,
+      display_name: null,
+      avatar_url: null,
+      onboarding_completed: true
+    } satisfies HostProfile)
+
+  return (
+    <>
+      <HostConsole onLogout={handleLogout} hostProfile={resolvedProfile} />
+      {!resolvedProfile.onboarding_completed ? (
+        <OnboardingModal
+          onCompleted={(next) => {
+            setHostProfile(next)
+          }}
+        />
+      ) : null}
+    </>
+  )
 }
 
-function HostConsole({ onLogout }: { onLogout: () => void }) {
+function HostConsole({
+  onLogout,
+  hostProfile
+}: {
+  onLogout: () => void
+  hostProfile: HostProfile
+}) {
   const [session, setSession] = useState<Session | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [polls, setPolls] = useState<Poll[]>([])
@@ -675,6 +743,8 @@ function HostConsole({ onLogout }: { onLogout: () => void }) {
           editorLink={editorLink}
           joinLink={joinLink}
           isAddinHost={isAddinHost}
+          displayName={hostProfile.display_name?.trim() || 'Host'}
+          avatarUrl={hostProfile.avatar_url}
         />
       ) : null}
 

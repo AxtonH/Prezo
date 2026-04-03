@@ -2,6 +2,8 @@ create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   display_name text,
+  avatar_url text,
+  onboarding_completed boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -12,8 +14,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, email)
-  values (new.id, new.email);
+  insert into public.profiles (id, email, onboarding_completed)
+  values (new.id, new.email, false);
   return new;
 end;
 $$;
