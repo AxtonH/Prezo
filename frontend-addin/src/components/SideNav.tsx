@@ -4,7 +4,6 @@ import { ProfileAvatar } from './ProfileAvatar'
 interface SideNavProps {
   onLogout: () => void
   editorLink: string | null
-  joinLink: string
   isAddinHost: boolean
   displayName: string
   avatarUrl: string | null
@@ -12,6 +11,8 @@ interface SideNavProps {
   onMySessions?: () => void
   /** True while a live session is open — highlights My Sessions and enables navigation back to the list. */
   hasLiveSession?: boolean
+  /** Opens join-by-code modal (same pattern as Start a new session). */
+  onJoinSession?: () => void
 }
 
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions', active: true }
@@ -25,12 +26,12 @@ const NAV_ITEMS_BELOW = [
 export function SideNav({
   onLogout,
   editorLink,
-  joinLink,
   isAddinHost,
   displayName,
   avatarUrl,
   onMySessions,
-  hasLiveSession = false
+  hasLiveSession = false,
+  onJoinSession
 }: SideNavProps) {
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
@@ -70,14 +71,15 @@ export function SideNav({
           </a>
         )}
 
-        {!isAddinHost ? (
-          <a
-            href={joinLink}
-            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+        {!isAddinHost && onJoinSession ? (
+          <button
+            type="button"
+            onClick={onJoinSession}
+            className="w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
           >
             <span className="material-symbols-outlined text-[1.25rem]">login</span>
             <span>Join a session</span>
-          </a>
+          </button>
         ) : null}
 
         {NAV_ITEMS_BELOW.map((item) => (

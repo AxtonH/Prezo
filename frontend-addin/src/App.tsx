@@ -34,7 +34,6 @@ import {
 } from './office/widgetShapes'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { isPowerPointAddinHost } from './utils/officeHost'
-import { AUDIENCE_BASE_URL, resolveJoinUrl } from './utils/joinUrl'
 
 /** Office / embedded WebViews sometimes omit History API methods; guard every use. */
 function safeHistoryState(): unknown {
@@ -261,6 +260,10 @@ function HostConsole({
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
+  const [showJoinByCodeForm, setShowJoinByCodeForm] = useState(false)
+  const [joinCodeInput, setJoinCodeInput] = useState('')
+  const [isJoiningByCode, setIsJoiningByCode] = useState(false)
+  const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -622,7 +625,11 @@ function HostConsole({
     })
   }
 
-  const joinSessionByCode = async (code: string) => {
+  const joinSessionByCode = async (
+    code: string,
+    options?: { setPageError?: boolean }
+  ) => {
+    const setPageError = options?.setPageError !== false
     setError(null)
     try {
       const joined = await api.joinSessionAsHost(code.trim().toUpperCase())
@@ -634,7 +641,9 @@ function HostConsole({
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to join session'
-      setError(message)
+      if (setPageError) {
+        setError(message)
+      }
       throw new Error(message)
     }
   }
@@ -844,7 +853,6 @@ function HostConsole({
   }
 
   const isAddinHost = isPowerPointAddinHost()
-  const joinLink = resolveJoinUrl(session) || `${AUDIENCE_BASE_URL}/`
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
     : null
@@ -856,12 +864,16 @@ function HostConsole({
         <SideNav
           onLogout={onLogout}
           editorLink={editorLink}
-          joinLink={joinLink}
           isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
           onMySessions={goToAllSessions}
           hasLiveSession={Boolean(session)}
+          onJoinSession={() => {
+            setJoinByCodeError(null)
+            setJoinCodeInput('')
+            setShowJoinByCodeForm(true)
+          }}
         />
       ) : null}
 
@@ -1049,6 +1061,111 @@ function HostConsole({
                   </button>
                   <button
                     onClick={() => { setShowCreateForm(false); setNewSessionTitle('') }}
+                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {showJoinByCodeForm ? (
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setShowJoinByCodeForm(false)
+                  setJoinCodeInput('')
+                  setJoinByCodeError(null)
+                }
+              }}
+            >
+              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+              <div className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-w-md mx-4 overflow-hidden">
+                <div className="px-7 pt-7 pb-2">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                      <span className="material-symbols-outlined text-primary text-xl">login</span>
+                    </div>
+                    <h2 className="text-lg font-bold text-slate-900 !m-0">Join a session</h2>
+                  </div>
+                  <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
+                    Enter the Prezo session code the host shared with you. You will connect as a co-host.
+                  </p>
+                </div>
+                <div className="px-7 py-5 space-y-4">
+                  <input
+                    autoFocus
+                    value={joinCodeInput}
+                    onChange={(e) => {
+                      setJoinCodeInput(e.target.value.toUpperCase())
+                      setJoinByCodeError(null)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !isJoiningByCode && joinCodeInput.trim()) {
+                        setIsJoiningByCode(true)
+                        setJoinByCodeError(null)
+                        void joinSessionByCode(joinCodeInput, { setPageError: false })
+                          .then(() => {
+                            setJoinCodeInput('')
+                            setShowJoinByCodeForm(false)
+                          })
+                          .catch((err) => {
+                            setJoinByCodeError(
+                              err instanceof Error ? err.message : 'Failed to join session'
+                            )
+                          })
+                          .finally(() => setIsJoiningByCode(false))
+                      }
+                      if (e.key === 'Escape') {
+                        setShowJoinByCodeForm(false)
+                        setJoinCodeInput('')
+                        setJoinByCodeError(null)
+                      }
+                    }}
+                    placeholder="e.g. ABC123"
+                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] font-mono tracking-widest focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all placeholder:!text-slate-400"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {joinByCodeError ? (
+                    <p className="text-danger text-sm !m-0">{joinByCodeError}</p>
+                  ) : null}
+                </div>
+                <div className="px-7 pb-7 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!joinCodeInput.trim()) {
+                        return
+                      }
+                      setIsJoiningByCode(true)
+                      setJoinByCodeError(null)
+                      void joinSessionByCode(joinCodeInput, { setPageError: false })
+                        .then(() => {
+                          setJoinCodeInput('')
+                          setShowJoinByCodeForm(false)
+                        })
+                        .catch((err) => {
+                          setJoinByCodeError(
+                            err instanceof Error ? err.message : 'Failed to join session'
+                          )
+                        })
+                        .finally(() => setIsJoiningByCode(false))
+                    }}
+                    disabled={isJoiningByCode || !joinCodeInput.trim()}
+                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50 disabled:!cursor-not-allowed"
+                  >
+                    {isJoiningByCode ? 'Joining…' : 'Join session'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowJoinByCodeForm(false)
+                      setJoinCodeInput('')
+                      setJoinByCodeError(null)
+                    }}
                     className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
                   >
                     Cancel
