@@ -135,7 +135,7 @@ export function SessionSetup({
                             <span className="material-symbols-outlined text-xl">play_arrow</span>
                           </button>
                         ) : null}
-                        {onDelete ? (
+                        {onDelete && entry.is_original_host !== false ? (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); onDelete(entry) }}

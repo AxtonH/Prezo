@@ -124,10 +124,9 @@ type PollStyleConfig = {
   lockStyle?: boolean
 }
 
-const ensurePowerPoint = () => {
-  if (typeof PowerPoint === 'undefined' || typeof PowerPoint.run !== 'function') {
-    throw new Error('PowerPoint JS API is not available.')
-  }
+/** True when the PowerPoint JS API exists (task pane). In the web host console it is absent — callers no-op instead of throwing. */
+export function isPowerPointShapeApiAvailable(): boolean {
+  return typeof PowerPoint !== 'undefined' && typeof PowerPoint.run === 'function'
 }
 
 const buildTitle = (code?: string | null, mode: QnaMode = 'audience', prompt?: string | null) => {
@@ -490,7 +489,9 @@ const buildPollOptions = (poll: Poll | null) => {
 }
 
 export async function insertQnaWidget(sessionId?: string | null, code?: string | null) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   const style = normalizeQnaStyle()
   const scale = style.spacingScale
@@ -786,7 +787,9 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
 
 
 export async function insertDiscussionWidget(sessionId?: string | null, code?: string | null) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   const style = normalizeQnaStyle()
   const scale = style.spacingScale
@@ -1082,7 +1085,9 @@ export async function updateQnaWidget(
   prompts: QnaPrompt[],
   config: QnaWidgetConfig = QNA_WIDGET_CONFIG
 ) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt]))
   const tags = config.tags
@@ -1338,7 +1343,9 @@ export async function insertPollWidget(
   code?: string | null,
   styleOverrides?: Partial<PollStyleConfig> | null
 ) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   const style = normalizePollStyle(styleOverrides)
   const scale = style.spacingScale
@@ -1582,7 +1589,9 @@ export async function updatePollWidget(
   code: string | null | undefined,
   polls: Poll[]
 ) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
@@ -2362,7 +2371,9 @@ export async function setQnaWidgetBinding(
   sessionId: string,
   promptId?: string | null
 ) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.getSelectedSlides()
@@ -2414,7 +2425,9 @@ export async function setDiscussionWidgetBinding(
   sessionId: string,
   promptId?: string | null
 ) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.getSelectedSlides()
@@ -2461,7 +2474,9 @@ export async function setDiscussionWidgetBinding(
 }
 
 export async function setPollWidgetBinding(sessionId: string, pollId?: string | null) {
-  ensurePowerPoint()
+  if (!isPowerPointShapeApiAvailable()) {
+    return
+  }
 
   await PowerPoint.run(async (context) => {
     const slides = context.presentation.getSelectedSlides()
