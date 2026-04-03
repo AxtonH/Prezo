@@ -52,7 +52,9 @@
         font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
       }
     </style>
-    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <!-- Office.js is injected from main.tsx only in real add-in hosts (see loadOfficeJs).
+         Loading it on every page (e.g. localhost in Chrome) pulls Microsoft telemetry and can log
+         "Unsafe attempt to load URL ... telemetryproxy.html ... chrome-error://chromewebdata/". -->
   </head>
   <body>
     <div id="root"></div>
