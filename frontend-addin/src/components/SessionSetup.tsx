@@ -87,6 +87,7 @@ export function SessionSetup({
                 const dateStr = formatDate(entry.created_at)
                 const timeStr = formatTime(entry.created_at)
                 const isActive = entry.status === 'active'
+                const isCoHost = entry.is_original_host === false
                 return (
                   <div
                     key={entry.id}
@@ -123,31 +124,41 @@ export function SessionSetup({
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 shrink-0">
                         {onResume ? (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); onResume(entry) }}
                             disabled={deletingSessionId === entry.id}
-                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-primary transition-colors duration-200 ease-out"
+                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-primary transition-colors duration-200 ease-out flex h-10 w-10 items-center justify-center"
                             title="Resume session"
                           >
                             <span className="material-symbols-outlined text-xl">play_arrow</span>
                           </button>
-                        ) : null}
-                        {onDelete && entry.is_original_host !== false ? (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
-                            disabled={deletingSessionId === entry.id}
-                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-danger transition-colors duration-200 ease-out"
-                            title={deletingSessionId === entry.id ? 'Deleting...' : 'Delete session'}
-                          >
-                            <span className="material-symbols-outlined text-xl">
-                              {deletingSessionId === entry.id ? 'hourglass_empty' : 'delete'}
+                        ) : (
+                          <span className="h-10 w-10 shrink-0" aria-hidden />
+                        )}
+                        {/* Fixed slot keeps rows aligned: delete (owner) or Co-Host pill (cohost). */}
+                        <div className="flex h-10 w-[6.75rem] min-w-[6.75rem] items-center justify-center">
+                          {isCoHost ? (
+                            <span className="bg-orange-50 text-orange-800 border border-orange-200/90 px-2.5 py-1 rounded-full text-[0.65rem] font-bold uppercase tracking-widest whitespace-nowrap shadow-sm">
+                              Co-Host
                             </span>
-                          </button>
-                        ) : null}
+                          ) : null}
+                          {!isCoHost && onDelete ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
+                              disabled={deletingSessionId === entry.id}
+                              className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-danger transition-colors duration-200 ease-out flex h-10 w-10 items-center justify-center"
+                              title={deletingSessionId === entry.id ? 'Deleting...' : 'Delete session'}
+                            >
+                              <span className="material-symbols-outlined text-xl">
+                                {deletingSessionId === entry.id ? 'hourglass_empty' : 'delete'}
+                              </span>
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </div>
