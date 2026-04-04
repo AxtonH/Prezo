@@ -106,12 +106,16 @@ export async function completeHostOnboarding(
 
   const { data, error } = await supabase
     .from('profiles')
-    .update({
-      display_name: trimmed,
-      avatar_url: avatarUrl,
-      onboarding_completed: true
-    })
-    .eq('id', user.id)
+    .upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        display_name: trimmed,
+        avatar_url: avatarUrl,
+        onboarding_completed: true
+      },
+      { onConflict: 'id' }
+    )
     .select('id, email, display_name, avatar_url, onboarding_completed')
     .single()
 
@@ -148,7 +152,10 @@ export async function updateHostProfile(
   }
 
   const existing = await fetchHostProfile()
-  let avatarUrl: string | null = existing?.avatar_url ?? null
+  if (!existing) {
+    throw new Error('Not signed in')
+  }
+  let avatarUrl: string | null = existing.avatar_url
 
   if (input.removeAvatar) {
     avatarUrl = null
@@ -178,11 +185,16 @@ export async function updateHostProfile(
 
   const { data, error } = await supabase
     .from('profiles')
-    .update({
-      display_name: trimmed,
-      avatar_url: avatarUrl
-    })
-    .eq('id', user.id)
+    .upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        display_name: trimmed,
+        avatar_url: avatarUrl,
+        onboarding_completed: existing.onboarding_completed
+      },
+      { onConflict: 'id' }
+    )
     .select('id, email, display_name, avatar_url, onboarding_completed')
     .single()
 
@@ -203,10 +215,23 @@ export async function skipHostOnboarding(): Promise<HostProfile> {
     throw new Error('Not signed in')
   }
 
+  const existing = await fetchHostProfile()
+  if (!existing) {
+    throw new Error('Not signed in')
+  }
+
   const { data, error } = await supabase
     .from('profiles')
-    .update({ onboarding_completed: true })
-    .eq('id', user.id)
+    .upsert(
+      {
+        id: user.id,
+        email: user.email ?? null,
+        display_name: existing.display_name,
+        avatar_url: existing.avatar_url,
+        onboarding_completed: true
+      },
+      { onConflict: 'id' }
+    )
     .select('id, email, display_name, avatar_url, onboarding_completed')
     .single()
 

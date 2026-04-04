@@ -438,6 +438,13 @@ create policy profiles_update_own
   using ((select auth.uid()) = id)
   with check ((select auth.uid()) = id);
 
+drop policy if exists profiles_insert_own on public.profiles;
+create policy profiles_insert_own
+  on public.profiles
+  for insert
+  to authenticated
+  with check ((select auth.uid()) = id);
+
 drop policy if exists sessions_select_own on public.sessions;
 create policy sessions_select_own
   on public.sessions
