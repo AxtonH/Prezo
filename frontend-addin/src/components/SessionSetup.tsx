@@ -19,6 +19,8 @@ interface SessionSetupProps {
   isCompact?: boolean
   /** Tailwind classes for the scrollable session list max height (default fits ~6 rows before scroll). */
   listMaxHeightClass?: string
+  /** Shown when the list finished loading and has no rows (e.g. Owner vs Co-Host filter). */
+  emptyListMessage?: string
 }
 
 const SESSION_ICONS = ['rocket_launch', 'palette', 'auto_graph', 'forum', 'interests', 'star']
@@ -52,7 +54,8 @@ export function SessionSetup({
   onRefresh: _onRefresh,
   deletingSessionId = null,
   isCompact: _isCompact = false,
-  listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]'
+  listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]',
+  emptyListMessage = 'Ops looks like you dont have any active sessions yet, click "Start a new session" to start one!'
 }: SessionSetupProps) {
   void _isCompact; void _onCreate; void _onJoinByCode; void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
@@ -173,9 +176,7 @@ export function SessionSetup({
         ) : null}
         {loadError ? <p className="text-danger text-sm py-2">{loadError}</p> : null}
         {!isLoading && !loadError && !hasRecentSessions ? (
-          <p className="text-muted text-sm py-4">
-            Ops looks like you dont have any active sessions yet, click &quot;Start a new session&quot; to start one!
-          </p>
+          <p className="text-muted text-sm py-4">{emptyListMessage}</p>
         ) : null}
 
         {error ? <p className="text-danger text-sm">{error}</p> : null}

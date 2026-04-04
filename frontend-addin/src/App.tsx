@@ -872,7 +872,21 @@ function HostConsole({
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
     : null
-  const [sessionFilter, setSessionFilter] = useState<'active' | 'upcoming' | 'past'>('active')
+  const [sessionFilter, setSessionFilter] = useState<
+    'active' | 'host' | 'cohost'
+  >('active')
+
+  const filteredRecentSessions = useMemo(() => {
+    return recentSessions.filter((s) => {
+      if (sessionFilter === 'active') {
+        return s.status === 'active'
+      }
+      if (sessionFilter === 'host') {
+        return s.is_original_host !== false
+      }
+      return s.is_original_host === false
+    })
+  }, [recentSessions, sessionFilter])
 
   return (
     <div className="flex h-screen overflow-hidden font-sans">
@@ -1024,18 +1038,24 @@ function HostConsole({
               {/* Filter Tabs (only when no active session) */}
               {!session ? (
                 <div className="flex gap-8 mb-6 border-b border-slate-100">
-                  {(['active', 'upcoming', 'past'] as const).map((tab) => (
+                  {(
+                    [
+                      { id: 'active' as const, label: 'Active' },
+                      { id: 'host' as const, label: 'Host' },
+                      { id: 'cohost' as const, label: 'Co-Host' }
+                    ] as const
+                  ).map(({ id, label }) => (
                     <button
-                      key={tab}
+                      key={id}
                       type="button"
-                      onClick={() => setSessionFilter(tab)}
+                      onClick={() => setSessionFilter(id)}
                       className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
-                        sessionFilter === tab
+                        sessionFilter === id
                           ? '!text-primary !border-primary'
                           : '!text-muted/50 hover:!text-slate-900 !border-transparent'
                       }`}
                     >
-                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -1049,7 +1069,14 @@ function HostConsole({
                 onCreate={createSession}
                 onJoinByCode={joinSessionByCode}
                 onSetHostJoinAccess={setHostJoinAccess}
-                recentSessions={recentSessions}
+                recentSessions={filteredRecentSessions}
+                emptyListMessage={
+                  sessionFilter === 'active'
+                    ? 'No active sessions right now. Start a new session or join one with a code.'
+                    : sessionFilter === 'host'
+                      ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
+                      : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
+                }
                 isLoading={sessionsLoading}
                 loadError={sessionsError}
                 onResume={resumeSession}
