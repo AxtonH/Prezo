@@ -1045,11 +1045,11 @@ function HostConsole({
                 <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
                   {session ? 'Active Session' : 'All Sessions'}
                 </h1>
-                <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                  {session
-                    ? 'Your session is live. Share the join code with your audience and manage interactions below.'
-                    : 'Manage your interactive sessions. Create new rooms, view engagement, and run live Q&A and polls.'}
-                </p>
+                {session ? (
+                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                    Your session is live. Share the join code with your audience and manage interactions below.
+                  </p>
+                ) : null}
               </div>
 
               {!session ? (
