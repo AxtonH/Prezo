@@ -887,6 +887,7 @@ function HostConsole({
           hasLiveSession={Boolean(session)}
           activeSection={hostConsoleView === 'settings' ? 'settings' : 'sessions'}
           onOpenSettings={() => setHostConsoleView('settings')}
+          joinSessionModalOpen={showJoinByCodeForm}
           onJoinSession={() => {
             setJoinByCodeError(null)
             setJoinCodeInput('')

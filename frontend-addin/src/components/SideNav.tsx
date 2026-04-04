@@ -13,6 +13,8 @@ interface SideNavProps {
   hasLiveSession?: boolean
   /** Opens join-by-code modal (same pattern as Start a new session). */
   onJoinSession?: () => void
+  /** True while join-by-code modal is open — highlights "Join a session" in the nav. */
+  joinSessionModalOpen?: boolean
   /** Which primary area is shown — drives sidebar highlight. */
   activeSection?: 'sessions' | 'settings'
   /** Opens full-page settings (host profile, account). */
@@ -36,11 +38,14 @@ export function SideNav({
   onMySessions,
   hasLiveSession = false,
   onJoinSession,
+  joinSessionModalOpen = false,
   activeSection = 'sessions',
   onOpenSettings
 }: SideNavProps) {
-  const sessionsActive = activeSection === 'sessions'
-  const settingsActive = activeSection === 'settings'
+  const joinModalOpen = joinSessionModalOpen
+  const sessionsNavActive = activeSection === 'sessions' && !joinModalOpen
+  const settingsNavActive = activeSection === 'settings' && !joinModalOpen
+  const joinNavActive = joinModalOpen
   const navActiveClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
   const navIdleClass =
@@ -63,11 +68,11 @@ export function SideNav({
           <button
             type="button"
             onClick={onMySessions}
-            className={sessionsActive ? navActiveClass : navIdleClass}
+            className={sessionsNavActive ? navActiveClass : navIdleClass}
             title={hasLiveSession ? 'Back to all sessions' : undefined}
           >
             <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-            <span className={sessionsActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+            <span className={sessionsNavActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
           </button>
         ) : (
           <a
@@ -84,10 +89,10 @@ export function SideNav({
           <button
             type="button"
             onClick={onJoinSession}
-            className="w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+            className={joinNavActive ? navActiveClass : navIdleClass}
           >
             <span className="material-symbols-outlined text-[1.25rem]">login</span>
-            <span>Join a session</span>
+            <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
           </button>
         ) : null}
 
@@ -122,10 +127,10 @@ export function SideNav({
             <button
               type="button"
               onClick={onOpenSettings}
-              className={settingsActive ? navActiveClass : navIdleClass}
+              className={settingsNavActive ? navActiveClass : navIdleClass}
             >
               <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-              <span className={settingsActive ? 'font-medium' : ''}>Settings</span>
+              <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
             </button>
           ) : (
             <a
