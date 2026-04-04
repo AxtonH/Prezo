@@ -15,6 +15,7 @@ import { fetchHostProfile, type HostProfile } from './auth/profile'
 import { LoginPage } from './components/LoginPage'
 import { PollManager } from './components/PollManager'
 import { PromptManager } from './components/PromptManager'
+import { HostSearchBar } from './components/HostSearchBar'
 import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
@@ -22,6 +23,8 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { SessionSetup } from './components/SessionSetup'
 import { SettingsPage } from './components/settings'
 import { SideNav } from './components/SideNav'
+import { useDebouncedValue } from './hooks/useDebouncedValue'
+import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { writeSessionBinding } from './office/sessionBinding'
@@ -34,6 +37,7 @@ import {
   updateQnaWidget
 } from './office/widgetShapes'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
+import { buildEventHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
 
 /** Office / embedded WebViews sometimes omit History API methods; guard every use. */
@@ -872,21 +876,37 @@ function HostConsole({
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
     : null
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<
     'active' | 'host' | 'cohost'
   >('active')
+  const debouncedSearch = useDebouncedValue(sessionSearchQuery, 320)
+  const { getSnapshot, loading: searchEventsLoading } = useHostSearchSnapshotCache(
+    recentSessions,
+    debouncedSearch
+  )
+
+  const eventHits = useMemo(
+    () => buildEventHits(recentSessions, debouncedSearch, getSnapshot),
+    [recentSessions, debouncedSearch, getSnapshot]
+  )
 
   const filteredRecentSessions = useMemo(() => {
     return recentSessions.filter((s) => {
       if (sessionFilter === 'active') {
-        return s.status === 'active'
+        if (s.status !== 'active') {
+          return false
+        }
+      } else if (sessionFilter === 'host') {
+        if (s.is_original_host === false) {
+          return false
+        }
+      } else if (s.is_original_host !== false) {
+        return false
       }
-      if (sessionFilter === 'host') {
-        return s.is_original_host !== false
-      }
-      return s.is_original_host === false
+      return matchesSessionTitleOrCode(s, sessionSearchQuery)
     })
-  }, [recentSessions, sessionFilter])
+  }, [recentSessions, sessionFilter, sessionSearchQuery])
 
   return (
     <div className="flex h-screen overflow-hidden font-sans">
@@ -967,14 +987,15 @@ function HostConsole({
                   Workspace
                 </button>
               ) : (
-                <>
-                  <span className="material-symbols-outlined text-muted flex-shrink-0">search</span>
-                  <input
-                    className="!bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !w-full !font-medium !tracking-tight !p-0"
-                    placeholder="Search sessions or events..."
-                    type="text"
-                  />
-                </>
+                <HostSearchBar
+                  value={sessionSearchQuery}
+                  onChange={setSessionSearchQuery}
+                  sessionMatches={filteredRecentSessions}
+                  eventHits={eventHits}
+                  eventsLoading={searchEventsLoading}
+                  debouncedQuery={debouncedSearch}
+                  onSelectSession={(selected) => void resumeSession(selected)}
+                />
               )}
             </div>
           )}
@@ -1071,11 +1092,13 @@ function HostConsole({
                 onSetHostJoinAccess={setHostJoinAccess}
                 recentSessions={filteredRecentSessions}
                 emptyListMessage={
-                  sessionFilter === 'active'
-                    ? 'No active sessions right now. Start a new session or join one with a code.'
-                    : sessionFilter === 'host'
-                      ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
-                      : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
+                  sessionSearchQuery.trim()
+                    ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
+                    : sessionFilter === 'active'
+                      ? 'No active sessions right now. Start a new session or join one with a code.'
+                      : sessionFilter === 'host'
+                        ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
+                        : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
                 }
                 isLoading={sessionsLoading}
                 loadError={sessionsError}
