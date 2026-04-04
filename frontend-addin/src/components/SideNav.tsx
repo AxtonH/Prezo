@@ -122,11 +122,7 @@ export function SideNav({
             <button
               type="button"
               onClick={onOpenSettings}
-              className={`w-full text-left rounded-lg flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ease-in-out ${
-                settingsActive
-                  ? 'bg-white text-primary border border-primary/30 shadow-sm'
-                  : 'text-slate-900/70 hover:bg-slate-200'
-              }`}
+              className={settingsActive ? navActiveClass : navIdleClass}
             >
               <span className="material-symbols-outlined text-[1.25rem]">settings</span>
               <span className={settingsActive ? 'font-medium' : ''}>Settings</span>
