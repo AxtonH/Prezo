@@ -20,7 +20,7 @@ export function SettingsPage({
   onSignOut
 }: SettingsPageProps) {
   return (
-    <div className="max-w-3xl mx-auto pb-16">
+    <div className="max-w-5xl mx-auto pb-16 px-1 sm:px-0">
       <div className="mb-10">
         <button
           type="button"
@@ -39,14 +39,7 @@ export function SettingsPage({
       </div>
 
       <div className="space-y-6">
-        <SettingsSection
-          id="profile"
-          icon="person"
-          title="Profile"
-          description="Your name and photo are shown in the host console and wherever you host sessions."
-        >
-          <ProfileSettingsPanel profile={profile} onProfileSaved={onProfileSaved} />
-        </SettingsSection>
+        <ProfileSettingsPanel profile={profile} onProfileSaved={onProfileSaved} />
 
         <SettingsSection
           id="account"
