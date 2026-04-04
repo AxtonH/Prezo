@@ -106,14 +106,14 @@ export function ProfileSettingsPanel({
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-start gap-8">
-        <div className="flex flex-col items-center sm:items-start gap-3">
+      <div className="flex flex-col items-center gap-8">
+        <div className="flex flex-col items-center w-full max-w-md mx-auto">
           <ProfileAvatar
             avatarUrl={effectiveAvatarUrl}
             displayName={displayName.trim() || profile.display_name?.trim() || 'Host'}
             sizeClass="w-28 h-28"
           />
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
             <input
               ref={fileInputRef}
               type="file"
@@ -139,12 +139,12 @@ export function ProfileSettingsPanel({
               </button>
             ) : null}
           </div>
-          <p className="text-xs text-muted text-center sm:text-left max-w-[14rem] leading-snug">
-            JPG, PNG, GIF or WebP. Max 2&nbsp;MB. Shown to you in the host console and on session tools.
+          <p className="text-xs text-muted text-center mt-2 leading-snug">
+            JPG, PNG, GIF or WebP. Max 2&nbsp;MB.
           </p>
         </div>
 
-        <div className="flex-1 space-y-5 min-w-0 w-full">
+        <div className="w-full max-w-md mx-auto space-y-5 min-w-0">
           <div>
             <label
               htmlFor="settings-display-name"
@@ -157,7 +157,7 @@ export function ProfileSettingsPanel({
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               autoComplete="name"
-              className="!w-full !max-w-md !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
+              className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
               placeholder="Your name"
             />
           </div>
@@ -169,8 +169,8 @@ export function ProfileSettingsPanel({
             <p className="text-[15px] text-slate-900 font-medium">
               {profile.email ?? '—'}
             </p>
-            <p className="text-xs text-muted mt-1.5 max-w-md leading-relaxed">
-              Email is tied to your sign-in account. To change it, use your identity provider or contact support.
+            <p className="text-xs text-muted mt-1.5 leading-relaxed">
+              This email is tied to your sign-in account. To change it contact support.
             </p>
           </div>
         </div>
