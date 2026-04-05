@@ -1,0 +1,7 @@
+export { SessionDashboardPage } from './SessionDashboardPage'
+export type { SessionDashboardPageProps } from './SessionDashboardPage'
+export { SessionDashboardHeader } from './SessionDashboardHeader'
+export { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
+export { SessionParticipantsCard } from './SessionParticipantsCard'
+export { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
+export { SessionActiveModulesPanel } from './SessionActiveModulesPanel'

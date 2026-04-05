@@ -20,6 +20,7 @@ import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { OnboardingModal } from './components/OnboardingModal'
+import { SessionDashboardPage } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
 import { SettingsPage } from './components/settings'
 import { SideNav, type WorkspaceNavId } from './components/SideNav'
@@ -1052,37 +1053,33 @@ function HostConsole({
             />
           ) : (
             <>
-              {/* Page Header */}
-              <div className="mb-8">
-                <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
-                  {!session
-                    ? 'All Sessions'
-                    : workspaceNav === 'dashboard'
-                      ? 'Dashboard'
+              {/* Page header: list + live-session sub-pages (not the session Dashboard — that uses SessionDashboardPage) */}
+              {!(session && workspaceNav === 'dashboard') ? (
+                <div className="mb-8">
+                  <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
+                    {!session
+                      ? 'All Sessions'
                       : workspaceNav === 'polls'
                         ? 'Polls'
                         : workspaceNav === 'discussion'
                           ? 'Open discussion'
                           : 'Q&A'}
-                </h1>
-                {!session ? null : workspaceNav === 'dashboard' ? (
-                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Your session is live. Share the join code with your audience and manage interactions below.
-                  </p>
-                ) : workspaceNav === 'polls' ? (
-                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Set up and launch polls for this session. Full layout is coming next.
-                  </p>
-                ) : workspaceNav === 'discussion' ? (
-                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Run open discussions and monitor the thread. Coming soon.
-                  </p>
-                ) : (
-                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Open Q&amp;A, moderate questions, and keep the conversation on track. Coming soon.
-                  </p>
-                )}
-              </div>
+                  </h1>
+                  {!session ? null : workspaceNav === 'polls' ? (
+                    <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                      Set up and launch polls for this session. Full layout is coming next.
+                    </p>
+                  ) : workspaceNav === 'discussion' ? (
+                    <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                      Run open discussions and monitor the thread. Coming soon.
+                    </p>
+                  ) : (
+                    <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                      Open Q&amp;A, moderate questions, and keep the conversation on track. Coming soon.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               {!session ? (
                 <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
@@ -1165,36 +1162,16 @@ function HostConsole({
                   </p>
                 </div>
               ) : (
-                <SessionSetup
+                <SessionDashboardPage
                   session={session}
-                  onCreate={createSession}
-                  onJoinByCode={joinSessionByCode}
+                  hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
+                  hostAvatarUrl={hostProfile.avatar_url}
+                  participantCount={null}
+                  polls={polls}
+                  audienceQuestions={questions.filter((q) => !q.prompt_id)}
                   onSetHostJoinAccess={setHostJoinAccess}
-                  recentSessions={filteredRecentSessions}
-                  emptyListMessage={
-                    sessionSearchQuery.trim()
-                      ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
-                      : sessionFilter === 'active'
-                        ? 'No active sessions right now. Start a new session or join one with a code.'
-                        : sessionFilter === 'host'
-                          ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
-                          : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
-                  }
-                  isLoading={sessionsLoading}
-                  loadError={sessionsError}
-                  onResume={resumeSession}
-                  onDelete={deleteSession}
-                  deletingSessionId={deletingSessionId}
-                  onRefresh={() => {
-                    void loadSessions(maxSessionsLimit)
-                    void loadDashboardStats()
-                  }}
-                  isCompact={isAddinHost}
-                  listMaxHeightClass={
-                    isAddinHost
-                      ? undefined
-                      : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
-                  }
+                  onConfigurePoll={() => setShowPolls(true)}
+                  onStopPoll={(pollId) => closePoll(pollId)}
                 />
               )}
             </>
