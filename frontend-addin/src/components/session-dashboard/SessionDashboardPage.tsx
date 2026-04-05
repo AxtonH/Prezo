@@ -190,7 +190,7 @@ export function SessionDashboardPage({
             hostAvatarUrl={hostAvatarUrl}
           />
         </div>
-        <div className="flex min-h-0 min-w-0 flex-col lg:[grid-area:activities]">
+        <div className="flex min-h-0 min-w-0 flex-col gap-5 lg:[grid-area:activities]">
           <div className="shrink-0 space-y-4">
             {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -211,7 +211,7 @@ export function SessionDashboardPage({
               </div>
             ) : null}
           </div>
-          <div className="min-h-0 overflow-x-hidden pt-4 lg:flex-1 lg:overflow-y-auto lg:pt-0 [scrollbar-gutter:stable]">
+          <div className="min-h-0 overflow-x-hidden lg:flex-1 lg:overflow-y-auto [scrollbar-gutter:stable]">
             <SessionActiveActivitiesPanel
               openPolls={openPolls}
               closedPolls={closedPolls}
