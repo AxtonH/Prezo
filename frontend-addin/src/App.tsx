@@ -28,7 +28,7 @@ import { useDebouncedValue } from './hooks/useDebouncedValue'
 import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
-import { writeSessionBinding } from './office/sessionBinding'
+import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
 import {
   setDiscussionWidgetBinding,
   setPollWidgetBinding,
@@ -40,6 +40,47 @@ import {
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { buildEventHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
+
+const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
+const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
+
+const WORKSPACE_NAV_IDS: WorkspaceNavId[] = ['dashboard', 'polls', 'discussion', 'qna']
+
+function parseWorkspaceNav(value: string | null): WorkspaceNavId {
+  if (value && WORKSPACE_NAV_IDS.includes(value as WorkspaceNavId)) {
+    return value as WorkspaceNavId
+  }
+  return 'dashboard'
+}
+
+function readStoredHostSession(): { sessionId: string; workspaceNav: WorkspaceNavId } | null {
+  try {
+    const id = sessionStorage.getItem(HOST_SESSION_STORAGE_ID)
+    if (!id) {
+      return null
+    }
+    return {
+      sessionId: id,
+      workspaceNav: parseWorkspaceNav(sessionStorage.getItem(HOST_WORKSPACE_NAV_KEY))
+    }
+  } catch {
+    return null
+  }
+}
+
+function persistHostSession(sessionId: string | null, workspaceNav: WorkspaceNavId) {
+  try {
+    if (sessionId) {
+      sessionStorage.setItem(HOST_SESSION_STORAGE_ID, sessionId)
+      sessionStorage.setItem(HOST_WORKSPACE_NAV_KEY, workspaceNav)
+    } else {
+      sessionStorage.removeItem(HOST_SESSION_STORAGE_ID)
+      sessionStorage.removeItem(HOST_WORKSPACE_NAV_KEY)
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
 
 /** Office / embedded WebViews sometimes omit History API methods; guard every use. */
 function safeHistoryState(): unknown {
@@ -208,6 +249,7 @@ export default function App() {
   }, [authSession?.access_token])
 
   const handleLogout = () => {
+    persistHostSession(null, 'dashboard')
     void signOut()
   }
 
@@ -280,12 +322,82 @@ function HostConsole({
   const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings'>('host')
   /** Primary area while hosting a live session (sidebar workspace tabs). */
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
+  /** False until we finish trying to restore the last open session (e.g. after browser refresh). */
+  const [hostRestoreComplete, setHostRestoreComplete] = useState(false)
 
   useEffect(() => {
     if (!session) {
       setWorkspaceNav('dashboard')
     }
   }, [session])
+
+  /** Remember active session + tab so refresh / task-pane reload returns to the same place. */
+  useEffect(() => {
+    if (!session?.id) {
+      return
+    }
+    persistHostSession(session.id, workspaceNav)
+  }, [session?.id, workspaceNav])
+
+  useEffect(() => {
+    let cancelled = false
+    const finish = () => {
+      if (!cancelled) {
+        setHostRestoreComplete(true)
+      }
+    }
+
+    const applySnapshot = (snapshot: SessionSnapshot, nav: WorkspaceNavId) => {
+      setSession((previous) =>
+        withPreservedHostRole(snapshot.session, previous ?? undefined)
+      )
+      setQuestions(snapshot.questions)
+      setPolls(snapshot.polls)
+      setPrompts(snapshot.prompts ?? [])
+      setShowPolls(snapshot.polls.length > 0)
+      setWorkspaceNav(nav)
+    }
+
+    const tryRestore = async () => {
+      if (typeof window === 'undefined') {
+        return
+      }
+
+      const stored = readStoredHostSession()
+      if (stored) {
+        try {
+          setError(null)
+          const snapshot = await api.getSnapshot(stored.sessionId)
+          if (!cancelled) {
+            applySnapshot(snapshot, stored.workspaceNav)
+          }
+        } catch {
+          persistHostSession(null, 'dashboard')
+        }
+        return
+      }
+
+      const binding = await readSessionBinding()
+      if (!binding?.sessionId || cancelled) {
+        return
+      }
+      try {
+        setError(null)
+        const snapshot = await api.getSnapshot(binding.sessionId)
+        if (!cancelled) {
+          applySnapshot(snapshot, 'dashboard')
+        }
+      } catch {
+        /* binding may be stale */
+      }
+    }
+
+    void tryRestore().finally(finish)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -315,6 +427,7 @@ function HostConsole({
   type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
 
   const clearLiveSessionState = useCallback(() => {
+    persistHostSession(null, 'dashboard')
     setSession(null)
     setQuestions([])
     setPolls([])
@@ -623,11 +736,14 @@ function HostConsole({
     if (session) {
       return
     }
+    if (!hostRestoreComplete) {
+      return
+    }
     void Promise.all([
       loadSessions(maxSessionsLimit),
       loadDashboardStats(),
     ])
-  }, [session, loadSessions, loadDashboardStats, maxSessionsLimit])
+  }, [session, hostRestoreComplete, loadSessions, loadDashboardStats, maxSessionsLimit])
 
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
