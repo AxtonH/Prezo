@@ -7,13 +7,16 @@ export interface ActivePollEventCardProps {
   variant?: 'active' | 'inactive'
   onConfigure?: (pollId: string) => void
   onStop?: (pollId: string) => void
+  /** Re-open a closed poll from the inactive panel. */
+  onResume?: (pollId: string) => void
 }
 
 export function ActivePollEventCard({
   poll,
   variant = 'active',
   onConfigure,
-  onStop
+  onStop,
+  onResume
 }: ActivePollEventCardProps) {
   const totalVotes = poll.options.reduce((sum, o) => sum + (o.votes ?? 0), 0)
   const inactive = variant === 'inactive'
@@ -100,13 +103,40 @@ export function ActivePollEventCard({
                 Stop poll
               </button>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex flex-wrap gap-2 pt-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onResume?.(poll.id)
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
+              >
+                Resume poll
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="p-5 pt-0">
           <p className={`text-sm ${inactive ? 'text-slate-600' : 'text-muted'}`}>
             This poll has no options.
           </p>
+          {inactive ? (
+            <div className="flex flex-wrap gap-2 pt-4">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onResume?.(poll.id)
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
+              >
+                Resume poll
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </CollapsibleEventPanelShell>

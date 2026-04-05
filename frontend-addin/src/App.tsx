@@ -1322,6 +1322,9 @@ function HostConsole({
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onStopQna={() => void closeQna()}
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
+                  onResumePoll={(pollId) => void openPoll(pollId)}
+                  onResumeQna={() => void openQna()}
+                  onResumeDiscussion={(promptId) => void openPrompt(promptId)}
                 />
               )}
             </>

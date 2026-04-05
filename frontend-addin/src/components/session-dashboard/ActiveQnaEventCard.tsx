@@ -7,13 +7,15 @@ export interface ActiveQnaEventCardProps {
   pendingPreview: Question | null
   variant?: 'active' | 'inactive'
   onStop?: () => void
+  onResume?: () => void
 }
 
 export function ActiveQnaEventCard({
   pendingCount,
   pendingPreview,
   variant = 'active',
-  onStop
+  onStop,
+  onResume
 }: ActiveQnaEventCardProps) {
   const inactive = variant === 'inactive'
 
@@ -80,7 +82,20 @@ export function ActiveQnaEventCard({
               Stop Q&amp;A
             </button>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex flex-wrap gap-2 pt-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onResume?.()
+              }}
+              className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
+            >
+              Resume Q&amp;A
+            </button>
+          </div>
+        )}
       </div>
     </CollapsibleEventPanelShell>
   )

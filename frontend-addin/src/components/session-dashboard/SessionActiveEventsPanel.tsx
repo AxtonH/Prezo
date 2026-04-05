@@ -21,6 +21,9 @@ export interface SessionActiveEventsPanelProps {
   onStopPoll?: (pollId: string) => void
   onStopQna?: () => void
   onStopDiscussion?: (promptId: string) => void
+  onResumePoll?: (pollId: string) => void
+  onResumeQna?: () => void
+  onResumeDiscussion?: (promptId: string) => void
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -42,7 +45,10 @@ export function SessionActiveEventsPanel({
   onConfigurePoll,
   onStopPoll,
   onStopQna,
-  onStopDiscussion
+  onStopDiscussion,
+  onResumePoll,
+  onResumeQna,
+  onResumeDiscussion
 }: SessionActiveEventsPanelProps) {
   const sortedOpenPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
   const sortedClosedPolls = useMemo(() => sortByCreatedDesc(closedPolls), [closedPolls])
@@ -125,7 +131,12 @@ export function SessionActiveEventsPanel({
           ))}
 
           {sortedClosedPolls.map((poll) => (
-            <ActivePollEventCard key={poll.id} poll={poll} variant="inactive" />
+            <ActivePollEventCard
+              key={poll.id}
+              poll={poll}
+              variant="inactive"
+              onResume={onResumePoll}
+            />
           ))}
 
           {showInactiveQna ? (
@@ -133,6 +144,7 @@ export function SessionActiveEventsPanel({
               pendingCount={pendingAudienceCount}
               pendingPreview={pendingPreview}
               variant="inactive"
+              onResume={onResumeQna}
             />
           ) : null}
 
@@ -143,6 +155,7 @@ export function SessionActiveEventsPanel({
               pendingCount={pendingCount}
               pendingPreview={discPreview}
               variant="inactive"
+              onResume={onResumeDiscussion}
             />
           ))}
         </div>

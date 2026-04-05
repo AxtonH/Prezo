@@ -31,6 +31,9 @@ export interface SessionDashboardPageProps {
   onStopPoll?: (pollId: string) => void | Promise<void>
   onStopQna?: () => void | Promise<void>
   onStopDiscussion?: (promptId: string) => void | Promise<void>
+  onResumePoll?: (pollId: string) => void | Promise<void>
+  onResumeQna?: () => void | Promise<void>
+  onResumeDiscussion?: (promptId: string) => void | Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -46,7 +49,10 @@ export function SessionDashboardPage({
   onConfigurePoll,
   onStopPoll,
   onStopQna,
-  onStopDiscussion
+  onStopDiscussion,
+  onResumePoll,
+  onResumeQna,
+  onResumeDiscussion
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -124,6 +130,9 @@ export function SessionDashboardPage({
             onStopPoll={onStopPoll}
             onStopQna={onStopQna}
             onStopDiscussion={onStopDiscussion}
+            onResumePoll={onResumePoll}
+            onResumeQna={onResumeQna}
+            onResumeDiscussion={onResumeDiscussion}
           />
         </div>
       </div>

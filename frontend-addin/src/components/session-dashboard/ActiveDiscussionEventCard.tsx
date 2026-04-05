@@ -8,6 +8,7 @@ export interface ActiveDiscussionEventCardProps {
   pendingPreview: Question | null
   variant?: 'active' | 'inactive'
   onStop?: (promptId: string) => void
+  onResume?: (promptId: string) => void
 }
 
 export function ActiveDiscussionEventCard({
@@ -15,7 +16,8 @@ export function ActiveDiscussionEventCard({
   pendingCount,
   pendingPreview,
   variant = 'active',
-  onStop
+  onStop,
+  onResume
 }: ActiveDiscussionEventCardProps) {
   const inactive = variant === 'inactive'
 
@@ -86,7 +88,20 @@ export function ActiveDiscussionEventCard({
               Stop discussion
             </button>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex flex-wrap gap-2 pt-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onResume?.(prompt.id)
+              }}
+              className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
+            >
+              Resume discussion
+            </button>
+          </div>
+        )}
       </div>
     </CollapsibleEventPanelShell>
   )
