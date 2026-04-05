@@ -322,6 +322,12 @@ function HostConsole({
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
   /** False until we finish trying to restore the last open session (e.g. after browser refresh). */
   const [hostRestoreComplete, setHostRestoreComplete] = useState(false)
+  /** Bumped after a successful audience Q&A delete so the dashboard can clear the “inactive Q&A” ref. */
+  const [qnaDeletedEpoch, setQnaDeletedEpoch] = useState(0)
+
+  useEffect(() => {
+    setQnaDeletedEpoch(0)
+  }, [session?.id])
 
   useEffect(() => {
     if (!session) {
@@ -994,6 +1000,7 @@ function HostConsole({
         setSession((previous) => withPreservedHostRole(updated, previous))
       }
       clearHostQnaSessionFlags(session.id)
+      setQnaDeletedEpoch((e) => e + 1)
       setError(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to delete Q&A'
@@ -1320,6 +1327,7 @@ function HostConsole({
               ) : (
                 <SessionDashboardPage
                   session={session}
+                  qnaDeletedEpoch={qnaDeletedEpoch}
                   hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
                   hostAvatarUrl={hostProfile.avatar_url}
                   participantCount={null}

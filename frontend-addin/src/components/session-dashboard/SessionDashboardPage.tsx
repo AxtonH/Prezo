@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
@@ -18,6 +18,8 @@ function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
 
 export interface SessionDashboardPageProps {
   session: Session
+  /** Incremented in the host app after a successful audience Q&A delete (clears the inactive Q&A card). */
+  qnaDeletedEpoch?: number
   hostDisplayName: string
   hostAvatarUrl: string | null
   /** Live audience size when available; `null` shows a placeholder. */
@@ -54,6 +56,7 @@ export interface SessionDashboardPageProps {
 
 export function SessionDashboardPage({
   session,
+  qnaDeletedEpoch = 0,
   hostDisplayName,
   hostAvatarUrl,
   participantCount,
@@ -124,6 +127,14 @@ export function SessionDashboardPage({
       qnaWasOpenedThisSessionRef.current = true
     }
   }, [session.qna_open])
+
+  const [, qnaInactiveRerender] = useState(0)
+  useEffect(() => {
+    if (qnaDeletedEpoch > 0) {
+      qnaWasOpenedThisSessionRef.current = false
+      qnaInactiveRerender((n) => n + 1)
+    }
+  }, [qnaDeletedEpoch])
 
   /** Ended Q&amp;A card: closed channel, plus audience history, in-session open, or persisted engagement after reload. */
   const showInactiveQna =
