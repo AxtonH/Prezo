@@ -231,7 +231,12 @@ export function SessionDashboardPage({
           </div>
         ) : null}
 
-        <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-start">
+        {/*
+          lg:grid-cols-2 is required: base grid-cols-1 sets repeat(1, …) and wins the cascade over
+          index.css unless a responsive column rule overrides it — otherwise implicit columns from
+          grid-template-areas skew to uneven widths (wide QR column, narrow session column).
+        */}
+        <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-2 lg:items-start">
           <div
             ref={audienceCoHostStackRef}
             className="min-w-0 space-y-4 lg:[grid-area:stack]"

@@ -1303,11 +1303,14 @@ body.login-view #root {
  * inflated both rows and pushed co-host down — one stack cell fixes row sizing so the rail scrolls.
  * Use align-items: start (not stretch) on the grid so a taller activities rail never stretches the
  * stack cell with empty space below the co-host card; bottoms stay aligned with maxHeight on the rail.
+ *
+ * Column widths MUST come from Tailwind on the element: grid-cols-1 lg:grid-cols-2. A lone
+ * grid-cols-1 utility sets repeat(1, minmax(0,1fr)) for all widths and loads after this file,
+ * overriding any grid-template-columns here — leaving one explicit column + implicit columns from
+ * grid-template-areas, which browsers size unevenly (often a very wide first column).
  */
 @media (min-width: 1024px) {
   .session-dashboard-body-grid {
-    /* 50/50: audience + co-host stack | session activities rail */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto;
     grid-template-areas:
       "stack activities"
