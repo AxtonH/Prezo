@@ -1,19 +1,9 @@
 interface SessionDashboardHeaderProps {
   title: string
   hostLabel: string
-  /** Optional; when backend supports ending a session from the console. */
-  onFinalizeSession?: () => void
-  finalizeDisabled?: boolean
-  finalizeLabel?: string
 }
 
-export function SessionDashboardHeader({
-  title,
-  hostLabel,
-  onFinalizeSession,
-  finalizeDisabled = true,
-  finalizeLabel = 'Finalize session'
-}: SessionDashboardHeaderProps) {
+export function SessionDashboardHeader({ title, hostLabel }: SessionDashboardHeaderProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between gap-y-3 mb-8">
       <div className="min-w-0">
@@ -30,15 +20,6 @@ export function SessionDashboardHeader({
           Hosted by <span className="text-slate-700 font-medium">{hostLabel}</span>
         </p>
       </div>
-      <button
-        type="button"
-        onClick={() => onFinalizeSession?.()}
-        disabled={finalizeDisabled || !onFinalizeSession}
-        title={!onFinalizeSession ? 'Coming soon' : undefined}
-        className="!shrink-0 !self-start !px-5 !py-2.5 !rounded-xl !text-sm !font-bold !bg-primary !text-white !border-0 !shadow-sm hover:!bg-primary-dark disabled:!opacity-50 disabled:!cursor-not-allowed !transition-all"
-      >
-        {finalizeLabel}
-      </button>
     </div>
   )
 }

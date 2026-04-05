@@ -852,7 +852,7 @@ function HostConsole({
 
   const openQna = async () => {
     if (!session) {
-      return
+      throw new Error('Session not available. Try again.')
     }
     const updated = await api.openQna(session.id)
     setHostQnaEngaged(session.id)
@@ -880,6 +880,46 @@ function HostConsole({
       return
     }
     await api.hideQuestion(session.id, questionId)
+  }
+
+  const createPoll = async (
+    questionText: string,
+    options: string[],
+    allowMultiple: boolean
+  ) => {
+    if (!session) {
+      throw new Error('Session not available. Try again.')
+    }
+    setError(null)
+    try {
+      const created = await api.createPoll(
+        session.id,
+        questionText,
+        options,
+        allowMultiple
+      )
+      await api.openPoll(session.id, created.id)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create poll'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const createDiscussionPrompt = async (promptText: string) => {
+    if (!session) {
+      throw new Error('Session not available. Try again.')
+    }
+    setError(null)
+    try {
+      const created = await api.createQnaPrompt(session.id, promptText.trim())
+      await api.openQnaPrompt(session.id, created.id)
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to create discussion'
+      setError(message)
+      throw new Error(message)
+    }
   }
 
   const openPoll = async (pollId: string) => {
@@ -1303,7 +1343,11 @@ function HostConsole({
                   onStopQna={() => void closeQna()}
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
                   onResumePoll={(pollId) => void openPoll(pollId)}
-                  onResumeQna={() => void openQna()}
+                  onResumeQna={() =>
+                    void openQna().catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Failed to open Q&A')
+                    )
+                  }
                   onResumeDiscussion={(promptId) => void openPrompt(promptId)}
                   onDeletePoll={deletePoll}
                   onDeleteQna={deleteQnaPanel}
@@ -1312,6 +1356,13 @@ function HostConsole({
                   onHideDiscussionQuestion={hideQuestion}
                   onApproveAudienceQuestion={approveQuestion}
                   onHideAudienceQuestion={hideQuestion}
+                  onCreatePoll={createPoll}
+                  onOpenAudienceQna={async () => {
+                    await openQna()
+                  }}
+                  onCreateDiscussionPrompt={async (prompt) => {
+                    await createDiscussionPrompt(prompt)
+                  }}
                 />
               )}
             </>

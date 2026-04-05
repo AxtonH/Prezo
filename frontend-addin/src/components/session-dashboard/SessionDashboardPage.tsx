@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
+import { CreateActivityMenu } from './CreateActivityMenu'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
@@ -42,6 +43,13 @@ export interface SessionDashboardPageProps {
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
   onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
+  onCreatePoll?: (
+    question: string,
+    options: string[],
+    allowMultiple: boolean
+  ) => Promise<void>
+  onOpenAudienceQna?: () => Promise<void>
+  onCreateDiscussionPrompt?: (prompt: string) => Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -67,7 +75,10 @@ export function SessionDashboardPage({
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
-  onHideAudienceQuestion
+  onHideAudienceQuestion,
+  onCreatePoll,
+  onOpenAudienceQna,
+  onCreateDiscussionPrompt
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -135,7 +146,25 @@ export function SessionDashboardPage({
           />
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
-        <div className="lg:col-span-8">
+        <div className="lg:col-span-8 space-y-4">
+          {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <div className="min-w-0">
+                <p className="text-[0.65rem] font-bold uppercase tracking-widest text-muted">
+                  Session activities
+                </p>
+                <p className="text-sm text-muted mt-1 max-w-xl">
+                  Run polls, Q&amp;A, or a guided discussion — all in one place below.
+                </p>
+              </div>
+              <CreateActivityMenu
+                qnaOpen={session.qna_open}
+                onCreatePoll={onCreatePoll}
+                onOpenAudienceQna={onOpenAudienceQna}
+                onCreateDiscussionPrompt={onCreateDiscussionPrompt}
+              />
+            </div>
+          ) : null}
           <SessionActiveActivitiesPanel
             openPolls={openPolls}
             closedPolls={closedPolls}
