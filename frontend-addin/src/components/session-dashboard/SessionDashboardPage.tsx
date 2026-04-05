@@ -248,36 +248,42 @@ export function SessionDashboardPage({
               </div>
             ) : null}
           </div>
-          <div
-            data-session-activities-scroll
-            className="min-h-0 overflow-x-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-card lg:flex-1 lg:overflow-y-auto lg:scroll-smooth session-list-scroll pr-2 [scrollbar-gutter:stable]"
-          >
-            <SessionActiveActivitiesPanel
-              openPolls={openPolls}
-              closedPolls={closedPolls}
-              qnaOpen={session.qna_open}
-              showInactiveQna={showInactiveQna}
-              audienceQnaSortKey={audienceQnaSortKey}
-              audiencePendingQuestions={audiencePendingQuestions}
-              audienceApprovedQuestions={audienceApprovedQuestions}
-              openPrompts={openPrompts}
-              closedPrompts={closedPrompts}
-              questions={questions}
-              onConfigurePoll={onConfigurePoll}
-              onStopPoll={onStopPoll}
-              onStopQna={onStopQna}
-              onStopDiscussion={onStopDiscussion}
-              onResumePoll={onResumePoll}
-              onResumeQna={onResumeQna}
-              onResumeDiscussion={onResumeDiscussion}
-              onDeletePoll={onDeletePoll}
-              onDeleteQna={onDeleteQna}
-              onDeleteDiscussion={onDeleteDiscussion}
-              onApproveDiscussionQuestion={onApproveDiscussionQuestion}
-              onHideDiscussionQuestion={onHideDiscussionQuestion}
-              onApproveAudienceQuestion={onApproveAudienceQuestion}
-              onHideAudienceQuestion={onHideAudienceQuestion}
-            />
+          {/*
+            Shadow + rounded corners on an outer shell; scroll only on the inner div. Same element
+            with overflow-y-auto + box-shadow can draw a rectangular shadow in some engines.
+          */}
+          <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+            <div
+              data-session-activities-scroll
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pr-2 session-list-scroll [scrollbar-gutter:stable] lg:scroll-smooth"
+            >
+              <SessionActiveActivitiesPanel
+                openPolls={openPolls}
+                closedPolls={closedPolls}
+                qnaOpen={session.qna_open}
+                showInactiveQna={showInactiveQna}
+                audienceQnaSortKey={audienceQnaSortKey}
+                audiencePendingQuestions={audiencePendingQuestions}
+                audienceApprovedQuestions={audienceApprovedQuestions}
+                openPrompts={openPrompts}
+                closedPrompts={closedPrompts}
+                questions={questions}
+                onConfigurePoll={onConfigurePoll}
+                onStopPoll={onStopPoll}
+                onStopQna={onStopQna}
+                onStopDiscussion={onStopDiscussion}
+                onResumePoll={onResumePoll}
+                onResumeQna={onResumeQna}
+                onResumeDiscussion={onResumeDiscussion}
+                onDeletePoll={onDeletePoll}
+                onDeleteQna={onDeleteQna}
+                onDeleteDiscussion={onDeleteDiscussion}
+                onApproveDiscussionQuestion={onApproveDiscussionQuestion}
+                onHideDiscussionQuestion={onHideDiscussionQuestion}
+                onApproveAudienceQuestion={onApproveAudienceQuestion}
+                onHideAudienceQuestion={onHideAudienceQuestion}
+              />
+            </div>
           </div>
         </div>
       </div>
