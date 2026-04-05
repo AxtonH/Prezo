@@ -19,6 +19,7 @@ import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
 import { PrezoLogo } from './components/PrezoLogo'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
+import { JoinSessionModal } from './components/JoinSessionModal'
 import { OnboardingModal } from './components/OnboardingModal'
 import { SessionDashboardPage } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
@@ -321,7 +322,6 @@ function HostConsole({
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
   const [showJoinByCodeForm, setShowJoinByCodeForm] = useState(false)
-  const [joinCodeInput, setJoinCodeInput] = useState('')
   const [isJoiningByCode, setIsJoiningByCode] = useState(false)
   const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
   /** `'host'` = sessions dashboard; `'settings'` = full-page settings. */
@@ -836,6 +836,13 @@ function HostConsole({
     ])
   }, [session, hostRestoreComplete, loadSessions, loadDashboardStats, maxSessionsLimit])
 
+  useEffect(() => {
+    if (!showJoinByCodeForm) {
+      return
+    }
+    void loadSessions(maxSessionsLimit)
+  }, [showJoinByCodeForm, loadSessions, maxSessionsLimit])
+
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
     setSession((previous) =>
@@ -880,6 +887,38 @@ function HostConsole({
         setError(message)
       }
       throw new Error(message)
+    }
+  }
+
+  const clearJoinByCodeError = useCallback(() => setJoinByCodeError(null), [])
+
+  const handleJoinWithSessionFromModal = async (selected: Session) => {
+    setIsJoiningByCode(true)
+    setJoinByCodeError(null)
+    setError(null)
+    setQuestions([])
+    setPolls([])
+    setPrompts([])
+    try {
+      await hydrateSession(selected)
+      setShowJoinByCodeForm(false)
+    } catch (err) {
+      setJoinByCodeError(err instanceof Error ? err.message : 'Failed to load session')
+    } finally {
+      setIsJoiningByCode(false)
+    }
+  }
+
+  const handleJoinWithCodeFromModal = async (code: string) => {
+    setIsJoiningByCode(true)
+    setJoinByCodeError(null)
+    try {
+      await joinSessionByCode(code, { setPageError: false })
+      setShowJoinByCodeForm(false)
+    } catch (err) {
+      setJoinByCodeError(err instanceof Error ? err.message : 'Failed to join session')
+    } finally {
+      setIsJoiningByCode(false)
     }
   }
 
@@ -1143,13 +1182,11 @@ function HostConsole({
           onCreateSession={() => {
             setShowJoinByCodeForm(false)
             setJoinByCodeError(null)
-            setJoinCodeInput('')
             setShowCreateForm(true)
           }}
           joinSessionModalOpen={showJoinByCodeForm}
           onJoinSession={() => {
             setJoinByCodeError(null)
-            setJoinCodeInput('')
             setShowCreateForm(false)
             setShowJoinByCodeForm(true)
           }}
@@ -1243,7 +1280,6 @@ function HostConsole({
                 onClick={() => {
                   setShowJoinByCodeForm(false)
                   setJoinByCodeError(null)
-                  setJoinCodeInput('')
                   setShowCreateForm(true)
                 }}
                 className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs"
@@ -1513,110 +1549,20 @@ function HostConsole({
             </div>
           ) : null}
 
-          {showJoinByCodeForm ? (
-            <div
-              className="fixed inset-0 z-[100] flex items-center justify-center"
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  setShowJoinByCodeForm(false)
-                  setJoinCodeInput('')
-                  setJoinByCodeError(null)
-                }
-              }}
-            >
-              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-              <div className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-w-md mx-4 overflow-hidden">
-                <div className="px-7 pt-7 pb-2">
-                  <div className="flex items-center gap-3 mb-1">
-                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                      <span className="material-symbols-outlined text-primary text-xl">login</span>
-                    </div>
-                    <h2 className="text-lg font-bold text-slate-900 !m-0">Join a session</h2>
-                  </div>
-                  <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
-                    Enter the Prezo session code the host shared with you. You will connect as a co-host.
-                  </p>
-                </div>
-                <div className="px-7 py-5 space-y-4">
-                  <input
-                    autoFocus
-                    value={joinCodeInput}
-                    onChange={(e) => {
-                      setJoinCodeInput(e.target.value.toUpperCase())
-                      setJoinByCodeError(null)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !isJoiningByCode && joinCodeInput.trim()) {
-                        setIsJoiningByCode(true)
-                        setJoinByCodeError(null)
-                        void joinSessionByCode(joinCodeInput, { setPageError: false })
-                          .then(() => {
-                            setJoinCodeInput('')
-                            setShowJoinByCodeForm(false)
-                          })
-                          .catch((err) => {
-                            setJoinByCodeError(
-                              err instanceof Error ? err.message : 'Failed to join session'
-                            )
-                          })
-                          .finally(() => setIsJoiningByCode(false))
-                      }
-                      if (e.key === 'Escape') {
-                        setShowJoinByCodeForm(false)
-                        setJoinCodeInput('')
-                        setJoinByCodeError(null)
-                      }
-                    }}
-                    placeholder="e.g. ABC123"
-                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] font-mono tracking-widest focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all placeholder:!text-slate-400"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  {joinByCodeError ? (
-                    <p className="text-danger text-sm !m-0">{joinByCodeError}</p>
-                  ) : null}
-                </div>
-                <div className="px-7 pb-7 flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!joinCodeInput.trim()) {
-                        return
-                      }
-                      setIsJoiningByCode(true)
-                      setJoinByCodeError(null)
-                      void joinSessionByCode(joinCodeInput, { setPageError: false })
-                        .then(() => {
-                          setJoinCodeInput('')
-                          setShowJoinByCodeForm(false)
-                        })
-                        .catch((err) => {
-                          setJoinByCodeError(
-                            err instanceof Error ? err.message : 'Failed to join session'
-                          )
-                        })
-                        .finally(() => setIsJoiningByCode(false))
-                    }}
-                    disabled={isJoiningByCode || !joinCodeInput.trim()}
-                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50 disabled:!cursor-not-allowed"
-                  >
-                    {isJoiningByCode ? 'Joining…' : 'Join session'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowJoinByCodeForm(false)
-                      setJoinCodeInput('')
-                      setJoinByCodeError(null)
-                    }}
-                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <JoinSessionModal
+            open={showJoinByCodeForm}
+            onClose={() => {
+              setShowJoinByCodeForm(false)
+              setJoinByCodeError(null)
+            }}
+            sessions={recentSessions}
+            sessionsLoading={sessionsLoading}
+            isBusy={isJoiningByCode}
+            error={joinByCodeError}
+            onClearError={clearJoinByCodeError}
+            onJoinWithSession={handleJoinWithSessionFromModal}
+            onJoinWithCode={handleJoinWithCodeFromModal}
+          />
         </div>
       </main>
     </div>
