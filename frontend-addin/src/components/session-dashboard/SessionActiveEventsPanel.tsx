@@ -28,6 +28,8 @@ export interface SessionActiveEventsPanelProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
+  onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -55,7 +57,9 @@ export function SessionActiveEventsPanel({
   onResumeDiscussion,
   onDeletePoll,
   onDeleteQna,
-  onDeleteDiscussion
+  onDeleteDiscussion,
+  onApproveDiscussionQuestion,
+  onHideDiscussionQuestion
 }: SessionActiveEventsPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<
     null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
@@ -69,26 +73,34 @@ export function SessionActiveEventsPanel({
 
   const discussionBlocks = useMemo(() => {
     return sortedOpenPrompts.map((prompt) => {
-      const pending = questions.filter(
-        (q) => q.prompt_id === prompt.id && q.status === 'pending'
+      const forPrompt = questions.filter((q) => q.prompt_id === prompt.id)
+      const pendingQuestions = sortByCreatedDesc(
+        forPrompt.filter((q) => q.status === 'pending')
+      )
+      const approvedQuestions = sortByCreatedDesc(
+        forPrompt.filter((q) => q.status === 'approved')
       )
       return {
         prompt,
-        pendingCount: pending.length,
-        pendingPreview: pending[0] ?? null
+        pendingQuestions,
+        approvedQuestions
       }
     })
   }, [sortedOpenPrompts, questions])
 
   const discussionBlocksInactive = useMemo(() => {
     return sortedClosedPrompts.map((prompt) => {
-      const pending = questions.filter(
-        (q) => q.prompt_id === prompt.id && q.status === 'pending'
+      const forPrompt = questions.filter((q) => q.prompt_id === prompt.id)
+      const pendingQuestions = sortByCreatedDesc(
+        forPrompt.filter((q) => q.status === 'pending')
+      )
+      const approvedQuestions = sortByCreatedDesc(
+        forPrompt.filter((q) => q.status === 'approved')
       )
       return {
         prompt,
-        pendingCount: pending.length,
-        pendingPreview: pending[0] ?? null
+        pendingQuestions,
+        approvedQuestions
       }
     })
   }, [sortedClosedPrompts, questions])
@@ -170,15 +182,17 @@ export function SessionActiveEventsPanel({
             />
           ) : null}
 
-          {discussionBlocks.map(({ prompt, pendingCount, pendingPreview: discPreview }) => (
+          {discussionBlocks.map(({ prompt, pendingQuestions, approvedQuestions }) => (
             <ActiveDiscussionEventCard
               key={prompt.id}
               prompt={prompt}
-              pendingCount={pendingCount}
-              pendingPreview={discPreview}
+              pendingQuestions={pendingQuestions}
+              approvedQuestions={approvedQuestions}
               variant="active"
               onStop={onStopDiscussion}
               onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+              onApproveQuestion={onApproveDiscussionQuestion}
+              onHideQuestion={onHideDiscussionQuestion}
             />
           ))}
 
@@ -202,15 +216,17 @@ export function SessionActiveEventsPanel({
             />
           ) : null}
 
-          {discussionBlocksInactive.map(({ prompt, pendingCount, pendingPreview: discPreview }) => (
+          {discussionBlocksInactive.map(({ prompt, pendingQuestions, approvedQuestions }) => (
             <ActiveDiscussionEventCard
               key={prompt.id}
               prompt={prompt}
-              pendingCount={pendingCount}
-              pendingPreview={discPreview}
+              pendingQuestions={pendingQuestions}
+              approvedQuestions={approvedQuestions}
               variant="inactive"
               onResume={onResumeDiscussion}
               onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+              onApproveQuestion={onApproveDiscussionQuestion}
+              onHideQuestion={onHideDiscussionQuestion}
             />
           ))}
         </div>

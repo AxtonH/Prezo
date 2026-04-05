@@ -1429,6 +1429,8 @@ function HostConsole({
                   onDeletePoll={deletePoll}
                   onDeleteQna={deleteQnaPanel}
                   onDeleteDiscussion={deleteDiscussionPrompt}
+                  onApproveDiscussionQuestion={approveQuestion}
+                  onHideDiscussionQuestion={hideQuestion}
                 />
               )}
             </>

@@ -38,6 +38,8 @@ export interface SessionDashboardPageProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
+  onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -59,7 +61,9 @@ export function SessionDashboardPage({
   onResumeDiscussion,
   onDeletePoll,
   onDeleteQna,
-  onDeleteDiscussion
+  onDeleteDiscussion,
+  onApproveDiscussionQuestion,
+  onHideDiscussionQuestion
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -145,6 +149,8 @@ export function SessionDashboardPage({
             onDeletePoll={onDeletePoll}
             onDeleteQna={onDeleteQna}
             onDeleteDiscussion={onDeleteDiscussion}
+            onApproveDiscussionQuestion={onApproveDiscussionQuestion}
+            onHideDiscussionQuestion={onHideDiscussionQuestion}
           />
         </div>
       </div>

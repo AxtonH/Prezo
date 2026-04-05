@@ -4,28 +4,99 @@ import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveDiscussionEventCardProps {
   prompt: QnaPrompt
-  pendingCount: number
-  pendingPreview: Question | null
+  /** Pending answers for this prompt (newest first). */
+  pendingQuestions: Question[]
+  /** Approved answers for this prompt (newest first). */
+  approvedQuestions: Question[]
   variant?: 'active' | 'inactive'
   onStop?: (promptId: string) => void
   onResume?: (promptId: string) => void
   onDelete?: () => void
+  onApproveQuestion?: (questionId: string) => void | Promise<void>
+  onHideQuestion?: (questionId: string) => void | Promise<void>
+}
+
+function DiscussionAnswerRow({
+  question,
+  inactive,
+  showApprove,
+  onApprove,
+  onHide
+}: {
+  question: Question
+  inactive: boolean
+  showApprove: boolean
+  onApprove?: (questionId: string) => void | Promise<void>
+  onHide?: (questionId: string) => void | Promise<void>
+}) {
+  return (
+    <div
+      className={`rounded-xl p-3 border ${
+        inactive ? 'bg-slate-300/40 border-slate-400/40' : 'bg-slate-50 border-slate-100'
+      }`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className={`flex items-center gap-2 text-xs mb-1.5 ${inactive ? 'text-slate-600' : 'text-muted'}`}>
+            <span className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-slate-500 text-sm">person</span>
+            </span>
+            <span>Participant</span>
+            <span aria-hidden>•</span>
+            <span>{formatRelativeTime(question.created_at)}</span>
+          </div>
+          <p className={`text-sm leading-relaxed ${inactive ? 'text-slate-800' : 'text-slate-800'}`}>
+            {question.text}
+          </p>
+          <p className={`text-xs mt-1 ${inactive ? 'text-slate-600' : 'text-muted'}`}>
+            {question.votes} vote{question.votes === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          {showApprove && onApprove ? (
+            <button
+              type="button"
+              onClick={() => void onApprove(question.id)}
+              className="!px-3 !py-1.5 !rounded-lg !text-xs !font-semibold !bg-primary !text-white !border-0 hover:!bg-primary-dark !transition-colors"
+            >
+              Approve
+            </button>
+          ) : null}
+          {onHide ? (
+            <button
+              type="button"
+              onClick={() => void onHide(question.id)}
+              className="!px-3 !py-1.5 !rounded-lg !text-xs !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors"
+            >
+              Hide
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function ActiveDiscussionEventCard({
   prompt,
-  pendingCount,
-  pendingPreview,
+  pendingQuestions,
+  approvedQuestions,
   variant = 'active',
   onStop,
   onResume,
-  onDelete
+  onDelete,
+  onApproveQuestion,
+  onHideQuestion
 }: ActiveDiscussionEventCardProps) {
   const inactive = variant === 'inactive'
+  const pendingCount = pendingQuestions.length
+  const approvedCount = approvedQuestions.length
+  const expandByDefault = pendingCount > 0 || approvedCount > 0
 
   return (
     <CollapsibleEventPanelShell
       variant={inactive ? 'inactive' : 'active'}
+      defaultExpanded={expandByDefault}
       icon={
         <div
           className={
@@ -52,33 +123,84 @@ export function ActiveDiscussionEventCard({
         </div>
       }
     >
-      <div className="p-5">
-        <p className={`text-sm mb-3 ${inactive ? 'text-slate-600' : 'text-muted'}`}>
+      <div className="p-5 space-y-5">
+        <p className={`text-sm ${inactive ? 'text-slate-600' : 'text-muted'}`}>
           {pendingCount} answer{pendingCount === 1 ? '' : 's'} awaiting moderation
+          {approvedCount > 0 ? (
+            <>
+              {' '}
+              · {approvedCount} approved
+            </>
+          ) : null}
         </p>
-        {pendingPreview ? (
-          <div
-            className={`rounded-xl p-4 border ${
-              inactive ? 'bg-slate-300/40 border-slate-400/40' : 'bg-slate-50 border-slate-100'
-            }`}
-          >
-            <div className={`flex items-center gap-2 text-xs mb-2 ${inactive ? 'text-slate-600' : 'text-muted'}`}>
-              <span className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center">
-                <span className="material-symbols-outlined text-slate-500 text-sm">person</span>
-              </span>
-              <span>Participant</span>
-              <span aria-hidden>•</span>
-              <span>{formatRelativeTime(pendingPreview.created_at)}</span>
-            </div>
-            <p className="text-sm text-slate-800 leading-relaxed line-clamp-3">{pendingPreview.text}</p>
-          </div>
-        ) : (
+
+        {pendingCount === 0 && approvedCount === 0 ? (
           <p className={`text-sm ${inactive ? 'text-slate-600' : 'text-muted'}`}>
             No answers yet for this discussion.
           </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <p
+                className={`text-[0.65rem] font-bold uppercase tracking-widest ${
+                  inactive ? 'text-slate-600' : 'text-muted'
+                }`}
+              >
+                Pending
+              </p>
+              {pendingQuestions.length === 0 ? (
+                <p className={`text-sm ${inactive ? 'text-slate-600' : 'text-muted'}`}>
+                  No answers waiting for approval.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {pendingQuestions.map((q) => (
+                    <li key={q.id}>
+                      <DiscussionAnswerRow
+                        question={q}
+                        inactive={inactive}
+                        showApprove={Boolean(onApproveQuestion)}
+                        onApprove={onApproveQuestion}
+                        onHide={onHideQuestion}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="space-y-3">
+              <p
+                className={`text-[0.65rem] font-bold uppercase tracking-widest ${
+                  inactive ? 'text-slate-600' : 'text-muted'
+                }`}
+              >
+                Approved
+              </p>
+              {approvedQuestions.length === 0 ? (
+                <p className={`text-sm ${inactive ? 'text-slate-600' : 'text-muted'}`}>
+                  No approved answers yet.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {approvedQuestions.map((q) => (
+                    <li key={q.id}>
+                      <DiscussionAnswerRow
+                        question={q}
+                        inactive={inactive}
+                        showApprove={false}
+                        onApprove={onApproveQuestion}
+                        onHide={onHideQuestion}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
+
         {!inactive ? (
-          <div className="flex flex-wrap gap-2 pt-4">
+          <div className="flex flex-wrap gap-2 pt-1">
             <button
               type="button"
               onClick={(e) => {
@@ -103,7 +225,7 @@ export function ActiveDiscussionEventCard({
             ) : null}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2 pt-4">
+          <div className="flex flex-wrap gap-2 pt-1">
             <button
               type="button"
               onClick={(e) => {
