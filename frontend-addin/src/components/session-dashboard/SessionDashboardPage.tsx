@@ -217,7 +217,7 @@ export function SessionDashboardPage({
       {/*
         lg: row 1 = audience+co-host (stack) | scrollable activities; row 2 = participants | empty.
       */}
-      <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-stretch">
+      <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-start">
         <div
           ref={audienceCoHostStackRef}
           className="min-w-0 space-y-5 lg:[grid-area:stack]"

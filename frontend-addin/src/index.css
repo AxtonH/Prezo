@@ -1301,6 +1301,8 @@ body.login-view #root {
  * Host session dashboard: row 1 pairs a left “stack” (audience + co-host) with activities.
  * If audience/co-host sat on separate rows while activities spanned two rows, the span’s height
  * inflated both rows and pushed co-host down — one stack cell fixes row sizing so the rail scrolls.
+ * Use align-items: start (not stretch) on the grid so a taller activities rail never stretches the
+ * stack cell with empty space below the co-host card; bottoms stay aligned with maxHeight on the rail.
  */
 @media (min-width: 1024px) {
   .session-dashboard-body-grid {
