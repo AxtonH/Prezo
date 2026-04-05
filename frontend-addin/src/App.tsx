@@ -277,8 +277,14 @@ function HostConsole({
   const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
   /** `'host'` = sessions dashboard; `'settings'` = full-page settings. */
   const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings'>('host')
-  /** Primary area on the All Sessions workspace (no live session). */
+  /** Primary area while hosting a live session (sidebar workspace tabs). */
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
+
+  useEffect(() => {
+    if (!session) {
+      setWorkspaceNav('dashboard')
+    }
+  }, [session])
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -930,7 +936,7 @@ function HostConsole({
             setJoinCodeInput('')
             setShowJoinByCodeForm(true)
           }}
-          workspaceMode={!session && hostConsoleView === 'host'}
+          workspaceMode={Boolean(session) && hostConsoleView === 'host'}
           activeWorkspaceNav={workspaceNav}
           onWorkspaceNav={setWorkspaceNav}
         />
@@ -1049,45 +1055,41 @@ function HostConsole({
               {/* Page Header */}
               <div className="mb-8">
                 <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
-                  {session
-                    ? 'Active Session'
+                  {!session
+                    ? 'All Sessions'
                     : workspaceNav === 'dashboard'
-                      ? 'All Sessions'
+                      ? 'Dashboard'
                       : workspaceNav === 'polls'
                         ? 'Polls'
                         : workspaceNav === 'discussion'
                           ? 'Open discussion'
                           : 'Q&A'}
                 </h1>
-                {session ? (
+                {!session ? null : workspaceNav === 'dashboard' ? (
                   <p className="text-muted max-w-3xl leading-relaxed text-sm">
                     Your session is live. Share the join code with your audience and manage interactions below.
                   </p>
-                ) : workspaceNav === 'dashboard' ? (
-                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Monitor your sessions, start new ones, and jump back into live rooms.
-                  </p>
                 ) : workspaceNav === 'polls' ? (
                   <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Create and manage polls for your sessions. Full setup is coming next.
+                    Set up and launch polls for this session. Full layout is coming next.
                   </p>
                 ) : workspaceNav === 'discussion' ? (
                   <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Run open discussions and follow the thread in real time. Coming soon.
+                    Run open discussions and monitor the thread. Coming soon.
                   </p>
                 ) : (
                   <p className="text-muted max-w-3xl leading-relaxed text-sm">
-                    Open Q&amp;A, moderate incoming questions, and drive the conversation. Coming soon.
+                    Open Q&amp;A, moderate questions, and keep the conversation on track. Coming soon.
                   </p>
                 )}
               </div>
 
-              {!session && workspaceNav === 'dashboard' ? (
+              {!session ? (
                 <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
               ) : null}
 
-              {/* Filter Tabs (only on Dashboard workspace) */}
-              {!session && workspaceNav === 'dashboard' ? (
+              {/* Filter Tabs (all-sessions list only) */}
+              {!session ? (
                 <div className="flex gap-8 mb-6 border-b border-slate-100">
                   {(
                     [
@@ -1114,7 +1116,40 @@ function HostConsole({
 
               {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
 
-              {!session && workspaceNav !== 'dashboard' ? (
+              {/* All-sessions list: always show SessionSetup (no session). Live session: show SessionSetup + panels only on Dashboard; other tabs are placeholders. */}
+              {!session ? (
+                <SessionSetup
+                  session={session}
+                  onCreate={createSession}
+                  onJoinByCode={joinSessionByCode}
+                  onSetHostJoinAccess={setHostJoinAccess}
+                  recentSessions={filteredRecentSessions}
+                  emptyListMessage={
+                    sessionSearchQuery.trim()
+                      ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
+                      : sessionFilter === 'active'
+                        ? 'No active sessions right now. Start a new session or join one with a code.'
+                        : sessionFilter === 'host'
+                          ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
+                          : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
+                  }
+                  isLoading={sessionsLoading}
+                  loadError={sessionsError}
+                  onResume={resumeSession}
+                  onDelete={deleteSession}
+                  deletingSessionId={deletingSessionId}
+                  onRefresh={() => {
+                    void loadSessions(maxSessionsLimit)
+                    void loadDashboardStats()
+                  }}
+                  isCompact={isAddinHost}
+                  listMaxHeightClass={
+                    isAddinHost
+                      ? undefined
+                      : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
+                  }
+                />
+              ) : workspaceNav !== 'dashboard' ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">
                   <span className="material-symbols-outlined text-4xl text-slate-300 mb-3 block">
                     {workspaceNav === 'polls'
@@ -1126,7 +1161,7 @@ function HostConsole({
                   <p className="text-slate-600 font-medium mb-1">This area is under construction</p>
                   <p className="text-muted text-sm max-w-md mx-auto">
                     We&apos;ll wire this up in a follow-up step. Use{' '}
-                    <strong className="text-slate-700">Dashboard</strong> in the sidebar to manage sessions.
+                    <strong className="text-slate-700">Dashboard</strong> in the sidebar for the live session overview.
                   </p>
                 </div>
               ) : (
@@ -1335,8 +1370,8 @@ function HostConsole({
             </div>
           ) : null}
 
-          {/* Q&A, Prompts, Polls — kept with existing styles via .grid/.panel */}
-          {session && hostConsoleView === 'host' ? (
+          {/* Q&A, Prompts, Polls — live session Dashboard tab only */}
+          {session && hostConsoleView === 'host' && workspaceNav === 'dashboard' ? (
             <div className="grid gap-5 mt-6">
               <div className="panel">
                 <div className="panel-header">

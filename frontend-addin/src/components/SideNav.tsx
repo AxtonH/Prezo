@@ -1,7 +1,7 @@
 import { PrezoWordmark } from './PrezoWordmark'
 import { ProfileAvatar } from './ProfileAvatar'
 
-/** Primary workspace areas when browsing sessions (no live session selected). */
+/** Primary areas while hosting a live session (sidebar replaces legacy items). */
 export type WorkspaceNavId = 'dashboard' | 'polls' | 'discussion' | 'qna'
 
 interface SideNavProps {
@@ -23,8 +23,8 @@ interface SideNavProps {
   /** Opens full-page settings (host profile, account). */
   onOpenSettings?: () => void
   /**
-   * When true (All Sessions workspace, no live session), show Dashboard / Polls / Discussion / Q&A
-   * instead of Join / Team / Analytics / Integrations.
+   * When true (user has a live session open in the host console), show Dashboard / Polls /
+   * Open discussion / Q&A instead of My Sessions / Join / Team / Analytics / Integrations.
    */
   workspaceMode?: boolean
   activeWorkspaceNav?: WorkspaceNavId
