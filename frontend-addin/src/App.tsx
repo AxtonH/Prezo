@@ -1330,7 +1330,17 @@ function HostConsole({
                   questions={questions}
                   audienceQuestions={questions.filter((q) => !q.prompt_id)}
                   onSetHostJoinAccess={setHostJoinAccess}
-                  onConfigurePoll={(_pollId) => setShowPolls(true)}
+                  onConfigurePoll={(pollId) => {
+                    if (!session) {
+                      return
+                    }
+                    const url = buildEditingStationUrl({
+                      sessionId: session.id,
+                      code: session.code,
+                      pollId
+                    })
+                    window.open(url, '_blank', 'noopener,noreferrer')
+                  }}
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onStopQna={() => void closeQna()}
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
