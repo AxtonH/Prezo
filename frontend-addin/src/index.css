@@ -1292,3 +1292,18 @@ body.login-view #root {
     padding: 20px;
   }
 }
+
+/*
+ * Host session dashboard body: each row of grid-template-areas is a separate quoted string;
+ * rows are separated by whitespace (not commas — commas are invalid here per CSS Grid).
+ */
+@media (min-width: 1024px) {
+  .session-dashboard-body-grid {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "audience activities"
+      "cohost activities"
+      "participants empty";
+  }
+}

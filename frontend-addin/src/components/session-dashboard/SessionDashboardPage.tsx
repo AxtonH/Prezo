@@ -172,61 +172,73 @@ export function SessionDashboardPage({
     <div className="space-y-6">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-6 items-start">
-        <div className="lg:col-span-4 space-y-5">
+      {/*
+        lg: explicit 2×3 template — left column = audience / co-host / participants; right column =
+        activities spanning rows 1–2 only (no row/column overlap with left cards).
+      */}
+      <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-stretch">
+        <div className="min-w-0 lg:[grid-area:audience]">
           <SessionAudienceAccessCard sessionCode={session.code} joinUrl={joinUrl} />
+        </div>
+        <div className="min-w-0 lg:[grid-area:cohost]">
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
+        </div>
+        <div className="min-w-0 lg:[grid-area:participants]">
           <SessionParticipantsCard
             activeParticipantCount={participantCount}
             hostDisplayName={hostDisplayName}
             hostAvatarUrl={hostAvatarUrl}
           />
         </div>
-        <div className="lg:col-span-8 space-y-4">
-          {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-              <div className="min-w-0">
-                <p className="text-[0.65rem] font-bold uppercase tracking-widest text-muted">
-                  Session activities
-                </p>
-                <p className="text-sm text-muted mt-1 max-w-xl">
-                  Run polls, Q&amp;A, or a guided discussion — all in one place below.
-                </p>
+        <div className="flex min-h-0 min-w-0 flex-col lg:[grid-area:activities]">
+          <div className="shrink-0 space-y-4">
+            {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-widest text-muted">
+                    Session activities
+                  </p>
+                  <p className="text-sm text-muted mt-1 max-w-xl">
+                    Run polls, Q&amp;A, or a guided discussion — all in one place below.
+                  </p>
+                </div>
+                <CreateActivityMenu
+                  qnaOpen={session.qna_open}
+                  onCreatePoll={onCreatePoll}
+                  onOpenAudienceQna={onOpenAudienceQna}
+                  onCreateDiscussionPrompt={onCreateDiscussionPrompt}
+                />
               </div>
-              <CreateActivityMenu
-                qnaOpen={session.qna_open}
-                onCreatePoll={onCreatePoll}
-                onOpenAudienceQna={onOpenAudienceQna}
-                onCreateDiscussionPrompt={onCreateDiscussionPrompt}
-              />
-            </div>
-          ) : null}
-          <SessionActiveActivitiesPanel
-            openPolls={openPolls}
-            closedPolls={closedPolls}
-            qnaOpen={session.qna_open}
-            showInactiveQna={showInactiveQna}
-            audienceQnaSortKey={audienceQnaSortKey}
-            audiencePendingQuestions={audiencePendingQuestions}
-            audienceApprovedQuestions={audienceApprovedQuestions}
-            openPrompts={openPrompts}
-            closedPrompts={closedPrompts}
-            questions={questions}
-            onConfigurePoll={onConfigurePoll}
-            onStopPoll={onStopPoll}
-            onStopQna={onStopQna}
-            onStopDiscussion={onStopDiscussion}
-            onResumePoll={onResumePoll}
-            onResumeQna={onResumeQna}
-            onResumeDiscussion={onResumeDiscussion}
-            onDeletePoll={onDeletePoll}
-            onDeleteQna={onDeleteQna}
-            onDeleteDiscussion={onDeleteDiscussion}
-            onApproveDiscussionQuestion={onApproveDiscussionQuestion}
-            onHideDiscussionQuestion={onHideDiscussionQuestion}
-            onApproveAudienceQuestion={onApproveAudienceQuestion}
-            onHideAudienceQuestion={onHideAudienceQuestion}
-          />
+            ) : null}
+          </div>
+          <div className="min-h-0 overflow-x-hidden pt-4 lg:flex-1 lg:overflow-y-auto lg:pt-0 [scrollbar-gutter:stable]">
+            <SessionActiveActivitiesPanel
+              openPolls={openPolls}
+              closedPolls={closedPolls}
+              qnaOpen={session.qna_open}
+              showInactiveQna={showInactiveQna}
+              audienceQnaSortKey={audienceQnaSortKey}
+              audiencePendingQuestions={audiencePendingQuestions}
+              audienceApprovedQuestions={audienceApprovedQuestions}
+              openPrompts={openPrompts}
+              closedPrompts={closedPrompts}
+              questions={questions}
+              onConfigurePoll={onConfigurePoll}
+              onStopPoll={onStopPoll}
+              onStopQna={onStopQna}
+              onStopDiscussion={onStopDiscussion}
+              onResumePoll={onResumePoll}
+              onResumeQna={onResumeQna}
+              onResumeDiscussion={onResumeDiscussion}
+              onDeletePoll={onDeletePoll}
+              onDeleteQna={onDeleteQna}
+              onDeleteDiscussion={onDeleteDiscussion}
+              onApproveDiscussionQuestion={onApproveDiscussionQuestion}
+              onHideDiscussionQuestion={onHideDiscussionQuestion}
+              onApproveAudienceQuestion={onApproveAudienceQuestion}
+              onHideAudienceQuestion={onHideAudienceQuestion}
+            />
+          </div>
         </div>
       </div>
     </div>
