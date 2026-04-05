@@ -1306,7 +1306,8 @@ body.login-view #root {
  */
 @media (min-width: 1024px) {
   .session-dashboard-body-grid {
-    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    /* 50/50: audience + co-host stack | session activities rail */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-rows: auto auto;
     grid-template-areas:
       "stack activities"
