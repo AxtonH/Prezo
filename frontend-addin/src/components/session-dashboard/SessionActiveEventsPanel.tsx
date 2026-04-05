@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { Poll, QnaPrompt, Question } from '../../api/types'
 import { ActiveDiscussionEventCard } from './ActiveDiscussionEventCard'
 import { ActivePollEventCard } from './ActivePollEventCard'
 import { ActiveQnaEventCard } from './ActiveQnaEventCard'
+import { DeleteEventConfirmModal } from './DeleteEventConfirmModal'
 
 export interface SessionActiveEventsPanelProps {
   openPolls: Poll[]
@@ -24,6 +25,9 @@ export interface SessionActiveEventsPanelProps {
   onResumePoll?: (pollId: string) => void
   onResumeQna?: () => void
   onResumeDiscussion?: (promptId: string) => void
+  onDeletePoll?: (pollId: string) => void | Promise<void>
+  onDeleteQna?: () => void | Promise<void>
+  onDeleteDiscussion?: (promptId: string) => void | Promise<void>
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -48,8 +52,16 @@ export function SessionActiveEventsPanel({
   onStopDiscussion,
   onResumePoll,
   onResumeQna,
-  onResumeDiscussion
+  onResumeDiscussion,
+  onDeletePoll,
+  onDeleteQna,
+  onDeleteDiscussion
 }: SessionActiveEventsPanelProps) {
+  const [deleteTarget, setDeleteTarget] = useState<
+    null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
+  >(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const sortedOpenPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
   const sortedClosedPolls = useMemo(() => sortByCreatedDesc(closedPolls), [closedPolls])
   const sortedOpenPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
@@ -89,8 +101,45 @@ export function SessionActiveEventsPanel({
     showInactiveQna ||
     discussionBlocksInactive.length > 0
 
+  const closeDeleteModal = () => {
+    if (!deleteBusy) {
+      setDeleteTarget(null)
+      setDeleteError(null)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) {
+      return
+    }
+    setDeleteBusy(true)
+    setDeleteError(null)
+    try {
+      if (deleteTarget.kind === 'poll') {
+        await onDeletePoll?.(deleteTarget.id)
+      } else if (deleteTarget.kind === 'qna') {
+        await onDeleteQna?.()
+      } else {
+        await onDeleteDiscussion?.(deleteTarget.id)
+      }
+      setDeleteTarget(null)
+      setDeleteError(null)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
   return (
     <>
+      <DeleteEventConfirmModal
+        open={deleteTarget !== null}
+        onCancel={closeDeleteModal}
+        onConfirm={confirmDelete}
+        busy={deleteBusy}
+        error={deleteError}
+      />
       {!hasAnyEvent ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
           <p className="text-sm text-muted">
@@ -107,6 +156,7 @@ export function SessionActiveEventsPanel({
               variant="active"
               onConfigure={onConfigurePoll}
               onStop={onStopPoll}
+              onDelete={() => setDeleteTarget({ kind: 'poll', id: poll.id })}
             />
           ))}
 
@@ -116,6 +166,7 @@ export function SessionActiveEventsPanel({
               pendingPreview={pendingPreview}
               variant="active"
               onStop={onStopQna}
+              onDelete={() => setDeleteTarget({ kind: 'qna' })}
             />
           ) : null}
 
@@ -127,6 +178,7 @@ export function SessionActiveEventsPanel({
               pendingPreview={discPreview}
               variant="active"
               onStop={onStopDiscussion}
+              onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
             />
           ))}
 
@@ -136,6 +188,7 @@ export function SessionActiveEventsPanel({
               poll={poll}
               variant="inactive"
               onResume={onResumePoll}
+              onDelete={() => setDeleteTarget({ kind: 'poll', id: poll.id })}
             />
           ))}
 
@@ -145,6 +198,7 @@ export function SessionActiveEventsPanel({
               pendingPreview={pendingPreview}
               variant="inactive"
               onResume={onResumeQna}
+              onDelete={() => setDeleteTarget({ kind: 'qna' })}
             />
           ) : null}
 
@@ -156,6 +210,7 @@ export function SessionActiveEventsPanel({
               pendingPreview={discPreview}
               variant="inactive"
               onResume={onResumeDiscussion}
+              onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
             />
           ))}
         </div>

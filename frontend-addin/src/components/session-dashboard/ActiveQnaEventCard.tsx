@@ -8,6 +8,7 @@ export interface ActiveQnaEventCardProps {
   variant?: 'active' | 'inactive'
   onStop?: () => void
   onResume?: () => void
+  onDelete?: () => void
 }
 
 export function ActiveQnaEventCard({
@@ -15,7 +16,8 @@ export function ActiveQnaEventCard({
   pendingPreview,
   variant = 'active',
   onStop,
-  onResume
+  onResume,
+  onDelete
 }: ActiveQnaEventCardProps) {
   const inactive = variant === 'inactive'
 
@@ -81,6 +83,18 @@ export function ActiveQnaEventCard({
             >
               Stop Q&amp;A
             </button>
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 pt-4">
@@ -94,6 +108,18 @@ export function ActiveQnaEventCard({
             >
               Resume Q&amp;A
             </button>
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         )}
       </div>

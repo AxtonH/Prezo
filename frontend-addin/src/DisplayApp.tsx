@@ -40,6 +40,16 @@ export function DisplayApp() {
       return
     }
 
+    if (event.type === 'audience_questions_deleted' && Array.isArray(event.payload.question_ids)) {
+      const ids = new Set(event.payload.question_ids as string[])
+      if (ids.size > 0) {
+        setQuestions((prev) =>
+          prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
+        )
+      }
+      return
+    }
+
     if (event.payload.question) {
       const question = event.payload.question as Question
       setQuestions((prev) => upsertById(prev, question))

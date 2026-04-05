@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from ..auth import AuthUser, get_current_user, get_optional_user
 from ..config import settings
@@ -28,6 +29,10 @@ from ..store import (
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+class AudienceQuestionsDeletedResponse(BaseModel):
+    question_ids: list[str]
 
 
 def with_join_url(session: Session) -> Session:
@@ -208,6 +213,31 @@ async def close_qna(
     await store.record_event(session_id, event)
     await manager.broadcast(session_id, event)
     return session
+
+
+@router.delete(
+    "/{session_id}/qna/audience-questions",
+    response_model=AudienceQuestionsDeletedResponse,
+)
+async def delete_audience_questions(
+    session_id: str,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> AudienceQuestionsDeletedResponse:
+    try:
+        question_ids = await store.delete_audience_questions(session_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    event = Event(
+        type="audience_questions_deleted",
+        payload={"question_ids": question_ids},
+        ts=datetime.now(timezone.utc),
+    )
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)
+    return AudienceQuestionsDeletedResponse(question_ids=question_ids)
 
 
 @router.post("/{session_id}/qna/config", response_model=Session)

@@ -43,7 +43,16 @@ async function request<T>(
     throw new Error(detail ?? `Request failed (${response.status})`)
   }
 
-  return (await response.json()) as T
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  const text = await response.text()
+  if (!text) {
+    return undefined as T
+  }
+
+  return JSON.parse(text) as T
 }
 
 export const api = {
@@ -90,6 +99,12 @@ export const api = {
     request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }, true),
   closeQna: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}/qna/close`, { method: 'POST' }, true),
+  deleteAudienceQuestions: (sessionId: string) =>
+    request<{ question_ids: string[] }>(
+      `/sessions/${sessionId}/qna/audience-questions`,
+      { method: 'DELETE' },
+      true
+    ),
   updateQnaConfig: (sessionId: string, mode: QnaMode, prompt?: string | null) =>
     request<Session>(`/sessions/${sessionId}/qna/config`, {
       method: 'POST',
@@ -122,6 +137,8 @@ export const api = {
     request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts/${promptId}/close`, {
       method: 'POST'
     }, true),
+  deleteQnaPrompt: (sessionId: string, promptId: string) =>
+    request<void>(`/sessions/${sessionId}/qna-prompts/${promptId}`, { method: 'DELETE' }, true),
   approveQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/approve`, {
       method: 'POST'
@@ -153,6 +170,8 @@ export const api = {
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/close`, {
       method: 'POST'
     }, true),
+  deletePoll: (sessionId: string, pollId: string) =>
+    request<void>(`/sessions/${sessionId}/polls/${pollId}`, { method: 'DELETE' }, true),
   updatePoll: (
     sessionId: string,
     pollId: string,

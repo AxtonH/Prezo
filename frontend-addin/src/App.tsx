@@ -40,6 +40,7 @@ import {
 } from './office/widgetShapes'
 import {
   clearAllHostQnaInactiveFlags,
+  clearHostQnaSessionFlags,
   setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
@@ -533,6 +534,29 @@ function HostConsole({
       return
     }
 
+    if (event.type === 'poll_deleted' && typeof event.payload.poll_id === 'string') {
+      const pollId = event.payload.poll_id as string
+      setPolls((prev) => prev.filter((p) => p.id !== pollId))
+      return
+    }
+
+    if (event.type === 'qna_prompt_deleted' && typeof event.payload.prompt_id === 'string') {
+      const promptId = event.payload.prompt_id as string
+      setPrompts((prev) => prev.filter((p) => p.id !== promptId))
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
+      return
+    }
+
+    if (event.type === 'audience_questions_deleted' && Array.isArray(event.payload.question_ids)) {
+      const ids = new Set(event.payload.question_ids as string[])
+      if (ids.size > 0) {
+        setQuestions((prev) =>
+          prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
+        )
+      }
+      return
+    }
+
     if (event.payload.session) {
       const updated = event.payload.session as Session
       setSession((previous) => withPreservedHostRole(updated, previous))
@@ -931,6 +955,58 @@ function HostConsole({
       return
     }
     await api.closeQnaPrompt(session.id, promptId)
+  }
+
+  const deletePoll = async (pollId: string) => {
+    if (!session) {
+      return
+    }
+    try {
+      await api.deletePoll(session.id, pollId)
+      setError(null)
+      setPolls((prev) => prev.filter((p) => p.id !== pollId))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete poll'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const deleteDiscussionPrompt = async (promptId: string) => {
+    if (!session) {
+      return
+    }
+    try {
+      await api.deleteQnaPrompt(session.id, promptId)
+      setError(null)
+      setPrompts((prev) => prev.filter((p) => p.id !== promptId))
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete discussion'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const deleteQnaPanel = async () => {
+    if (!session) {
+      return
+    }
+    try {
+      await api.deleteAudienceQuestions(session.id)
+      /** Drop audience-only rows locally; discussion prompts keep their thread questions. */
+      setQuestions((prev) => prev.filter((q) => Boolean(q.prompt_id)))
+      if (session.qna_open) {
+        const updated = await api.closeQna(session.id)
+        setSession((previous) => withPreservedHostRole(updated, previous))
+      }
+      clearHostQnaSessionFlags(session.id)
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete Q&A'
+      setError(message)
+      throw new Error(message)
+    }
   }
 
   const bindPollWidget = async (pollId: string | null) => {
@@ -1350,6 +1426,9 @@ function HostConsole({
                   onResumePoll={(pollId) => void openPoll(pollId)}
                   onResumeQna={() => void openQna()}
                   onResumeDiscussion={(promptId) => void openPrompt(promptId)}
+                  onDeletePoll={deletePoll}
+                  onDeleteQna={deleteQnaPanel}
+                  onDeleteDiscussion={deleteDiscussionPrompt}
                 />
               )}
             </>

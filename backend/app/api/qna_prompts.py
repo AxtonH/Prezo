@@ -82,3 +82,20 @@ async def close_prompt(
     await store.record_event(session_id, event)
     await manager.broadcast(session_id, event)
     return prompt
+
+
+@router.delete("/{prompt_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_prompt(
+    session_id: str,
+    prompt_id: str,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> None:
+    try:
+        await store.delete_qna_prompt(session_id, prompt_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    event = make_event("qna_prompt_deleted", {"prompt_id": prompt_id})
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)

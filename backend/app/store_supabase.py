@@ -789,6 +789,46 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_prompt(data[0])
 
+    async def delete_qna_prompt(
+        self, session_id: str, prompt_id: str, user_id: str
+    ) -> None:
+        await self.get_session(session_id, user_id)
+        existing = await self._select(
+            "qna_prompts",
+            {
+                "select": "id",
+                "id": f"eq.{prompt_id}",
+                "session_id": f"eq.{session_id}",
+            },
+        )
+        if not existing:
+            raise NotFoundError("prompt not found")
+        await self._request(
+            "DELETE",
+            "qna_prompts",
+            params={"id": f"eq.{prompt_id}", "session_id": f"eq.{session_id}"},
+        )
+        self._invalidate_session_snapshot(session_id)
+
+    async def delete_audience_questions(self, session_id: str, user_id: str) -> list[str]:
+        await self.get_session(session_id, user_id)
+        rows = await self._select(
+            "questions",
+            {
+                "select": "id",
+                "session_id": f"eq.{session_id}",
+                "prompt_id": "is.null",
+            },
+        )
+        ids = [str(r["id"]) for r in rows]
+        await self._request(
+            "DELETE",
+            "questions",
+            params={"session_id": f"eq.{session_id}", "prompt_id": "is.null"},
+        )
+        self._invalidate_session_snapshot(session_id)
+        return ids
+
     async def set_question_status(
         self,
         session_id: str,
@@ -991,6 +1031,25 @@ class SupabaseStore:
         poll_data = {key: value for key, value in payload.items() if key != "options"}
         self._invalidate_session_snapshot(session_id)
         return self._to_poll(poll_data, option_rows)
+
+    async def delete_poll(self, session_id: str, poll_id: str, user_id: str) -> None:
+        await self.get_session(session_id, user_id)
+        existing = await self._select(
+            "polls",
+            {
+                "select": "id",
+                "id": f"eq.{poll_id}",
+                "session_id": f"eq.{session_id}",
+            },
+        )
+        if not existing:
+            raise NotFoundError("poll not found")
+        await self._request(
+            "DELETE",
+            "polls",
+            params={"id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
+        )
+        self._invalidate_session_snapshot(session_id)
 
     async def snapshot(
         self, session_id: str, viewer_user_id: str | None = None

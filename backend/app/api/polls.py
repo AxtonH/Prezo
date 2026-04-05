@@ -75,6 +75,23 @@ async def close_poll(
     return poll
 
 
+@router.delete("/{poll_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_poll(
+    session_id: str,
+    poll_id: str,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> None:
+    try:
+        await store.delete_poll(session_id, poll_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    event = make_event("poll_deleted", {"poll_id": poll_id})
+    await store.record_event(session_id, event)
+    await manager.broadcast(session_id, event)
+
+
 @router.patch("/{poll_id}", response_model=Poll)
 async def update_poll(
     session_id: str,

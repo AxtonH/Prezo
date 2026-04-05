@@ -545,6 +545,55 @@ class InMemoryStore:
             option.votes += 1
             return self._to_poll(poll)
 
+    async def delete_poll(self, session_id: str, poll_id: str, user_id: str) -> None:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            self._get_poll(session_id, poll_id)
+            del self._polls[poll_id]
+            self._polls_by_session[session_id] = [
+                p for p in self._polls_by_session[session_id] if p != poll_id
+            ]
+            self._poll_votes.pop(poll_id, None)
+
+    async def delete_qna_prompt(self, session_id: str, prompt_id: str, user_id: str) -> None:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            self._get_prompt(session_id, prompt_id)
+            qids_to_remove = [
+                qid
+                for qid, q in self._questions.items()
+                if q.session_id == session_id and q.prompt_id == prompt_id
+            ]
+            for qid in qids_to_remove:
+                self._questions.pop(qid, None)
+                self._question_votes.pop(qid, None)
+                try:
+                    self._questions_by_session[session_id].remove(qid)
+                except ValueError:
+                    pass
+            del self._prompts[prompt_id]
+            self._prompts_by_session[session_id] = [
+                p for p in self._prompts_by_session[session_id] if p != prompt_id
+            ]
+
+    async def delete_audience_questions(self, session_id: str, user_id: str) -> list[str]:
+        """Remove session questions that are not tied to an open-discussion prompt (audience Q&A)."""
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            qids_to_remove = [
+                qid
+                for qid in self._questions_by_session.get(session_id, [])
+                if self._questions[qid].prompt_id is None
+            ]
+            for qid in qids_to_remove:
+                self._questions.pop(qid, None)
+                self._question_votes.pop(qid, None)
+                try:
+                    self._questions_by_session[session_id].remove(qid)
+                except ValueError:
+                    pass
+            return qids_to_remove
+
     async def snapshot(
         self, session_id: str, viewer_user_id: str | None = None
     ) -> SessionSnapshot:

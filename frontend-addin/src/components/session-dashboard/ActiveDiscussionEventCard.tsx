@@ -9,6 +9,7 @@ export interface ActiveDiscussionEventCardProps {
   variant?: 'active' | 'inactive'
   onStop?: (promptId: string) => void
   onResume?: (promptId: string) => void
+  onDelete?: () => void
 }
 
 export function ActiveDiscussionEventCard({
@@ -17,7 +18,8 @@ export function ActiveDiscussionEventCard({
   pendingPreview,
   variant = 'active',
   onStop,
-  onResume
+  onResume,
+  onDelete
 }: ActiveDiscussionEventCardProps) {
   const inactive = variant === 'inactive'
 
@@ -87,6 +89,18 @@ export function ActiveDiscussionEventCard({
             >
               Stop discussion
             </button>
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 pt-4">
@@ -100,6 +114,18 @@ export function ActiveDiscussionEventCard({
             >
               Resume discussion
             </button>
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         )}
       </div>

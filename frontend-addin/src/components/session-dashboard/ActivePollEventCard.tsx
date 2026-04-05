@@ -9,6 +9,8 @@ export interface ActivePollEventCardProps {
   onStop?: (pollId: string) => void
   /** Re-open a closed poll from the inactive panel. */
   onResume?: (pollId: string) => void
+  /** Permanently remove this poll from the session. */
+  onDelete?: () => void
 }
 
 export function ActivePollEventCard({
@@ -16,7 +18,8 @@ export function ActivePollEventCard({
   variant = 'active',
   onConfigure,
   onStop,
-  onResume
+  onResume,
+  onDelete
 }: ActivePollEventCardProps) {
   const totalVotes = poll.options.reduce((sum, o) => sum + (o.votes ?? 0), 0)
   const inactive = variant === 'inactive'
@@ -103,6 +106,18 @@ export function ActivePollEventCard({
               >
                 Stop poll
               </button>
+              {onDelete ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete()
+                  }}
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 pt-2">
@@ -116,6 +131,18 @@ export function ActivePollEventCard({
               >
                 Resume poll
               </button>
+              {onDelete ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete()
+                  }}
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           )}
         </div>
@@ -135,6 +162,31 @@ export function ActivePollEventCard({
                 className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
               >
                 Resume poll
+              </button>
+              {onDelete ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete()
+                  }}
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+          ) : onDelete ? (
+            <div className="flex flex-wrap gap-2 pt-4">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+              >
+                Delete
               </button>
             </div>
           ) : null}
