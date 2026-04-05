@@ -14,7 +14,6 @@ export interface SessionActiveEventsPanelProps {
   questions: Question[]
   onConfigurePoll?: (pollId: string) => void
   onStopPoll?: (pollId: string) => void
-  onAddEvent?: () => void
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -31,8 +30,7 @@ export function SessionActiveEventsPanel({
   openPrompts,
   questions,
   onConfigurePoll,
-  onStopPoll,
-  onAddEvent
+  onStopPoll
 }: SessionActiveEventsPanelProps) {
   const sortedPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
   const sortedPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
@@ -54,29 +52,16 @@ export function SessionActiveEventsPanel({
     sortedPolls.length > 0 || qnaOpen || discussionBlocks.length > 0
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-bold text-slate-900">Active events</h3>
-        <button
-          type="button"
-          onClick={onAddEvent}
-          disabled={!onAddEvent}
-          className="!inline-flex !items-center !gap-1.5 !text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline disabled:!opacity-40 disabled:!cursor-not-allowed"
-        >
-          <span className="material-symbols-outlined text-lg">add</span>
-          Add event
-        </button>
-      </div>
-
+    <>
       {!hasAnyEvent ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
           <p className="text-sm text-muted">
             No active events right now. Open a poll, Q&amp;A, or discussion from the moderation tools
-            below, or use <strong className="text-slate-700">Add event</strong> when available.
+            below.
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="flex flex-col gap-5">
           {sortedPolls.map((poll) => (
             <ActivePollEventCard
               key={poll.id}
@@ -103,6 +88,6 @@ export function SessionActiveEventsPanel({
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

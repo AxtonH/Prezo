@@ -58,10 +58,10 @@ export function SessionDashboardPage({
   const pendingPreview = pendingAudience[0] ?? null
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-6 items-start">
         <div className="lg:col-span-4 space-y-5">
           <SessionAudienceAccessCard sessionCode={session.code} joinUrl={joinUrl} />
           <SessionParticipantsCard
