@@ -21,7 +21,7 @@ export interface SessionDashboardPageProps {
   /** Audience (non-prompt) questions for Q&A preview */
   audienceQuestions: Question[]
   onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
-  onConfigurePoll?: () => void
+  onConfigurePoll?: (pollId: string) => void
   onStopPoll?: (pollId: string) => void | Promise<void>
 }
 
@@ -40,9 +40,14 @@ export function SessionDashboardPage({
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
-  const openPoll = useMemo(
-    () => polls.find((p) => p.status === 'open') ?? null,
+  const openPolls = useMemo(
+    () => polls.filter((p) => p.status === 'open'),
     [polls]
+  )
+
+  const openPrompts = useMemo(
+    () => prompts.filter((p) => p.status === 'open'),
+    [prompts]
   )
 
   const pendingAudience = useMemo(
@@ -51,22 +56,6 @@ export function SessionDashboardPage({
   )
 
   const pendingPreview = pendingAudience[0] ?? null
-
-  const activeDiscussionPrompt = useMemo(
-    () => prompts.find((p) => p.status === 'open') ?? null,
-    [prompts]
-  )
-
-  const discussionPending = useMemo(() => {
-    if (!activeDiscussionPrompt) {
-      return []
-    }
-    return questions.filter(
-      (q) => q.prompt_id === activeDiscussionPrompt.id && q.status === 'pending'
-    )
-  }, [questions, activeDiscussionPrompt])
-
-  const discussionPreview = discussionPending[0] ?? null
 
   return (
     <div className="space-y-8">
@@ -84,15 +73,14 @@ export function SessionDashboardPage({
         </div>
         <div className="lg:col-span-8">
           <SessionActiveEventsPanel
-            openPoll={openPoll}
+            openPolls={openPolls}
+            qnaOpen={session.qna_open}
             pendingAudienceCount={pendingAudience.length}
             pendingPreview={pendingPreview}
-            qnaOpen={session.qna_open}
-            activeDiscussionPrompt={activeDiscussionPrompt}
-            discussionPendingCount={discussionPending.length}
-            discussionPreview={discussionPreview}
+            openPrompts={openPrompts}
+            questions={questions}
             onConfigurePoll={onConfigurePoll}
-            onStopPoll={openPoll && onStopPoll ? () => void onStopPoll(openPoll.id) : undefined}
+            onStopPoll={onStopPoll}
           />
         </div>
       </div>

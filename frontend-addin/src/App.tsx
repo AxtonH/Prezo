@@ -1172,7 +1172,7 @@ function HostConsole({
                   questions={questions}
                   audienceQuestions={questions.filter((q) => !q.prompt_id)}
                   onSetHostJoinAccess={setHostJoinAccess}
-                  onConfigurePoll={() => setShowPolls(true)}
+                  onConfigurePoll={(_pollId) => setShowPolls(true)}
                   onStopPoll={(pollId) => closePoll(pollId)}
                 />
               )}
