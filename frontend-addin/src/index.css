@@ -90,6 +90,10 @@ body.login-view #root {
   background-clip: padding-box;
 }
 
+.session-list-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .topbar {
   display: flex;
   align-items: center;

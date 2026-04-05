@@ -249,13 +249,13 @@ export function SessionDashboardPage({
             ) : null}
           </div>
           {/*
-            Shadow + rounded corners on an outer shell; scroll only on the inner div. Same element
-            with overflow-y-auto + box-shadow can draw a rectangular shadow in some engines.
+            Outer: rounded + box-shadow only (no overflow-hidden — that can square off the shadow).
+            Inner: rounded + overflow-y-auto so panel shadows clip to the same radius at the bottom.
           */}
-          <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-card">
+          <div className="flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-slate-200 bg-white shadow-card">
             <div
               data-session-activities-scroll
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3 pr-2 session-list-scroll [scrollbar-gutter:stable] lg:scroll-smooth"
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-2xl bg-white p-3 pb-10 pr-2 session-list-scroll [scrollbar-gutter:stable] lg:scroll-smooth"
             >
               <SessionActiveActivitiesPanel
                 openPolls={openPolls}
