@@ -10,9 +10,9 @@ import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionParticipantsCard } from './SessionParticipantsCard'
 
-function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
+function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
   return [...items].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   )
 }
 
@@ -91,7 +91,7 @@ export function SessionDashboardPage({
   )
 
   const closedPolls = useMemo(
-    () => sortByCreatedDesc(polls.filter((p) => p.status === 'closed')),
+    () => sortByCreatedAsc(polls.filter((p) => p.status === 'closed')),
     [polls]
   )
 
@@ -101,19 +101,39 @@ export function SessionDashboardPage({
   )
 
   const closedPrompts = useMemo(
-    () => sortByCreatedDesc(prompts.filter((p) => p.status === 'closed')),
+    () => sortByCreatedAsc(prompts.filter((p) => p.status === 'closed')),
     [prompts]
   )
 
   const audiencePendingQuestions = useMemo(
-    () => sortByCreatedDesc(audienceQuestions.filter((q) => q.status === 'pending')),
+    () => sortByCreatedAsc(audienceQuestions.filter((q) => q.status === 'pending')),
     [audienceQuestions]
   )
 
   const audienceApprovedQuestions = useMemo(
-    () => sortByCreatedDesc(audienceQuestions.filter((q) => q.status === 'approved')),
+    () => sortByCreatedAsc(audienceQuestions.filter((q) => q.status === 'approved')),
     [audienceQuestions]
   )
+
+  /**
+   * Audience Q&A has no row `created_at`; use earliest question time, or sort after all polls/prompts
+   * when the channel is empty so merged panel order stays chronological.
+   */
+  const audienceQnaSortKey = useMemo(() => {
+    if (audienceQuestions.length > 0) {
+      return audienceQuestions.reduce(
+        (earliest, q) => (q.created_at < earliest ? q.created_at : earliest),
+        audienceQuestions[0].created_at
+      )
+    }
+    const times = [
+      session.created_at,
+      ...polls.map((p) => p.created_at),
+      ...prompts.map((p) => p.created_at)
+    ]
+    const maxMs = Math.max(...times.map((t) => new Date(t).getTime()))
+    return new Date(maxMs + 1).toISOString()
+  }, [audienceQuestions, polls, prompts, session.created_at])
 
   /** Tracks Q&amp;A being opened this session so we still show an inactive panel after close even with zero questions. */
   const qnaWasOpenedThisSessionRef = useRef(false)
@@ -181,6 +201,7 @@ export function SessionDashboardPage({
             closedPolls={closedPolls}
             qnaOpen={session.qna_open}
             showInactiveQna={showInactiveQna}
+            audienceQnaSortKey={audienceQnaSortKey}
             audiencePendingQuestions={audiencePendingQuestions}
             audienceApprovedQuestions={audienceApprovedQuestions}
             openPrompts={openPrompts}

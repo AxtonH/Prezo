@@ -8,14 +8,19 @@ import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 
 export interface SessionActiveActivitiesPanelProps {
   openPolls: Poll[]
-  /** Stopped polls — shown at the bottom, inactive styling. */
+  /** Stopped polls — shown in the inactive block, oldest first when merged. */
   closedPolls: Poll[]
   qnaOpen: boolean
-  /** When Q&amp;A was closed but had audience activity — show inactive card at bottom. */
+  /**
+   * When Q&amp;A was closed but had audience activity — show inactive card in the inactive block.
+   * Must be false while `qnaOpen` is true (parent normally guarantees this; the panel also guards).
+   */
   showInactiveQna: boolean
-  /** Audience Q&amp;A (no prompt) — pending, newest first. */
+  /** ISO time for merging audience Q&amp;A with polls/discussions (earliest question or synthetic). */
+  audienceQnaSortKey: string
+  /** Audience Q&amp;A (no prompt) — pending, oldest first. */
   audiencePendingQuestions: Question[]
-  /** Audience Q&amp;A (no prompt) — approved, newest first. */
+  /** Audience Q&amp;A (no prompt) — approved, oldest first. */
   audienceApprovedQuestions: Question[]
   openPrompts: QnaPrompt[]
   closedPrompts: QnaPrompt[]
@@ -36,17 +41,38 @@ export interface SessionActiveActivitiesPanelProps {
   onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
 }
 
-function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
+function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
   return [...items].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   )
 }
+
+function sortKeyMs(iso: string): number {
+  return new Date(iso).getTime()
+}
+
+type DiscussionBlock = {
+  prompt: QnaPrompt
+  pendingQuestions: Question[]
+  approvedQuestions: Question[]
+}
+
+type MergedActiveRow =
+  | { kind: 'poll'; sortAt: string; poll: Poll }
+  | { kind: 'qna'; sortAt: string }
+  | { kind: 'discussion'; sortAt: string; block: DiscussionBlock }
+
+type MergedInactiveRow =
+  | { kind: 'poll'; sortAt: string; poll: Poll }
+  | { kind: 'qna'; sortAt: string }
+  | { kind: 'discussion'; sortAt: string; block: DiscussionBlock }
 
 export function SessionActiveActivitiesPanel({
   openPolls,
   closedPolls,
   qnaOpen,
   showInactiveQna,
+  audienceQnaSortKey,
   audiencePendingQuestions,
   audienceApprovedQuestions,
   openPrompts,
@@ -72,52 +98,64 @@ export function SessionActiveActivitiesPanel({
   >(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  const sortedOpenPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
-  const sortedClosedPolls = useMemo(() => sortByCreatedDesc(closedPolls), [closedPolls])
-  const sortedOpenPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
-  const sortedClosedPrompts = useMemo(() => sortByCreatedDesc(closedPrompts), [closedPrompts])
 
-  const discussionBlocks = useMemo(() => {
-    return sortedOpenPrompts.map((prompt) => {
-      const forPrompt = questions.filter((q) => q.prompt_id === prompt.id)
-      const pendingQuestions = sortByCreatedDesc(
-        forPrompt.filter((q) => q.status === 'pending')
-      )
-      const approvedQuestions = sortByCreatedDesc(
-        forPrompt.filter((q) => q.status === 'approved')
-      )
-      return {
-        prompt,
-        pendingQuestions,
-        approvedQuestions
-      }
-    })
-  }, [sortedOpenPrompts, questions])
+  const sortedOpenPolls = useMemo(() => sortByCreatedAsc(openPolls), [openPolls])
+  const sortedClosedPolls = useMemo(() => sortByCreatedAsc(closedPolls), [closedPolls])
+  const sortedOpenPrompts = useMemo(() => sortByCreatedAsc(openPrompts), [openPrompts])
+  const sortedClosedPrompts = useMemo(() => sortByCreatedAsc(closedPrompts), [closedPrompts])
 
-  const discussionBlocksInactive = useMemo(() => {
-    return sortedClosedPrompts.map((prompt) => {
-      const forPrompt = questions.filter((q) => q.prompt_id === prompt.id)
-      const pendingQuestions = sortByCreatedDesc(
-        forPrompt.filter((q) => q.status === 'pending')
-      )
-      const approvedQuestions = sortByCreatedDesc(
-        forPrompt.filter((q) => q.status === 'approved')
-      )
-      return {
-        prompt,
-        pendingQuestions,
-        approvedQuestions
-      }
-    })
-  }, [sortedClosedPrompts, questions])
+  const discussionBlockFor = (prompt: QnaPrompt): DiscussionBlock => {
+    const forPrompt = questions.filter((q) => q.prompt_id === prompt.id)
+    const pendingQuestions = sortByCreatedAsc(
+      forPrompt.filter((q) => q.status === 'pending')
+    )
+    const approvedQuestions = sortByCreatedAsc(
+      forPrompt.filter((q) => q.status === 'approved')
+    )
+    return { prompt, pendingQuestions, approvedQuestions }
+  }
+
+  const mergedActiveRows = useMemo((): MergedActiveRow[] => {
+    const rows: MergedActiveRow[] = []
+    for (const poll of sortedOpenPolls) {
+      rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+    }
+    if (qnaOpen) {
+      rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
+    }
+    for (const prompt of sortedOpenPrompts) {
+      rows.push({
+        kind: 'discussion',
+        sortAt: prompt.created_at,
+        block: discussionBlockFor(prompt)
+      })
+    }
+    rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+    return rows
+  }, [sortedOpenPolls, sortedOpenPrompts, qnaOpen, audienceQnaSortKey, questions])
+
+  const mergedInactiveRows = useMemo((): MergedInactiveRow[] => {
+    const rows: MergedInactiveRow[] = []
+    for (const poll of sortedClosedPolls) {
+      rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+    }
+    /** Never show inactive Q&amp;A while the channel is open — avoids duplicating the same question lists. */
+    if (showInactiveQna && !qnaOpen) {
+      rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
+    }
+    for (const prompt of sortedClosedPrompts) {
+      rows.push({
+        kind: 'discussion',
+        sortAt: prompt.created_at,
+        block: discussionBlockFor(prompt)
+      })
+    }
+    rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+    return rows
+  }, [sortedClosedPolls, sortedClosedPrompts, showInactiveQna, qnaOpen, audienceQnaSortKey, questions])
 
   const hasAnyActivity =
-    sortedOpenPolls.length > 0 ||
-    qnaOpen ||
-    discussionBlocks.length > 0 ||
-    sortedClosedPolls.length > 0 ||
-    showInactiveQna ||
-    discussionBlocksInactive.length > 0
+    mergedActiveRows.length > 0 || mergedInactiveRows.length > 0
 
   const closeDeleteModal = () => {
     if (!deleteBusy) {
@@ -167,78 +205,90 @@ export function SessionActiveActivitiesPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-5">
-          {sortedOpenPolls.map((poll) => (
-            <ActivePollActivityCard
-              key={poll.id}
-              poll={poll}
-              variant="active"
-              onConfigure={onConfigurePoll}
-              onStop={onStopPoll}
-              onDelete={() => setDeleteTarget({ kind: 'poll', id: poll.id })}
-            />
-          ))}
+          {mergedActiveRows.map((row) => {
+            if (row.kind === 'poll') {
+              return (
+                <ActivePollActivityCard
+                  key={`poll-open-${row.poll.id}`}
+                  poll={row.poll}
+                  variant="active"
+                  onConfigure={onConfigurePoll}
+                  onStop={onStopPoll}
+                  onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
+                />
+              )
+            }
+            if (row.kind === 'qna') {
+              return (
+                <ActiveQnaActivityCard
+                  key="qna-active"
+                  pendingQuestions={audiencePendingQuestions}
+                  approvedQuestions={audienceApprovedQuestions}
+                  variant="active"
+                  onStop={onStopQna}
+                  onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onApproveQuestion={onApproveAudienceQuestion}
+                  onHideQuestion={onHideAudienceQuestion}
+                />
+              )
+            }
+            const { prompt, pendingQuestions, approvedQuestions } = row.block
+            return (
+              <ActiveDiscussionActivityCard
+                key={`discussion-open-${prompt.id}`}
+                prompt={prompt}
+                pendingQuestions={pendingQuestions}
+                approvedQuestions={approvedQuestions}
+                variant="active"
+                onStop={onStopDiscussion}
+                onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onApproveQuestion={onApproveDiscussionQuestion}
+                onHideQuestion={onHideDiscussionQuestion}
+              />
+            )
+          })}
 
-          {qnaOpen ? (
-            <ActiveQnaActivityCard
-              pendingQuestions={audiencePendingQuestions}
-              approvedQuestions={audienceApprovedQuestions}
-              variant="active"
-              onStop={onStopQna}
-              onDelete={() => setDeleteTarget({ kind: 'qna' })}
-              onApproveQuestion={onApproveAudienceQuestion}
-              onHideQuestion={onHideAudienceQuestion}
-            />
-          ) : null}
-
-          {discussionBlocks.map(({ prompt, pendingQuestions, approvedQuestions }) => (
-            <ActiveDiscussionActivityCard
-              key={prompt.id}
-              prompt={prompt}
-              pendingQuestions={pendingQuestions}
-              approvedQuestions={approvedQuestions}
-              variant="active"
-              onStop={onStopDiscussion}
-              onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
-              onApproveQuestion={onApproveDiscussionQuestion}
-              onHideQuestion={onHideDiscussionQuestion}
-            />
-          ))}
-
-          {sortedClosedPolls.map((poll) => (
-            <ActivePollActivityCard
-              key={poll.id}
-              poll={poll}
-              variant="inactive"
-              onResume={onResumePoll}
-              onDelete={() => setDeleteTarget({ kind: 'poll', id: poll.id })}
-            />
-          ))}
-
-          {showInactiveQna ? (
-            <ActiveQnaActivityCard
-              pendingQuestions={audiencePendingQuestions}
-              approvedQuestions={audienceApprovedQuestions}
-              variant="inactive"
-              onResume={onResumeQna}
-              onDelete={() => setDeleteTarget({ kind: 'qna' })}
-              onApproveQuestion={onApproveAudienceQuestion}
-              onHideQuestion={onHideAudienceQuestion}
-            />
-          ) : null}
-
-          {discussionBlocksInactive.map(({ prompt, pendingQuestions, approvedQuestions }) => (
-            <ActiveDiscussionActivityCard
-              key={prompt.id}
-              prompt={prompt}
-              pendingQuestions={pendingQuestions}
-              approvedQuestions={approvedQuestions}
-              variant="inactive"
-              onResume={onResumeDiscussion}
-              onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
-              onApproveQuestion={onApproveDiscussionQuestion}
-              onHideQuestion={onHideDiscussionQuestion}
-            />
-          ))}
+          {mergedInactiveRows.map((row) => {
+            if (row.kind === 'poll') {
+              return (
+                <ActivePollActivityCard
+                  key={`poll-closed-${row.poll.id}`}
+                  poll={row.poll}
+                  variant="inactive"
+                  onResume={onResumePoll}
+                  onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
+                />
+              )
+            }
+            if (row.kind === 'qna') {
+              return (
+                <ActiveQnaActivityCard
+                  key="qna-inactive"
+                  pendingQuestions={audiencePendingQuestions}
+                  approvedQuestions={audienceApprovedQuestions}
+                  variant="inactive"
+                  onResume={onResumeQna}
+                  onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onApproveQuestion={onApproveAudienceQuestion}
+                  onHideQuestion={onHideAudienceQuestion}
+                />
+              )
+            }
+            const { prompt, pendingQuestions, approvedQuestions } = row.block
+            return (
+              <ActiveDiscussionActivityCard
+                key={`discussion-closed-${prompt.id}`}
+                prompt={prompt}
+                pendingQuestions={pendingQuestions}
+                approvedQuestions={approvedQuestions}
+                variant="inactive"
+                onResume={onResumeDiscussion}
+                onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onApproveQuestion={onApproveDiscussionQuestion}
+                onHideQuestion={onHideDiscussionQuestion}
+              />
+            )
+          })}
         </div>
       )}
     </>
