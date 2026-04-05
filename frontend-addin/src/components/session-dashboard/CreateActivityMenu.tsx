@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export interface CreateActivityMenuProps {
   qnaOpen: boolean
@@ -38,7 +38,6 @@ export function CreateActivityMenu({
   onOpenAudienceQna,
   onCreateDiscussionPrompt
 }: CreateActivityMenuProps) {
-  const rootRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<'pick' | 'poll' | 'qna' | 'discussion'>('pick')
   const [busy, setBusy] = useState(false)
@@ -64,22 +63,13 @@ export function CreateActivityMenu({
     if (!open) {
       return
     }
-    const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        closeAll()
-      }
-    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         closeAll()
       }
     }
-    document.addEventListener('mousedown', onDoc)
     window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      window.removeEventListener('keydown', onKey)
-    }
+    return () => window.removeEventListener('keydown', onKey)
   }, [open, closeAll])
 
   const updatePollOption = (index: number, value: string) => {
@@ -153,221 +143,301 @@ export function CreateActivityMenu({
           ? 'Audience Q&A'
           : 'Open discussion'
 
+  const headerIcon =
+    step === 'pick'
+      ? 'add_circle'
+      : step === 'poll'
+        ? 'bar_chart'
+        : step === 'qna'
+          ? 'chat_bubble'
+          : 'forum'
+
+  const headerBlurb =
+    step === 'pick'
+      ? 'Choose what you want to run in this session.'
+      : step === 'poll'
+        ? 'Add your question and answer choices. The poll opens as soon as you create it.'
+        : step === 'qna'
+          ? qnaOpen
+            ? 'Audience Q&A is already live for this session.'
+            : 'Open live audience Q&A so people can send questions.'
+          : 'Set a prompt — the discussion opens as soon as you create it.'
+
   return (
-    <div ref={rootRef} className="relative flex justify-end">
-      <button
-        type="button"
-        onClick={() => {
-          if (open) {
-            closeAll()
-          } else {
+    <>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => {
             setStep('pick')
             setFormError(null)
             setOpen(true)
-          }
-        }}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        className="!inline-flex !items-center !gap-2 !px-5 !py-2.5 !rounded-xl !text-sm !font-bold !bg-primary !text-white !border-0 !shadow-sm hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shrink-0"
-      >
-        <span className="material-symbols-outlined text-lg" aria-hidden>
-          add_circle
-        </span>
-        Create activity
-      </button>
+          }}
+          className="!inline-flex !items-center !gap-2 !px-5 !py-2.5 !rounded-xl !text-sm !font-bold !bg-primary !text-white !border-0 !shadow-sm hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shrink-0"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden>
+            add_circle
+          </span>
+          Create activity
+        </button>
+      </div>
 
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-[60] w-[min(calc(100vw-2rem),26rem)] sm:w-[26rem] rounded-2xl border border-slate-200/95 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.14)] overflow-hidden"
-          role="dialog"
-          aria-label={panelTitle}
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          role="presentation"
         >
-          <div className="px-5 pt-4 pb-3 border-b border-slate-100 flex items-center gap-2">
-            {step !== 'pick' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('pick')
-                  setFormError(null)
-                }}
-                className="!p-1.5 !rounded-lg !border-0 !bg-transparent !text-slate-600 hover:!bg-slate-100 !shadow-none"
-                aria-label="Back"
-              >
-                <span className="material-symbols-outlined text-xl">arrow_back</span>
-              </button>
-            ) : null}
-            <h3 className="text-base font-bold text-slate-900 flex-1 min-w-0">{panelTitle}</h3>
-            <button
-              type="button"
-              onClick={closeAll}
-              className="!p-1.5 !rounded-lg !border-0 !bg-transparent !text-muted hover:!text-slate-800 hover:!bg-slate-100 !shadow-none"
-              aria-label="Close"
-            >
-              <span className="material-symbols-outlined text-xl">close</span>
-            </button>
-          </div>
-
-          <div className="p-5 max-h-[min(70vh,32rem)] overflow-y-auto">
-            {step === 'pick' ? (
-              <div className="grid grid-cols-1 gap-3">
-                {ACTIVITY_TYPES.map((a) => (
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={closeAll}
+            aria-hidden
+          />
+          <div
+            className="relative z-10 bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-h-[min(90vh,40rem)] overflow-hidden flex flex-col max-w-lg"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-activity-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-7 pt-7 pb-2 shrink-0 border-b border-slate-100">
+              <div className="flex items-start gap-3">
+                {step !== 'pick' ? (
                   <button
-                    key={a.id}
                     type="button"
                     onClick={() => {
+                      setStep('pick')
                       setFormError(null)
-                      setStep(a.id)
                     }}
-                    className="flex gap-4 text-left rounded-xl border border-slate-200 p-4 hover:border-primary/35 hover:bg-slate-50/90 transition-colors"
+                    className="!mt-0.5 !p-1.5 !rounded-lg !border-0 !bg-transparent !text-slate-600 hover:!bg-slate-100 !shadow-none shrink-0"
+                    aria-label="Back"
                   >
-                    <span
-                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-2xl"
-                      aria-hidden
-                    >
-                      {a.emoji}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block font-bold text-slate-900 text-sm">{a.title}</span>
-                      <span className="block text-xs text-muted mt-1 leading-relaxed">{a.description}</span>
-                    </span>
+                    <span className="material-symbols-outlined text-xl">arrow_back</span>
                   </button>
-                ))}
-              </div>
-            ) : null}
-
-            {step === 'poll' ? (
-              <div className="space-y-4">
-                <p className="text-sm text-muted leading-relaxed">
-                  Add your question and at least two answer choices. The poll opens as soon as you create it.
-                </p>
-                <div>
-                  <label htmlFor="create-poll-q" className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">
-                    Question
-                  </label>
-                  <input
-                    id="create-poll-q"
-                    value={pollQuestion}
-                    onChange={(e) => setPollQuestion(e.target.value)}
-                    placeholder="What should we vote on?"
-                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none"
-                  />
+                ) : null}
+                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-primary text-xl">{headerIcon}</span>
                 </div>
-                <div className="space-y-2">
-                  <span className="block text-xs font-bold uppercase tracking-wider text-muted">Options</span>
-                  {pollOptions.map((opt, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        value={opt}
-                        onChange={(e) => updatePollOption(index, e.target.value)}
-                        placeholder={`Option ${index + 1}`}
-                        className="!min-w-0 !flex-1 !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-2.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none"
-                      />
-                      {pollOptions.length > 2 ? (
-                        <button
-                          type="button"
-                          onClick={() => removePollOption(index)}
-                          className="!shrink-0 !px-2 !text-xs !font-semibold !text-slate-500 hover:!text-danger !bg-transparent !border-0 !shadow-none"
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={addPollOption}
-                    className="!text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
-                  >
-                    + Add option
-                  </button>
+                <div className="min-w-0 flex-1 pr-2">
+                  <h2 id="create-activity-title" className="text-lg font-bold text-slate-900 !m-0">
+                    {panelTitle}
+                  </h2>
+                  <p className="text-sm text-muted mt-2 leading-relaxed !m-0">{headerBlurb}</p>
                 </div>
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={pollAllowMultiple}
-                    onChange={(e) => setPollAllowMultiple(e.target.checked)}
-                    className="!rounded !border-slate-300"
-                  />
-                  Allow multiple choices
-                </label>
-                {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => void handleCreatePoll()}
-                  className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark disabled:!opacity-50 !border-0 !shadow-sm"
+                  onClick={closeAll}
+                  className="!p-1.5 !rounded-lg !border-0 !bg-transparent !text-muted hover:!text-slate-800 hover:!bg-slate-100 !shadow-none shrink-0"
+                  aria-label="Close"
                 >
-                  {busy ? 'Creating…' : 'Create & open poll'}
+                  <span className="material-symbols-outlined text-xl">close</span>
                 </button>
               </div>
-            ) : null}
+            </div>
 
-            {step === 'qna' ? (
-              <div className="space-y-4">
-                {qnaOpen ? (
-                  <>
-                    <p className="text-sm text-slate-700 leading-relaxed">
-                      Audience Q&amp;A is already open. Participants can submit questions; use the activity list to moderate.
+            <div className="px-7 py-5 overflow-y-auto flex-1 min-h-0">
+              {step === 'pick' ? (
+                <div className="grid grid-cols-1 gap-3">
+                  {ACTIVITY_TYPES.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setFormError(null)
+                        setStep(a.id)
+                      }}
+                      className="flex gap-4 text-left rounded-xl border border-slate-200 p-4 hover:border-primary/35 hover:bg-slate-50/90 transition-colors"
+                    >
+                      <span
+                        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-2xl"
+                        aria-hidden
+                      >
+                        {a.emoji}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-bold text-slate-900 text-sm">{a.title}</span>
+                        <span className="block text-xs text-muted mt-1 leading-relaxed">{a.description}</span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {step === 'poll' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="create-poll-q" className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">
+                      Question
+                    </label>
+                    <input
+                      id="create-poll-q"
+                      value={pollQuestion}
+                      onChange={(e) => setPollQuestion(e.target.value)}
+                      placeholder="What should we vote on?"
+                      className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <span className="block text-xs font-bold uppercase tracking-wider text-muted">Options</span>
+                    {pollOptions.map((opt, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input
+                          value={opt}
+                          onChange={(e) => updatePollOption(index, e.target.value)}
+                          placeholder={`Option ${index + 1}`}
+                          className="!min-w-0 !flex-1 !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
+                        />
+                        {pollOptions.length > 2 ? (
+                          <button
+                            type="button"
+                            onClick={() => removePollOption(index)}
+                            className="!shrink-0 !px-2 !text-xs !font-semibold !text-slate-500 hover:!text-danger !bg-transparent !border-0 !shadow-none"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={addPollOption}
+                      className="!text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
+                    >
+                      + Add option
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={pollAllowMultiple}
+                      onChange={(e) => setPollAllowMultiple(e.target.checked)}
+                      className="!rounded !border-slate-300"
+                    />
+                    Allow multiple choices
+                  </label>
+                  {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
+                </div>
+              ) : null}
+
+              {step === 'qna' ? (
+                <div className="space-y-4">
+                  {qnaOpen ? (
+                    <p className="text-sm text-slate-700 leading-relaxed !m-0">
+                      Participants can submit questions; use the activity list below to moderate.
                     </p>
+                  ) : (
+                    <>
+                      {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {step === 'discussion' ? (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="create-discussion-prompt" className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">
+                      Discussion prompt
+                    </label>
+                    <textarea
+                      id="create-discussion-prompt"
+                      value={discussionPrompt}
+                      onChange={(e) => setDiscussionPrompt(e.target.value)}
+                      rows={4}
+                      placeholder="What topic should people discuss?"
+                      className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none resize-y min-h-[6rem] !transition-all"
+                    />
+                  </div>
+                  {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="px-7 pb-7 flex flex-col sm:flex-row gap-3 shrink-0 border-t border-slate-100 pt-4 bg-white">
+              {step === 'pick' ? (
+                <button
+                  type="button"
+                  onClick={closeAll}
+                  className="!w-full !bg-transparent !border !border-slate-200 !text-slate-600 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
+                >
+                  Cancel
+                </button>
+              ) : null}
+
+              {step === 'poll' ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleCreatePoll()}
+                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50"
+                  >
+                    {busy ? 'Creating…' : 'Create & open poll'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeAll}
+                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none sm:!min-w-[7rem]"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : null}
+
+              {step === 'qna' ? (
+                <>
+                  {qnaOpen ? (
                     <button
                       type="button"
                       onClick={closeAll}
-                      className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark !border-0 !shadow-sm"
+                      className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
                     >
                       Done
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-muted leading-relaxed">
-                      Opens live audience Q&amp;A so people can send questions. You can approve or hide them from the dashboard.
-                    </p>
-                    {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void handleOpenQna()}
-                      className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark disabled:!opacity-50 !border-0 !shadow-sm"
-                    >
-                      {busy ? 'Opening…' : 'Open audience Q&A'}
-                    </button>
-                  </>
-                )}
-              </div>
-            ) : null}
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleOpenQna()}
+                        className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50"
+                      >
+                        {busy ? 'Opening…' : 'Open audience Q&A'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={closeAll}
+                        className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none sm:!min-w-[7rem]"
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </>
+              ) : null}
 
-            {step === 'discussion' ? (
-              <div className="space-y-4">
-                <p className="text-sm text-muted leading-relaxed">
-                  The prompt appears to participants. The discussion opens as soon as you create it.
-                </p>
-                <div>
-                  <label htmlFor="create-discussion-prompt" className="block text-xs font-bold uppercase tracking-wider text-muted mb-1.5">
-                    Discussion prompt
-                  </label>
-                  <textarea
-                    id="create-discussion-prompt"
-                    value={discussionPrompt}
-                    onChange={(e) => setDiscussionPrompt(e.target.value)}
-                    rows={4}
-                    placeholder="What topic should people discuss?"
-                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none resize-y min-h-[6rem]"
-                  />
-                </div>
-                {formError ? <p className="text-danger text-sm !m-0">{formError}</p> : null}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleCreateDiscussion()}
-                  className="!w-full !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark disabled:!opacity-50 !border-0 !shadow-sm"
-                >
-                  {busy ? 'Starting…' : 'Create & open discussion'}
-                </button>
-              </div>
-            ) : null}
+              {step === 'discussion' ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleCreateDiscussion()}
+                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50"
+                  >
+                    {busy ? 'Starting…' : 'Create & open discussion'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeAll}
+                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none sm:!min-w-[7rem]"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   )
 }
