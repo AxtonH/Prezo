@@ -1310,6 +1310,6 @@ body.login-view #root {
     grid-template-rows: auto auto;
     grid-template-areas:
       "stack activities"
-      "participants empty";
+      "participants participants";
   }
 }

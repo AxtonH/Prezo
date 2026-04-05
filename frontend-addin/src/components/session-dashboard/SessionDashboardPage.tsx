@@ -215,7 +215,7 @@ export function SessionDashboardPage({
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
       {/*
-        lg: row 1 = audience+co-host (stack) | scrollable activities; row 2 = participants | empty.
+        lg: row 1 = audience+co-host (stack) | scrollable activities; row 2 = session stats full width.
       */}
       <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-start">
         <div
