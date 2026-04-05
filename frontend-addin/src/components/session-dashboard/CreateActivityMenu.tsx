@@ -11,22 +11,23 @@ export interface CreateActivityMenuProps {
   onCreateDiscussionPrompt: (prompt: string) => Promise<void>
 }
 
+/** Same Material Symbols as `WORKSPACE_NAV_ITEMS` in SideNav (polls, discussion, qna). */
 const ACTIVITY_TYPES = [
   {
     id: 'poll' as const,
-    emoji: '📊',
+    icon: 'bar_chart',
     title: 'Poll',
     description: 'Multiple-choice question your audience votes on live.'
   },
   {
     id: 'qna' as const,
-    emoji: '💬',
+    icon: 'chat_bubble',
     title: 'Q&A',
     description: 'Collect and moderate questions from the audience.'
   },
   {
     id: 'discussion' as const,
-    emoji: '🗣️',
+    icon: 'forum',
     title: 'Open discussion',
     description: 'Set a prompt and run a focused thread with your audience.'
   }
@@ -247,12 +248,12 @@ export function CreateActivityMenu({
                       }}
                       className="flex gap-4 text-left rounded-xl border border-slate-200 p-4 hover:border-primary/35 hover:bg-slate-50/90 transition-colors"
                     >
-                      <span
-                        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-2xl"
-                        aria-hidden
-                      >
-                        {a.emoji}
-                      </span>
+                    <span
+                      className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-primary"
+                      aria-hidden
+                    >
+                      <span className="material-symbols-outlined text-[1.25rem]">{a.icon}</span>
+                    </span>
                       <span className="min-w-0">
                         <span className="block font-bold text-slate-900 text-sm">{a.title}</span>
                         <span className="block text-xs text-muted mt-1 leading-relaxed">{a.description}</span>
