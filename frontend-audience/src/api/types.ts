@@ -57,7 +57,7 @@ export interface SessionSnapshot {
   prompts: QnaPrompt[]
 }
 
-export interface SessionEvent {
+export interface SessionActivity {
   type: string
   payload: Record<string, unknown>
   ts: string

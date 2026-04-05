@@ -523,7 +523,7 @@ class SupabaseStore:
         if not sessions:
             return HostDashboardStats(
                 active_sessions=0,
-                active_events=0,
+                active_activities=0,
                 unique_participants=0,
             )
 
@@ -552,7 +552,7 @@ class SupabaseStore:
             ),
         )
 
-        active_events = (
+        active_activities = (
             len(open_polls) + len(open_prompts) + qna_open_sessions
         )
 
@@ -600,7 +600,7 @@ class SupabaseStore:
 
         return HostDashboardStats(
             active_sessions=active_sessions,
-            active_events=active_events,
+            active_activities=active_activities,
             unique_participants=len(unique_clients),
         )
 
@@ -1418,5 +1418,5 @@ class SupabaseStore:
             )
         return restored
 
-    async def record_event(self, session_id: str, event: object) -> None:
+    async def record_activity(self, session_id: str, activity: object) -> None:
         return None

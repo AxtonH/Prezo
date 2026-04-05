@@ -9,7 +9,7 @@ from ..auth import AuthUser, get_current_user, get_optional_user
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
-    Event,
+    SessionActivity,
     HostAccessUpdate,
     HostDashboardStats,
     HostJoinRequest,
@@ -88,13 +88,13 @@ async def update_host_access(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     session = with_join_url(session)
-    event = Event(
+    activity = SessionActivity(
         type="host_access_updated",
         payload={"session": session.model_dump(mode="json")},
         ts=datetime.now(timezone.utc),
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return session
 
 
@@ -182,13 +182,13 @@ async def open_qna(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     session = with_join_url(session)
-    event = Event(
+    activity = SessionActivity(
         type="qna_opened",
         payload={"session": session.model_dump(mode="json")},
         ts=datetime.now(timezone.utc),
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return session
 
 
@@ -205,13 +205,13 @@ async def close_qna(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     session = with_join_url(session)
-    event = Event(
+    activity = SessionActivity(
         type="qna_closed",
         payload={"session": session.model_dump(mode="json")},
         ts=datetime.now(timezone.utc),
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return session
 
 
@@ -230,13 +230,13 @@ async def delete_audience_questions(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    event = Event(
+    activity = SessionActivity(
         type="audience_questions_deleted",
         payload={"question_ids": question_ids},
         ts=datetime.now(timezone.utc),
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return AudienceQuestionsDeletedResponse(question_ids=question_ids)
 
 
@@ -261,11 +261,11 @@ async def set_qna_config(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     session = with_join_url(session)
-    event = Event(
+    activity = SessionActivity(
         type="qna_config_updated",
         payload={"session": session.model_dump(mode="json")},
         ts=datetime.now(timezone.utc),
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return session

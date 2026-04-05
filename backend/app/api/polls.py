@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth import AuthUser, get_current_user, get_library_user
 from ..deps import get_manager, get_store
-from ..models import Event, Poll, PollCreate, PollStatus, PollUpdate, PollVote
+from ..models import Poll, PollCreate, PollStatus, PollUpdate, PollVote, SessionActivity
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
@@ -15,8 +15,10 @@ router = APIRouter(prefix="/sessions/{session_id}/polls", tags=["polls"])
 logger = logging.getLogger("prezo.polls")
 
 
-def make_event(event_type: str, payload: dict) -> Event:
-    return Event(type=event_type, payload=payload, ts=datetime.now(timezone.utc))
+def make_activity(activity_type: str, payload: dict) -> SessionActivity:
+    return SessionActivity(
+        type=activity_type, payload=payload, ts=datetime.now(timezone.utc)
+    )
 
 
 @router.post("", response_model=Poll, status_code=status.HTTP_201_CREATED)
@@ -33,9 +35,9 @@ async def create_poll(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("poll_created", {"poll": poll.model_dump(mode="json")})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_created", {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return poll
 
 
@@ -51,9 +53,9 @@ async def open_poll(
         poll = await store.set_poll_status(session_id, poll_id, PollStatus.open, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("poll_opened", {"poll": poll.model_dump(mode="json")})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_opened", {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return poll
 
 
@@ -69,9 +71,9 @@ async def close_poll(
         poll = await store.set_poll_status(session_id, poll_id, PollStatus.closed, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("poll_closed", {"poll": poll.model_dump(mode="json")})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_closed", {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return poll
 
 
@@ -87,9 +89,9 @@ async def delete_poll(
         await store.delete_poll(session_id, poll_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("poll_deleted", {"poll_id": poll_id})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_deleted", {"poll_id": poll_id})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
 
 
 @router.patch("/{poll_id}", response_model=Poll)
@@ -111,9 +113,9 @@ async def update_poll(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("poll_updated", {"poll": poll.model_dump(mode="json")})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_updated", {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return poll
 
 
@@ -140,7 +142,7 @@ async def vote_poll(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    event = make_event("poll_vote_updated", {"poll": poll.model_dump(mode="json")})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("poll_vote_updated", {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return poll

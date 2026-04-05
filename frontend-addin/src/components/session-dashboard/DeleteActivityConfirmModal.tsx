@@ -1,4 +1,4 @@
-export interface DeleteEventConfirmModalProps {
+export interface DeleteActivityConfirmModalProps {
   open: boolean
   onCancel: () => void
   onConfirm: () => void | Promise<void>
@@ -8,13 +8,13 @@ export interface DeleteEventConfirmModalProps {
   error?: string | null
 }
 
-export function DeleteEventConfirmModal({
+export function DeleteActivityConfirmModal({
   open,
   onCancel,
   onConfirm,
   busy = false,
   error = null
-}: DeleteEventConfirmModalProps) {
+}: DeleteActivityConfirmModalProps) {
   if (!open) {
     return null
   }
@@ -30,19 +30,19 @@ export function DeleteEventConfirmModal({
         className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.2)] w-full max-w-md overflow-hidden border border-slate-100"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="delete-event-title"
+        aria-labelledby="delete-activity-title"
       >
         <div className="px-7 pt-7 pb-2">
           <div className="flex items-center gap-3 mb-1">
             <div className="w-9 h-9 bg-rose-50 rounded-xl flex items-center justify-center">
               <span className="material-symbols-outlined text-rose-600 text-xl">delete_forever</span>
             </div>
-            <h2 id="delete-event-title" className="text-lg font-bold text-slate-900 !m-0">
-              Delete event?
+            <h2 id="delete-activity-title" className="text-lg font-bold text-slate-900 !m-0">
+              Delete activity?
             </h2>
           </div>
           <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
-            Are you sure you want to delete this event, this action{' '}
+            Are you sure you want to delete this activity, this action{' '}
             <span className="font-bold text-slate-900">cannot</span> be undone.
           </p>
           {error ? (

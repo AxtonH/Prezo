@@ -235,7 +235,7 @@ class HostDashboardStats(BaseModel):
     """Aggregated metrics for the authenticated host's sessions."""
 
     active_sessions: int = Field(ge=0)
-    active_events: int = Field(
+    active_activities: int = Field(
         ge=0,
         description=(
             "Live interactive surfaces: open audience Q&A (per session), "
@@ -248,7 +248,7 @@ class HostDashboardStats(BaseModel):
     )
 
 
-class Event(BaseModel):
+class SessionActivity(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     type: str

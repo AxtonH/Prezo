@@ -1,7 +1,7 @@
 import type { Poll } from '../../api/types'
-import { CollapsibleEventPanelShell } from './CollapsibleEventPanelShell'
+import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 
-export interface ActivePollEventCardProps {
+export interface ActivePollActivityCardProps {
   poll: Poll
   /** Stopped polls render at the bottom with inactive styling. */
   variant?: 'active' | 'inactive'
@@ -13,19 +13,19 @@ export interface ActivePollEventCardProps {
   onDelete?: () => void
 }
 
-export function ActivePollEventCard({
+export function ActivePollActivityCard({
   poll,
   variant = 'active',
   onConfigure,
   onStop,
   onResume,
   onDelete
-}: ActivePollEventCardProps) {
+}: ActivePollActivityCardProps) {
   const totalVotes = poll.options.reduce((sum, o) => sum + (o.votes ?? 0), 0)
   const inactive = variant === 'inactive'
 
   return (
-    <CollapsibleEventPanelShell
+    <CollapsibleActivityPanelShell
       variant={inactive ? 'inactive' : 'active'}
       icon={
         <div
@@ -192,6 +192,6 @@ export function ActivePollEventCard({
           ) : null}
         </div>
       )}
-    </CollapsibleEventPanelShell>
+    </CollapsibleActivityPanelShell>
   )
 }

@@ -8,8 +8,8 @@ const CARDS: {
 }[] = [
   { key: 'active_sessions', label: 'Active sessions', icon: 'event_available' },
   {
-    key: 'active_events',
-    label: 'Active events',
+    key: 'active_activities',
+    label: 'Active activities',
     icon: 'bolt',
     hint: 'Open Q&A, polls, and prompts across your sessions'
   },

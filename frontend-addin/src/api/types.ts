@@ -61,11 +61,11 @@ export interface SessionSnapshot {
 
 export interface HostDashboardStats {
   active_sessions: number
-  active_events: number
+  active_activities: number
   unique_participants: number
 }
 
-export interface SessionEvent {
+export interface SessionActivity {
   type: string
   payload: Record<string, unknown>
   ts: string

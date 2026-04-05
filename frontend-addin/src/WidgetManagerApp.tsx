@@ -7,7 +7,7 @@ import type {
   QnaPrompt,
   Question,
   Session,
-  SessionEvent,
+  SessionActivity,
   SessionSnapshot
 } from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -29,30 +29,30 @@ export function WidgetManagerApp() {
   const [isInserting, setIsInserting] = useState(false)
   const [isSavingConfig, setIsSavingConfig] = useState(false)
 
-  const handleEvent = useCallback((event: SessionEvent) => {
-    if (event.type === 'session_snapshot') {
-      const snapshot = event.payload.snapshot as SessionSnapshot
+  const handleSessionActivity = useCallback((activity: SessionActivity) => {
+    if (activity.type === 'session_snapshot') {
+      const snapshot = activity.payload.snapshot as SessionSnapshot
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       setPrompts(snapshot.prompts ?? [])
       return
     }
 
-    if (event.payload.session) {
-      const updated = event.payload.session as Session
+    if (activity.payload.session) {
+      const updated = activity.payload.session as Session
       setSession(updated)
       return
     }
 
-    if (event.type === 'qna_prompt_deleted' && typeof event.payload.prompt_id === 'string') {
-      const promptId = event.payload.prompt_id as string
+    if (activity.type === 'qna_prompt_deleted' && typeof activity.payload.prompt_id === 'string') {
+      const promptId = activity.payload.prompt_id as string
       setPrompts((prev) => prev.filter((p) => p.id !== promptId))
       setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
       return
     }
 
-    if (event.type === 'audience_questions_deleted' && Array.isArray(event.payload.question_ids)) {
-      const ids = new Set(event.payload.question_ids as string[])
+    if (activity.type === 'audience_questions_deleted' && Array.isArray(activity.payload.question_ids)) {
+      const ids = new Set(activity.payload.question_ids as string[])
       if (ids.size > 0) {
         setQuestions((prev) =>
           prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
@@ -61,8 +61,8 @@ export function WidgetManagerApp() {
       return
     }
 
-    if (event.payload.question) {
-      const question = event.payload.question as Question
+    if (activity.payload.question) {
+      const question = activity.payload.question as Question
       setQuestions((prev) => {
         const index = prev.findIndex((entry) => entry.id === question.id)
         if (index === -1) {
@@ -74,8 +74,8 @@ export function WidgetManagerApp() {
       })
     }
 
-    if (event.payload.prompt) {
-      const prompt = event.payload.prompt as QnaPrompt
+    if (activity.payload.prompt) {
+      const prompt = activity.payload.prompt as QnaPrompt
       setPrompts((prev) => {
         const index = prev.findIndex((entry) => entry.id === prompt.id)
         if (index === -1) {
@@ -88,7 +88,7 @@ export function WidgetManagerApp() {
     }
   }, [])
 
-  const socketStatus = useSessionSocket(binding?.sessionId ?? null, handleEvent)
+  const socketStatus = useSessionSocket(binding?.sessionId ?? null, handleSessionActivity)
 
   useEffect(() => {
     let active = true

@@ -1,4 +1,4 @@
-/** Short relative time for event previews (e.g. "2m ago"). */
+/** Short relative time for activity previews (e.g. "2m ago"). */
 export function formatRelativeTime(iso: string) {
   const t = new Date(iso).getTime()
   if (Number.isNaN(t)) return ''

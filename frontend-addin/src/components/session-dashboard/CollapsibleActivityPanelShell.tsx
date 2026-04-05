@@ -1,25 +1,25 @@
 import { useState, type ReactNode } from 'react'
 
-interface CollapsibleEventPanelShellProps {
+interface CollapsibleActivityPanelShellProps {
   icon: ReactNode
   titleBlock: ReactNode
   children: ReactNode
   /** @default false — panels start collapsed */
   defaultExpanded?: boolean
-  /** Stopped/closed events use a darker, muted treatment and an Inactive badge. */
+  /** Stopped/closed activities use a darker, muted treatment and an Inactive badge. */
   variant?: 'active' | 'inactive'
 }
 
 /**
- * Clickable header toggles body visibility; used by poll / Q&A / discussion event cards.
+ * Clickable header toggles body visibility; used by poll / Q&A / discussion activity cards.
  */
-export function CollapsibleEventPanelShell({
+export function CollapsibleActivityPanelShell({
   icon,
   titleBlock,
   children,
   defaultExpanded = false,
   variant = 'active'
-}: CollapsibleEventPanelShellProps) {
+}: CollapsibleActivityPanelShellProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const inactive = variant === 'inactive'
 

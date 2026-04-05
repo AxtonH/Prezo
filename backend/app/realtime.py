@@ -6,7 +6,7 @@ from typing import Iterable
 
 from fastapi import WebSocket
 
-from .models import Event
+from .models import SessionActivity
 
 
 class ConnectionManager:
@@ -23,13 +23,13 @@ class ConnectionManager:
         async with self._lock:
             self._connections[session_id].discard(websocket)
 
-    async def broadcast(self, session_id: str, event: Event) -> None:
+    async def broadcast(self, session_id: str, activity: SessionActivity) -> None:
         async with self._lock:
             recipients: Iterable[WebSocket] = list(self._connections[session_id])
         stale: list[WebSocket] = []
         for ws in recipients:
             try:
-                await ws.send_json(event.model_dump(mode="json"))
+                await ws.send_json(activity.model_dump(mode="json"))
             except Exception:
                 stale.append(ws)
         if stale:

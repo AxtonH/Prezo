@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PrezoLogo } from './components/PrezoLogo'
 
 import { api } from './api/client'
-import type { Question, Session, SessionEvent, SessionSnapshot } from './api/types'
+import type { Question, Session, SessionActivity, SessionSnapshot } from './api/types'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { readSessionBinding } from './office/sessionBinding'
 
@@ -26,22 +26,22 @@ export function DisplayApp() {
   const [bindingCode, setBindingCode] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const handleEvent = useCallback((event: SessionEvent) => {
-    if (event.type === 'session_snapshot') {
-      const snapshot = event.payload.snapshot as SessionSnapshot
+  const handleSessionActivity = useCallback((activity: SessionActivity) => {
+    if (activity.type === 'session_snapshot') {
+      const snapshot = activity.payload.snapshot as SessionSnapshot
       setSession(snapshot.session)
       setQuestions(snapshot.questions)
       return
     }
 
-    if (event.payload.session) {
-      const updated = event.payload.session as Session
+    if (activity.payload.session) {
+      const updated = activity.payload.session as Session
       setSession(updated)
       return
     }
 
-    if (event.type === 'audience_questions_deleted' && Array.isArray(event.payload.question_ids)) {
-      const ids = new Set(event.payload.question_ids as string[])
+    if (activity.type === 'audience_questions_deleted' && Array.isArray(activity.payload.question_ids)) {
+      const ids = new Set(activity.payload.question_ids as string[])
       if (ids.size > 0) {
         setQuestions((prev) =>
           prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
@@ -50,13 +50,13 @@ export function DisplayApp() {
       return
     }
 
-    if (event.payload.question) {
-      const question = event.payload.question as Question
+    if (activity.payload.question) {
+      const question = activity.payload.question as Question
       setQuestions((prev) => upsertById(prev, question))
     }
   }, [])
 
-  const socketStatus = useSessionSocket(bindingSessionId, handleEvent)
+  const socketStatus = useSessionSocket(bindingSessionId, handleSessionActivity)
 
   useEffect(() => {
     let active = true

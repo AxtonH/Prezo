@@ -12,7 +12,6 @@ from typing import Any
 from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     BrandProfile,
-    Event,
     HostDashboardStats,
     Poll,
     PollOption,
@@ -26,6 +25,7 @@ from .models import (
     SavedArtifact,
     SavedTheme,
     Session,
+    SessionActivity,
     SessionSnapshot,
     SessionStatus,
 )
@@ -174,7 +174,7 @@ class InMemoryStore:
         self._prompts_by_session: dict[str, list[str]] = defaultdict(list)
         self._question_votes: dict[str, set[str]] = defaultdict(set)
         self._poll_votes: dict[str, dict[str, set[str]]] = defaultdict(dict)
-        self._events_by_session: dict[str, list[Event]] = defaultdict(list)
+        self._activities_by_session: dict[str, list[SessionActivity]] = defaultdict(list)
         self._session_hosts: dict[str, set[str]] = defaultdict(set)
         self._saved_themes_by_user: dict[str, dict[str, SavedThemeData]] = defaultdict(dict)
         self._saved_artifacts_by_user: dict[str, dict[str, SavedArtifactData]] = defaultdict(dict)
@@ -250,12 +250,12 @@ class InMemoryStore:
             if not session_ids:
                 return HostDashboardStats(
                     active_sessions=0,
-                    active_events=0,
+                    active_activities=0,
                     unique_participants=0,
                 )
 
             active_sessions = 0
-            active_events = 0
+            active_activities = 0
             unique_clients: set[str] = set()
 
             for session_id in session_ids:
@@ -265,15 +265,15 @@ class InMemoryStore:
                 if session.status == SessionStatus.active:
                     active_sessions += 1
                 if session.qna_open:
-                    active_events += 1
+                    active_activities += 1
                 for pid in self._polls_by_session.get(session_id, []):
                     poll = self._polls.get(pid)
                     if poll and poll.status == PollStatus.open:
-                        active_events += 1
+                        active_activities += 1
                 for prid in self._prompts_by_session.get(session_id, []):
                     pr = self._prompts.get(prid)
                     if pr and pr.status == QnaPromptStatus.open:
-                        active_events += 1
+                        active_activities += 1
 
             for qid, clients in self._question_votes.items():
                 q = self._questions.get(qid)
@@ -293,7 +293,7 @@ class InMemoryStore:
 
             return HostDashboardStats(
                 active_sessions=active_sessions,
-                active_events=active_events,
+                active_activities=active_activities,
                 unique_participants=len(unique_clients),
             )
 
@@ -317,7 +317,7 @@ class InMemoryStore:
             for prompt_id in prompt_ids:
                 self._prompts.pop(prompt_id, None)
 
-            self._events_by_session.pop(session_id, None)
+            self._activities_by_session.pop(session_id, None)
             self._session_hosts.pop(session_id, None)
 
             return self._to_session(session, user_id)
@@ -826,9 +826,9 @@ class InMemoryStore:
                 self._append_saved_artifact_version(artifact, source="restore")
             return self._to_saved_artifact(artifact)
 
-    async def record_event(self, session_id: str, event: Event) -> None:
+    async def record_activity(self, session_id: str, activity: SessionActivity) -> None:
         async with self._lock:
-            self._events_by_session[session_id].append(event)
+            self._activities_by_session[session_id].append(activity)
 
     def _ensure_session(self, session_id: str) -> None:
         session = self._sessions.get(session_id)

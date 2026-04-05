@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 
 import type { Poll, QnaPrompt, Question } from '../../api/types'
-import { ActiveDiscussionEventCard } from './ActiveDiscussionEventCard'
-import { ActivePollEventCard } from './ActivePollEventCard'
-import { ActiveQnaEventCard } from './ActiveQnaEventCard'
-import { DeleteEventConfirmModal } from './DeleteEventConfirmModal'
+import { ActiveDiscussionActivityCard } from './ActiveDiscussionActivityCard'
+import { ActivePollActivityCard } from './ActivePollActivityCard'
+import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
+import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 
-export interface SessionActiveEventsPanelProps {
+export interface SessionActiveActivitiesPanelProps {
   openPolls: Poll[]
   /** Stopped polls — shown at the bottom, inactive styling. */
   closedPolls: Poll[]
@@ -42,7 +42,7 @@ function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
   )
 }
 
-export function SessionActiveEventsPanel({
+export function SessionActiveActivitiesPanel({
   openPolls,
   closedPolls,
   qnaOpen,
@@ -66,7 +66,7 @@ export function SessionActiveEventsPanel({
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
   onHideAudienceQuestion
-}: SessionActiveEventsPanelProps) {
+}: SessionActiveActivitiesPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<
     null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
   >(null)
@@ -111,7 +111,7 @@ export function SessionActiveEventsPanel({
     })
   }, [sortedClosedPrompts, questions])
 
-  const hasAnyEvent =
+  const hasAnyActivity =
     sortedOpenPolls.length > 0 ||
     qnaOpen ||
     discussionBlocks.length > 0 ||
@@ -151,24 +151,24 @@ export function SessionActiveEventsPanel({
 
   return (
     <>
-      <DeleteEventConfirmModal
+      <DeleteActivityConfirmModal
         open={deleteTarget !== null}
         onCancel={closeDeleteModal}
         onConfirm={confirmDelete}
         busy={deleteBusy}
         error={deleteError}
       />
-      {!hasAnyEvent ? (
+      {!hasAnyActivity ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
           <p className="text-sm text-muted">
-            No active events right now. Open a poll, Q&amp;A, or discussion from the moderation tools
+            No active activities right now. Open a poll, Q&amp;A, or discussion from the moderation tools
             below.
           </p>
         </div>
       ) : (
         <div className="flex flex-col gap-5">
           {sortedOpenPolls.map((poll) => (
-            <ActivePollEventCard
+            <ActivePollActivityCard
               key={poll.id}
               poll={poll}
               variant="active"
@@ -179,7 +179,7 @@ export function SessionActiveEventsPanel({
           ))}
 
           {qnaOpen ? (
-            <ActiveQnaEventCard
+            <ActiveQnaActivityCard
               pendingQuestions={audiencePendingQuestions}
               approvedQuestions={audienceApprovedQuestions}
               variant="active"
@@ -191,7 +191,7 @@ export function SessionActiveEventsPanel({
           ) : null}
 
           {discussionBlocks.map(({ prompt, pendingQuestions, approvedQuestions }) => (
-            <ActiveDiscussionEventCard
+            <ActiveDiscussionActivityCard
               key={prompt.id}
               prompt={prompt}
               pendingQuestions={pendingQuestions}
@@ -205,7 +205,7 @@ export function SessionActiveEventsPanel({
           ))}
 
           {sortedClosedPolls.map((poll) => (
-            <ActivePollEventCard
+            <ActivePollActivityCard
               key={poll.id}
               poll={poll}
               variant="inactive"
@@ -215,7 +215,7 @@ export function SessionActiveEventsPanel({
           ))}
 
           {showInactiveQna ? (
-            <ActiveQnaEventCard
+            <ActiveQnaActivityCard
               pendingQuestions={audiencePendingQuestions}
               approvedQuestions={audienceApprovedQuestions}
               variant="inactive"
@@ -227,7 +227,7 @@ export function SessionActiveEventsPanel({
           ) : null}
 
           {discussionBlocksInactive.map(({ prompt, pendingQuestions, approvedQuestions }) => (
-            <ActiveDiscussionEventCard
+            <ActiveDiscussionActivityCard
               key={prompt.id}
               prompt={prompt}
               pendingQuestions={pendingQuestions}

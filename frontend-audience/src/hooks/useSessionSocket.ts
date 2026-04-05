@@ -2,18 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 
 import { connectSessionSocket } from '../api/realtime'
 import type { SocketStatus } from '../api/realtime'
-import type { SessionEvent } from '../api/types'
+import type { SessionActivity } from '../api/types'
 
 export function useSessionSocket(
   sessionId: string | null,
-  onEvent: (event: SessionEvent) => void
+  onActivity: (activity: SessionActivity) => void
 ): SocketStatus {
   const [status, setStatus] = useState<SocketStatus>('disconnected')
-  const handlerRef = useRef(onEvent)
+  const handlerRef = useRef(onActivity)
 
   useEffect(() => {
-    handlerRef.current = onEvent
-  }, [onEvent])
+    handlerRef.current = onActivity
+  }, [onActivity])
 
   useEffect(() => {
     if (!sessionId) {
@@ -21,8 +21,8 @@ export function useSessionSocket(
       return undefined
     }
 
-    const socket = connectSessionSocket(sessionId, (event) => {
-      handlerRef.current(event)
+    const socket = connectSessionSocket(sessionId, (activity) => {
+      handlerRef.current(activity)
     }, setStatus)
 
     return () => {

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from .api import ai, brand_extract, library, polls, qna_prompts, questions, sessions
 from .config import settings
 from .deps import manager, store
-from .models import Event, SessionSnapshot
+from .models import SessionActivity, SessionSnapshot
 from .store import NotFoundError
 from .store_supabase import SupabaseError
 
@@ -62,12 +62,12 @@ async def session_socket(websocket: WebSocket, session_id: str) -> None:
     await manager.connect(session_id, websocket)
     try:
         snapshot = with_join_url(await store.snapshot(session_id))
-        event = Event(
+        activity = SessionActivity(
             type="session_snapshot",
             payload={"snapshot": snapshot.model_dump(mode="json")},
             ts=datetime.now(timezone.utc),
         )
-        await websocket.send_json(event.model_dump(mode="json"))
+        await websocket.send_json(activity.model_dump(mode="json"))
         while True:
             await websocket.receive_text()
     except NotFoundError:

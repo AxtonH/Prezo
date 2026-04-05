@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { Session } from '../api/types'
-import type { HostSearchEventHit } from '../utils/hostSearch'
+import type { HostSearchActivityHit } from '../utils/hostSearch'
 
 export type HostSearchBarProps = {
   value: string
   onChange: (value: string) => void
   /** Sessions matching title/code (tab filter already applied). */
   sessionMatches: Session[]
-  eventHits: HostSearchEventHit[]
-  /** True while snapshots are loading for event search. */
-  eventsLoading: boolean
-  /** Debounced query length ≥ 2 enables event matching. */
+  activityHits: HostSearchActivityHit[]
+  /** True while snapshots are loading for activity search. */
+  activitiesLoading: boolean
+  /** Debounced query length ≥ 2 enables activity matching. */
   debouncedQuery: string
   onSelectSession: (session: Session) => void
   /** Clears the search field after navigation. */
@@ -26,8 +26,8 @@ export function HostSearchBar({
   value,
   onChange,
   sessionMatches,
-  eventHits,
-  eventsLoading,
+  activityHits,
+  activitiesLoading,
   debouncedQuery,
   onSelectSession,
   onClear
@@ -38,7 +38,7 @@ export function HostSearchBar({
 
   const q = value.trim()
   const dq = debouncedQuery.trim()
-  const showEventsSection = dq.length >= 2
+  const showActivitiesSection = dq.length >= 2
   const showPanel = open && q.length > 0
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export function HostSearchBar({
     onSelectSession(s)
   }
 
-  const handlePickEvent = (hit: HostSearchEventHit) => {
+  const handlePickActivity = (hit: HostSearchActivityHit) => {
     onChange('')
     onClear?.()
     setOpen(false)
@@ -97,7 +97,7 @@ export function HostSearchBar({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="Search sessions or events..."
+          placeholder="Search sessions or activities..."
           className="!min-w-0 !flex-1 !bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !font-medium !tracking-tight !p-0 !text-slate-900 placeholder:!text-slate-400"
           aria-expanded={showPanel}
           aria-controls="host-search-results"
@@ -153,24 +153,24 @@ export function HostSearchBar({
             </div>
           ) : null}
 
-          {showEventsSection ? (
+          {showActivitiesSection ? (
             <div className={sessionMatches.length > 0 ? 'mt-2 border-t border-slate-100 pt-2' : ''}>
               <p className="px-3 pb-1.5 pt-1 text-[0.65rem] font-bold uppercase tracking-widest text-muted">
                 Polls &amp; questions
               </p>
-              {eventsLoading && eventHits.length === 0 ? (
+              {activitiesLoading && activityHits.length === 0 ? (
                 <p className="px-3 py-3 text-sm text-muted">Searching sessions…</p>
               ) : null}
-              {!eventsLoading && eventHits.length === 0 && sessionMatches.length === 0 ? (
+              {!activitiesLoading && activityHits.length === 0 && sessionMatches.length === 0 ? (
                 <p className="px-3 py-2 text-sm text-muted">
                   No matching polls or questions. Try another keyword.
                 </p>
               ) : null}
-              {!eventsLoading && eventHits.length === 0 && sessionMatches.length > 0 ? (
+              {!activitiesLoading && activityHits.length === 0 && sessionMatches.length > 0 ? (
                 <p className="px-3 pb-2 text-xs text-muted">No polls or questions match this search.</p>
               ) : null}
               <ul className="space-y-0.5 px-1">
-                {eventHits.map((hit, i) => {
+                {activityHits.map((hit, i) => {
                   const key = `${hit.session.id}-${hit.kind}-${
                     hit.kind === 'poll'
                       ? hit.poll.id
@@ -190,7 +190,7 @@ export function HostSearchBar({
                         role="option"
                         className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
                         onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handlePickEvent(hit)}
+                        onClick={() => handlePickActivity(hit)}
                       >
                         <span className="text-[0.65rem] font-bold uppercase tracking-wider text-primary/90">
                           {hit.kind === 'poll'
@@ -209,7 +209,7 @@ export function HostSearchBar({
             </div>
           ) : null}
 
-          {sessionMatches.length === 0 && !showEventsSection ? (
+          {sessionMatches.length === 0 && !showActivitiesSection ? (
             <p className="px-3 py-4 text-sm text-muted">No sessions match. Try a different name or code.</p>
           ) : null}
         </div>

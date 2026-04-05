@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
-import { SessionActiveEventsPanel } from './SessionActiveEventsPanel'
+import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
@@ -136,7 +136,7 @@ export function SessionDashboardPage({
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
         <div className="lg:col-span-8">
-          <SessionActiveEventsPanel
+          <SessionActiveActivitiesPanel
             openPolls={openPolls}
             closedPolls={closedPolls}
             qnaOpen={session.qna_open}

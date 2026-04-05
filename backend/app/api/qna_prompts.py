@@ -6,15 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth import AuthUser, get_current_user
 from ..deps import get_manager, get_store
-from ..models import Event, QnaPrompt, QnaPromptCreate, QnaPromptStatus
+from ..models import QnaPrompt, QnaPromptCreate, QnaPromptStatus, SessionActivity
 from ..realtime import ConnectionManager
 from ..store import InMemoryStore, NotFoundError
 
 router = APIRouter(prefix="/sessions/{session_id}/qna-prompts", tags=["qna-prompts"])
 
 
-def make_event(event_type: str, payload: dict) -> Event:
-    return Event(type=event_type, payload=payload, ts=datetime.now(timezone.utc))
+def make_activity(activity_type: str, payload: dict) -> SessionActivity:
+    return SessionActivity(
+        type=activity_type, payload=payload, ts=datetime.now(timezone.utc)
+    )
 
 
 @router.post("", response_model=QnaPrompt, status_code=status.HTTP_201_CREATED)
@@ -30,11 +32,11 @@ async def create_prompt(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    event = make_event(
+    activity = make_activity(
         "qna_prompt_created", {"prompt": prompt.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return prompt
 
 
@@ -53,11 +55,11 @@ async def open_prompt(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    event = make_event(
+    activity = make_activity(
         "qna_prompt_opened", {"prompt": prompt.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return prompt
 
 
@@ -76,11 +78,11 @@ async def close_prompt(
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    event = make_event(
+    activity = make_activity(
         "qna_prompt_closed", {"prompt": prompt.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return prompt
 
 
@@ -96,6 +98,6 @@ async def delete_prompt(
         await store.delete_qna_prompt(session_id, prompt_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event("qna_prompt_deleted", {"prompt_id": prompt_id})
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    activity = make_activity("qna_prompt_deleted", {"prompt_id": prompt_id})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)

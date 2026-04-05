@@ -6,15 +6,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth import AuthUser, get_current_user
 from ..deps import get_manager, get_store
-from ..models import Event, Question, QuestionCreate, QuestionStatus, QuestionVote
+from ..models import Question, QuestionCreate, QuestionStatus, QuestionVote, SessionActivity
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
 
 router = APIRouter(prefix="/sessions/{session_id}/questions", tags=["questions"])
 
 
-def make_event(event_type: str, payload: dict) -> Event:
-    return Event(type=event_type, payload=payload, ts=datetime.now(timezone.utc))
+def make_activity(activity_type: str, payload: dict) -> SessionActivity:
+    return SessionActivity(
+        type=activity_type, payload=payload, ts=datetime.now(timezone.utc)
+    )
 
 
 @router.post("", response_model=Question, status_code=status.HTTP_201_CREATED)
@@ -32,11 +34,11 @@ async def create_question(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    event = make_event(
+    activity = make_activity(
         "question_submitted", {"question": question.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return question
 
 
@@ -54,11 +56,11 @@ async def approve_question(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event(
+    activity = make_activity(
         "question_approved", {"question": question.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return question
 
 
@@ -76,11 +78,11 @@ async def hide_question(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    event = make_event(
+    activity = make_activity(
         "question_hidden", {"question": question.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return question
 
 
@@ -96,9 +98,9 @@ async def vote_question(
         question = await store.vote_question(session_id, question_id, payload.client_id)
     except (NotFoundError, ConflictError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    event = make_event(
+    activity = make_activity(
         "question_vote_updated", {"question": question.model_dump(mode="json")}
     )
-    await store.record_event(session_id, event)
-    await manager.broadcast(session_id, event)
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
     return question

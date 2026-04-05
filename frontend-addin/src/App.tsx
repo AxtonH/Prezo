@@ -7,7 +7,7 @@ import type {
   QnaPrompt,
   Question,
   Session,
-  SessionEvent,
+  SessionActivity,
   SessionSnapshot
 } from './api/types'
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
@@ -44,7 +44,7 @@ import {
   setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
-import { buildEventHits, matchesSessionTitleOrCode } from './utils/hostSearch'
+import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
 
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
@@ -524,9 +524,9 @@ function HostConsole({
     }
   }, [session, goToAllSessions])
 
-  const handleEvent = useCallback((event: SessionEvent) => {
-    if (event.type === 'session_snapshot') {
-      const snapshot = event.payload.snapshot as SessionSnapshot
+  const handleSessionActivity = useCallback((activity: SessionActivity) => {
+    if (activity.type === 'session_snapshot') {
+      const snapshot = activity.payload.snapshot as SessionSnapshot
       setSession((previous) => withPreservedHostRole(snapshot.session, previous))
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
@@ -534,21 +534,21 @@ function HostConsole({
       return
     }
 
-    if (event.type === 'poll_deleted' && typeof event.payload.poll_id === 'string') {
-      const pollId = event.payload.poll_id as string
+    if (activity.type === 'poll_deleted' && typeof activity.payload.poll_id === 'string') {
+      const pollId = activity.payload.poll_id as string
       setPolls((prev) => prev.filter((p) => p.id !== pollId))
       return
     }
 
-    if (event.type === 'qna_prompt_deleted' && typeof event.payload.prompt_id === 'string') {
-      const promptId = event.payload.prompt_id as string
+    if (activity.type === 'qna_prompt_deleted' && typeof activity.payload.prompt_id === 'string') {
+      const promptId = activity.payload.prompt_id as string
       setPrompts((prev) => prev.filter((p) => p.id !== promptId))
       setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
       return
     }
 
-    if (event.type === 'audience_questions_deleted' && Array.isArray(event.payload.question_ids)) {
-      const ids = new Set(event.payload.question_ids as string[])
+    if (activity.type === 'audience_questions_deleted' && Array.isArray(activity.payload.question_ids)) {
+      const ids = new Set(activity.payload.question_ids as string[])
       if (ids.size > 0) {
         setQuestions((prev) =>
           prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
@@ -557,30 +557,30 @@ function HostConsole({
       return
     }
 
-    if (event.payload.session) {
-      const updated = event.payload.session as Session
+    if (activity.payload.session) {
+      const updated = activity.payload.session as Session
       setSession((previous) => withPreservedHostRole(updated, previous))
       return
     }
 
-    if (event.payload.question) {
-      const question = event.payload.question as Question
+    if (activity.payload.question) {
+      const question = activity.payload.question as Question
       setQuestions((prev) => upsertById(prev, question))
       return
     }
 
-    if (event.payload.poll) {
-      const poll = event.payload.poll as Poll
+    if (activity.payload.poll) {
+      const poll = activity.payload.poll as Poll
       setPolls((prev) => upsertById(prev, poll))
     }
 
-    if (event.payload.prompt) {
-      const prompt = event.payload.prompt as QnaPrompt
+    if (activity.payload.prompt) {
+      const prompt = activity.payload.prompt as QnaPrompt
       setPrompts((prev) => upsertById(prev, prompt))
     }
   }, [])
 
-  const socketStatus = useSessionSocket(session?.id ?? null, handleEvent)
+  const socketStatus = useSessionSocket(session?.id ?? null, handleSessionActivity)
 
   useEffect(() => {
     latestSessionRef.current = session
@@ -1099,13 +1099,13 @@ function HostConsole({
     'active' | 'host' | 'cohost'
   >('active')
   const debouncedSearch = useDebouncedValue(sessionSearchQuery, 320)
-  const { getSnapshot, loading: searchEventsLoading } = useHostSearchSnapshotCache(
+  const { getSnapshot, loading: searchActivitiesLoading } = useHostSearchSnapshotCache(
     recentSessions,
     debouncedSearch
   )
 
-  const eventHits = useMemo(
-    () => buildEventHits(recentSessions, debouncedSearch, getSnapshot),
+  const activityHits = useMemo(
+    () => buildActivityHits(recentSessions, debouncedSearch, getSnapshot),
     [recentSessions, debouncedSearch, getSnapshot]
   )
 
@@ -1229,8 +1229,8 @@ function HostConsole({
                   value={sessionSearchQuery}
                   onChange={setSessionSearchQuery}
                   sessionMatches={filteredRecentSessions}
-                  eventHits={eventHits}
-                  eventsLoading={searchEventsLoading}
+                  activityHits={activityHits}
+                  activitiesLoading={searchActivitiesLoading}
                   debouncedQuery={debouncedSearch}
                   onSelectSession={(selected) => void resumeSession(selected)}
                 />

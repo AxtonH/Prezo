@@ -1,8 +1,8 @@
 import type { Question } from '../../api/types'
-import { CollapsibleEventPanelShell } from './CollapsibleEventPanelShell'
+import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
 
-export interface ActiveQnaEventCardProps {
+export interface ActiveQnaActivityCardProps {
   /** Audience Q&amp;A questions with status pending (newest first). */
   pendingQuestions: Question[]
   /** Audience Q&amp;A questions with status approved (newest first). */
@@ -76,7 +76,7 @@ function AudienceQuestionRow({
   )
 }
 
-export function ActiveQnaEventCard({
+export function ActiveQnaActivityCard({
   pendingQuestions,
   approvedQuestions,
   variant = 'active',
@@ -85,14 +85,14 @@ export function ActiveQnaEventCard({
   onDelete,
   onApproveQuestion,
   onHideQuestion
-}: ActiveQnaEventCardProps) {
+}: ActiveQnaActivityCardProps) {
   const inactive = variant === 'inactive'
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const expandByDefault = pendingCount > 0 || approvedCount > 0
 
   return (
-    <CollapsibleEventPanelShell
+    <CollapsibleActivityPanelShell
       variant={inactive ? 'inactive' : 'active'}
       defaultExpanded={expandByDefault}
       icon={
@@ -243,6 +243,6 @@ export function ActiveQnaEventCard({
           </div>
         )}
       </div>
-    </CollapsibleEventPanelShell>
+    </CollapsibleActivityPanelShell>
   )
 }

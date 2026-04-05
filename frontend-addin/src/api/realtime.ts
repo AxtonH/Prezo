@@ -1,5 +1,5 @@
 import { API_BASE_URL } from './client'
-import type { SessionEvent } from './types'
+import type { SessionActivity } from './types'
 
 const wsBaseFromApi = () => {
   const url = new URL(API_BASE_URL)
@@ -14,7 +14,7 @@ export type SocketStatus = 'connecting' | 'connected' | 'disconnected'
 
 export function connectSessionSocket(
   sessionId: string,
-  onEvent: (event: SessionEvent) => void,
+  onActivity: (activity: SessionActivity) => void,
   onStatus?: (status: SocketStatus) => void
 ): WebSocket {
   const socket = new WebSocket(`${WS_BASE_URL}/ws/sessions/${sessionId}`)
@@ -24,8 +24,8 @@ export function connectSessionSocket(
   socket.addEventListener('open', () => onStatus?.('connected'))
   socket.addEventListener('close', () => onStatus?.('disconnected'))
   socket.addEventListener('message', (message) => {
-    const data = JSON.parse(message.data) as SessionEvent
-    onEvent(data)
+    const data = JSON.parse(message.data) as SessionActivity
+    onActivity(data)
   })
 
   return socket

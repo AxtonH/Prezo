@@ -1,8 +1,8 @@
 import type { QnaPrompt, Question } from '../../api/types'
-import { CollapsibleEventPanelShell } from './CollapsibleEventPanelShell'
+import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
 
-export interface ActiveDiscussionEventCardProps {
+export interface ActiveDiscussionActivityCardProps {
   prompt: QnaPrompt
   /** Pending answers for this prompt (newest first). */
   pendingQuestions: Question[]
@@ -77,7 +77,7 @@ function DiscussionAnswerRow({
   )
 }
 
-export function ActiveDiscussionEventCard({
+export function ActiveDiscussionActivityCard({
   prompt,
   pendingQuestions,
   approvedQuestions,
@@ -87,14 +87,14 @@ export function ActiveDiscussionEventCard({
   onDelete,
   onApproveQuestion,
   onHideQuestion
-}: ActiveDiscussionEventCardProps) {
+}: ActiveDiscussionActivityCardProps) {
   const inactive = variant === 'inactive'
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const expandByDefault = pendingCount > 0 || approvedCount > 0
 
   return (
-    <CollapsibleEventPanelShell
+    <CollapsibleActivityPanelShell
       variant={inactive ? 'inactive' : 'active'}
       defaultExpanded={expandByDefault}
       icon={
@@ -251,6 +251,6 @@ export function ActiveDiscussionEventCard({
           </div>
         )}
       </div>
-    </CollapsibleEventPanelShell>
+    </CollapsibleActivityPanelShell>
   )
 }
