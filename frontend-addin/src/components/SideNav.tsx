@@ -1,6 +1,9 @@
 import { PrezoWordmark } from './PrezoWordmark'
 import { ProfileAvatar } from './ProfileAvatar'
 
+/** Primary workspace areas when browsing sessions (no live session selected). */
+export type WorkspaceNavId = 'dashboard' | 'polls' | 'discussion' | 'qna'
+
 interface SideNavProps {
   onLogout: () => void
   editorLink: string | null
@@ -19,14 +22,28 @@ interface SideNavProps {
   activeSection?: 'sessions' | 'settings'
   /** Opens full-page settings (host profile, account). */
   onOpenSettings?: () => void
+  /**
+   * When true (All Sessions workspace, no live session), show Dashboard / Polls / Discussion / Q&A
+   * instead of Join / Team / Analytics / Integrations.
+   */
+  workspaceMode?: boolean
+  activeWorkspaceNav?: WorkspaceNavId
+  onWorkspaceNav?: (id: WorkspaceNavId) => void
 }
 
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
 
-const NAV_ITEMS_BELOW = [
+const NAV_ITEMS_LEGACY = [
   { icon: 'group', label: 'Team' },
   { icon: 'analytics', label: 'Analytics' },
   { icon: 'extension', label: 'Integrations' }
+]
+
+const WORKSPACE_NAV_ITEMS: { id: WorkspaceNavId; icon: string; label: string }[] = [
+  { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
+  { id: 'polls', icon: 'bar_chart', label: 'Polls' },
+  { id: 'discussion', icon: 'forum', label: 'Open discussion' },
+  { id: 'qna', icon: 'question_answer', label: 'Q&A' }
 ]
 
 export function SideNav({
@@ -40,7 +57,10 @@ export function SideNav({
   onJoinSession,
   joinSessionModalOpen = false,
   activeSection = 'sessions',
-  onOpenSettings
+  onOpenSettings,
+  workspaceMode = false,
+  activeWorkspaceNav = 'dashboard',
+  onWorkspaceNav
 }: SideNavProps) {
   const joinModalOpen = joinSessionModalOpen
   const sessionsNavActive = activeSection === 'sessions' && !joinModalOpen
@@ -50,6 +70,9 @@ export function SideNav({
     'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
   const navIdleClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
+
+  const workspaceItemActive = (id: WorkspaceNavId) =>
+    workspaceMode && activeSection === 'sessions' && !joinModalOpen && activeWorkspaceNav === id
 
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
@@ -64,49 +87,67 @@ export function SideNav({
       </div>
 
       <nav className="flex-1 px-4 space-y-1 min-h-0">
-        {onMySessions ? (
-          <button
-            type="button"
-            onClick={onMySessions}
-            className={sessionsNavActive ? navActiveClass : navIdleClass}
-            title={hasLiveSession ? 'Back to all sessions' : undefined}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-            <span className={sessionsNavActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
-          </button>
+        {!workspaceMode ? (
+          <>
+            {onMySessions ? (
+              <button
+                type="button"
+                onClick={onMySessions}
+                className={sessionsNavActive ? navActiveClass : navIdleClass}
+                title={hasLiveSession ? 'Back to all sessions' : undefined}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
+                <span className={sessionsNavActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+              </button>
+            ) : (
+              <a
+                href="#"
+                className="flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out"
+                onClick={(e) => e.preventDefault()}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
+                <span className="font-medium">{MY_SESSIONS_ITEM.label}</span>
+              </a>
+            )}
+
+            {!isAddinHost && onJoinSession ? (
+              <button
+                type="button"
+                onClick={onJoinSession}
+                className={joinNavActive ? navActiveClass : navIdleClass}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">login</span>
+                <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
+              </button>
+            ) : null}
+
+            {NAV_ITEMS_LEGACY.map((item) => (
+              <a
+                key={item.label}
+                href="#"
+                className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+                onClick={(e) => e.preventDefault()}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </>
         ) : (
-          <a
-            href="#"
-            className="flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out"
-            onClick={(e) => e.preventDefault()}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-            <span className="font-medium">{MY_SESSIONS_ITEM.label}</span>
-          </a>
+          <>
+            {WORKSPACE_NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onWorkspaceNav?.(item.id)}
+                className={workspaceItemActive(item.id) ? navActiveClass : navIdleClass}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
+                <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
+              </button>
+            ))}
+          </>
         )}
-
-        {!isAddinHost && onJoinSession ? (
-          <button
-            type="button"
-            onClick={onJoinSession}
-            className={joinNavActive ? navActiveClass : navIdleClass}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">login</span>
-            <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
-          </button>
-        ) : null}
-
-        {NAV_ITEMS_BELOW.map((item) => (
-          <a
-            key={item.label}
-            href="#"
-            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
-            onClick={(e) => e.preventDefault()}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
-            <span>{item.label}</span>
-          </a>
-        ))}
       </nav>
 
       <div className="mt-auto p-4 border-t border-border/30 flex flex-col">

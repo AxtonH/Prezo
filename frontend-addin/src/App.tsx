@@ -22,7 +22,7 @@ import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { OnboardingModal } from './components/OnboardingModal'
 import { SessionSetup } from './components/SessionSetup'
 import { SettingsPage } from './components/settings'
-import { SideNav } from './components/SideNav'
+import { SideNav, type WorkspaceNavId } from './components/SideNav'
 import { useDebouncedValue } from './hooks/useDebouncedValue'
 import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
@@ -277,6 +277,8 @@ function HostConsole({
   const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
   /** `'host'` = sessions dashboard; `'settings'` = full-page settings. */
   const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings'>('host')
+  /** Primary area on the All Sessions workspace (no live session). */
+  const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
@@ -381,6 +383,7 @@ function HostConsole({
 
   const navigateToSessionsHome = useCallback(() => {
     setHostConsoleView('host')
+    setWorkspaceNav('dashboard')
     if (session) {
       goToAllSessions()
     }
@@ -927,6 +930,9 @@ function HostConsole({
             setJoinCodeInput('')
             setShowJoinByCodeForm(true)
           }}
+          workspaceMode={!session && hostConsoleView === 'host'}
+          activeWorkspaceNav={workspaceNav}
+          onWorkspaceNav={setWorkspaceNav}
         />
       ) : null}
 
@@ -1043,21 +1049,45 @@ function HostConsole({
               {/* Page Header */}
               <div className="mb-8">
                 <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
-                  {session ? 'Active Session' : 'All Sessions'}
+                  {session
+                    ? 'Active Session'
+                    : workspaceNav === 'dashboard'
+                      ? 'All Sessions'
+                      : workspaceNav === 'polls'
+                        ? 'Polls'
+                        : workspaceNav === 'discussion'
+                          ? 'Open discussion'
+                          : 'Q&A'}
                 </h1>
                 {session ? (
                   <p className="text-muted max-w-3xl leading-relaxed text-sm">
                     Your session is live. Share the join code with your audience and manage interactions below.
                   </p>
-                ) : null}
+                ) : workspaceNav === 'dashboard' ? (
+                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                    Monitor your sessions, start new ones, and jump back into live rooms.
+                  </p>
+                ) : workspaceNav === 'polls' ? (
+                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                    Create and manage polls for your sessions. Full setup is coming next.
+                  </p>
+                ) : workspaceNav === 'discussion' ? (
+                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                    Run open discussions and follow the thread in real time. Coming soon.
+                  </p>
+                ) : (
+                  <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                    Open Q&amp;A, moderate incoming questions, and drive the conversation. Coming soon.
+                  </p>
+                )}
               </div>
 
-              {!session ? (
+              {!session && workspaceNav === 'dashboard' ? (
                 <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
               ) : null}
 
-              {/* Filter Tabs (only when no active session) */}
-              {!session ? (
+              {/* Filter Tabs (only on Dashboard workspace) */}
+              {!session && workspaceNav === 'dashboard' ? (
                 <div className="flex gap-8 mb-6 border-b border-slate-100">
                   {(
                     [
@@ -1084,38 +1114,54 @@ function HostConsole({
 
               {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
 
-              {/* Session Setup (list or live session) */}
-              <SessionSetup
-                session={session}
-                onCreate={createSession}
-                onJoinByCode={joinSessionByCode}
-                onSetHostJoinAccess={setHostJoinAccess}
-                recentSessions={filteredRecentSessions}
-                emptyListMessage={
-                  sessionSearchQuery.trim()
-                    ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
-                    : sessionFilter === 'active'
-                      ? 'No active sessions right now. Start a new session or join one with a code.'
-                      : sessionFilter === 'host'
-                        ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
-                        : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
-                }
-                isLoading={sessionsLoading}
-                loadError={sessionsError}
-                onResume={resumeSession}
-                onDelete={deleteSession}
-                deletingSessionId={deletingSessionId}
-                onRefresh={() => {
-                  void loadSessions(maxSessionsLimit)
-                  void loadDashboardStats()
-                }}
-                isCompact={isAddinHost}
-                listMaxHeightClass={
-                  isAddinHost
-                    ? undefined
-                    : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
-                }
-              />
+              {!session && workspaceNav !== 'dashboard' ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">
+                  <span className="material-symbols-outlined text-4xl text-slate-300 mb-3 block">
+                    {workspaceNav === 'polls'
+                      ? 'bar_chart'
+                      : workspaceNav === 'discussion'
+                        ? 'forum'
+                        : 'question_answer'}
+                  </span>
+                  <p className="text-slate-600 font-medium mb-1">This area is under construction</p>
+                  <p className="text-muted text-sm max-w-md mx-auto">
+                    We&apos;ll wire this up in a follow-up step. Use{' '}
+                    <strong className="text-slate-700">Dashboard</strong> in the sidebar to manage sessions.
+                  </p>
+                </div>
+              ) : (
+                <SessionSetup
+                  session={session}
+                  onCreate={createSession}
+                  onJoinByCode={joinSessionByCode}
+                  onSetHostJoinAccess={setHostJoinAccess}
+                  recentSessions={filteredRecentSessions}
+                  emptyListMessage={
+                    sessionSearchQuery.trim()
+                      ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
+                      : sessionFilter === 'active'
+                        ? 'No active sessions right now. Start a new session or join one with a code.'
+                        : sessionFilter === 'host'
+                          ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
+                          : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
+                  }
+                  isLoading={sessionsLoading}
+                  loadError={sessionsError}
+                  onResume={resumeSession}
+                  onDelete={deleteSession}
+                  deletingSessionId={deletingSessionId}
+                  onRefresh={() => {
+                    void loadSessions(maxSessionsLimit)
+                    void loadDashboardStats()
+                  }}
+                  isCompact={isAddinHost}
+                  listMaxHeightClass={
+                    isAddinHost
+                      ? undefined
+                      : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
+                  }
+                />
+              )}
             </>
           )}
 
