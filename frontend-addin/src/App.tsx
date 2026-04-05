@@ -1246,7 +1246,7 @@ function HostConsole({
             </div>
           )}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {!session && hostConsoleView !== 'settings' && !hostRestoreInProgress ? (
+            {isAddinHost && !session && hostConsoleView !== 'settings' && !hostRestoreInProgress ? (
               <button
                 type="button"
                 onClick={() => {
@@ -1255,17 +1255,11 @@ function HostConsole({
                   setJoinCodeInput('')
                   setShowCreateForm(true)
                 }}
-                className={`!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all ${
-                  isAddinHost ? '!px-2.5 !py-1.5 !text-xs' : '!px-4 !py-2 !text-sm'
-                }`}
+                className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs"
               >
                 <span className="material-symbols-outlined text-lg">add</span>
-                {isAddinHost ? (
-                  <span className="max-[380px]:hidden">Start a new session</span>
-                ) : (
-                  <span>Start a new session</span>
-                )}
-                {isAddinHost ? <span className="hidden max-[380px]:inline">New session</span> : null}
+                <span className="max-[380px]:hidden">Start a new session</span>
+                <span className="hidden max-[380px]:inline">New session</span>
               </button>
             ) : null}
             {isAddinHost ? (
