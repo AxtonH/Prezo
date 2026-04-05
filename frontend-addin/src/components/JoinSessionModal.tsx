@@ -42,7 +42,9 @@ export function JoinSessionModal({
     if (open) {
       setQuery('')
       setLocalError(null)
-      setPanelOpen(false)
+      // Do not call setPanelOpen(false) here: it runs after paint and races with
+      // autoFocus + onFocus (which sets panelOpen true), hiding the dropdown until
+      // the user blurs/refocuses. showPanel is already false while query is ''.
       onClearError()
     }
   }, [open, onClearError])
@@ -151,7 +153,11 @@ export function JoinSessionModal({
                 spellCheck={false}
                 value={query}
                 onChange={(e) => {
-                  setQuery(e.target.value)
+                  const v = e.target.value
+                  setQuery(v)
+                  if (v.trim().length > 0) {
+                    setPanelOpen(true)
+                  }
                   setLocalError(null)
                   onClearError()
                 }}
