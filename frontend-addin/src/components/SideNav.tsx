@@ -74,6 +74,10 @@ export function SideNav({
   const workspaceItemActive = (id: WorkspaceNavId) =>
     workspaceMode && activeSection === 'sessions' && !joinModalOpen && activeWorkspaceNav === id
 
+  /** In workspace mode, submenu items sit under the session icon with inset + left rail. */
+  const workspaceSubmenuBase =
+    'w-full text-left flex items-center gap-3 pl-8 pr-4 py-3 ml-4 border-l-2 transition-all duration-200 ease-in-out'
+
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
       <div className="p-8 pb-10">
@@ -141,9 +145,14 @@ export function SideNav({
                 onClick={onMySessions}
                 className={navIdleClass}
                 title="Back to all sessions"
+                aria-label="Back to all sessions"
               >
-                <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-                <span>{MY_SESSIONS_ITEM.label}</span>
+                <span
+                  className="material-symbols-outlined text-[1.25rem] inline-block -rotate-90"
+                  aria-hidden
+                >
+                  {MY_SESSIONS_ITEM.icon}
+                </span>
               </button>
             ) : null}
             {WORKSPACE_NAV_ITEMS.map((item) => (
@@ -151,9 +160,13 @@ export function SideNav({
                 key={item.id}
                 type="button"
                 onClick={() => onWorkspaceNav?.(item.id)}
-                className={workspaceItemActive(item.id) ? navActiveClass : navIdleClass}
+                className={
+                  workspaceItemActive(item.id)
+                    ? `${workspaceSubmenuBase} bg-white text-primary border-l-4 border-primary`
+                    : `${workspaceSubmenuBase} text-slate-900/70 hover:bg-slate-200 border-l-2 border-slate-300/80`
+                }
               >
-                <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
+                <span className="material-symbols-outlined text-[1.25rem] shrink-0">{item.icon}</span>
                 <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
               </button>
             ))}

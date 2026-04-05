@@ -4,7 +4,7 @@ interface CollapsibleEventPanelShellProps {
   icon: ReactNode
   titleBlock: ReactNode
   children: ReactNode
-  /** @default true */
+  /** @default false — panels start collapsed */
   defaultExpanded?: boolean
 }
 
@@ -15,7 +15,7 @@ export function CollapsibleEventPanelShell({
   icon,
   titleBlock,
   children,
-  defaultExpanded = true
+  defaultExpanded = false
 }: CollapsibleEventPanelShellProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
 
