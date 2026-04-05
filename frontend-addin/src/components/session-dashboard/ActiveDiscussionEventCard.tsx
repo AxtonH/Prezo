@@ -1,4 +1,5 @@
 import type { QnaPrompt, Question } from '../../api/types'
+import { CollapsibleEventPanelShell } from './CollapsibleEventPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveDiscussionEventCardProps {
@@ -13,23 +14,21 @@ export function ActiveDiscussionEventCard({
   pendingPreview
 }: ActiveDiscussionEventCardProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
-      <div className="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-            <span className="material-symbols-outlined">forum</span>
-          </div>
-          <div className="min-w-0">
-            <h4 className="font-bold text-slate-900 text-base leading-snug line-clamp-3">
-              {prompt.prompt.trim() || 'Discussion'}
-            </h4>
-            <p className="text-sm text-muted mt-1">Open discussion</p>
-          </div>
+    <CollapsibleEventPanelShell
+      icon={
+        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+          <span className="material-symbols-outlined">forum</span>
         </div>
-        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest shrink-0">
-          Active
-        </span>
-      </div>
+      }
+      titleBlock={
+        <div className="min-w-0">
+          <h4 className="font-bold text-slate-900 text-base leading-snug line-clamp-3">
+            {prompt.prompt.trim() || 'Discussion'}
+          </h4>
+          <p className="text-sm text-muted mt-1">Open discussion</p>
+        </div>
+      }
+    >
       <div className="p-5">
         <p className="text-sm text-muted mb-3">
           {pendingCount} question{pendingCount === 1 ? '' : 's'} awaiting moderation
@@ -50,6 +49,6 @@ export function ActiveDiscussionEventCard({
           <p className="text-sm text-muted">No questions yet for this discussion.</p>
         )}
       </div>
-    </div>
+    </CollapsibleEventPanelShell>
   )
 }

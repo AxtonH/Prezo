@@ -1,4 +1,5 @@
 import type { Question } from '../../api/types'
+import { CollapsibleEventPanelShell } from './CollapsibleEventPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveQnaEventCardProps {
@@ -8,21 +9,19 @@ export interface ActiveQnaEventCardProps {
 
 export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEventCardProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden">
-      <div className="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
-            <span className="material-symbols-outlined">chat_bubble</span>
-          </div>
-          <div className="min-w-0">
-            <h4 className="font-bold text-slate-900 text-base leading-snug">Audience questions</h4>
-            <p className="text-sm text-muted mt-1">Q&amp;A</p>
-          </div>
+    <CollapsibleEventPanelShell
+      icon={
+        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+          <span className="material-symbols-outlined">chat_bubble</span>
         </div>
-        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest shrink-0">
-          Active
-        </span>
-      </div>
+      }
+      titleBlock={
+        <div className="min-w-0">
+          <h4 className="font-bold text-slate-900 text-base leading-snug">Audience questions</h4>
+          <p className="text-sm text-muted mt-1">Q&amp;A</p>
+        </div>
+      }
+    >
       <div className="p-5">
         <p className="text-sm text-muted mb-3">
           {pendingCount} unanswered question{pendingCount === 1 ? '' : 's'}
@@ -43,6 +42,6 @@ export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEv
           <p className="text-sm text-muted">No questions waiting for approval.</p>
         )}
       </div>
-    </div>
+    </CollapsibleEventPanelShell>
   )
 }
