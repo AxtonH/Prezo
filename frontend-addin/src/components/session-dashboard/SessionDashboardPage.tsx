@@ -220,8 +220,13 @@ export function SessionDashboardPage({
             hostAvatarUrl={hostAvatarUrl}
           />
         </div>
+        {/*
+          Do not use overflow-hidden here: it clips descendants' box-shadow to a rectangular
+          region, which shows square “shadow” corners behind rounded cards. min-h-0 + min-w-0
+          keep flex sizing; horizontal spill is handled by the grid column.
+        */}
         <div
-          className="flex min-h-0 min-w-0 flex-col gap-5 overflow-hidden lg:[grid-area:activities]"
+          className="flex min-h-0 min-w-0 flex-col gap-5 lg:[grid-area:activities]"
           style={
             activitiesRailMaxPx != null
               ? { maxHeight: activitiesRailMaxPx }
@@ -249,40 +254,46 @@ export function SessionDashboardPage({
             ) : null}
           </div>
           {/*
-            Outer: rounded + box-shadow only (no overflow-hidden — that can square off the shadow).
-            Inner: rounded + overflow-y-auto so panel shadows clip to the same radius at the bottom.
+            Shadow on its own layer (absolute, no scroll/overflow) so border-radius + box-shadow
+            paint a true round shadow. Foreground uses overflow-hidden to clip the scroller only.
           */}
-          <div className="flex min-h-0 w-full flex-1 flex-col rounded-2xl border border-slate-200 bg-white shadow-card">
+          <div className="relative isolate flex min-h-0 w-full flex-1 flex-col">
             <div
-              data-session-activities-scroll
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-2xl bg-white p-3 pb-10 pr-2 session-list-scroll [scrollbar-gutter:stable] lg:scroll-smooth"
-            >
-              <SessionActiveActivitiesPanel
-                openPolls={openPolls}
-                closedPolls={closedPolls}
-                qnaOpen={session.qna_open}
-                showInactiveQna={showInactiveQna}
-                audienceQnaSortKey={audienceQnaSortKey}
-                audiencePendingQuestions={audiencePendingQuestions}
-                audienceApprovedQuestions={audienceApprovedQuestions}
-                openPrompts={openPrompts}
-                closedPrompts={closedPrompts}
-                questions={questions}
-                onConfigurePoll={onConfigurePoll}
-                onStopPoll={onStopPoll}
-                onStopQna={onStopQna}
-                onStopDiscussion={onStopDiscussion}
-                onResumePoll={onResumePoll}
-                onResumeQna={onResumeQna}
-                onResumeDiscussion={onResumeDiscussion}
-                onDeletePoll={onDeletePoll}
-                onDeleteQna={onDeleteQna}
-                onDeleteDiscussion={onDeleteDiscussion}
-                onApproveDiscussionQuestion={onApproveDiscussionQuestion}
-                onHideDiscussionQuestion={onHideDiscussionQuestion}
-                onApproveAudienceQuestion={onApproveAudienceQuestion}
-                onHideAudienceQuestion={onHideAudienceQuestion}
-              />
+              className="pointer-events-none absolute inset-0 rounded-2xl shadow-card"
+              aria-hidden
+            />
+            <div className="relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div
+                data-session-activities-scroll
+                className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto bg-white p-3 pb-10 pr-2 [scrollbar-gutter:stable] lg:scroll-smooth session-list-scroll"
+              >
+                <SessionActiveActivitiesPanel
+                  openPolls={openPolls}
+                  closedPolls={closedPolls}
+                  qnaOpen={session.qna_open}
+                  showInactiveQna={showInactiveQna}
+                  audienceQnaSortKey={audienceQnaSortKey}
+                  audiencePendingQuestions={audiencePendingQuestions}
+                  audienceApprovedQuestions={audienceApprovedQuestions}
+                  openPrompts={openPrompts}
+                  closedPrompts={closedPrompts}
+                  questions={questions}
+                  onConfigurePoll={onConfigurePoll}
+                  onStopPoll={onStopPoll}
+                  onStopQna={onStopQna}
+                  onStopDiscussion={onStopDiscussion}
+                  onResumePoll={onResumePoll}
+                  onResumeQna={onResumeQna}
+                  onResumeDiscussion={onResumeDiscussion}
+                  onDeletePoll={onDeletePoll}
+                  onDeleteQna={onDeleteQna}
+                  onDeleteDiscussion={onDeleteDiscussion}
+                  onApproveDiscussionQuestion={onApproveDiscussionQuestion}
+                  onHideDiscussionQuestion={onHideDiscussionQuestion}
+                  onApproveAudienceQuestion={onApproveAudienceQuestion}
+                  onHideAudienceQuestion={onHideAudienceQuestion}
+                />
+              </div>
             </div>
           </div>
         </div>
