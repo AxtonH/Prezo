@@ -1148,10 +1148,18 @@ function HostConsole({
           hasLiveSession={Boolean(session)}
           activeSection={hostConsoleView === 'settings' ? 'settings' : 'sessions'}
           onOpenSettings={() => setHostConsoleView('settings')}
+          createSessionModalOpen={showCreateForm}
+          onCreateSession={() => {
+            setShowJoinByCodeForm(false)
+            setJoinByCodeError(null)
+            setJoinCodeInput('')
+            setShowCreateForm(true)
+          }}
           joinSessionModalOpen={showJoinByCodeForm}
           onJoinSession={() => {
             setJoinByCodeError(null)
             setJoinCodeInput('')
+            setShowCreateForm(false)
             setShowJoinByCodeForm(true)
           }}
           workspaceMode={Boolean(session) && hostConsoleView === 'host'}
@@ -1241,7 +1249,12 @@ function HostConsole({
             {!session && hostConsoleView !== 'settings' && !hostRestoreInProgress ? (
               <button
                 type="button"
-                onClick={() => setShowCreateForm(true)}
+                onClick={() => {
+                  setShowJoinByCodeForm(false)
+                  setJoinByCodeError(null)
+                  setJoinCodeInput('')
+                  setShowCreateForm(true)
+                }}
                 className={`!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all ${
                   isAddinHost ? '!px-2.5 !py-1.5 !text-xs' : '!px-4 !py-2 !text-sm'
                 }`}

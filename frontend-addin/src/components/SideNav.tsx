@@ -14,6 +14,10 @@ interface SideNavProps {
   onMySessions?: () => void
   /** True while a live session is open — highlights My Sessions and enables navigation back to the list. */
   hasLiveSession?: boolean
+  /** Opens the new-session modal (same as the top bar “Start a new session” action). */
+  onCreateSession?: () => void
+  /** True while the new-session modal is open — highlights “Create a session” in the nav. */
+  createSessionModalOpen?: boolean
   /** Opens join-by-code modal (same pattern as Start a new session). */
   onJoinSession?: () => void
   /** True while join-by-code modal is open — highlights "Join a session" in the nav. */
@@ -54,6 +58,8 @@ export function SideNav({
   avatarUrl,
   onMySessions,
   hasLiveSession = false,
+  onCreateSession,
+  createSessionModalOpen = false,
   onJoinSession,
   joinSessionModalOpen = false,
   activeSection = 'sessions',
@@ -63,16 +69,23 @@ export function SideNav({
   onWorkspaceNav
 }: SideNavProps) {
   const joinModalOpen = joinSessionModalOpen
-  const sessionsNavActive = activeSection === 'sessions' && !joinModalOpen
-  const settingsNavActive = activeSection === 'settings' && !joinModalOpen
-  const joinNavActive = joinModalOpen
+  const createModalOpen = createSessionModalOpen
+  const sessionsNavActive =
+    activeSection === 'sessions' && !joinModalOpen && !createModalOpen
+  const settingsNavActive = activeSection === 'settings' && !joinModalOpen && !createModalOpen
+  const joinNavActive = joinModalOpen && !createModalOpen
+  const createNavActive = createModalOpen
   const navActiveClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
   const navIdleClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
 
   const workspaceItemActive = (id: WorkspaceNavId) =>
-    workspaceMode && activeSection === 'sessions' && !joinModalOpen && activeWorkspaceNav === id
+    workspaceMode &&
+    activeSection === 'sessions' &&
+    !joinModalOpen &&
+    !createModalOpen &&
+    activeWorkspaceNav === id
 
   /** In workspace mode, submenu items sit under the session icon with inset + left rail. */
   const workspaceSubmenuBase =
@@ -113,6 +126,18 @@ export function SideNav({
                 <span className="font-medium">{MY_SESSIONS_ITEM.label}</span>
               </a>
             )}
+
+            {onCreateSession ? (
+              <button
+                type="button"
+                onClick={onCreateSession}
+                className={createNavActive ? navActiveClass : navIdleClass}
+                title="Create a new session"
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">add</span>
+                <span className={createNavActive ? 'font-medium' : ''}>Create a session</span>
+              </button>
+            ) : null}
 
             {!isAddinHost && onJoinSession ? (
               <button
