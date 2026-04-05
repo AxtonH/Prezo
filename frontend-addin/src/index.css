@@ -1294,16 +1294,16 @@ body.login-view #root {
 }
 
 /*
- * Host session dashboard body: each row of grid-template-areas is a separate quoted string;
- * rows are separated by whitespace (not commas — commas are invalid here per CSS Grid).
+ * Host session dashboard: row 1 pairs a left “stack” (audience + co-host) with activities.
+ * If audience/co-host sat on separate rows while activities spanned two rows, the span’s height
+ * inflated both rows and pushed co-host down — one stack cell fixes row sizing so the rail scrolls.
  */
 @media (min-width: 1024px) {
   .session-dashboard-body-grid {
     grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto;
     grid-template-areas:
-      "audience activities"
-      "cohost activities"
+      "stack activities"
       "participants empty";
   }
 }

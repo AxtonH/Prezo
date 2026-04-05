@@ -173,14 +173,11 @@ export function SessionDashboardPage({
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
       {/*
-        lg: explicit 2×3 template — left column = audience / co-host / participants; right column =
-        activities spanning rows 1–2 only (no row/column overlap with left cards).
+        lg: row 1 = audience+co-host (stack) | scrollable activities; row 2 = participants | empty.
       */}
       <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-stretch">
-        <div className="min-w-0 lg:[grid-area:audience]">
+        <div className="min-w-0 space-y-5 lg:[grid-area:stack]">
           <SessionAudienceAccessCard sessionCode={session.code} joinUrl={joinUrl} />
-        </div>
-        <div className="min-w-0 lg:[grid-area:cohost]">
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
         <div className="min-w-0 lg:[grid-area:participants]">
@@ -190,7 +187,7 @@ export function SessionDashboardPage({
             hostAvatarUrl={hostAvatarUrl}
           />
         </div>
-        <div className="flex min-h-0 min-w-0 flex-col gap-5 lg:[grid-area:activities]">
+        <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-hidden lg:[grid-area:activities]">
           <div className="shrink-0 space-y-4">
             {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
