@@ -7,10 +7,15 @@ import { ActiveQnaEventCard } from './ActiveQnaEventCard'
 
 export interface SessionActiveEventsPanelProps {
   openPolls: Poll[]
+  /** Stopped polls — shown at the bottom, inactive styling. */
+  closedPolls: Poll[]
   qnaOpen: boolean
+  /** When Q&amp;A was closed but had audience activity — show inactive card at bottom. */
+  showInactiveQna: boolean
   pendingAudienceCount: number
   pendingPreview: Question | null
   openPrompts: QnaPrompt[]
+  closedPrompts: QnaPrompt[]
   questions: Question[]
   onConfigurePoll?: (pollId: string) => void
   onStopPoll?: (pollId: string) => void
@@ -26,21 +31,26 @@ function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
 
 export function SessionActiveEventsPanel({
   openPolls,
+  closedPolls,
   qnaOpen,
+  showInactiveQna,
   pendingAudienceCount,
   pendingPreview,
   openPrompts,
+  closedPrompts,
   questions,
   onConfigurePoll,
   onStopPoll,
   onStopQna,
   onStopDiscussion
 }: SessionActiveEventsPanelProps) {
-  const sortedPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
-  const sortedPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
+  const sortedOpenPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
+  const sortedClosedPolls = useMemo(() => sortByCreatedDesc(closedPolls), [closedPolls])
+  const sortedOpenPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
+  const sortedClosedPrompts = useMemo(() => sortByCreatedDesc(closedPrompts), [closedPrompts])
 
   const discussionBlocks = useMemo(() => {
-    return sortedPrompts.map((prompt) => {
+    return sortedOpenPrompts.map((prompt) => {
       const pending = questions.filter(
         (q) => q.prompt_id === prompt.id && q.status === 'pending'
       )
@@ -50,10 +60,28 @@ export function SessionActiveEventsPanel({
         pendingPreview: pending[0] ?? null
       }
     })
-  }, [sortedPrompts, questions])
+  }, [sortedOpenPrompts, questions])
+
+  const discussionBlocksInactive = useMemo(() => {
+    return sortedClosedPrompts.map((prompt) => {
+      const pending = questions.filter(
+        (q) => q.prompt_id === prompt.id && q.status === 'pending'
+      )
+      return {
+        prompt,
+        pendingCount: pending.length,
+        pendingPreview: pending[0] ?? null
+      }
+    })
+  }, [sortedClosedPrompts, questions])
 
   const hasAnyEvent =
-    sortedPolls.length > 0 || qnaOpen || discussionBlocks.length > 0
+    sortedOpenPolls.length > 0 ||
+    qnaOpen ||
+    discussionBlocks.length > 0 ||
+    sortedClosedPolls.length > 0 ||
+    showInactiveQna ||
+    discussionBlocksInactive.length > 0
 
   return (
     <>
@@ -66,10 +94,11 @@ export function SessionActiveEventsPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-5">
-          {sortedPolls.map((poll) => (
+          {sortedOpenPolls.map((poll) => (
             <ActivePollEventCard
               key={poll.id}
               poll={poll}
+              variant="active"
               onConfigure={onConfigurePoll}
               onStop={onStopPoll}
             />
@@ -79,6 +108,7 @@ export function SessionActiveEventsPanel({
             <ActiveQnaEventCard
               pendingCount={pendingAudienceCount}
               pendingPreview={pendingPreview}
+              variant="active"
               onStop={onStopQna}
             />
           ) : null}
@@ -89,7 +119,30 @@ export function SessionActiveEventsPanel({
               prompt={prompt}
               pendingCount={pendingCount}
               pendingPreview={discPreview}
+              variant="active"
               onStop={onStopDiscussion}
+            />
+          ))}
+
+          {sortedClosedPolls.map((poll) => (
+            <ActivePollEventCard key={poll.id} poll={poll} variant="inactive" />
+          ))}
+
+          {showInactiveQna ? (
+            <ActiveQnaEventCard
+              pendingCount={pendingAudienceCount}
+              pendingPreview={pendingPreview}
+              variant="inactive"
+            />
+          ) : null}
+
+          {discussionBlocksInactive.map(({ prompt, pendingCount, pendingPreview: discPreview }) => (
+            <ActiveDiscussionEventCard
+              key={prompt.id}
+              prompt={prompt}
+              pendingCount={pendingCount}
+              pendingPreview={discPreview}
+              variant="inactive"
             />
           ))}
         </div>

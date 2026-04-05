@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { resolveJoinUrl } from '../../utils/joinUrl'
@@ -7,6 +7,12 @@ import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionParticipantsCard } from './SessionParticipantsCard'
+
+function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
+  return [...items].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+}
 
 export interface SessionDashboardPageProps {
   session: Session
@@ -49,8 +55,18 @@ export function SessionDashboardPage({
     [polls]
   )
 
+  const closedPolls = useMemo(
+    () => sortByCreatedDesc(polls.filter((p) => p.status === 'closed')),
+    [polls]
+  )
+
   const openPrompts = useMemo(
     () => prompts.filter((p) => p.status === 'open'),
+    [prompts]
+  )
+
+  const closedPrompts = useMemo(
+    () => sortByCreatedDesc(prompts.filter((p) => p.status === 'closed')),
     [prompts]
   )
 
@@ -60,6 +76,24 @@ export function SessionDashboardPage({
   )
 
   const pendingPreview = pendingAudience[0] ?? null
+
+  /** Tracks Q&amp;A being opened this session so we still show an inactive panel after close even with zero questions. */
+  const qnaWasOpenedThisSessionRef = useRef(false)
+  const lastSessionIdRef = useRef(session.id)
+  if (lastSessionIdRef.current !== session.id) {
+    lastSessionIdRef.current = session.id
+    qnaWasOpenedThisSessionRef.current = false
+  }
+  useEffect(() => {
+    if (session.qna_open) {
+      qnaWasOpenedThisSessionRef.current = true
+    }
+  }, [session.qna_open])
+
+  /** Ended Q&amp;A card: closed channel, and either had audience items or Q&amp;A was opened at least once this session. */
+  const showInactiveQna =
+    !session.qna_open &&
+    (audienceQuestions.length > 0 || qnaWasOpenedThisSessionRef.current)
 
   return (
     <div className="space-y-6">
@@ -78,10 +112,13 @@ export function SessionDashboardPage({
         <div className="lg:col-span-8">
           <SessionActiveEventsPanel
             openPolls={openPolls}
+            closedPolls={closedPolls}
             qnaOpen={session.qna_open}
+            showInactiveQna={showInactiveQna}
             pendingAudienceCount={pendingAudience.length}
             pendingPreview={pendingPreview}
             openPrompts={openPrompts}
+            closedPrompts={closedPrompts}
             questions={questions}
             onConfigurePoll={onConfigurePoll}
             onStopPoll={onStopPoll}
