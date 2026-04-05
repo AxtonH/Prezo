@@ -13,8 +13,6 @@ import type {
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { fetchHostProfile, type HostProfile } from './auth/profile'
 import { LoginPage } from './components/LoginPage'
-import { PollManager } from './components/PollManager'
-import { PromptManager } from './components/PromptManager'
 import { HostSearchBar } from './components/HostSearchBar'
 import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
@@ -30,14 +28,7 @@ import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
-import {
-  setDiscussionWidgetBinding,
-  setPollWidgetBinding,
-  setQnaWidgetBinding,
-  updateDiscussionWidget,
-  updatePollWidget,
-  updateQnaWidget
-} from './office/widgetShapes'
+import { updateDiscussionWidget, updatePollWidget, updateQnaWidget } from './office/widgetShapes'
 import {
   clearAllHostQnaInactiveFlags,
   clearHostQnaSessionFlags,
@@ -361,7 +352,6 @@ function HostConsole({
       setQuestions(snapshot.questions)
       setPolls(snapshot.polls)
       setPrompts(snapshot.prompts ?? [])
-      setShowPolls(snapshot.polls.length > 0)
       setWorkspaceNav(nav)
     }
 
@@ -408,11 +398,6 @@ function HostConsole({
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
-  const [showPolls, setShowPolls] = useState(false)
-  const [isQnaCollapsed, setIsQnaCollapsed] = useState(true)
-  const [isPollsCollapsed, setIsPollsCollapsed] = useState(true)
-  const [qnaWidgetStatus, setQnaWidgetStatus] = useState<string | null>(null)
-  const [qnaWidgetError, setQnaWidgetError] = useState<string | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
@@ -440,7 +425,6 @@ function HostConsole({
     setQuestions([])
     setPolls([])
     setPrompts([])
-    setShowPolls(false)
     setError(null)
   }, [])
 
@@ -482,7 +466,6 @@ function HostConsole({
             setQuestions(snapshot.questions)
             setPolls(snapshot.polls)
             setPrompts(snapshot.prompts ?? [])
-            setShowPolls(snapshot.polls.length > 0)
           } catch (err) {
             setError(
               err instanceof Error ? err.message : 'Failed to restore session'
@@ -597,12 +580,6 @@ function HostConsole({
   useEffect(() => {
     latestPromptsRef.current = prompts
   }, [prompts])
-
-  useEffect(() => {
-    if (polls.length > 0) {
-      setShowPolls(true)
-    }
-  }, [polls.length])
 
   useEffect(() => {
     if (!session) {
@@ -791,7 +768,6 @@ function HostConsole({
     setQuestions(snapshot.questions)
     setPolls(snapshot.polls)
     setPrompts(snapshot.prompts ?? [])
-    setShowPolls(snapshot.polls.length > 0)
   }
 
   const createSession = async (title: string) => {
@@ -801,7 +777,6 @@ function HostConsole({
     setQuestions([])
     setPolls([])
     setPrompts([])
-    setShowPolls(false)
     setRecentSessions((prev) => {
       const next = upsertById(prev, created)
       const keep = prev.length || maxSessionsLimit
@@ -854,7 +829,6 @@ function HostConsole({
     setQuestions([])
     setPolls([])
     setPrompts([])
-    setShowPolls(false)
     try {
       await hydrateSession(selected)
     } catch (err) {
@@ -908,19 +882,6 @@ function HostConsole({
     await api.hideQuestion(session.id, questionId)
   }
 
-  const createPoll = async (
-    questionText: string,
-    options: string[],
-    allowMultiple: boolean
-  ) => {
-    if (!session) {
-      return
-    }
-    const created = await api.createPoll(session.id, questionText, options, allowMultiple)
-    await api.openPoll(session.id, created.id)
-    setShowPolls(true)
-  }
-
   const openPoll = async (pollId: string) => {
     if (!session) {
       return
@@ -933,14 +894,6 @@ function HostConsole({
       return
     }
     await api.closePoll(session.id, pollId)
-  }
-
-  const createPrompt = async (promptText: string) => {
-    if (!session) {
-      return
-    }
-    const created = await api.createQnaPrompt(session.id, promptText)
-    await api.openQnaPrompt(session.id, created.id)
   }
 
   const openPrompt = async (promptId: string) => {
@@ -1007,87 +960,6 @@ function HostConsole({
       setError(message)
       throw new Error(message)
     }
-  }
-
-  const bindPollWidget = async (pollId: string | null) => {
-    if (!session) {
-      return
-    }
-    await setPollWidgetBinding(session.id, pollId)
-    schedulePollWidgetUpdate(session.id, session.code, polls)
-  }
-
-  const bindQnaWidget = async (promptId: string | null) => {
-    if (!session) {
-      return
-    }
-    setQnaWidgetStatus(null)
-    setQnaWidgetError(null)
-    try {
-      await setQnaWidgetBinding(session.id, promptId)
-      await updateQnaWidget(session.id, session.code, questions, prompts)
-      setQnaWidgetStatus(
-        promptId
-          ? 'Q&A widget bound to the selected prompt.'
-          : 'Q&A widget bound to audience Q&A.'
-      )
-    } catch (err) {
-      setQnaWidgetError(
-        err instanceof Error ? err.message : 'Failed to update Q&A widget binding.'
-      )
-    }
-  }
-
-  const bindDiscussionWidget = async (promptId: string | null) => {
-    if (!session) {
-      return
-    }
-    await setDiscussionWidgetBinding(session.id, promptId)
-    await updateDiscussionWidget(session.id, session.code, questions, prompts)
-  }
-
-  const audiencePending = useMemo(
-    () =>
-      questions.filter(
-        (question) => !question.prompt_id && question.status === 'pending'
-      ),
-    [questions]
-  )
-  const audienceApproved = useMemo(
-    () =>
-      questions.filter(
-        (question) => !question.prompt_id && question.status === 'approved'
-      ),
-    [questions]
-  )
-  const openPollCount = useMemo(
-    () => polls.filter((poll) => poll.status === 'open').length,
-    [polls]
-  )
-  const qnaStatusLabel = session?.qna_open ? 'Active 1' : 'Inactive'
-  const pollStatusLabel = openPollCount > 0 ? `Active ${openPollCount}` : 'Inactive'
-
-  const renderQuestionList = (
-    items: Question[],
-    emptyMessage: string,
-    renderActions: (question: Question) => JSX.Element
-  ) => {
-    if (items.length === 0) {
-      return <p className="muted">{emptyMessage}</p>
-    }
-    return (
-      <ul className="list">
-        {items.map((question) => (
-          <li key={question.id} className="list-item">
-            <div>
-              <p>{question.text}</p>
-              <span className="muted">{question.votes} votes</span>
-            </div>
-            <div className="actions">{renderActions(question)}</div>
-          </li>
-        ))}
-      </ul>
-    )
   }
 
   const isAddinHost = isPowerPointAddinHost()
@@ -1612,120 +1484,6 @@ function HostConsole({
                   </button>
                 </div>
               </div>
-            </div>
-          ) : null}
-
-          {/* Q&A, Prompts, Polls — live session Dashboard tab only */}
-          {session && hostConsoleView === 'host' && workspaceNav === 'dashboard' ? (
-            <div className="grid gap-5 mt-6">
-              <div className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">
-                    <button
-                      type="button"
-                      className={`collapse-toggle${isQnaCollapsed ? '' : ' is-expanded'}`}
-                      aria-label={isQnaCollapsed ? 'Expand Q&A section' : 'Collapse Q&A section'}
-                      onClick={() => setIsQnaCollapsed((prev) => !prev)}
-                    />
-                    <h2>Q&amp;A</h2>
-                  </div>
-                  <div className="actions">
-                    {isQnaCollapsed ? (
-                      <span className="badge">{qnaStatusLabel}</span>
-                    ) : session?.qna_open ? (
-                      <button className="ghost" onClick={closeQna}>Close Q&amp;A</button>
-                    ) : (
-                      <button onClick={openQna} disabled={!session}>Open Q&amp;A</button>
-                    )}
-                  </div>
-                </div>
-                {isQnaCollapsed ? null : (
-                  <div className="panel-body">
-                    <p className="muted">Open Q&amp;A to collect and moderate questions.</p>
-                    {session.qna_open ? (
-                      <p className="muted">Q&amp;A is open. New questions will appear below.</p>
-                    ) : (
-                      <p className="muted">Q&amp;A is closed. Open it to start collecting questions.</p>
-                    )}
-                    <div className="moderation-block">
-                      <div className="panel-header">
-                        <h3>Audience Q&amp;A</h3>
-                        <span className="badge">Pending {audiencePending.length}</span>
-                      </div>
-                      <div className="moderation-columns">
-                        <div>
-                          <div className="section-label">Pending</div>
-                          {renderQuestionList(audiencePending, 'No questions waiting for approval.', (question) => (
-                            <>
-                              <button onClick={() => approveQuestion(question.id)}>Approve</button>
-                              <button className="ghost" onClick={() => hideQuestion(question.id)}>Hide</button>
-                            </>
-                          ))}
-                        </div>
-                        <div>
-                          <div className="section-label">Approved</div>
-                          {renderQuestionList(audienceApproved, 'Approved questions will appear here.', (question) => (
-                            <button className="ghost" onClick={() => hideQuestion(question.id)}>Hide</button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="widget-binding">
-                      <div className="actions">
-                        <button className="ghost" onClick={() => bindQnaWidget(null)}>Bind to audience Q&amp;A</button>
-                      </div>
-                      {qnaWidgetStatus ? <p className="muted">{qnaWidgetStatus}</p> : null}
-                      {qnaWidgetError ? <p className="error">{qnaWidgetError}</p> : null}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <PromptManager
-                prompts={prompts}
-                questions={questions}
-                onCreate={createPrompt}
-                onOpen={openPrompt}
-                onClose={closePrompt}
-                onApprove={approveQuestion}
-                onHide={hideQuestion}
-                onBindDiscussionWidget={bindDiscussionWidget}
-              />
-
-              {!showPolls ? (
-                <div className="panel">
-                  <div className="panel-header">
-                    <div className="panel-title">
-                      <button
-                        type="button"
-                        className={`collapse-toggle${isPollsCollapsed ? '' : ' is-expanded'}`}
-                        aria-label={isPollsCollapsed ? 'Expand polls section' : 'Collapse polls section'}
-                        onClick={() => setIsPollsCollapsed((prev) => !prev)}
-                      />
-                      <h2>Polls</h2>
-                    </div>
-                    <span className="badge">{pollStatusLabel}</span>
-                  </div>
-                  {isPollsCollapsed ? null : (
-                    <div className="panel-body">
-                      <p className="muted">Launch a poll and share it instantly with your audience.</p>
-                      <button className="primary full-width" onClick={() => setShowPolls(true)} disabled={!session}>
-                        Start poll
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <PollManager
-                  polls={polls}
-                  onCreate={createPoll}
-                  onOpen={openPoll}
-                  onClose={closePoll}
-                  onBindWidget={bindPollWidget}
-                  sessionId={session.id}
-                  sessionCode={session.code}
-                />
-              )}
             </div>
           ) : null}
         </div>
