@@ -135,6 +135,17 @@ export function SideNav({
           </>
         ) : (
           <>
+            {onMySessions ? (
+              <button
+                type="button"
+                onClick={onMySessions}
+                className={navIdleClass}
+                title="Back to all sessions"
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
+                <span>{MY_SESSIONS_ITEM.label}</span>
+              </button>
+            ) : null}
             {WORKSPACE_NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
