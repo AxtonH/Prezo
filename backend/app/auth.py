@@ -126,6 +126,18 @@ async def get_current_user(
     return await get_current_user_from_supabase_token(credentials.credentials)
 
 
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> AuthUser | None:
+    """Bearer token when present (e.g. host). No token → None (e.g. audience snapshot)."""
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user_from_supabase_token(credentials.credentials)
+    except HTTPException:
+        return None
+
+
 async def get_library_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> AuthUser:

@@ -59,8 +59,13 @@ class SupabaseStore:
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, connect=15.0),
         )
-        self._snapshot_cache: dict[str, tuple[float, SessionSnapshot]] = {}
-        self._snapshot_inflight: dict[str, asyncio.Task[SessionSnapshot]] = {}
+        # Key: (session_id, viewer_user_id) — session embeds is_original_host per viewer.
+        self._snapshot_cache: dict[
+            tuple[str, str | None], tuple[float, SessionSnapshot]
+        ] = {}
+        self._snapshot_inflight: dict[
+            tuple[str, str | None], asyncio.Task[SessionSnapshot]
+        ] = {}
         self._transport_unavailable_until = 0.0
         self._transport_failure_detail = ""
 
@@ -174,12 +179,19 @@ class SupabaseStore:
         return response.json()
 
     def _invalidate_session_snapshot(self, session_id: str) -> None:
-        self._snapshot_cache.pop(session_id, None)
+        to_remove = [k for k in self._snapshot_cache if k[0] == session_id]
+        for k in to_remove:
+            self._snapshot_cache.pop(k, None)
 
     def _get_cached_snapshot_copy(
-        self, session_id: str, now: float, max_age_seconds: float
+        self,
+        session_id: str,
+        viewer_user_id: str | None,
+        now: float,
+        max_age_seconds: float,
     ) -> SessionSnapshot | None:
-        cached = self._snapshot_cache.get(session_id)
+        cache_key = (session_id, viewer_user_id)
+        cached = self._snapshot_cache.get(cache_key)
         if not cached:
             return None
         cached_at, snapshot = cached
@@ -187,9 +199,11 @@ class SupabaseStore:
             return None
         return snapshot.model_copy(deep=True)
 
-    def _get_stale_snapshot_copy(self, session_id: str) -> SessionSnapshot | None:
+    def _get_stale_snapshot_copy(
+        self, session_id: str, viewer_user_id: str | None
+    ) -> SessionSnapshot | None:
         stale_snapshot = self._get_cached_snapshot_copy(
-            session_id, time.monotonic(), SNAPSHOT_STALE_MAX_SECONDS
+            session_id, viewer_user_id, time.monotonic(), SNAPSHOT_STALE_MAX_SECONDS
         )
         if stale_snapshot:
             logger.warning(
@@ -198,13 +212,15 @@ class SupabaseStore:
             )
         return stale_snapshot
 
-    async def _load_snapshot(self, session_id: str) -> SessionSnapshot:
+    async def _load_snapshot(
+        self, session_id: str, viewer_user_id: str | None = None
+    ) -> SessionSnapshot:
         sessions = await self._select(
             "sessions", {"select": "*", "id": f"eq.{session_id}"}
         )
         if not sessions:
             raise NotFoundError("session not found")
-        session = self._to_session(sessions[0])
+        session = self._to_session(sessions[0], viewer_user_id)
 
         questions = await self._select(
             "questions",
@@ -976,39 +992,46 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_poll(poll_data, option_rows)
 
-    async def snapshot(self, session_id: str) -> SessionSnapshot:
+    async def snapshot(
+        self, session_id: str, viewer_user_id: str | None = None
+    ) -> SessionSnapshot:
+        cache_key = (session_id, viewer_user_id)
         now = time.monotonic()
         cached_snapshot = self._get_cached_snapshot_copy(
-            session_id, now, SNAPSHOT_CACHE_TTL_SECONDS
+            session_id, viewer_user_id, now, SNAPSHOT_CACHE_TTL_SECONDS
         )
         if cached_snapshot:
             return cached_snapshot
 
-        inflight = self._snapshot_inflight.get(session_id)
+        inflight = self._snapshot_inflight.get(cache_key)
         if inflight:
             try:
                 snapshot = await inflight
             except SupabaseError:
-                stale_snapshot = self._get_stale_snapshot_copy(session_id)
+                stale_snapshot = self._get_stale_snapshot_copy(
+                    session_id, viewer_user_id
+                )
                 if stale_snapshot:
                     return stale_snapshot
                 raise
             return snapshot.model_copy(deep=True)
 
-        task = asyncio.create_task(self._load_snapshot(session_id))
-        self._snapshot_inflight[session_id] = task
+        task = asyncio.create_task(self._load_snapshot(session_id, viewer_user_id))
+        self._snapshot_inflight[cache_key] = task
         try:
             snapshot = await task
         except SupabaseError:
-            stale_snapshot = self._get_stale_snapshot_copy(session_id)
+            stale_snapshot = self._get_stale_snapshot_copy(
+                session_id, viewer_user_id
+            )
             if stale_snapshot:
                 return stale_snapshot
             raise
         finally:
-            if self._snapshot_inflight.get(session_id) is task:
-                self._snapshot_inflight.pop(session_id, None)
+            if self._snapshot_inflight.get(cache_key) is task:
+                self._snapshot_inflight.pop(cache_key, None)
 
-        self._snapshot_cache[session_id] = (time.monotonic(), snapshot)
+        self._snapshot_cache[cache_key] = (time.monotonic(), snapshot)
         return snapshot.model_copy(deep=True)
 
     async def list_saved_themes(self, user_id: str) -> list[SavedTheme]:

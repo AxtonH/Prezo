@@ -83,8 +83,9 @@ export const api = {
     request<Session>(`/sessions/${sessionId}`, { method: 'DELETE' }, true),
   getSessionByCode: (code: string) =>
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
+  /** Sends auth when signed in so snapshot.session includes is_original_host for host UI. */
   getSnapshot: (sessionId: string) =>
-    request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`),
+    request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`, {}, true),
   openQna: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }, true),
   closeQna: (sessionId: string) =>

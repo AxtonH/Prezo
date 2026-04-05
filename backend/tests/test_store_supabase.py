@@ -110,7 +110,9 @@ class SupabaseStoreTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_snapshot_coalesces_concurrent_loads(self) -> None:
         snapshot = build_snapshot()
 
-        async def delayed_snapshot(session_id: str) -> SessionSnapshot:
+        async def delayed_snapshot(
+            session_id: str, viewer_user_id: str | None = None
+        ) -> SessionSnapshot:
             await asyncio.sleep(0.01)
             self.assertEqual(session_id, "session-1")
             return snapshot
@@ -132,7 +134,10 @@ class SupabaseStoreTransportTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         snapshot = build_snapshot()
-        self.store._snapshot_cache["session-1"] = (time.monotonic() - 2.0, snapshot)
+        self.store._snapshot_cache[("session-1", None)] = (
+            time.monotonic() - 2.0,
+            snapshot,
+        )
         load_mock = AsyncMock(
             side_effect=SupabaseError(503, "temporary upstream timeout", "supabase_unavailable")
         )

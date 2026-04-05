@@ -545,7 +545,9 @@ class InMemoryStore:
             option.votes += 1
             return self._to_poll(poll)
 
-    async def snapshot(self, session_id: str) -> SessionSnapshot:
+    async def snapshot(
+        self, session_id: str, viewer_user_id: str | None = None
+    ) -> SessionSnapshot:
         async with self._lock:
             session = self._sessions.get(session_id)
             if not session:
@@ -563,7 +565,7 @@ class InMemoryStore:
                 for pid in self._prompts_by_session[session_id]
             ]
             return SessionSnapshot(
-                session=self._to_session(session),
+                session=self._to_session(session, viewer_user_id),
                 questions=questions,
                 polls=polls,
                 prompts=prompts,

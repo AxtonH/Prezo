@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from ..auth import AuthUser, get_current_user
+from ..auth import AuthUser, get_current_user, get_optional_user
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
@@ -151,10 +151,13 @@ async def get_session_by_code(
 
 @router.get("/{session_id}/snapshot", response_model=SessionSnapshot)
 async def get_snapshot(
-    session_id: str, store: InMemoryStore = Depends(get_store)
+    session_id: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser | None = Depends(get_optional_user),
 ) -> SessionSnapshot:
     try:
-        snapshot = await store.snapshot(session_id)
+        viewer_id = user.id if user else None
+        snapshot = await store.snapshot(session_id, viewer_user_id=viewer_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     session = with_join_url(snapshot.session)
