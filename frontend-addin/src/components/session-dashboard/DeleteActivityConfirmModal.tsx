@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+
 export interface DeleteActivityConfirmModalProps {
   open: boolean
   onCancel: () => void
@@ -8,6 +10,11 @@ export interface DeleteActivityConfirmModalProps {
   error?: string | null
 }
 
+/**
+ * Portals to `document.body` so `position: fixed` covers the full viewport. When this tree lived
+ * inside the session activities scroller, a containing block (overflow/transform ancestors) caused
+ * the backdrop to only cover that panel — unlike Create activity, which mounts outside the scroll.
+ */
 export function DeleteActivityConfirmModal({
   open,
   onCancel,
@@ -15,14 +22,14 @@ export function DeleteActivityConfirmModal({
   busy = false,
   error = null
 }: DeleteActivityConfirmModalProps) {
-  if (!open) {
+  if (!open || typeof document === 'undefined') {
     return null
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-slate-900/45 backdrop-blur-sm"
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
         aria-hidden
         onClick={busy ? undefined : onCancel}
       />
@@ -71,6 +78,7 @@ export function DeleteActivityConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
