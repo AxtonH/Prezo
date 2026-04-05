@@ -41,7 +41,7 @@ import {
 import {
   clearAllHostQnaInactiveFlags,
   clearHostQnaInactive,
-  setHostQnaInactive
+  setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { buildEventHits, matchesSessionTitleOrCode } from './utils/hostSearch'
@@ -463,6 +463,13 @@ function HostConsole({
     prevSessionIdForHistoryRef.current = id
   }, [session?.id])
 
+  /** Persist “Q&A used” so the inactive card survives reloads when Q&A is closed. */
+  useEffect(() => {
+    if (session?.id && session.qna_open) {
+      setHostQnaEngaged(session.id)
+    }
+  }, [session?.id, session?.qna_open])
+
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
       const st = event.state as HostHistoryState | null
@@ -854,7 +861,7 @@ function HostConsole({
       return
     }
     const updated = await api.openQna(session.id)
-    clearHostQnaInactive(session.id)
+    setHostQnaEngaged(session.id)
     setSession((previous) => withPreservedHostRole(updated, previous))
   }
 
@@ -863,7 +870,7 @@ function HostConsole({
       return
     }
     const updated = await api.closeQna(session.id)
-    setHostQnaInactive(session.id)
+    setHostQnaEngaged(session.id)
     setSession((previous) => withPreservedHostRole(updated, previous))
   }
 
