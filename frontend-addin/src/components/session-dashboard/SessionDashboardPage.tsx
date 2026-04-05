@@ -248,7 +248,10 @@ export function SessionDashboardPage({
               </div>
             ) : null}
           </div>
-          <div className="min-h-0 overflow-x-hidden lg:flex-1 lg:overflow-y-auto lg:scroll-smooth session-list-scroll pr-1.5 -mr-0.5 [scrollbar-gutter:stable]">
+          <div
+            data-session-activities-scroll
+            className="min-h-0 overflow-x-hidden lg:flex-1 lg:overflow-y-auto lg:scroll-smooth session-list-scroll pr-1.5 -mr-0.5 [scrollbar-gutter:stable]"
+          >
             <SessionActiveActivitiesPanel
               openPolls={openPolls}
               closedPolls={closedPolls}

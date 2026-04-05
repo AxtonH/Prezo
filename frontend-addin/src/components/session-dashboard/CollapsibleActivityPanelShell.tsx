@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+
+import { scrollPanelIntoOverflowParent } from '../../utils/scrollPanelIntoOverflowParent'
 
 interface CollapsibleActivityPanelShellProps {
   icon: ReactNode
@@ -22,9 +24,54 @@ export function CollapsibleActivityPanelShell({
 }: CollapsibleActivityPanelShellProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const inactive = variant === 'inactive'
+  const rootRef = useRef<HTMLDivElement>(null)
+  const prevExpandedRef = useRef<boolean | null>(null)
+
+  useLayoutEffect(() => {
+    const scrollExpandedPanelIntoView = () => {
+      const el = rootRef.current
+      if (!el) {
+        return
+      }
+      const scrollParent = el.closest(
+        '[data-session-activities-scroll]'
+      ) as HTMLElement | null
+      if (
+        !scrollParent ||
+        scrollParent.scrollHeight <= scrollParent.clientHeight + 1
+      ) {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        return
+      }
+      scrollPanelIntoOverflowParent(el, scrollParent, 'smooth')
+    }
+
+    const scheduleScroll = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(scrollExpandedPanelIntoView)
+      })
+    }
+
+    if (prevExpandedRef.current === null) {
+      prevExpandedRef.current = expanded
+      /** Pre-expanded panels (`defaultExpanded`) can start off-screen; align once on mount. */
+      if (expanded) {
+        scheduleScroll()
+      }
+      return
+    }
+
+    const wasCollapsed = !prevExpandedRef.current
+    prevExpandedRef.current = expanded
+    if (!expanded || !wasCollapsed) {
+      return
+    }
+    scheduleScroll()
+  }, [expanded])
 
   return (
     <div
+      ref={rootRef}
       className={
         inactive
           ? 'bg-slate-200/60 rounded-2xl border border-slate-400/50 shadow-sm overflow-hidden ring-1 ring-slate-400/20'
