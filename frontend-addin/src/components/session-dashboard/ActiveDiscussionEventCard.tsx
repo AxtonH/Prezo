@@ -20,8 +20,10 @@ export function ActiveDiscussionEventCard({
             <span className="material-symbols-outlined">forum</span>
           </div>
           <div className="min-w-0">
-            <h4 className="font-bold text-slate-900">Open discussion</h4>
-            <p className="text-sm text-muted line-clamp-2">{prompt.prompt}</p>
+            <h4 className="font-bold text-slate-900 text-base leading-snug line-clamp-3">
+              {prompt.prompt.trim() || 'Discussion'}
+            </h4>
+            <p className="text-sm text-muted mt-1">Open discussion</p>
           </div>
         </div>
         <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest shrink-0">

@@ -17,8 +17,10 @@ export function ActivePollEventCard({ poll, onConfigure, onStop }: ActivePollEve
             <span className="material-symbols-outlined">bar_chart</span>
           </div>
           <div className="min-w-0">
-            <h4 className="font-bold text-slate-900">Live polling</h4>
-            <p className="text-sm text-muted truncate">{poll.question}</p>
+            <h4 className="font-bold text-slate-900 text-base leading-snug line-clamp-3">
+              {poll.question.trim() || 'Untitled poll'}
+            </h4>
+            <p className="text-sm text-muted mt-1">Poll</p>
           </div>
         </div>
         <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest shrink-0">

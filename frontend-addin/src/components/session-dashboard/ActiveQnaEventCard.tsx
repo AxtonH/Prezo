@@ -15,10 +15,8 @@ export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEv
             <span className="material-symbols-outlined">chat_bubble</span>
           </div>
           <div className="min-w-0">
-            <h4 className="font-bold text-slate-900">Q&amp;A</h4>
-            <p className="text-sm text-muted">
-              {pendingCount} unanswered question{pendingCount === 1 ? '' : 's'}
-            </p>
+            <h4 className="font-bold text-slate-900 text-base leading-snug">Audience questions</h4>
+            <p className="text-sm text-muted mt-1">Q&amp;A</p>
           </div>
         </div>
         <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest shrink-0">
@@ -26,6 +24,9 @@ export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEv
         </span>
       </div>
       <div className="p-5">
+        <p className="text-sm text-muted mb-3">
+          {pendingCount} unanswered question{pendingCount === 1 ? '' : 's'}
+        </p>
         {pendingPreview ? (
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
             <div className="flex items-center gap-2 text-xs text-muted mb-2">
