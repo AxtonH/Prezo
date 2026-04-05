@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 
-import type { Poll, Question, Session } from '../../api/types'
+import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { resolveJoinUrl } from '../../utils/joinUrl'
-import { SessionActiveModulesPanel } from './SessionActiveModulesPanel'
+import { SessionActiveEventsPanel } from './SessionActiveEventsPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
@@ -15,6 +15,9 @@ export interface SessionDashboardPageProps {
   /** Live audience size when available; `null` shows a placeholder. */
   participantCount: number | null
   polls: Poll[]
+  prompts: QnaPrompt[]
+  /** All questions (used for discussion thread preview). */
+  questions: Question[]
   /** Audience (non-prompt) questions for Q&A preview */
   audienceQuestions: Question[]
   onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
@@ -28,6 +31,8 @@ export function SessionDashboardPage({
   hostAvatarUrl,
   participantCount,
   polls,
+  prompts,
+  questions,
   audienceQuestions,
   onSetHostJoinAccess,
   onConfigurePoll,
@@ -47,6 +52,22 @@ export function SessionDashboardPage({
 
   const pendingPreview = pendingAudience[0] ?? null
 
+  const activeDiscussionPrompt = useMemo(
+    () => prompts.find((p) => p.status === 'open') ?? null,
+    [prompts]
+  )
+
+  const discussionPending = useMemo(() => {
+    if (!activeDiscussionPrompt) {
+      return []
+    }
+    return questions.filter(
+      (q) => q.prompt_id === activeDiscussionPrompt.id && q.status === 'pending'
+    )
+  }, [questions, activeDiscussionPrompt])
+
+  const discussionPreview = discussionPending[0] ?? null
+
   return (
     <div className="space-y-8">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
@@ -62,11 +83,14 @@ export function SessionDashboardPage({
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
         <div className="lg:col-span-8">
-          <SessionActiveModulesPanel
+          <SessionActiveEventsPanel
             openPoll={openPoll}
             pendingAudienceCount={pendingAudience.length}
             pendingPreview={pendingPreview}
             qnaOpen={session.qna_open}
+            activeDiscussionPrompt={activeDiscussionPrompt}
+            discussionPendingCount={discussionPending.length}
+            discussionPreview={discussionPreview}
             onConfigurePoll={onConfigurePoll}
             onStopPoll={openPoll && onStopPoll ? () => void onStopPoll(openPoll.id) : undefined}
           />

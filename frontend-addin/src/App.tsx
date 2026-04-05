@@ -1168,6 +1168,8 @@ function HostConsole({
                   hostAvatarUrl={hostProfile.avatar_url}
                   participantCount={null}
                   polls={polls}
+                  prompts={prompts}
+                  questions={questions}
                   audienceQuestions={questions.filter((q) => !q.prompt_id)}
                   onSetHostJoinAccess={setHostJoinAccess}
                   onConfigurePoll={() => setShowPolls(true)}
