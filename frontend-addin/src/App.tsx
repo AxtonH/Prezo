@@ -38,6 +38,11 @@ import {
   updatePollWidget,
   updateQnaWidget
 } from './office/widgetShapes'
+import {
+  clearAllHostQnaInactiveFlags,
+  clearHostQnaInactive,
+  setHostQnaInactive
+} from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { buildEventHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
@@ -251,6 +256,7 @@ export default function App() {
 
   const handleLogout = () => {
     persistHostSession(null, 'dashboard')
+    clearAllHostQnaInactiveFlags()
     void signOut()
   }
 
@@ -428,6 +434,10 @@ function HostConsole({
   type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
 
   const clearLiveSessionState = useCallback(() => {
+    const sid = latestSessionRef.current?.id
+    if (sid) {
+      clearHostQnaInactive(sid)
+    }
     persistHostSession(null, 'dashboard')
     setSession(null)
     setQuestions([])
@@ -844,6 +854,7 @@ function HostConsole({
       return
     }
     const updated = await api.openQna(session.id)
+    clearHostQnaInactive(session.id)
     setSession((previous) => withPreservedHostRole(updated, previous))
   }
 
@@ -852,6 +863,7 @@ function HostConsole({
       return
     }
     const updated = await api.closeQna(session.id)
+    setHostQnaInactive(session.id)
     setSession((previous) => withPreservedHostRole(updated, previous))
   }
 

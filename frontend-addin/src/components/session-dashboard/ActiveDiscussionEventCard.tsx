@@ -45,7 +45,7 @@ export function ActiveDiscussionEventCard({
             {prompt.prompt.trim() || 'Discussion'}
           </h4>
           <p className={`text-sm mt-1 ${inactive ? 'text-slate-600' : 'text-muted'}`}>
-            {inactive ? 'Discussion' : 'Open discussion'}
+            Open discussion
           </p>
         </div>
       }

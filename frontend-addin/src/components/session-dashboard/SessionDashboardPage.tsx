@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
+import { readHostQnaInactive } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
 import { SessionActiveEventsPanel } from './SessionActiveEventsPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
@@ -96,10 +97,12 @@ export function SessionDashboardPage({
     }
   }, [session.qna_open])
 
-  /** Ended Q&amp;A card: closed channel, and either had audience items or Q&amp;A was opened at least once this session. */
+  /** Ended Q&amp;A card: closed channel, plus audience history, in-session open, or persisted “closed” after reload. */
   const showInactiveQna =
     !session.qna_open &&
-    (audienceQuestions.length > 0 || qnaWasOpenedThisSessionRef.current)
+    (audienceQuestions.length > 0 ||
+      qnaWasOpenedThisSessionRef.current ||
+      readHostQnaInactive(session.id))
 
   return (
     <div className="space-y-6">

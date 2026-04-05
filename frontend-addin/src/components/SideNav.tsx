@@ -43,7 +43,7 @@ const WORKSPACE_NAV_ITEMS: { id: WorkspaceNavId; icon: string; label: string }[]
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
   { id: 'polls', icon: 'bar_chart', label: 'Polls' },
   { id: 'discussion', icon: 'forum', label: 'Open discussion' },
-  { id: 'qna', icon: 'question_answer', label: 'Q&A' }
+  { id: 'qna', icon: 'chat_bubble', label: 'Q&A' }
 ]
 
 export function SideNav({
