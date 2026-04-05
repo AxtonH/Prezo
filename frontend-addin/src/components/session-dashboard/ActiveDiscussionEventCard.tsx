@@ -6,12 +6,14 @@ export interface ActiveDiscussionEventCardProps {
   prompt: QnaPrompt
   pendingCount: number
   pendingPreview: Question | null
+  onStop?: (promptId: string) => void
 }
 
 export function ActiveDiscussionEventCard({
   prompt,
   pendingCount,
-  pendingPreview
+  pendingPreview,
+  onStop
 }: ActiveDiscussionEventCardProps) {
   return (
     <CollapsibleEventPanelShell
@@ -48,6 +50,18 @@ export function ActiveDiscussionEventCard({
         ) : (
           <p className="text-sm text-muted">No answers yet for this discussion.</p>
         )}
+        <div className="flex flex-wrap gap-2 pt-4">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onStop?.(prompt.id)
+            }}
+            className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
+          >
+            Stop discussion
+          </button>
+        </div>
       </div>
     </CollapsibleEventPanelShell>
   )

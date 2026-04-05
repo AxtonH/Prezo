@@ -5,9 +5,10 @@ import { formatRelativeTime } from './formatRelativeTime'
 export interface ActiveQnaEventCardProps {
   pendingCount: number
   pendingPreview: Question | null
+  onStop?: () => void
 }
 
-export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEventCardProps) {
+export function ActiveQnaEventCard({ pendingCount, pendingPreview, onStop }: ActiveQnaEventCardProps) {
   return (
     <CollapsibleEventPanelShell
       icon={
@@ -41,6 +42,18 @@ export function ActiveQnaEventCard({ pendingCount, pendingPreview }: ActiveQnaEv
         ) : (
           <p className="text-sm text-muted">No questions waiting for approval.</p>
         )}
+        <div className="flex flex-wrap gap-2 pt-4">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onStop?.()
+            }}
+            className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
+          >
+            Stop Q&amp;A
+          </button>
+        </div>
       </div>
     </CollapsibleEventPanelShell>
   )

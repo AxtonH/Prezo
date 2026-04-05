@@ -14,6 +14,8 @@ export interface SessionActiveEventsPanelProps {
   questions: Question[]
   onConfigurePoll?: (pollId: string) => void
   onStopPoll?: (pollId: string) => void
+  onStopQna?: () => void
+  onStopDiscussion?: (promptId: string) => void
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -30,7 +32,9 @@ export function SessionActiveEventsPanel({
   openPrompts,
   questions,
   onConfigurePoll,
-  onStopPoll
+  onStopPoll,
+  onStopQna,
+  onStopDiscussion
 }: SessionActiveEventsPanelProps) {
   const sortedPolls = useMemo(() => sortByCreatedDesc(openPolls), [openPolls])
   const sortedPrompts = useMemo(() => sortByCreatedDesc(openPrompts), [openPrompts])
@@ -75,6 +79,7 @@ export function SessionActiveEventsPanel({
             <ActiveQnaEventCard
               pendingCount={pendingAudienceCount}
               pendingPreview={pendingPreview}
+              onStop={onStopQna}
             />
           ) : null}
 
@@ -84,6 +89,7 @@ export function SessionActiveEventsPanel({
               prompt={prompt}
               pendingCount={pendingCount}
               pendingPreview={discPreview}
+              onStop={onStopDiscussion}
             />
           ))}
         </div>

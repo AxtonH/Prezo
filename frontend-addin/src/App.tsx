@@ -1320,6 +1320,8 @@ function HostConsole({
                   onSetHostJoinAccess={setHostJoinAccess}
                   onConfigurePoll={(_pollId) => setShowPolls(true)}
                   onStopPoll={(pollId) => closePoll(pollId)}
+                  onStopQna={() => void closeQna()}
+                  onStopDiscussion={(promptId) => void closePrompt(promptId)}
                 />
               )}
             </>

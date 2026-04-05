@@ -23,6 +23,8 @@ export interface SessionDashboardPageProps {
   onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
   onConfigurePoll?: (pollId: string) => void
   onStopPoll?: (pollId: string) => void | Promise<void>
+  onStopQna?: () => void | Promise<void>
+  onStopDiscussion?: (promptId: string) => void | Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -36,7 +38,9 @@ export function SessionDashboardPage({
   audienceQuestions,
   onSetHostJoinAccess,
   onConfigurePoll,
-  onStopPoll
+  onStopPoll,
+  onStopQna,
+  onStopDiscussion
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -81,6 +85,8 @@ export function SessionDashboardPage({
             questions={questions}
             onConfigurePoll={onConfigurePoll}
             onStopPoll={onStopPoll}
+            onStopQna={onStopQna}
+            onStopDiscussion={onStopDiscussion}
           />
         </div>
       </div>
