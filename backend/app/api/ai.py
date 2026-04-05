@@ -420,6 +420,8 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
         "- The artifact is edited as a package with files: index.html, styles.css, renderer.js.",
         "- For set_css_property, use file='styles.css'.",
+        "- Runtime preview: the host may apply per-field style overrides after the base HTML/CSS loads. "
+        "When the prompt includes a \"runtime user style overrides\" block, use it to interpret colors or wording the user refers to that may not appear in the raw files alone.",
         "- SELECTOR TARGETING: Use the selector reference map provided in the prompt to pick the correct selector. "
         "When the user refers to an element by its visual name (e.g. 'the bricks', 'the polls', 'the options'), "
         "target the selector that directly owns the sizing properties (width, height, font-size, etc.) for that element. "
@@ -2216,6 +2218,42 @@ def get_artifact_patch_source_package(
     return None
 
 
+STYLE_OVERRIDES_PROMPT_MAX_TOTAL = 4500
+STYLE_OVERRIDES_PROMPT_MAX_KEYS = 40
+STYLE_OVERRIDES_PROMPT_SNIPPET_PER_KEY = 320
+
+
+def format_style_overrides_for_prompt(overrides: Any) -> str:
+    """
+    Summarize host-side styleOverrides (manual rich-text HTML per field) for LLM context.
+    The base artifact files may not reflect these; the user sees the merged result in the iframe.
+    """
+    if not isinstance(overrides, dict) or not overrides:
+        return ""
+    lines: list[str] = []
+    total = 0
+    for key, val in list(overrides.items())[:STYLE_OVERRIDES_PROMPT_MAX_KEYS]:
+        if not isinstance(key, str) or not key.strip():
+            continue
+        if isinstance(val, str) and val.strip():
+            snippet = " ".join(val.strip().split())[:STYLE_OVERRIDES_PROMPT_SNIPPET_PER_KEY]
+        else:
+            snippet = repr(val)[:STYLE_OVERRIDES_PROMPT_SNIPPET_PER_KEY]
+        line = f"- `{key.strip()}`: {snippet}"
+        if total + len(line) > STYLE_OVERRIDES_PROMPT_MAX_TOTAL:
+            break
+        lines.append(line)
+        total += len(line) + 1
+    if not lines:
+        return ""
+    header = (
+        "Runtime user style overrides (applied in the live preview after the base HTML/CSS loads; "
+        "the user may see colors or text here that are NOT in the raw artifact files alone). "
+        "When the user refers to colors, wording, or labels, treat these as the effective styling intent:"
+    )
+    return header + "\n" + "\n".join(lines)
+
+
 def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
@@ -2260,6 +2298,10 @@ def build_artifact_patch_edit_prompt(
         if isinstance(artifact_context.get("pollTitle"), str)
         else ""
     )
+    _raw_style_overrides = artifact_context.get("styleOverrides") or artifact_context.get(
+        "style_overrides"
+    )
+    style_overrides_block = format_style_overrides_for_prompt(_raw_style_overrides)
     is_background_edit = is_background_visual_edit_request(original_edit_request)
     is_layout_orientation_edit = is_layout_orientation_artifact_edit_request(
         original_edit_request
@@ -2309,6 +2351,14 @@ def build_artifact_patch_edit_prompt(
             f"Current artifact type: {artifact_type}" if artifact_type else "",
             f"Current design guidelines: {design_guidelines}" if design_guidelines else "",
             f"Live poll title: {poll_title}" if poll_title else "",
+            style_overrides_block,
+            (
+                "If runtime user style overrides are listed above, the user's description of colors or text "
+                "may refer to that effective view. Apply edits so the resulting artifact matches that intent; "
+                "after your patch, the host will clear conflicting manual HTML overrides for poll fields."
+                if style_overrides_block
+                else ""
+            ),
             (
                 "This is a background/time-of-day/lighting request. Modify only background, sky, ambient, backdrop, and closely related color/lighting styles. Do not change cars, foreground gameplay visuals, labels, icons, or decorative detail."
                 if is_background_edit
@@ -6260,6 +6310,16 @@ def prepare_artifact_context_for_model(
     dg = artifact_context.get("designGuidelines")
     if isinstance(dg, str) and len(dg) > 3000:
         artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
+    raw_style = artifact_context.get("styleOverrides") or artifact_context.get("style_overrides")
+    summary = format_style_overrides_for_prompt(raw_style)
+    if summary:
+        artifact_context["styleOverridesSummary"] = trim_artifact_context_text(
+            summary, STYLE_OVERRIDES_PROMPT_MAX_TOTAL + 400
+        )
+    else:
+        artifact_context.pop("styleOverridesSummary", None)
+    artifact_context.pop("styleOverrides", None)
+    artifact_context.pop("style_overrides", None)
     return prepared
 
 

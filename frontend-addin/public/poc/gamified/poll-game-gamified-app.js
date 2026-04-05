@@ -62,7 +62,8 @@ import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
   extractCopyFromStyleOverrides,
-  mergeCopyIntoStyleOverrides
+  mergeCopyIntoStyleOverrides,
+  rebuildStyleOverridesKeepingCopyOnly
 } from './poll-game-gamified-artifact-copy.js'
 
 ;(() => {
@@ -2417,7 +2418,15 @@ import {
         pollClose: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/close`,
         pollVote: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/vote`,
         liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
-      }
+      },
+      /** Merged saved + pending; backend turns this into styleOverridesSummary for the model. */
+      styleOverrides: (() => {
+        const merged = {
+          ...(state.artifact.savedStyleOverrides || {}),
+          ...pendingArtifactStyleOverrides
+        }
+        return Object.keys(merged).length > 0 ? merged : undefined
+      })()
     }
   }
 
@@ -3020,6 +3029,15 @@ import {
     artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
+    if (requestKind === 'edit') {
+      const merged = mergeCopyIntoStyleOverrides(
+        { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
+        pendingArtifactCopyOverrides
+      )
+      pendingArtifactStyleOverrides = {}
+      pendingArtifactCopyOverrides = {}
+      state.artifact.savedStyleOverrides = rebuildStyleOverridesKeepingCopyOnly(merged)
+    }
     return true
   }
 

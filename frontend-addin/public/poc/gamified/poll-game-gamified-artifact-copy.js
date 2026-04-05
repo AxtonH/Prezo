@@ -86,3 +86,22 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
 
   return next
 }
+
+/**
+ * After an AI artifact edit, drop manual HTML/style overrides for poll fields so the
+ * new base artifact wins, but keep subtitle/footer copy keys (namespaced).
+ *
+ * @param {Record<string, unknown> | null | undefined} styleOverrides
+ * @returns {Record<string, string>}
+ */
+export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
+  const copy = extractCopyFromStyleOverrides(styleOverrides || {})
+  const next = {}
+  if (copy.subtitle !== undefined) {
+    next[PREZO_COPY_STYLE_KEYS.subtitle] = copy.subtitle
+  }
+  if (copy.footerSuffix !== undefined) {
+    next[PREZO_COPY_STYLE_KEYS.footerSuffix] = copy.footerSuffix
+  }
+  return next
+}
