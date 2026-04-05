@@ -40,6 +40,8 @@ export interface SessionDashboardPageProps {
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
+  onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
+  onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -63,7 +65,9 @@ export function SessionDashboardPage({
   onDeleteQna,
   onDeleteDiscussion,
   onApproveDiscussionQuestion,
-  onHideDiscussionQuestion
+  onHideDiscussionQuestion,
+  onApproveAudienceQuestion,
+  onHideAudienceQuestion
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -87,12 +91,15 @@ export function SessionDashboardPage({
     [prompts]
   )
 
-  const pendingAudience = useMemo(
-    () => audienceQuestions.filter((q) => q.status === 'pending'),
+  const audiencePendingQuestions = useMemo(
+    () => sortByCreatedDesc(audienceQuestions.filter((q) => q.status === 'pending')),
     [audienceQuestions]
   )
 
-  const pendingPreview = pendingAudience[0] ?? null
+  const audienceApprovedQuestions = useMemo(
+    () => sortByCreatedDesc(audienceQuestions.filter((q) => q.status === 'approved')),
+    [audienceQuestions]
+  )
 
   /** Tracks Q&amp;A being opened this session so we still show an inactive panel after close even with zero questions. */
   const qnaWasOpenedThisSessionRef = useRef(false)
@@ -134,8 +141,8 @@ export function SessionDashboardPage({
             closedPolls={closedPolls}
             qnaOpen={session.qna_open}
             showInactiveQna={showInactiveQna}
-            pendingAudienceCount={pendingAudience.length}
-            pendingPreview={pendingPreview}
+            audiencePendingQuestions={audiencePendingQuestions}
+            audienceApprovedQuestions={audienceApprovedQuestions}
             openPrompts={openPrompts}
             closedPrompts={closedPrompts}
             questions={questions}
@@ -151,6 +158,8 @@ export function SessionDashboardPage({
             onDeleteDiscussion={onDeleteDiscussion}
             onApproveDiscussionQuestion={onApproveDiscussionQuestion}
             onHideDiscussionQuestion={onHideDiscussionQuestion}
+            onApproveAudienceQuestion={onApproveAudienceQuestion}
+            onHideAudienceQuestion={onHideAudienceQuestion}
           />
         </div>
       </div>

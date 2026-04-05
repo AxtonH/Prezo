@@ -13,8 +13,10 @@ export interface SessionActiveEventsPanelProps {
   qnaOpen: boolean
   /** When Q&amp;A was closed but had audience activity — show inactive card at bottom. */
   showInactiveQna: boolean
-  pendingAudienceCount: number
-  pendingPreview: Question | null
+  /** Audience Q&amp;A (no prompt) — pending, newest first. */
+  audiencePendingQuestions: Question[]
+  /** Audience Q&amp;A (no prompt) — approved, newest first. */
+  audienceApprovedQuestions: Question[]
   openPrompts: QnaPrompt[]
   closedPrompts: QnaPrompt[]
   questions: Question[]
@@ -30,6 +32,8 @@ export interface SessionActiveEventsPanelProps {
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
+  onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
+  onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
 }
 
 function sortByCreatedDesc<T extends { created_at: string }>(items: T[]): T[] {
@@ -43,8 +47,8 @@ export function SessionActiveEventsPanel({
   closedPolls,
   qnaOpen,
   showInactiveQna,
-  pendingAudienceCount,
-  pendingPreview,
+  audiencePendingQuestions,
+  audienceApprovedQuestions,
   openPrompts,
   closedPrompts,
   questions,
@@ -59,7 +63,9 @@ export function SessionActiveEventsPanel({
   onDeleteQna,
   onDeleteDiscussion,
   onApproveDiscussionQuestion,
-  onHideDiscussionQuestion
+  onHideDiscussionQuestion,
+  onApproveAudienceQuestion,
+  onHideAudienceQuestion
 }: SessionActiveEventsPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<
     null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
@@ -174,11 +180,13 @@ export function SessionActiveEventsPanel({
 
           {qnaOpen ? (
             <ActiveQnaEventCard
-              pendingCount={pendingAudienceCount}
-              pendingPreview={pendingPreview}
+              pendingQuestions={audiencePendingQuestions}
+              approvedQuestions={audienceApprovedQuestions}
               variant="active"
               onStop={onStopQna}
               onDelete={() => setDeleteTarget({ kind: 'qna' })}
+              onApproveQuestion={onApproveAudienceQuestion}
+              onHideQuestion={onHideAudienceQuestion}
             />
           ) : null}
 
@@ -208,11 +216,13 @@ export function SessionActiveEventsPanel({
 
           {showInactiveQna ? (
             <ActiveQnaEventCard
-              pendingCount={pendingAudienceCount}
-              pendingPreview={pendingPreview}
+              pendingQuestions={audiencePendingQuestions}
+              approvedQuestions={audienceApprovedQuestions}
               variant="inactive"
               onResume={onResumeQna}
               onDelete={() => setDeleteTarget({ kind: 'qna' })}
+              onApproveQuestion={onApproveAudienceQuestion}
+              onHideQuestion={onHideAudienceQuestion}
             />
           ) : null}
 

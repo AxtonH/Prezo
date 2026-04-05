@@ -1431,6 +1431,8 @@ function HostConsole({
                   onDeleteDiscussion={deleteDiscussionPrompt}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
+                  onApproveAudienceQuestion={approveQuestion}
+                  onHideAudienceQuestion={hideQuestion}
                 />
               )}
             </>
