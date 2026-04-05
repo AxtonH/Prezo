@@ -57,7 +57,7 @@ export function DeleteEventConfirmModal({
             type="button"
             disabled={busy}
             onClick={() => void onConfirm()}
-            className="!w-full !bg-rose-600 !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-rose-700 active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50 disabled:!cursor-not-allowed"
+            className="!w-full !bg-red-600 !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-red-700 active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50 disabled:!cursor-not-allowed"
           >
             {busy ? 'Deleting…' : 'Delete'}
           </button>

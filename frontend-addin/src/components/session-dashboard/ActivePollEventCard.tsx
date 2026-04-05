@@ -113,7 +113,7 @@ export function ActivePollEventCard({
                     e.stopPropagation()
                     onDelete()
                   }}
-                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
                 >
                   Delete
                 </button>
@@ -138,7 +138,7 @@ export function ActivePollEventCard({
                     e.stopPropagation()
                     onDelete()
                   }}
-                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
                 >
                   Delete
                 </button>
@@ -170,7 +170,7 @@ export function ActivePollEventCard({
                     e.stopPropagation()
                     onDelete()
                   }}
-                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
                 >
                   Delete
                 </button>
@@ -184,7 +184,7 @@ export function ActivePollEventCard({
                   e.stopPropagation()
                   onDelete()
                 }}
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-50 !text-slate-700 !border !border-slate-200 hover:!bg-slate-100 !transition-colors"
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
               >
                 Delete
               </button>
