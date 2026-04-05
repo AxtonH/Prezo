@@ -18,6 +18,7 @@ import { PromptManager } from './components/PromptManager'
 import { HostSearchBar } from './components/HostSearchBar'
 import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
+import { PrezoLogo } from './components/PrezoLogo'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { OnboardingModal } from './components/OnboardingModal'
 import { SessionDashboardPage } from './components/session-dashboard'
@@ -1034,9 +1035,18 @@ function HostConsole({
     })
   }, [recentSessions, sessionFilter, sessionSearchQuery])
 
+  /**
+   * While a session restore may still complete, avoid painting the All Sessions list (flash on refresh).
+   * Web: only when we have a persisted session id. Add-in: always wait — binding may restore without storage.
+   */
+  const hostRestoreInProgress =
+    !session &&
+    !hostRestoreComplete &&
+    (readStoredHostSession() !== null || isAddinHost)
+
   return (
     <div className="flex h-screen overflow-hidden font-sans">
-      {!isAddinHost ? (
+      {!isAddinHost && !hostRestoreInProgress ? (
         <SideNav
           onLogout={onLogout}
           editorLink={editorLink}
@@ -1060,11 +1070,19 @@ function HostConsole({
       ) : null}
 
       <main
-        className={`flex-1 min-h-0 overflow-y-auto bg-white ${isAddinHost ? '' : 'ml-64'}`}
+        className={`flex-1 min-h-0 overflow-y-auto bg-white ${isAddinHost || hostRestoreInProgress ? '' : 'ml-64'}`}
       >
         {/* Top App Bar */}
         <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
-          {isAddinHost ? (
+          {hostRestoreInProgress && hostConsoleView === 'host' ? (
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <PrezoWordmark
+                logoSize={isAddinHost ? 20 : 24}
+                textClassName={`${isAddinHost ? 'text-base' : 'text-lg'} font-bold tracking-tight text-[#004080]`}
+                className="min-w-0 truncate"
+              />
+            </div>
+          ) : isAddinHost ? (
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {hostConsoleView === 'settings' ? (
                 <button
@@ -1129,7 +1147,7 @@ function HostConsole({
             </div>
           )}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {!session && hostConsoleView !== 'settings' ? (
+            {!session && hostConsoleView !== 'settings' && !hostRestoreInProgress ? (
               <button
                 type="button"
                 onClick={() => setShowCreateForm(true)}
@@ -1167,6 +1185,18 @@ function HostConsole({
               onProfileSaved={onHostProfileChange}
               onSignOut={onLogout}
             />
+          ) : hostRestoreInProgress ? (
+            <div
+              className="flex min-h-[min(60vh,28rem)] flex-col items-center justify-center gap-5 py-20"
+              aria-busy="true"
+              aria-live="polite"
+            >
+              <div className="animate-pulse">
+                <PrezoLogo size={40} decorative />
+              </div>
+              <p className="text-sm text-muted">Restoring your session…</p>
+              <span className="sr-only">Loading session</span>
+            </div>
           ) : (
             <>
               {/* Page header: list + live-session sub-pages (not the session Dashboard — that uses SessionDashboardPage) */}
