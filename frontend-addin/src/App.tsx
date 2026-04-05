@@ -40,7 +40,6 @@ import {
 } from './office/widgetShapes'
 import {
   clearAllHostQnaInactiveFlags,
-  clearHostQnaInactive,
   setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
@@ -434,10 +433,7 @@ function HostConsole({
   type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
 
   const clearLiveSessionState = useCallback(() => {
-    const sid = latestSessionRef.current?.id
-    if (sid) {
-      clearHostQnaInactive(sid)
-    }
+    /** Keep hostQnaEngaged in sessionStorage so the inactive Q&A row returns after list → session. */
     persistHostSession(null, 'dashboard')
     setSession(null)
     setQuestions([])
