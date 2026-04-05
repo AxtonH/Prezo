@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
@@ -10,6 +10,8 @@ import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionParticipantsCard } from './SessionParticipantsCard'
+
+const LG_MEDIA = '(min-width: 1024px)'
 
 function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
   return [...items].sort(
@@ -85,6 +87,34 @@ export function SessionDashboardPage({
   onCreateDiscussionPrompt
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
+  /** Audience + co-host column height — activities rail maxes to this on lg so panels scroll inside. */
+  const audienceCoHostStackRef = useRef<HTMLDivElement>(null)
+  const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    const stack = audienceCoHostStackRef.current
+    if (!stack) {
+      return
+    }
+    const measure = () => {
+      if (typeof window === 'undefined' || !window.matchMedia(LG_MEDIA).matches) {
+        setActivitiesRailMaxPx(null)
+        return
+      }
+      setActivitiesRailMaxPx(stack.getBoundingClientRect().height)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(stack)
+    window.addEventListener('resize', measure)
+    const mq = window.matchMedia(LG_MEDIA)
+    mq.addEventListener('change', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+      mq.removeEventListener('change', measure)
+    }
+  }, [session.id])
 
   const openPolls = useMemo(
     () => polls.filter((p) => p.status === 'open'),
@@ -176,7 +206,10 @@ export function SessionDashboardPage({
         lg: row 1 = audience+co-host (stack) | scrollable activities; row 2 = participants | empty.
       */}
       <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-stretch">
-        <div className="min-w-0 space-y-5 lg:[grid-area:stack]">
+        <div
+          ref={audienceCoHostStackRef}
+          className="min-w-0 space-y-5 lg:[grid-area:stack]"
+        >
           <SessionAudienceAccessCard sessionCode={session.code} joinUrl={joinUrl} />
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
@@ -187,7 +220,14 @@ export function SessionDashboardPage({
             hostAvatarUrl={hostAvatarUrl}
           />
         </div>
-        <div className="flex min-h-0 min-w-0 flex-col gap-5 overflow-hidden lg:[grid-area:activities]">
+        <div
+          className="flex min-h-0 min-w-0 flex-col gap-5 overflow-hidden lg:[grid-area:activities]"
+          style={
+            activitiesRailMaxPx != null
+              ? { maxHeight: activitiesRailMaxPx }
+              : undefined
+          }
+        >
           <div className="shrink-0 space-y-4">
             {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
@@ -208,7 +248,7 @@ export function SessionDashboardPage({
               </div>
             ) : null}
           </div>
-          <div className="min-h-0 overflow-x-hidden lg:flex-1 lg:overflow-y-auto [scrollbar-gutter:stable]">
+          <div className="min-h-0 overflow-x-hidden lg:flex-1 lg:overflow-y-auto lg:scroll-smooth session-list-scroll pr-1.5 -mr-0.5 [scrollbar-gutter:stable]">
             <SessionActiveActivitiesPanel
               openPolls={openPolls}
               closedPolls={closedPolls}
