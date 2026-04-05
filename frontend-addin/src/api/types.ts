@@ -65,6 +65,12 @@ export interface HostDashboardStats {
   unique_participants: number
 }
 
+/** Per-session engagement from GET /sessions/{id}/session-stats */
+export interface SessionSessionStats {
+  unique_participants: number
+  total_interactions: number
+}
+
 export interface SessionActivity {
   type: string
   payload: Record<string, unknown>

@@ -13,6 +13,7 @@ from ..models import (
     HostAccessUpdate,
     HostDashboardStats,
     HostJoinRequest,
+    SessionSessionStats,
     QnaConfigUpdate,
     QnaMode,
     Session,
@@ -115,6 +116,20 @@ async def get_host_dashboard_stats(
     user: AuthUser = Depends(get_current_user),
 ) -> HostDashboardStats:
     return await store.host_dashboard_stats(user.id)
+
+
+@router.get("/{session_id}/session-stats", response_model=SessionSessionStats)
+async def get_session_session_stats(
+    session_id: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> SessionSessionStats:
+    try:
+        return await store.session_session_stats(session_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/{session_id}", response_model=Session)

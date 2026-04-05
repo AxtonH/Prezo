@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
+import type { Poll, Question, QnaPrompt, Session, SessionSessionStats } from '../../api/types'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
@@ -9,7 +9,7 @@ import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
-import { SessionParticipantsCard } from './SessionParticipantsCard'
+import { SessionSessionMetricsGrid } from './SessionSessionMetricsGrid'
 
 const LG_MEDIA = '(min-width: 1024px)'
 
@@ -25,8 +25,8 @@ export interface SessionDashboardPageProps {
   qnaDeletedEpoch?: number
   hostDisplayName: string
   hostAvatarUrl: string | null
-  /** Live audience size when available; `null` shows a placeholder. */
-  participantCount: number | null
+  /** Per-session engagement from the API; `null` until loaded. */
+  sessionStats: SessionSessionStats | null
   polls: Poll[]
   prompts: QnaPrompt[]
   /** All questions (used for discussion thread preview). */
@@ -62,7 +62,7 @@ export function SessionDashboardPage({
   qnaDeletedEpoch = 0,
   hostDisplayName,
   hostAvatarUrl,
-  participantCount,
+  sessionStats,
   polls,
   prompts,
   questions,
@@ -198,6 +198,18 @@ export function SessionDashboardPage({
       qnaWasOpenedThisSessionRef.current ||
       readHostQnaEngaged(session.id))
 
+  const activityCount = useMemo(() => {
+    const audienceSlot =
+      session.qna_open || audienceQuestions.length > 0 || showInactiveQna
+    return polls.length + prompts.length + (audienceSlot ? 1 : 0)
+  }, [
+    session.qna_open,
+    audienceQuestions.length,
+    showInactiveQna,
+    polls.length,
+    prompts.length
+  ])
+
   return (
     <div className="space-y-6">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
@@ -214,8 +226,10 @@ export function SessionDashboardPage({
           <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
         </div>
         <div className="min-w-0 lg:[grid-area:participants]">
-          <SessionParticipantsCard
-            activeParticipantCount={participantCount}
+          <SessionSessionMetricsGrid
+            uniqueParticipants={sessionStats?.unique_participants ?? null}
+            totalInteractions={sessionStats?.total_interactions ?? null}
+            activityCount={activityCount}
             hostDisplayName={hostDisplayName}
             hostAvatarUrl={hostAvatarUrl}
           />

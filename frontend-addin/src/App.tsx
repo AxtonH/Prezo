@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from './api/client'
 import type {
@@ -8,6 +8,7 @@ import type {
   Question,
   Session,
   SessionActivity,
+  SessionSessionStats,
   SessionSnapshot
 } from './api/types'
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
@@ -315,6 +316,7 @@ function HostConsole({
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [dashboardStats, setDashboardStats] = useState<HostDashboardStats | null>(null)
   const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false)
+  const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -333,6 +335,32 @@ function HostConsole({
 
   useEffect(() => {
     setQnaDeletedEpoch(0)
+  }, [session?.id])
+
+  useEffect(() => {
+    if (!session?.id) {
+      setSessionSessionStats(null)
+      return
+    }
+    const id = session.id
+    let cancelled = false
+    void api
+      .getSessionSessionStats(id)
+      .then((stats) => {
+        if (cancelled) {
+          return
+        }
+        setSessionSessionStats(stats)
+      })
+      .catch(() => {
+        if (cancelled) {
+          return
+        }
+        setSessionSessionStats(null)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [session?.id])
 
   useEffect(() => {
@@ -520,6 +548,28 @@ function HostConsole({
   }, [session, goToAllSessions])
 
   const handleSessionActivity = useCallback((activity: SessionActivity) => {
+    const sid = latestSessionRef.current?.id
+    if (sid) {
+      const shouldRefreshSessionStats =
+        activity.type === 'session_snapshot' ||
+        Boolean(activity.payload.poll) ||
+        Boolean(activity.payload.question) ||
+        activity.type === 'audience_questions_deleted' ||
+        activity.type === 'poll_deleted' ||
+        activity.type === 'qna_prompt_deleted'
+      if (shouldRefreshSessionStats) {
+        void api
+          .getSessionSessionStats(sid)
+          .then((stats) => {
+            if (latestSessionRef.current?.id !== sid) {
+              return
+            }
+            setSessionSessionStats(stats)
+          })
+          .catch(() => {})
+      }
+    }
+
     if (activity.type === 'session_snapshot') {
       const snapshot = activity.payload.snapshot as SessionSnapshot
       setSession((previous) => withPreservedHostRole(snapshot.session, previous))
@@ -577,7 +627,8 @@ function HostConsole({
 
   const socketStatus = useSessionSocket(session?.id ?? null, handleSessionActivity)
 
-  useEffect(() => {
+  /** Sync before paint so async stats/snapshot completions can reject stale session ids. */
+  useLayoutEffect(() => {
     latestSessionRef.current = session
   }, [session])
 
@@ -605,13 +656,26 @@ function HostConsole({
       return
     }
     const refreshSnapshot = () => {
+      const targetId = session.id
       void api
-        .getSnapshot(session.id)
+        .getSnapshot(targetId)
         .then((snapshot) => {
+          if (latestSessionRef.current?.id !== targetId) {
+            return
+          }
           setSession((previous) => withPreservedHostRole(snapshot.session, previous))
           setQuestions(snapshot.questions)
           setPolls(snapshot.polls)
           setPrompts(snapshot.prompts ?? [])
+          void api
+            .getSessionSessionStats(targetId)
+            .then((stats) => {
+              if (latestSessionRef.current?.id !== targetId) {
+                return
+              }
+              setSessionSessionStats(stats)
+            })
+            .catch(() => {})
         })
         .catch(() => {})
     }
@@ -1338,7 +1402,7 @@ function HostConsole({
                   qnaDeletedEpoch={qnaDeletedEpoch}
                   hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
                   hostAvatarUrl={hostProfile.avatar_url}
-                  participantCount={null}
+                  sessionStats={sessionSessionStats}
                   polls={polls}
                   prompts={prompts}
                   questions={questions}

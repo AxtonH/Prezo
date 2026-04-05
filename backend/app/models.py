@@ -248,6 +248,22 @@ class HostDashboardStats(BaseModel):
     )
 
 
+class SessionSessionStats(BaseModel):
+    """Per-session engagement metrics for the host dashboard."""
+
+    unique_participants: int = Field(
+        ge=0,
+        description="Distinct audience client_ids on poll and question upvotes.",
+    )
+    total_interactions: int = Field(
+        ge=0,
+        description=(
+            "Question submissions, question upvotes, and poll option selections "
+            "(same client may contribute multiple times)."
+        ),
+    )
+
+
 class SessionActivity(BaseModel):
     model_config = ConfigDict(extra="allow")
 

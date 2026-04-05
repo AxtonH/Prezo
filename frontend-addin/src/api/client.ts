@@ -1,6 +1,7 @@
 import { getAccessToken } from '../auth/auth'
 import type {
   HostDashboardStats,
+  SessionSessionStats,
   Poll,
   Question,
   QnaMode,
@@ -88,6 +89,8 @@ export const api = {
   },
   getHostDashboardStats: () =>
     request<HostDashboardStats>('/sessions/dashboard-stats', {}, true),
+  getSessionSessionStats: (sessionId: string) =>
+    request<SessionSessionStats>(`/sessions/${sessionId}/session-stats`, {}, true),
   deleteSession: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}`, { method: 'DELETE' }, true),
   getSessionByCode: (code: string) =>

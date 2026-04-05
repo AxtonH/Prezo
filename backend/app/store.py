@@ -13,6 +13,7 @@ from .artifact_package import build_saved_artifact_snapshot_signature
 from .models import (
     BrandProfile,
     HostDashboardStats,
+    SessionSessionStats,
     Poll,
     PollOption,
     PollStatus,
@@ -295,6 +296,34 @@ class InMemoryStore:
                 active_sessions=active_sessions,
                 active_activities=active_activities,
                 unique_participants=len(unique_clients),
+            )
+
+    async def session_session_stats(
+        self, session_id: str, user_id: str
+    ) -> SessionSessionStats:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            unique_clients: set[str] = set()
+            for qid in self._questions_by_session.get(session_id, []):
+                for cid in self._question_votes.get(qid, set()):
+                    if cid:
+                        unique_clients.add(cid)
+            for pid in self._polls_by_session.get(session_id, []):
+                for cid in self._poll_votes.get(pid, {}):
+                    if cid:
+                        unique_clients.add(cid)
+
+            total_interactions = 0
+            total_interactions += len(self._questions_by_session.get(session_id, []))
+            for qid in self._questions_by_session.get(session_id, []):
+                total_interactions += len(self._question_votes.get(qid, set()))
+            for pid in self._polls_by_session.get(session_id, []):
+                for hist in self._poll_votes.get(pid, {}).values():
+                    total_interactions += len(hist)
+
+            return SessionSessionStats(
+                unique_participants=len(unique_clients),
+                total_interactions=total_interactions,
             )
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
