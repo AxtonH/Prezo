@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Poll, Question, QnaPrompt, Session } from '../../api/types'
+import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
 import { CreateActivityMenu } from './CreateActivityMenu'
@@ -116,10 +117,14 @@ export function SessionDashboardPage({
   )
 
   /**
-   * Audience Q&A has no row `created_at`; use earliest question time, or sort after all polls/prompts
-   * when the channel is empty so merged panel order stays chronological.
+   * Audience Q&A has no row `created_at`. Prefer the host’s open time (sessionStorage, set in App on
+   * openQna); else earliest question; else last resort after all polls/prompts when still empty.
    */
   const audienceQnaSortKey = useMemo(() => {
+    const openedAt = readAudienceQnaOpenedAt(session.id)
+    if (openedAt) {
+      return openedAt
+    }
     if (audienceQuestions.length > 0) {
       return audienceQuestions.reduce(
         (earliest, q) => (q.created_at < earliest ? q.created_at : earliest),
@@ -133,7 +138,7 @@ export function SessionDashboardPage({
     ]
     const maxMs = Math.max(...times.map((t) => new Date(t).getTime()))
     return new Date(maxMs + 1).toISOString()
-  }, [audienceQuestions, polls, prompts, session.created_at])
+  }, [audienceQuestions, polls, prompts, session.created_at, session.id, session.qna_open])
 
   /** Tracks Q&amp;A being opened this session so we still show an inactive panel after close even with zero questions. */
   const qnaWasOpenedThisSessionRef = useRef(false)

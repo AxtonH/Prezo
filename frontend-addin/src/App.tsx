@@ -30,6 +30,11 @@ import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/library
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
 import { updateDiscussionWidget, updatePollWidget, updateQnaWidget } from './office/widgetShapes'
 import {
+  clearAllAudienceQnaOpenedAt,
+  clearAudienceQnaOpenedAt,
+  setAudienceQnaOpenedAt
+} from './utils/audienceQnaOpenedAtStorage'
+import {
   clearAllHostQnaInactiveFlags,
   clearHostQnaSessionFlags,
   setHostQnaEngaged
@@ -248,6 +253,7 @@ export default function App() {
   const handleLogout = () => {
     persistHostSession(null, 'dashboard')
     clearAllHostQnaInactiveFlags()
+    clearAllAudienceQnaOpenedAt()
     void signOut()
   }
 
@@ -861,6 +867,7 @@ function HostConsole({
       throw new Error('Session not available. Try again.')
     }
     const updated = await api.openQna(session.id)
+    setAudienceQnaOpenedAt(session.id)
     setHostQnaEngaged(session.id)
     setSession((previous) => withPreservedHostRole(updated, previous))
   }
@@ -1000,6 +1007,7 @@ function HostConsole({
         setSession((previous) => withPreservedHostRole(updated, previous))
       }
       clearHostQnaSessionFlags(session.id)
+      clearAudienceQnaOpenedAt(session.id)
       setQnaDeletedEpoch((e) => e + 1)
       setError(null)
     } catch (err) {
