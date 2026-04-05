@@ -145,7 +145,7 @@ export function JoinSessionModal({
               </span>
               <input
                 ref={inputRef}
-                type="search"
+                type="text"
                 autoFocus
                 autoComplete="off"
                 spellCheck={false}
