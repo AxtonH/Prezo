@@ -28,8 +28,8 @@ export function SessionCoHostAccessRow({ session, onSetHostJoinAccess }: Session
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-card">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-card">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-900">Co-host access</p>
           <p className="text-sm text-muted mt-0.5">

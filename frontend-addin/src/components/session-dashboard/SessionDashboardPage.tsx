@@ -215,21 +215,13 @@ export function SessionDashboardPage({
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
       {/*
-        Toolbar sits above the body grid so the scroll rail can align top-to-bottom with
+        Create activity control sits above the body grid so the scroll rail can align with
         Audience access + Co-host (row 1 stack | activities scroll only).
         lg: row 1 = audience+co-host (stack) | scrollable list; row 2 = session stats full width.
       */}
       <div className="space-y-2 lg:space-y-3">
         {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div className="min-w-0">
-              <p className="text-[0.65rem] font-bold uppercase tracking-widest text-muted">
-                Session activities
-              </p>
-              <p className="text-sm text-muted mt-0.5 max-w-xl leading-snug">
-                Run polls, Q&amp;A, or a guided discussion — all in one place below.
-              </p>
-            </div>
+          <div className="flex justify-end">
             <CreateActivityMenu
               qnaOpen={session.qna_open}
               onCreatePoll={onCreatePoll}
@@ -242,7 +234,7 @@ export function SessionDashboardPage({
         <div className="session-dashboard-body-grid grid grid-cols-1 gap-x-8 gap-y-6 lg:items-start">
           <div
             ref={audienceCoHostStackRef}
-            className="min-w-0 space-y-5 lg:[grid-area:stack]"
+            className="min-w-0 space-y-4 lg:[grid-area:stack]"
           >
             <SessionAudienceAccessCard sessionCode={session.code} joinUrl={joinUrl} />
             <SessionCoHostAccessRow session={session} onSetHostJoinAccess={onSetHostJoinAccess} />
