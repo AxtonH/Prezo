@@ -31,7 +31,7 @@ export function ActiveDiscussionEventCard({
     >
       <div className="p-5">
         <p className="text-sm text-muted mb-3">
-          {pendingCount} question{pendingCount === 1 ? '' : 's'} awaiting moderation
+          {pendingCount} answer{pendingCount === 1 ? '' : 's'} awaiting moderation
         </p>
         {pendingPreview ? (
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
@@ -46,7 +46,7 @@ export function ActiveDiscussionEventCard({
             <p className="text-sm text-slate-800 leading-relaxed line-clamp-3">{pendingPreview.text}</p>
           </div>
         ) : (
-          <p className="text-sm text-muted">No questions yet for this discussion.</p>
+          <p className="text-sm text-muted">No answers yet for this discussion.</p>
         )}
       </div>
     </CollapsibleEventPanelShell>
