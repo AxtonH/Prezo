@@ -124,6 +124,14 @@ export interface BrandTypographySlot {
   custom_url?: string | null
 }
 
+/** Four 0–100 axes: 0 = left pole, 100 = right pole, 50 = balanced. From pass-3 extraction. */
+export interface BrandToneCalibration {
+  serious_playful: number
+  formal_casual: number
+  respectful_irreverent: number
+  matter_of_fact_enthusiastic: number
+}
+
 export interface BrandUiIdentity {
   brand_name: string
   color_roles: BrandColorRole[]
@@ -132,4 +140,5 @@ export interface BrandUiIdentity {
     heading_2: BrandTypographySlot
     body: BrandTypographySlot
   }
+  tone_calibration: BrandToneCalibration
 }

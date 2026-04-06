@@ -1,4 +1,4 @@
-import type { BrandUiIdentity, BrandColorRole } from '../api/types'
+import type { BrandUiIdentity, BrandColorRole, BrandToneCalibration } from '../api/types'
 
 const DEFAULT_ROLES: Omit<BrandColorRole, 'hex'>[] = [
   { role: 'Slide Background', usage: 'Main slide background', hierarchy_rank: 1, surface: 'background' },
@@ -8,6 +8,34 @@ const DEFAULT_ROLES: Omit<BrandColorRole, 'hex'>[] = [
   { role: 'Body Text', usage: 'Paragraphs and captions', hierarchy_rank: 5, surface: 'foreground' },
   { role: 'Borders & Dividers', usage: 'Lines, separators', hierarchy_rank: 6, surface: 'border' }
 ]
+
+const DEFAULT_TONE: BrandToneCalibration = {
+  serious_playful: 50,
+  formal_casual: 50,
+  respectful_irreverent: 50,
+  matter_of_fact_enthusiastic: 50
+}
+
+function clampTone(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  if (!Number.isFinite(v)) {
+    return 50
+  }
+  return Math.min(100, Math.max(0, Math.round(v)))
+}
+
+function parseToneCalibration(raw: unknown): BrandToneCalibration {
+  const o = asRecord(raw)
+  if (!o) {
+    return { ...DEFAULT_TONE }
+  }
+  return {
+    serious_playful: clampTone(o.serious_playful),
+    formal_casual: clampTone(o.formal_casual),
+    respectful_irreverent: clampTone(o.respectful_irreverent),
+    matter_of_fact_enthusiastic: clampTone(o.matter_of_fact_enthusiastic)
+  }
+}
 
 export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity {
   return {
@@ -20,7 +48,8 @@ export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity 
       heading_1: { family: 'Inter', source: 'google' },
       heading_2: { family: 'Inter', source: 'google' },
       body: { family: 'Inter', source: 'google' }
-    }
+    },
+    tone_calibration: { ...DEFAULT_TONE }
   }
 }
 
@@ -39,6 +68,8 @@ export function parseBrandUiIdentity(
   if (!ui) {
     return base
   }
+
+  const tone_calibration = parseToneCalibration(ui.tone_calibration)
 
   const name = typeof ui.brand_name === 'string' && ui.brand_name.trim() ? ui.brand_name.trim() : base.brand_name
 
@@ -90,7 +121,8 @@ export function parseBrandUiIdentity(
     return {
       brand_name: name,
       color_roles: base.color_roles.map((b, i) => roles[i] ?? b),
-      typography
+      typography,
+      tone_calibration
     }
   }
 
@@ -98,7 +130,8 @@ export function parseBrandUiIdentity(
   return {
     brand_name: name,
     color_roles: sorted,
-    typography
+    typography,
+    tone_calibration
   }
 }
 

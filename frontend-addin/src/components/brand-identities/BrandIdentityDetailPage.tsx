@@ -4,6 +4,7 @@ import type { BrandProfile, BrandUiIdentity } from '../../api/types'
 import { parseBrandUiIdentity } from '../../utils/brandUiIdentity'
 import { FontPickerField } from './FontPickerField'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
+import { ToneCalibrationPanel } from './ToneCalibrationPanel'
 
 type Props = {
   /** Library profile name (URL key). */
@@ -172,6 +173,13 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
             onChange={(e) => setUi((u) => ({ ...u, brand_name: e.target.value.slice(0, 200) }))}
             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-900 shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             autoComplete="off"
+          />
+        </section>
+
+        <section>
+          <ToneCalibrationPanel
+            value={ui.tone_calibration}
+            onChange={(tone_calibration) => setUi((u) => ({ ...u, tone_calibration }))}
           />
         </section>
 

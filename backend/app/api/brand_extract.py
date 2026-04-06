@@ -202,7 +202,13 @@ PASS3_SYSTEM = (
     "typography:\n"
     "- heading_1.family, heading_2.family, body.family — font family names used for main title, "
     "subhead/section titles, and body copy (infer from guidelines if not explicit).\n\n"
-    "Be concise. Use real hex values. Do not invent brand names that contradict the document."
+    "Be concise. Use real hex values. Do not invent brand names that contradict the document.\n\n"
+    "tone_calibration — four axes for voice, each an integer 0–100 (0 = left pole, 100 = right pole, 50 = balanced):\n"
+    "- serious_playful: 0 = serious, 100 = playful\n"
+    "- formal_casual: 0 = formal, 100 = casual\n"
+    "- respectful_irreverent: 0 = respectful, 100 = irreverent\n"
+    "- matter_of_fact_enthusiastic: 0 = matter-of-fact, 100 = enthusiastic\n"
+    "Infer from tone of voice, messaging, audience, and style cues in the document."
 )
 
 PASS3_SCHEMA: dict[str, Any] = {
@@ -251,8 +257,24 @@ PASS3_SCHEMA: dict[str, Any] = {
             "required": ["heading_1", "heading_2", "body"],
             "additionalProperties": False,
         },
+        "tone_calibration": {
+            "type": "object",
+            "properties": {
+                "serious_playful": {"type": "integer", "minimum": 0, "maximum": 100},
+                "formal_casual": {"type": "integer", "minimum": 0, "maximum": 100},
+                "respectful_irreverent": {"type": "integer", "minimum": 0, "maximum": 100},
+                "matter_of_fact_enthusiastic": {"type": "integer", "minimum": 0, "maximum": 100},
+            },
+            "required": [
+                "serious_playful",
+                "formal_casual",
+                "respectful_irreverent",
+                "matter_of_fact_enthusiastic",
+            ],
+            "additionalProperties": False,
+        },
     },
-    "required": ["brand_name", "color_roles", "typography"],
+    "required": ["brand_name", "color_roles", "typography", "tone_calibration"],
     "additionalProperties": False,
 }
 
@@ -266,6 +288,28 @@ _DEFAULT_COLOR_ROLES: list[tuple[str, str, str]] = [
 ]
 
 _HEX_RE = re.compile(r"#[0-9A-Fa-f]{6}\b")
+
+_TONE_KEYS = (
+    "serious_playful",
+    "formal_casual",
+    "respectful_irreverent",
+    "matter_of_fact_enthusiastic",
+)
+
+
+def _normalize_tone_calibration(raw: Any) -> dict[str, int]:
+    """0 = left pole, 100 = right pole, 50 = balanced."""
+    defaults = {k: 50 for k in _TONE_KEYS}
+    if not isinstance(raw, dict):
+        return defaults
+    out = dict(defaults)
+    for k in _TONE_KEYS:
+        try:
+            v = int(raw.get(k))
+            out[k] = max(0, min(100, v))
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def _parse_first_hex(text: str) -> str | None:
@@ -333,6 +377,7 @@ def _ui_identity_fallback_from_guidelines(
             "heading_2": {"family": h2},
             "body": {"family": body},
         },
+        "tone_calibration": {k: 50 for k in _TONE_KEYS},
     }
 
 
@@ -341,7 +386,7 @@ def _normalize_ui_identity(
     merged_guidelines: dict[str, Any],
     brand_hint: str,
 ) -> dict[str, Any]:
-    """Ensure ui_identity has 6 roles, valid hex, ranks 1–6, and typography keys."""
+    """Ensure ui_identity has 6 roles, valid hex, ranks 1–6, typography keys, and tone_calibration."""
     base = _ui_identity_fallback_from_guidelines(merged_guidelines, brand_hint)
     if not isinstance(raw, dict):
         return base
@@ -398,6 +443,7 @@ def _normalize_ui_identity(
         "brand_name": name[:200],
         "color_roles": roles,
         "typography": out_typo,
+        "tone_calibration": _normalize_tone_calibration(raw.get("tone_calibration")),
     }
 
 
