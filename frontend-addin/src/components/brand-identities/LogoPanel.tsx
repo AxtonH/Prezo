@@ -43,8 +43,9 @@ export function LogoPanel({ value, onChange }: Props) {
         <h2 className="text-lg font-semibold text-slate-900">Logo</h2>
       </div>
       <p className="mb-4 text-sm text-slate-600">
-        We try to pick the primary logo from your guidelines. Remove it if wrong, then upload PNG, SVG,
-        JPEG, WebP, or GIF.
+        We try to pick the primary logo from embedded images in your file. PDFs that use vector-only logos
+        may not yield a separate image — use upload below. Remove a bad match and upload PNG, SVG, JPEG,
+        WebP, or GIF.
       </p>
 
       <input

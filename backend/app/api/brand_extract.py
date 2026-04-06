@@ -219,7 +219,9 @@ PASS3_SYSTEM = (
     "keyword lists or labels only. Quote or closely paraphrase the guidelines when possible.\n"
     "If the document is silent on a field, use an empty string. Do not invent contradictory details.\n\n"
     "logo_image_index: integer index into embedded images listed in the separate user message "
-    "(0-based), or -1 if none is clearly the primary brand logo. Prefer wordmarks and lockups over photos."
+    "(0-based), or -1 if none is clearly the primary brand logo. Prefer wordmarks and lockups over photos "
+    "and over generic photography. If the only candidate is a full-page PDF preview (labeled as such), "
+    "set index 0 so the user gets a starting asset they can replace — unless the page has no visible logo at all."
 )
 
 _VISUAL_STYLE_TEXT_MAX = 8000
@@ -451,7 +453,10 @@ def _append_logo_candidate_hint(
         w = img.get("width", "?")
         h = img.get("height", "?")
         pg = img.get("page", "?")
-        lines.append(f"  Candidate {i}: {w}×{h} px (page/slide {pg})")
+        note = ""
+        if img.get("source") == "page_render":
+            note = " — full-page raster (common when the PDF has vector-only artwork)"
+        lines.append(f"  Candidate {i}: {w}×{h} px (page/slide {pg}){note}")
     lines.append(
         "Set logo_image_index to the index of the PRIMARY brand logo (wordmark, lockup, or icon) "
         "if clearly present; otherwise -1."
@@ -473,6 +478,13 @@ async def _apply_extracted_logo(
         idx = int(ui_raw.get("logo_image_index", -1))
     except (TypeError, ValueError):
         idx = -1
+    # Single full-page fallback raster (vector-only PDFs): model often returns -1; still attach a preview.
+    if (
+        idx < 0
+        and len(extracted_images) == 1
+        and extracted_images[0].get("source") == "page_render"
+    ):
+        idx = 0
     if idx < 0 or idx >= len(extracted_images):
         return ui
     data_url = extracted_images[idx].get("data_url")
@@ -807,6 +819,49 @@ def _pass2_schema_for_artifact() -> dict[str, Any]:
 # Image extraction from PDF / PPTX
 # ---------------------------------------------------------------------------
 
+def _pdf_first_page_render_candidate(file_bytes: bytes) -> dict[str, Any] | None:
+    """When a PDF has no extractable embedded rasters (common for vector logos), rasterize page 1.
+
+    Gives the LLM (and upload path) a bitmap to work with; user can replace with a real logo file.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return None
+
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+    except Exception as exc:
+        logger.warning("PDF page render fallback: could not open PDF: %s", exc)
+        return None
+
+    try:
+        if len(doc) < 1:
+            return None
+        page = doc[0]
+        for zoom in (2.0, 1.5, 1.25, 1.0, 0.85, 0.7, 0.55, 0.45, 0.35, 0.28, 0.22):
+            mat = fitz.Matrix(zoom, zoom)
+            try:
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+            except Exception:
+                continue
+            png = pix.tobytes("png")
+            b64 = base64.standard_b64encode(png).decode("ascii")
+            if len(b64) <= IMAGE_MAX_DATA_URL_BYTES:
+                return {
+                    "data_url": f"data:image/png;base64,{b64}",
+                    "width": int(pix.width),
+                    "height": int(pix.height),
+                    "page": 1,
+                    "source": "page_render",
+                }
+    finally:
+        doc.close()
+
+    logger.info("PDF page render fallback: could not fit first page under data URL size cap")
+    return None
+
+
 def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
     """Extract embedded images from a PDF as data URL candidates."""
     try:
@@ -861,6 +916,11 @@ def _extract_images_from_pdf(file_bytes: bytes) -> list[dict[str, Any]]:
                 })
     finally:
         doc.close()
+
+    if not candidates:
+        fallback = _pdf_first_page_render_candidate(file_bytes)
+        if fallback:
+            candidates.append(fallback)
 
     candidates.sort(key=lambda c: c["width"] * c["height"], reverse=True)
     return candidates[:IMAGE_MAX_CANDIDATES]

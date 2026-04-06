@@ -178,8 +178,6 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
           />
         </section>
 
-        <LogoPanel value={ui.logo} onChange={(logo) => setUi((u) => ({ ...u, logo }))} />
-
         <section>
           <div className="mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">palette</span>
@@ -319,6 +317,8 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
             onChange={(visual_style) => setUi((u) => ({ ...u, visual_style }))}
           />
         </section>
+
+        <LogoPanel value={ui.logo} onChange={(logo) => setUi((u) => ({ ...u, logo }))} />
       </div>
 
       <NewBrandIdentityModal
