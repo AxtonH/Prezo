@@ -22,52 +22,34 @@ const DEFAULT_TONE: BrandToneCalibration = {
   matter_of_fact_enthusiastic: 50
 }
 
-const KEYWORD_MAX = 40
-const KEYWORD_LEN_MAX = 120
+const VISUAL_TEXT_MAX = 8000
 
 const EMPTY_DESIGN_ELEMENTS: BrandDesignElements = {
-  patterns_textures: [],
-  icon_style: [],
-  image_treatment: [],
-  decorative_elements: []
+  patterns_textures: '',
+  icon_style: '',
+  image_treatment: '',
+  decorative_elements: ''
 }
 
 const EMPTY_VISUAL_STYLE: BrandVisualStyle = {
-  visual_mood_aesthetic: [],
-  style_guidelines: [],
+  visual_mood_aesthetic: '',
+  style_guidelines: '',
   design_elements: { ...EMPTY_DESIGN_ELEMENTS }
 }
 
-function parseKeywordList(raw: unknown): string[] {
+/** Prose string; legacy arrays from older extractions are joined. */
+function clipVisualProse(raw: unknown): string {
   if (Array.isArray(raw)) {
-    const seen = new Set<string>()
-    const out: string[] = []
-    for (const x of raw) {
-      const s = typeof x === 'string' ? x.trim().slice(0, KEYWORD_LEN_MAX) : String(x).trim().slice(0, KEYWORD_LEN_MAX)
-      if (!s) {
-        continue
-      }
-      const k = s.toLowerCase()
-      if (seen.has(k)) {
-        continue
-      }
-      seen.add(k)
-      out.push(s)
-      if (out.length >= KEYWORD_MAX) {
-        break
-      }
-    }
-    return out
+    const joined = raw
+      .map((x) => (typeof x === 'string' ? x.trim() : String(x).trim()))
+      .filter(Boolean)
+      .join(' ')
+    return joined.slice(0, VISUAL_TEXT_MAX)
   }
   if (typeof raw === 'string') {
-    const s = raw.trim()
-    if (!s) {
-      return []
-    }
-    const parts = s.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean)
-    return parseKeywordList(parts)
+    return raw.trim().slice(0, VISUAL_TEXT_MAX)
   }
-  return []
+  return ''
 }
 
 function parseVisualStyle(raw: unknown): BrandVisualStyle {
@@ -79,12 +61,12 @@ function parseVisualStyle(raw: unknown): BrandVisualStyle {
   const de: BrandDesignElements = { ...EMPTY_DESIGN_ELEMENTS }
   if (deIn) {
     for (const k of Object.keys(EMPTY_DESIGN_ELEMENTS) as (keyof BrandDesignElements)[]) {
-      de[k] = parseKeywordList(deIn[k])
+      de[k] = clipVisualProse(deIn[k])
     }
   }
   return {
-    visual_mood_aesthetic: parseKeywordList(o.visual_mood_aesthetic),
-    style_guidelines: parseKeywordList(o.style_guidelines),
+    visual_mood_aesthetic: clipVisualProse(o.visual_mood_aesthetic),
+    style_guidelines: clipVisualProse(o.style_guidelines),
     design_elements: de
   }
 }
