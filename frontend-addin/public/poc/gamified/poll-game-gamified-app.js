@@ -54,7 +54,6 @@ import {
   sanitizeArtifactPackage
 } from './poll-game-gamified-artifact-package.js'
 import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
-import { createBrandProfileExtractor } from './poll-game-gamified-brand-profiles.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
@@ -97,7 +96,6 @@ import {
   const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
   const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
   const SNAPSHOT_POLL_DISCONNECTED_MS = 15000
-  const BRAND_ATTACH_STEP_INDEX = 2 // Q3 — design guidelines
 
   const query = new URLSearchParams(window.location.search)
 
@@ -269,12 +267,6 @@ import {
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
-    brandAttachZone: must('brand-attach-zone'),
-    brandAttachFile: must('brand-attach-file'),
-    brandAttachUrl: must('brand-attach-url'),
-    brandAttachExtract: must('brand-attach-extract'),
-    brandAttachStatus: must('brand-attach-status'),
-    brandAttachProfileName: document.getElementById('artifact-brand-profile-name'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -533,11 +525,6 @@ import {
     getApiBase: () => state.apiBase,
     getAccessToken: () => getLibraryAccessToken(),
     onArtifactCopyEdit: (field, text) => handleArtifactCopyEdit(field, text)
-  })
-  const brandExtractor = createBrandProfileExtractor({
-    getApiBase: () => state.apiBase,
-    getAccessToken: getLibraryAccessToken,
-    errorToMessage
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
@@ -1193,8 +1180,6 @@ import {
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.addEventListener('click', handleArtifactEditQuickActionClick)
-    el.brandAttachFile.addEventListener('change', handleBrandAttachFileChange)
-    el.brandAttachExtract.addEventListener('click', handleBrandAttachExtractClick)
   }
 
   function syncArtifactComposerVisibility() {
@@ -1306,9 +1291,6 @@ import {
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
-    if (el.brandAttachProfileName) {
-      el.brandAttachProfileName.disabled = Boolean(state.artifact.busy)
-    }
     el.artifactPromptSubmit.textContent = state.artifact.busy
       ? 'Working...'
       : canEditArtifact
@@ -1354,7 +1336,6 @@ import {
     renderArtifactConversation()
     renderArtifactEditQuickActions()
     syncArtifactComposerBusyState()
-    syncBrandAttachZoneVisibility()
     if (state.artifact.busy) {
       return
     }
@@ -1730,135 +1711,6 @@ import {
     }
     setArtifactComposerFloatingOpen(false)
   }
-
-  // ── Brand attach zone ─────────────────────────────────────────────────────
-
-  function syncBrandAttachZoneVisibility() {
-    const onBrandStep =
-      !isArtifactConversationComplete() &&
-      state.artifact.conversationStepIndex === BRAND_ATTACH_STEP_INDEX
-    el.brandAttachZone.classList.toggle('hidden', !onBrandStep)
-    if (!onBrandStep) {
-      setBrandAttachStatus('')
-    }
-  }
-
-  function setBrandAttachStatus(text, tone = '') {
-    el.brandAttachStatus.textContent = text || ''
-    el.brandAttachStatus.classList.remove('status-error', 'status-success')
-    if (tone === 'error') el.brandAttachStatus.classList.add('status-error')
-    if (tone === 'success') el.brandAttachStatus.classList.add('status-success')
-  }
-
-  function setBrandAttachBusy(busy) {
-    el.brandAttachExtract.disabled = busy
-    el.brandAttachFile.disabled = busy
-    el.brandAttachUrl.disabled = busy
-  }
-
-  async function runBrandExtract({ file, url }) {
-    setBrandAttachBusy(true)
-    setBrandAttachStatus(file ? `Extracting from ${file.name}…` : 'Extracting from URL…')
-    try {
-      const payload = await brandExtractor.extract({ file, url, purpose: 'artifact' })
-      const text = brandExtractor.formatGuidelinesText(payload, { mode: 'artifact' })
-      if (text) {
-        el.artifactPromptInput.value = text
-        el.artifactPromptInput.focus()
-
-        // Show extracted images as logo candidates for the user to pick
-        const images = Array.isArray(payload.extracted_images) ? payload.extracted_images : []
-        if (images.length > 0) {
-          showExtractedImagePicker(images)
-          setBrandAttachStatus(
-            `Guidelines extracted. ${images.length} image(s) found — pick a logo below.`,
-            'success'
-          )
-        } else {
-          setBrandAttachStatus('Guidelines extracted. Review and press Send.', 'success')
-        }
-      } else {
-        setBrandAttachStatus('No guidelines found in the provided source.', 'error')
-      }
-    } catch (error) {
-      setBrandAttachStatus(errorToMessage(error), 'error')
-    } finally {
-      setBrandAttachBusy(false)
-      // Reset file input so the same file can be re-selected if needed
-      el.brandAttachFile.value = ''
-    }
-  }
-
-  function showExtractedImagePicker(images) {
-    // Remove any existing picker
-    const existing = document.getElementById('brand-image-picker')
-    if (existing) existing.remove()
-
-    const picker = document.createElement('div')
-    picker.id = 'brand-image-picker'
-    picker.className = 'brand-image-picker'
-
-    const header = document.createElement('div')
-    header.className = 'brand-image-picker-header'
-    header.textContent = 'Select a logo to apply:'
-    picker.appendChild(header)
-
-    const grid = document.createElement('div')
-    grid.className = 'brand-image-picker-grid'
-
-    for (const img of images) {
-      const thumb = document.createElement('button')
-      thumb.className = 'brand-image-thumb'
-      thumb.type = 'button'
-      thumb.title = img.page ? `Page ${img.page}` : 'Extracted image'
-
-      const image = document.createElement('img')
-      image.src = img.data_url
-      image.alt = thumb.title
-      thumb.appendChild(image)
-
-      thumb.addEventListener('click', () => {
-        updateTheme({ logoUrl: img.data_url }, { historyLabel: 'Apply extracted brand logo' })
-        // Highlight the selected thumb
-        grid.querySelectorAll('.brand-image-thumb').forEach(t => t.classList.remove('selected'))
-        thumb.classList.add('selected')
-      })
-      grid.appendChild(thumb)
-    }
-
-    picker.appendChild(grid)
-
-    const skipBtn = document.createElement('button')
-    skipBtn.type = 'button'
-    skipBtn.className = 'brand-image-skip'
-    skipBtn.textContent = 'Skip — no logo'
-    skipBtn.addEventListener('click', () => {
-      picker.remove()
-    })
-    picker.appendChild(skipBtn)
-
-    // Insert the picker into the brand attach zone
-    el.brandAttachZone.appendChild(picker)
-  }
-
-  function handleBrandAttachFileChange() {
-    const file = el.brandAttachFile.files?.[0]
-    if (!file) {
-      return
-    }
-    void runBrandExtract({ file, url: null })
-  }
-
-  function handleBrandAttachExtractClick() {
-    const url = asText(el.brandAttachUrl.value).trim()
-    if (!url) {
-      setBrandAttachStatus('Enter a URL to extract guidelines from.', 'error')
-      return
-    }
-    void runBrandExtract({ file: null, url })
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
 
   function handleArtifactFrameLoad() {
     artifactBridge.handleFrameLoad()
@@ -2911,23 +2763,13 @@ import {
     return { Authorization: `Bearer ${token}` }
   }
 
-  function getArtifactBrandProfileName() {
-    const input = el.brandAttachProfileName
-    if (!input || !(input instanceof HTMLInputElement)) {
-      return ''
-    }
-    return asText(input.value).trim()
-  }
-
   async function requestAiArtifactBuild(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
-    const brandProfileName = getArtifactBrandProfileName()
     const body = {
       prompt,
       context,
-      model,
-      ...(brandProfileName ? { brand_profile_name: brandProfileName } : {})
+      model
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -2963,12 +2805,10 @@ import {
   async function requestAiArtifactAnswer(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
-    const brandProfileName = getArtifactBrandProfileName()
     const body = {
       prompt,
       context,
-      model,
-      ...(brandProfileName ? { brand_profile_name: brandProfileName } : {})
+      model
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -10018,8 +9858,6 @@ import {
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
-    el.brandAttachFile.removeEventListener('change', handleBrandAttachFileChange)
-    el.brandAttachExtract.removeEventListener('click', handleBrandAttachExtractClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('resize', handleEditorDockViewportResize)
