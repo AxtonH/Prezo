@@ -106,3 +106,22 @@ export interface BrandExtractResult {
   extraction_purpose?: string
   extracted_images?: unknown[]
 }
+
+/** Stored under `guidelines.ui_identity` — editable in the Brand identity detail page. */
+export interface BrandColorRole {
+  role: string
+  usage: string
+  hex: string
+  hierarchy_rank: number
+  surface: string
+}
+
+export interface BrandUiIdentity {
+  brand_name: string
+  color_roles: BrandColorRole[]
+  typography: {
+    heading_1: { family: string }
+    heading_2: { family: string }
+    body: { family: string }
+  }
+}

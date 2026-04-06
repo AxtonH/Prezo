@@ -1208,6 +1208,19 @@ class SupabaseStore:
         )
         return [self._to_brand_profile(row) for row in rows]
 
+    async def get_brand_profile(self, user_id: str, name: str) -> BrandProfile | None:
+        rows = await self._select(
+            "brand_profiles",
+            {
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "name": f"eq.{name}",
+            },
+        )
+        if not rows:
+            return None
+        return self._to_brand_profile(rows[0])
+
     async def save_brand_profile(
         self,
         user_id: str,

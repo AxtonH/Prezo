@@ -689,6 +689,11 @@ class InMemoryStore:
             profiles.sort(key=lambda item: item.updated_at, reverse=True)
             return [self._to_brand_profile(item) for item in profiles]
 
+    async def get_brand_profile(self, user_id: str, name: str) -> BrandProfile | None:
+        async with self._lock:
+            item = self._brand_profiles_by_user.get(user_id, {}).get(name)
+            return self._to_brand_profile(item) if item else None
+
     async def save_brand_profile(
         self,
         user_id: str,

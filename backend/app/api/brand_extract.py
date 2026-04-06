@@ -182,6 +182,267 @@ PASS2_SCHEMA: dict[str, Any] = {
 
 
 # ---------------------------------------------------------------------------
+# Pass 3 — UI identity (structured brand name, 6 color roles, typography)
+# Used for the host Brand identity editor; stored under guidelines["ui_identity"].
+# ---------------------------------------------------------------------------
+
+PASS3_SYSTEM = (
+    "You extract a compact UI IDENTITY block for a presentation product (slides and on-screen UI).\n\n"
+    "Return exactly 6 color roles, each with a clear job on a typical slide:\n"
+    "1) Slide background 2) Headline / title text 3) Accent & highlights (buttons, icons, callouts)\n"
+    "4) Card & panel fill 5) Body / paragraph text 6) Borders & dividers\n\n"
+    "For each color role provide:\n"
+    "- role: short title (e.g. 'Slide Background')\n"
+    "- usage: one line describing where it is used\n"
+    "- hex: primary sRGB hex like #RRGGBB (prefer colours from the brand document)\n"
+    "- hierarchy_rank: integer 1–6 where 1 = most visually dominant / largest area on a typical slide, "
+    "6 = least dominant (thin lines / rare accents)\n"
+    "- surface: one of background, foreground, accent, border, fill, neutral — best match for that swatch\n\n"
+    "brand_name: the official brand or product name from the document (or a reasonable inferred name).\n\n"
+    "typography:\n"
+    "- heading_1.family, heading_2.family, body.family — font family names used for main title, "
+    "subhead/section titles, and body copy (infer from guidelines if not explicit).\n\n"
+    "Be concise. Use real hex values. Do not invent brand names that contradict the document."
+)
+
+PASS3_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "brand_name": {"type": "string"},
+        "color_roles": {
+            "type": "array",
+            "minItems": 6,
+            "maxItems": 6,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "role": {"type": "string"},
+                    "usage": {"type": "string"},
+                    "hex": {"type": "string"},
+                    "hierarchy_rank": {"type": "integer"},
+                    "surface": {"type": "string"},
+                },
+                "required": ["role", "usage", "hex", "hierarchy_rank", "surface"],
+                "additionalProperties": False,
+            },
+        },
+        "typography": {
+            "type": "object",
+            "properties": {
+                "heading_1": {
+                    "type": "object",
+                    "properties": {"family": {"type": "string"}},
+                    "required": ["family"],
+                    "additionalProperties": False,
+                },
+                "heading_2": {
+                    "type": "object",
+                    "properties": {"family": {"type": "string"}},
+                    "required": ["family"],
+                    "additionalProperties": False,
+                },
+                "body": {
+                    "type": "object",
+                    "properties": {"family": {"type": "string"}},
+                    "required": ["family"],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["heading_1", "heading_2", "body"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["brand_name", "color_roles", "typography"],
+    "additionalProperties": False,
+}
+
+_DEFAULT_COLOR_ROLES: list[tuple[str, str, str]] = [
+    ("Slide Background", "Main slide background", "background"),
+    ("Headline Text", "Titles and headings", "foreground"),
+    ("Accent & Highlights", "Buttons, icons, callouts", "accent"),
+    ("Card & Panel Fill", "Cards, boxes, containers", "fill"),
+    ("Body Text", "Paragraphs and captions", "foreground"),
+    ("Borders & Dividers", "Lines, separators", "border"),
+]
+
+_HEX_RE = re.compile(r"#[0-9A-Fa-f]{6}\b")
+
+
+def _parse_first_hex(text: str) -> str | None:
+    m = _HEX_RE.search(text)
+    return m.group(0).upper() if m else None
+
+
+def _normalize_hex(raw: str) -> str:
+    s = (raw or "").strip()
+    if not s:
+        return "#CCCCCC"
+    if s.startswith("#"):
+        if len(s) == 4 and s[1:].isalnum():  # #RGB
+            r, g, b = s[1], s[2], s[3]
+            s = f"#{r}{r}{g}{g}{b}{b}"
+        if len(s) == 7:
+            return s.upper()
+        m = _parse_first_hex(s)
+        return m if m else "#CCCCCC"
+    m = _parse_first_hex("#" + s)
+    return m if m else "#CCCCCC"
+
+
+def _ui_identity_fallback_from_guidelines(
+    guidelines: dict[str, Any],
+    brand_hint: str,
+) -> dict[str, Any]:
+    """Build ui_identity when pass3 is skipped (artifact mode) or failed."""
+    primary = guidelines.get("primary_colors")
+    fonts = guidelines.get("fonts")
+    hexes: list[str] = []
+    if isinstance(primary, list):
+        for line in primary:
+            hx = _parse_first_hex(str(line))
+            if hx:
+                hexes.append(hx)
+            if len(hexes) >= 6:
+                break
+    while len(hexes) < 6:
+        hexes.append("#CCCCCC")
+
+    roles: list[dict[str, Any]] = []
+    for i, (title, usage, surface) in enumerate(_DEFAULT_COLOR_ROLES):
+        roles.append({
+            "role": title,
+            "usage": usage,
+            "hex": hexes[i],
+            "hierarchy_rank": i + 1,
+            "surface": surface,
+        })
+
+    h1 = h2 = body = "Inter"
+    if isinstance(fonts, list) and fonts:
+        fam0 = fonts[0] if isinstance(fonts[0], dict) else {}
+        if isinstance(fam0, dict) and fam0.get("family"):
+            h1 = h2 = body = str(fam0["family"])
+        if len(fonts) > 1 and isinstance(fonts[1], dict) and fonts[1].get("family"):
+            body = str(fonts[1]["family"])
+
+    return {
+        "brand_name": brand_hint.strip() or "Brand",
+        "color_roles": roles,
+        "typography": {
+            "heading_1": {"family": h1},
+            "heading_2": {"family": h2},
+            "body": {"family": body},
+        },
+    }
+
+
+def _normalize_ui_identity(
+    raw: dict[str, Any] | None,
+    merged_guidelines: dict[str, Any],
+    brand_hint: str,
+) -> dict[str, Any]:
+    """Ensure ui_identity has 6 roles, valid hex, ranks 1–6, and typography keys."""
+    base = _ui_identity_fallback_from_guidelines(merged_guidelines, brand_hint)
+    if not isinstance(raw, dict):
+        return base
+
+    name = str(raw.get("brand_name") or "").strip() or base["brand_name"]
+    typo = raw.get("typography")
+    out_typo = dict(base["typography"])
+    if isinstance(typo, dict):
+        for key in ("heading_1", "heading_2", "body"):
+            slot = typo.get(key)
+            if isinstance(slot, dict) and slot.get("family"):
+                fam = str(slot["family"]).strip()
+                if fam:
+                    out_typo[key] = {"family": fam[:120]}
+
+    roles_in = raw.get("color_roles")
+    roles: list[dict[str, Any]] = []
+    if isinstance(roles_in, list):
+        for item in roles_in[:12]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip() or "Color"
+            usage = str(item.get("usage") or "").strip() or "Usage"
+            hx = _normalize_hex(str(item.get("hex") or ""))
+            try:
+                rank = int(item.get("hierarchy_rank"))
+            except (TypeError, ValueError):
+                rank = 3
+            rank = max(1, min(6, rank))
+            surface = str(item.get("surface") or "neutral").strip() or "neutral"
+            roles.append({
+                "role": role[:120],
+                "usage": usage[:240],
+                "hex": hx,
+                "hierarchy_rank": rank,
+                "surface": surface[:40],
+            })
+
+    if len(roles) < 6:
+        fb = base["color_roles"]
+        for i in range(len(roles), 6):
+            roles.append(dict(fb[i]))
+    elif len(roles) > 6:
+        roles = roles[:6]
+
+    # Sort by hierarchy_rank so UI can show most-used first
+    roles.sort(key=lambda r: int(r.get("hierarchy_rank", 6)))
+
+    return {
+        "brand_name": name[:200],
+        "color_roles": roles,
+        "typography": out_typo,
+    }
+
+
+async def _run_brand_extract_passes(
+    parts: list[dict[str, Any]],
+    artifact_mode: bool,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Run visual + voice (+ ui_identity for full extraction) in parallel."""
+    pass1_sys = PASS1_ARTIFACT_SYSTEM if artifact_mode else PASS1_SYSTEM
+    pass2_sys = PASS2_ARTIFACT_SYSTEM if artifact_mode else PASS2_SYSTEM
+    pass1_schema = _pass1_schema_for_artifact() if artifact_mode else PASS1_SCHEMA
+    pass2_schema = _pass2_schema_for_artifact() if artifact_mode else PASS2_SCHEMA
+    tok = ARTIFACT_MAX_OUTPUT_TOKENS if artifact_mode else None
+
+    async def p1() -> dict[str, Any]:
+        return await _gemini_extract_pass(
+            parts=parts,
+            system_instruction=pass1_sys,
+            response_schema=pass1_schema,
+            pass_name="visual",
+            max_output_tokens=tok,
+        )
+
+    async def p2() -> dict[str, Any]:
+        return await _gemini_extract_pass(
+            parts=parts,
+            system_instruction=pass2_sys,
+            response_schema=pass2_schema,
+            pass_name="voice",
+            max_output_tokens=tok,
+        )
+
+    if artifact_mode:
+        pass1_result, pass2_result = await asyncio.gather(p1(), p2())
+        return pass1_result, pass2_result, {}
+
+    async def p3() -> dict[str, Any]:
+        return await _gemini_extract_pass(
+            parts=parts,
+            system_instruction=PASS3_SYSTEM,
+            response_schema=PASS3_SCHEMA,
+            pass_name="ui_identity",
+            max_output_tokens=4096,
+        )
+
+    return await asyncio.gather(p1(), p2(), p3())
+
+
+# ---------------------------------------------------------------------------
 # Artifact mode — concise extraction for interactive HTML poll slides
 # (avoids "exhaustive" deck dumps that overwhelm the artifact LLM)
 # ---------------------------------------------------------------------------
@@ -637,11 +898,12 @@ async def extract_brand_profile(
 ) -> dict[str, Any]:
     """Extract brand guidelines from an uploaded file or a website URL.
 
-    Uses a 2-pass parallel extraction strategy:
+    Uses a parallel extraction strategy:
       Pass 1 — Visual Identity (colours, fonts, patterns, asset styles)
       Pass 2 — Brand Voice & Strategy (tone, principles, messaging, dos/don'ts)
+      Pass 3 — UI identity (full purpose only): brand name, 6 color roles, typography H1/H2/body
 
-    Both passes run concurrently with schema enforcement so Gemini is forced
+    Passes run concurrently with schema enforcement so Gemini is forced
     to populate every field instead of dumping into raw_notes.
 
     `purpose`:
@@ -724,28 +986,8 @@ async def extract_brand_profile(
             source_type = "file"
             source_filename = file.filename or ""
 
-            pass1_sys = PASS1_ARTIFACT_SYSTEM if artifact_mode else PASS1_SYSTEM
-            pass2_sys = PASS2_ARTIFACT_SYSTEM if artifact_mode else PASS2_SYSTEM
-            pass1_schema = _pass1_schema_for_artifact() if artifact_mode else PASS1_SCHEMA
-            pass2_schema = _pass2_schema_for_artifact() if artifact_mode else PASS2_SCHEMA
-            tok = ARTIFACT_MAX_OUTPUT_TOKENS if artifact_mode else None
-
-            # --- Run both passes in parallel ---
-            pass1_result, pass2_result = await asyncio.gather(
-                _gemini_extract_pass(
-                    parts=parts,
-                    system_instruction=pass1_sys,
-                    response_schema=pass1_schema,
-                    pass_name="visual",
-                    max_output_tokens=tok,
-                ),
-                _gemini_extract_pass(
-                    parts=parts,
-                    system_instruction=pass2_sys,
-                    response_schema=pass2_schema,
-                    pass_name="voice",
-                    max_output_tokens=tok,
-                ),
+            pass1_result, pass2_result, pass3_result = await _run_brand_extract_passes(
+                parts, artifact_mode
             )
         finally:
             if file_uri:
@@ -797,35 +1039,37 @@ async def extract_brand_profile(
         source_type = "url"
         source_filename = url
 
-        pass1_sys = PASS1_ARTIFACT_SYSTEM if artifact_mode else PASS1_SYSTEM
-        pass2_sys = PASS2_ARTIFACT_SYSTEM if artifact_mode else PASS2_SYSTEM
-        pass1_schema = _pass1_schema_for_artifact() if artifact_mode else PASS1_SCHEMA
-        pass2_schema = _pass2_schema_for_artifact() if artifact_mode else PASS2_SCHEMA
-        tok = ARTIFACT_MAX_OUTPUT_TOKENS if artifact_mode else None
-
-        pass1_result, pass2_result = await asyncio.gather(
-            _gemini_extract_pass(
-                parts=parts,
-                system_instruction=pass1_sys,
-                response_schema=pass1_schema,
-                pass_name="visual",
-                max_output_tokens=tok,
-            ),
-            _gemini_extract_pass(
-                parts=parts,
-                system_instruction=pass2_sys,
-                response_schema=pass2_schema,
-                pass_name="voice",
-                max_output_tokens=tok,
-            ),
+        pass1_result, pass2_result, pass3_result = await _run_brand_extract_passes(
+            parts, artifact_mode
         )
 
-    # --- Merge both pass results into a single guidelines object ---
+    # --- Merge pass results into a single guidelines object ---
     guidelines: dict[str, Any] = {}
     if isinstance(pass1_result, dict):
         guidelines.update(pass1_result)
     if isinstance(pass2_result, dict):
         guidelines.update(pass2_result)
+
+    brand_hint = ""
+    if file:
+        fn = source_filename or ""
+        base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        brand_hint = base.rsplit(".", 1)[0] if base else ""
+    else:
+        try:
+            from urllib.parse import urlparse
+
+            host = urlparse(url or "").hostname or ""
+            brand_hint = host.split(".")[0] if host else ""
+        except Exception:
+            brand_hint = ""
+
+    ui_raw = pass3_result if isinstance(pass3_result, dict) else {}
+    guidelines["ui_identity"] = _normalize_ui_identity(
+        ui_raw if not artifact_mode else None,
+        guidelines,
+        brand_hint,
+    )
 
     result: dict[str, Any] = {
         "source_type": source_type,

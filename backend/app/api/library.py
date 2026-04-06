@@ -173,6 +173,22 @@ async def list_brand_profiles(
     return await store.list_brand_profiles(user.id)
 
 
+@router.get("/brand-profiles/{name}", response_model=BrandProfile)
+async def get_brand_profile(
+    name: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> BrandProfile:
+    normalized_name = normalize_library_name(name)
+    profile = await store.get_brand_profile(user.id, normalized_name)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="brand profile not found",
+        )
+    return profile
+
+
 @router.put("/brand-profiles/{name}", response_model=BrandProfile)
 async def save_brand_profile(
     name: str,

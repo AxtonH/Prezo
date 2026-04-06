@@ -10,7 +10,8 @@ type Props = {
   /** When editing, the existing profile name (cannot change). */
   existingName?: string
   onClose: () => void
-  onSaved: () => void
+  /** Called after a successful extract + save with the library profile name. */
+  onSaved?: (savedName: string) => void
 }
 
 function normalizeName(raw: string): string {
@@ -88,7 +89,7 @@ export function NewBrandIdentityModal({ open, mode, existingName, onClose, onSav
 
       await saveBrandProfile(n, body)
       reset()
-      onSaved()
+      onSaved?.(n)
       onClose()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not save brand identity.'

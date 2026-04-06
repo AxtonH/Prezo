@@ -63,6 +63,11 @@ export async function listBrandProfiles(): Promise<BrandProfile[]> {
   return request<BrandProfile[]>('/library/poll-game/brand-profiles', {}, true)
 }
 
+export async function getBrandProfile(name: string): Promise<BrandProfile> {
+  const path = `/library/poll-game/brand-profiles/${encodeURIComponent(name)}`
+  return request<BrandProfile>(path, {}, true)
+}
+
 export async function saveBrandProfile(name: string, body: BrandProfileUpsert): Promise<BrandProfile> {
   const path = `/library/poll-game/brand-profiles/${encodeURIComponent(name)}`
   return request<BrandProfile>(path, {

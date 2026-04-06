@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { deleteBrandProfile, listBrandProfiles } from '../../api/client'
 import type { BrandProfile } from '../../api/types'
 import { BrandIdentityCard } from './BrandIdentityCard'
+import { BrandIdentityDetailPage } from './BrandIdentityDetailPage'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
 
 export function BrandIdentitiesPage() {
@@ -9,8 +10,7 @@ export function BrandIdentitiesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create')
-  const [editName, setEditName] = useState<string | undefined>(undefined)
+  const [detailName, setDetailName] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -31,14 +31,6 @@ export function BrandIdentitiesPage() {
   }, [load])
 
   const openCreate = () => {
-    setModalMode('create')
-    setEditName(undefined)
-    setModalOpen(true)
-  }
-
-  const openEdit = (name: string) => {
-    setModalMode('edit')
-    setEditName(name)
     setModalOpen(true)
   }
 
@@ -52,6 +44,16 @@ export function BrandIdentitiesPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not delete.')
     }
+  }
+
+  if (detailName) {
+    return (
+      <BrandIdentityDetailPage
+        profileName={detailName}
+        onBack={() => setDetailName(null)}
+        onUpdated={() => void load()}
+      />
+    )
   }
 
   return (
@@ -118,7 +120,7 @@ export function BrandIdentitiesPage() {
           <ul className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {profiles.map((p) => (
               <li key={p.name}>
-                <BrandIdentityCard profile={p} onEdit={openEdit} onDelete={handleDelete} />
+                <BrandIdentityCard profile={p} onOpen={setDetailName} onDelete={handleDelete} />
               </li>
             ))}
           </ul>
@@ -127,10 +129,12 @@ export function BrandIdentitiesPage() {
 
       <NewBrandIdentityModal
         open={modalOpen}
-        mode={modalMode}
-        existingName={editName}
+        mode="create"
         onClose={() => setModalOpen(false)}
-        onSaved={() => void load()}
+        onSaved={(savedName) => {
+          void load()
+          setDetailName(savedName)
+        }}
       />
     </div>
   )

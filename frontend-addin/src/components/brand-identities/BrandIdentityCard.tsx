@@ -8,15 +8,17 @@ import {
   extractToneLine,
   formatBrandDate
 } from '../../utils/brandIdentityDisplay'
+import { parseBrandUiIdentity } from '../../utils/brandUiIdentity'
 
 type Props = {
   profile: BrandProfile
-  onEdit: (name: string) => void
+  onOpen: (name: string) => void
   onDelete: (name: string) => void
 }
 
-export function BrandIdentityCard({ profile, onEdit, onDelete }: Props) {
+export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
   const g = (profile.guidelines ?? {}) as Record<string, unknown>
+  const displayName = parseBrandUiIdentity(g, profile.name).brand_name
   const palette = extractPaletteHex(g)
   const fonts = extractFontsLine(g)
   const tagline = extractTagline(g)
@@ -52,7 +54,7 @@ export function BrandIdentityCard({ profile, onEdit, onDelete }: Props) {
             {initial}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-lg font-semibold text-slate-900">{profile.name}</h3>
+            <h3 className="truncate text-lg font-semibold text-slate-900">{displayName}</h3>
             {fonts ? (
               <p className="mt-0.5 text-sm text-slate-600">{fonts}</p>
             ) : (
@@ -108,11 +110,11 @@ export function BrandIdentityCard({ profile, onEdit, onDelete }: Props) {
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
           <button
             type="button"
-            onClick={() => onEdit(profile.name)}
+            onClick={() => onOpen(profile.name)}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition hover:bg-slate-50"
           >
-            <span className="material-symbols-outlined text-[1.1rem]">edit</span>
-            Edit
+            <span className="material-symbols-outlined text-[1.1rem]">visibility</span>
+            View & edit
           </button>
           <button
             type="button"
