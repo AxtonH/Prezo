@@ -1,5 +1,8 @@
 import { getAccessToken } from '../auth/auth'
 import type {
+  BrandExtractResult,
+  BrandProfile,
+  BrandProfileUpsert,
   HostDashboardStats,
   SessionSessionStats,
   Poll,
@@ -54,6 +57,67 @@ async function request<T>(
   }
 
   return JSON.parse(text) as T
+}
+
+export async function listBrandProfiles(): Promise<BrandProfile[]> {
+  return request<BrandProfile[]>('/library/poll-game/brand-profiles', {}, true)
+}
+
+export async function saveBrandProfile(name: string, body: BrandProfileUpsert): Promise<BrandProfile> {
+  const path = `/library/poll-game/brand-profiles/${encodeURIComponent(name)}`
+  return request<BrandProfile>(path, {
+    method: 'PUT',
+    body: JSON.stringify({
+      source_type: body.source_type ?? '',
+      source_filename: body.source_filename ?? '',
+      guidelines: body.guidelines,
+      raw_summary: body.raw_summary ?? ''
+    })
+  }, true)
+}
+
+export async function deleteBrandProfile(name: string): Promise<BrandProfile> {
+  const path = `/library/poll-game/brand-profiles/${encodeURIComponent(name)}`
+  return request<BrandProfile>(path, { method: 'DELETE' }, true)
+}
+
+export async function extractBrandProfile(args: {
+  file?: File
+  url?: string
+  purpose?: 'full' | 'artifact'
+}): Promise<BrandExtractResult> {
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('Sign in required')
+  }
+  const form = new FormData()
+  if (args.file) {
+    form.append('file', args.file)
+  }
+  if (args.url) {
+    form.append('url', args.url)
+  }
+  form.append('purpose', args.purpose ?? 'full')
+
+  const response = await fetch(`${API_BASE_URL}/library/poll-game/brand-profiles/extract`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: form
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    const detail = (body as { detail?: string }).detail
+    throw new Error(detail ?? `Extract failed (${response.status})`)
+  }
+
+  const text = await response.text()
+  if (!text) {
+    throw new Error('Empty response from extract')
+  }
+  return JSON.parse(text) as BrandExtractResult
 }
 
 export const api = {

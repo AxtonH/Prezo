@@ -27,6 +27,7 @@ import {
   SessionPollsDashboardPage
 } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
+import { BrandIdentitiesPage } from './components/brand-identities'
 import { SettingsPage } from './components/settings'
 import { SideNav, type WorkspaceNavId } from './components/SideNav'
 import { useDebouncedValue } from './hooks/useDebouncedValue'
@@ -328,8 +329,10 @@ function HostConsole({
   const [showJoinByCodeForm, setShowJoinByCodeForm] = useState(false)
   const [isJoiningByCode, setIsJoiningByCode] = useState(false)
   const [joinByCodeError, setJoinByCodeError] = useState<string | null>(null)
-  /** `'host'` = sessions dashboard; `'settings'` = full-page settings. */
-  const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings'>('host')
+  /** `'host'` = sessions dashboard; `'settings'` / `'brandIdentities'` = full-page views. */
+  const [hostConsoleView, setHostConsoleView] = useState<'host' | 'settings' | 'brandIdentities'>(
+    'host'
+  )
   /** Primary area while hosting a live session (sidebar workspace tabs). */
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
   /** False until we finish trying to restore the last open session (e.g. after browser refresh). */
@@ -1180,8 +1183,15 @@ function HostConsole({
           avatarUrl={hostProfile.avatar_url}
           onMySessions={navigateToSessionsHome}
           hasLiveSession={Boolean(session)}
-          activeSection={hostConsoleView === 'settings' ? 'settings' : 'sessions'}
+          activeSection={
+            hostConsoleView === 'settings'
+              ? 'settings'
+              : hostConsoleView === 'brandIdentities'
+                ? 'brandIdentities'
+                : 'sessions'
+          }
           onOpenSettings={() => setHostConsoleView('settings')}
+          onBrandIdentities={() => setHostConsoleView('brandIdentities')}
           createSessionModalOpen={showCreateForm}
           onCreateSession={() => {
             setShowJoinByCodeForm(false)
@@ -1215,7 +1225,7 @@ function HostConsole({
             </div>
           ) : isAddinHost ? (
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              {hostConsoleView === 'settings' ? (
+              {hostConsoleView === 'settings' || hostConsoleView === 'brandIdentities' ? (
                 <button
                   type="button"
                   onClick={() => setHostConsoleView('host')}
@@ -1255,7 +1265,7 @@ function HostConsole({
             </div>
           ) : (
             <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
-              {hostConsoleView === 'settings' ? (
+              {hostConsoleView === 'settings' || hostConsoleView === 'brandIdentities' ? (
                 <button
                   type="button"
                   onClick={() => setHostConsoleView('host')}
@@ -1278,7 +1288,10 @@ function HostConsole({
             </div>
           )}
           <div className="flex items-center gap-3 flex-shrink-0">
-            {isAddinHost && !session && hostConsoleView !== 'settings' && !hostRestoreInProgress ? (
+            {isAddinHost &&
+            !session &&
+            hostConsoleView === 'host' &&
+            !hostRestoreInProgress ? (
               <button
                 type="button"
                 onClick={() => {
@@ -1306,7 +1319,13 @@ function HostConsole({
         </header>
 
         {/* Content */}
-        <div className={`${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'} w-full max-w-[min(96rem,calc(100vw-1.5rem))] mx-auto`}>
+        <div
+          className={
+            hostConsoleView === 'brandIdentities' && !isAddinHost
+              ? 'mx-auto w-full max-w-none px-0 py-0'
+              : `mx-auto w-full max-w-[min(96rem,calc(100vw-1.5rem))] ${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'}`
+          }
+        >
           {hostConsoleView === 'settings' ? (
             <SettingsPage
               profile={hostProfile}
@@ -1314,6 +1333,8 @@ function HostConsole({
               onProfileSaved={onHostProfileChange}
               onSignOut={onLogout}
             />
+          ) : hostConsoleView === 'brandIdentities' ? (
+            <BrandIdentitiesPage />
           ) : hostRestoreInProgress ? (
             <div
               className="flex min-h-[min(60vh,28rem)] flex-col items-center justify-center gap-5 py-20"

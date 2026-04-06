@@ -76,3 +76,33 @@ export interface SessionActivity {
   payload: Record<string, unknown>
   ts: string
 }
+
+/** Saved brand profile from GET/PUT/DELETE `/library/poll-game/brand-profiles`. */
+export interface BrandProfile {
+  id: string
+  name: string
+  source_type: string
+  source_filename: string
+  guidelines: Record<string, unknown>
+  raw_summary: string
+  created_at: string
+  updated_at: string
+}
+
+/** Body for PUT `/library/poll-game/brand-profiles/{name}`. */
+export interface BrandProfileUpsert {
+  source_type?: string
+  source_filename?: string | null
+  guidelines: Record<string, unknown>
+  raw_summary?: string | null
+}
+
+/** Response from POST `/library/poll-game/brand-profiles/extract`. */
+export interface BrandExtractResult {
+  source_type: string
+  source_filename: string
+  guidelines: Record<string, unknown>
+  raw_summary: string
+  extraction_purpose?: string
+  extracted_images?: unknown[]
+}

@@ -23,9 +23,11 @@ interface SideNavProps {
   /** True while join-by-code modal is open — highlights "Join a session" in the nav. */
   joinSessionModalOpen?: boolean
   /** Which primary area is shown — drives sidebar highlight. */
-  activeSection?: 'sessions' | 'settings'
+  activeSection?: 'sessions' | 'settings' | 'brandIdentities'
   /** Opens full-page settings (host profile, account). */
   onOpenSettings?: () => void
+  /** Opens brand identity library (saved profiles + upload). */
+  onBrandIdentities?: () => void
   /**
    * When true (user has a live session open in the host console), show Dashboard / Polls /
    * Open discussion / Q&A instead of My Sessions / Join / Brand identity / Analytics / Integrations.
@@ -38,7 +40,6 @@ interface SideNavProps {
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
 
 const NAV_ITEMS_LEGACY = [
-  { icon: 'palette', label: 'Brand identity' },
   { icon: 'analytics', label: 'Analytics' },
   { icon: 'extension', label: 'Integrations' }
 ]
@@ -64,6 +65,7 @@ export function SideNav({
   joinSessionModalOpen = false,
   activeSection = 'sessions',
   onOpenSettings,
+  onBrandIdentities,
   workspaceMode = false,
   activeWorkspaceNav = 'dashboard',
   onWorkspaceNav
@@ -73,6 +75,8 @@ export function SideNav({
   const sessionsNavActive =
     activeSection === 'sessions' && !joinModalOpen && !createModalOpen
   const settingsNavActive = activeSection === 'settings' && !joinModalOpen && !createModalOpen
+  const brandIdentitiesNavActive =
+    activeSection === 'brandIdentities' && !joinModalOpen && !createModalOpen
   const joinNavActive = joinModalOpen && !createModalOpen
   const createNavActive = createModalOpen
   const navActiveClass =
@@ -147,6 +151,17 @@ export function SideNav({
               >
                 <span className="material-symbols-outlined text-[1.25rem]">login</span>
                 <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
+              </button>
+            ) : null}
+
+            {onBrandIdentities ? (
+              <button
+                type="button"
+                onClick={onBrandIdentities}
+                className={brandIdentitiesNavActive ? navActiveClass : navIdleClass}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">palette</span>
+                <span className={brandIdentitiesNavActive ? 'font-medium' : ''}>Brand identity</span>
               </button>
             ) : null}
 
