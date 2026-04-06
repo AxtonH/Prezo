@@ -1225,7 +1225,7 @@ function HostConsole({
             </div>
           ) : isAddinHost ? (
             <div className="flex items-center gap-2 min-w-0 flex-1">
-              {hostConsoleView === 'settings' || hostConsoleView === 'brandIdentities' ? (
+              {hostConsoleView === 'settings' ? (
                 <button
                   type="button"
                   onClick={() => setHostConsoleView('host')}
@@ -1235,7 +1235,7 @@ function HostConsole({
                 >
                   <span className="material-symbols-outlined text-xl">arrow_back</span>
                 </button>
-              ) : session ? (
+              ) : hostConsoleView !== 'brandIdentities' && session ? (
                 <button
                   type="button"
                   onClick={goToAllSessions}
@@ -1265,7 +1265,7 @@ function HostConsole({
             </div>
           ) : (
             <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
-              {hostConsoleView === 'settings' || hostConsoleView === 'brandIdentities' ? (
+              {hostConsoleView === 'settings' ? (
                 <button
                   type="button"
                   onClick={() => setHostConsoleView('host')}

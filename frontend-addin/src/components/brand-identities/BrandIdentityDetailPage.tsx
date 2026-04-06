@@ -124,14 +124,6 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
   return (
     <div className="bg-slate-50">
       <div className="border-b border-slate-200 bg-white px-6 py-5 md:px-10">
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/90"
-        >
-          <span className="material-symbols-outlined text-xl">arrow_back</span>
-          Brand identities
-        </button>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
             {ui.brand_name.trim() || profileName}
