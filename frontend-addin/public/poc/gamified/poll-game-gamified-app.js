@@ -68,7 +68,6 @@ import {
 
 ;(() => {
   const ARTIFACT_STAGE_ASPECT_RATIO = 16 / 9
-  const ARTIFACT_SAFE_FIT_SCALE = 0.98
   const ARTIFACT_READY_MESSAGE_TYPE = 'prezo-artifact-ready'
   const ARTIFACT_SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
   const ARTIFACT_RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
@@ -520,7 +519,6 @@ import {
     clone,
     clamp,
     stageAspectRatio: ARTIFACT_STAGE_ASPECT_RATIO,
-    safeFitScale: ARTIFACT_SAFE_FIT_SCALE,
     statePushBatchMs: ARTIFACT_STATE_PUSH_BATCH_MS,
     editRenderConfirmTimeoutMs: ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS,
     onRenderWatchdogTimeout: () => {
@@ -1891,7 +1889,7 @@ import {
       return
     }
     if (message.type === ARTIFACT_SIZE_MESSAGE_TYPE) {
-      artifactBridge.updateReportedContentSize(message.width, message.height)
+      // Iframe layout is locked to the stage; child size pings are ignored (see artifact-bridge).
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {

@@ -9,7 +9,6 @@ export function createPollGameArtifactBridge({
   clone,
   clamp,
   stageAspectRatio,
-  safeFitScale,
   statePushBatchMs,
   editRenderConfirmTimeoutMs,
   pollStateMessageType = 'prezo-poll-state',
@@ -186,6 +185,15 @@ export function createPollGameArtifactBridge({
     setFrameHeight(artifactState.frameHeight, { force: true })
   }
 
+  /**
+   * Size the sandbox iframe to exactly the visible stage (16:9 box).
+   *
+   * We intentionally do NOT drive iframe width/height from the child's
+   * `prezo-artifact-size` measurements or apply CSS `scale()` to "fit" them:
+   * that created a feedback loop (iframe dimensions → child layout / vh → new
+   * measured size → new scale) and visible "breathing" / bent proportions.
+   * Artifacts should fill the stage with % / flex / 100% height instead.
+   */
   function applyFrameFit() {
     const stageSize = readStageLayoutSize()
     const stageWidth = stageSize.width
@@ -193,60 +201,14 @@ export function createPollGameArtifactBridge({
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    const contentWidth = clamp(
-      artifactState.reportedContentWidth,
-      stageWidth,
-      Math.max(stageWidth * 2.4, 1400),
-      stageWidth
-    )
-    const contentHeight = clamp(
-      artifactState.reportedContentHeight,
-      stageHeight,
-      Math.max(stageHeight * 2.4, 1400),
-      stageHeight
-    )
-    const scaleToFit = Math.min(stageWidth / contentWidth, stageHeight / contentHeight, 1)
-    const fitScale = clamp(scaleToFit * safeFitScale, 0.4, 1, safeFitScale)
-    const scaledWidth = contentWidth * fitScale
-    const scaledHeight = contentHeight * fitScale
-    const insetX = Math.max(0, (stageWidth - scaledWidth) / 2)
-    const insetY = Math.max(0, (stageHeight - scaledHeight) / 2)
-    frameEl.style.width = `${Math.round(contentWidth)}px`
-    frameEl.style.height = `${Math.round(contentHeight)}px`
-    frameEl.style.transform = `translate(${Math.round(insetX)}px, ${Math.round(insetY)}px) scale(${fitScale})`
+    const w = Math.round(stageWidth)
+    const h = Math.round(stageHeight)
+    frameEl.style.width = `${w}px`
+    frameEl.style.height = `${h}px`
+    frameEl.style.transform = 'none'
     frameEl.style.transformOrigin = 'top left'
-  }
-
-  function updateReportedContentSize(widthValue, heightValue) {
-    const stageSize = readStageLayoutSize()
-    const stageWidth = stageSize.width
-    const stageHeight = stageSize.height
-    if (stageWidth <= 0 || stageHeight <= 0) {
-      return
-    }
-    const rawWidth = Number(widthValue)
-    const rawHeight = Number(heightValue)
-    const maxWidth = Math.max(stageWidth * 2.4, 1400)
-    const maxHeight = Math.max(stageHeight * 2.4, 1400)
-    const normalizedWidth =
-      Number.isFinite(rawWidth) && rawWidth > 0 && rawWidth <= maxWidth
-        ? Math.max(stageWidth, rawWidth)
-        : stageWidth
-    const normalizedHeight =
-      Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
-        ? Math.max(stageHeight, rawHeight)
-        : stageHeight
-    // Ignore sub-pixel / transition jitter from iframe content (bars animating, vh reflow).
-    const epsilon = 10
-    if (
-      Math.abs(normalizedWidth - artifactState.reportedContentWidth) < epsilon &&
-      Math.abs(normalizedHeight - artifactState.reportedContentHeight) < epsilon
-    ) {
-      return
-    }
-    artifactState.reportedContentWidth = normalizedWidth
-    artifactState.reportedContentHeight = normalizedHeight
-    applyFrameFit()
+    artifactState.reportedContentWidth = w
+    artifactState.reportedContentHeight = h
   }
 
   function clearRenderWatchdog() {
@@ -321,7 +283,6 @@ export function createPollGameArtifactBridge({
     setFrameHeight,
     handleViewportResize,
     applyFrameFit,
-    updateReportedContentSize,
     clearRenderWatchdog,
     scheduleRenderWatchdog,
     dispose
