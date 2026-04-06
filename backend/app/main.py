@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import ai, brand_extract, library, polls, qna_prompts, questions, sessions
+from .api import ai, brand_extract, brand_fonts, library, polls, qna_prompts, questions, sessions
 from .config import settings
 from .deps import manager, store
 from .models import SessionActivity, SessionSnapshot
@@ -33,6 +33,7 @@ app.include_router(qna_prompts.router)
 app.include_router(ai.router)
 app.include_router(library.router)
 app.include_router(brand_extract.router)
+app.include_router(brand_fonts.router)
 
 
 @app.exception_handler(SupabaseError)

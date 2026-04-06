@@ -17,9 +17,9 @@ export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity 
       hex: ['#FFFFFF', '#1e1e1e', '#6366f1', '#f1f5f9', '#334155', '#e2e8f0'][i] ?? '#CCCCCC'
     })),
     typography: {
-      heading_1: { family: 'Inter' },
-      heading_2: { family: 'Inter' },
-      body: { family: 'Inter' }
+      heading_1: { family: 'Inter', source: 'google' },
+      heading_2: { family: 'Inter', source: 'google' },
+      body: { family: 'Inter', source: 'google' }
     }
   }
 }
@@ -47,9 +47,22 @@ export function parseBrandUiIdentity(
   if (typo) {
     for (const key of ['heading_1', 'heading_2', 'body'] as const) {
       const slot = asRecord(typo[key])
-      const fam = typeof slot?.family === 'string' ? slot.family.trim() : ''
+      if (!slot) {
+        continue
+      }
+      const fam = typeof slot.family === 'string' ? slot.family.trim() : ''
       if (fam) {
-        typography[key] = { family: fam.slice(0, 120) }
+        const url = typeof slot.custom_url === 'string' ? slot.custom_url.trim() : ''
+        const wantsCustom = slot.source === 'custom'
+        if (wantsCustom && url) {
+          typography[key] = {
+            family: fam.slice(0, 120),
+            source: 'custom',
+            custom_url: url.slice(0, 2048)
+          }
+        } else {
+          typography[key] = { family: fam.slice(0, 120), source: 'google' }
+        }
       }
     }
   }

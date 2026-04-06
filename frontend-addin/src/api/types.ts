@@ -116,12 +116,20 @@ export interface BrandColorRole {
   surface: string
 }
 
+/** One of heading_1 | heading_2 | body — Google list pick or uploaded file. */
+export interface BrandTypographySlot {
+  family: string
+  source?: 'google' | 'custom'
+  /** Absolute URL to uploaded font (woff2/woff/ttf/otf) when source is custom. */
+  custom_url?: string | null
+}
+
 export interface BrandUiIdentity {
   brand_name: string
   color_roles: BrandColorRole[]
   typography: {
-    heading_1: { family: string }
-    heading_2: { family: string }
-    body: { family: string }
+    heading_1: BrandTypographySlot
+    heading_2: BrandTypographySlot
+    body: BrandTypographySlot
   }
 }

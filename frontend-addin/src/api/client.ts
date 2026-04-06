@@ -86,6 +86,44 @@ export async function deleteBrandProfile(name: string): Promise<BrandProfile> {
   return request<BrandProfile>(path, { method: 'DELETE' }, true)
 }
 
+export async function uploadBrandFont(file: File): Promise<{
+  font_id: string
+  /** Persist in `guidelines.ui_identity.typography.*.custom_url` — Supabase public URL or API URL (local). */
+  custom_url: string
+  storage: 'supabase' | 'local'
+  path: string
+  url: string
+}> {
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('Sign in required')
+  }
+  const form = new FormData()
+  form.append('file', file)
+
+  const response = await fetch(`${API_BASE_URL}/library/poll-game/brand-fonts/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: form
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    const detail = (body as { detail?: string }).detail
+    throw new Error(detail ?? `Upload failed (${response.status})`)
+  }
+
+  return JSON.parse(await response.text()) as {
+    font_id: string
+    custom_url: string
+    storage: 'supabase' | 'local'
+    path: string
+    url: string
+  }
+}
+
 export async function extractBrandProfile(args: {
   file?: File
   url?: string

@@ -30,3 +30,6 @@ yarn-error.log*
 
 # Misc
 Untitled
+
+# Backend local uploads (brand fonts, etc.)
+backend/data/

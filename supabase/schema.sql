@@ -145,6 +145,7 @@ begin
   end if;
 end $$;
 
+-- guidelines jsonb includes ui_identity (e.g. typography slots with optional custom_url from Storage).
 create table if not exists brand_profiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

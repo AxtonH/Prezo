@@ -73,8 +73,13 @@ class Settings(BaseSettings):
     app_name: str = "Prezo"
     cors_origins: str = ",".join(DEFAULT_CORS_ORIGINS)
     public_base_url: str = "http://localhost:5174"
+    # Server-local directory for persisted uploads (e.g. brand custom fonts).
+    data_dir: str = "./data"
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    # Storage bucket for brand font files. Create it in Supabase Dashboard → Storage; enable public
+    # read (or a SELECT policy) so browser @font-face can load URLs. Set to "" to use local disk only.
+    supabase_brand_fonts_bucket: str = "brand-fonts"
     library_sync_secret: str | None = None
     library_sync_ttl_seconds: int = 604800
     anthropic_api_key: str | None = None

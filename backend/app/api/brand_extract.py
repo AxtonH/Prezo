@@ -355,7 +355,11 @@ def _normalize_ui_identity(
             if isinstance(slot, dict) and slot.get("family"):
                 fam = str(slot["family"]).strip()
                 if fam:
-                    out_typo[key] = {"family": fam[:120]}
+                    entry: dict[str, Any] = {"family": fam[:120]}
+                    if str(slot.get("source") or "") == "custom" and slot.get("custom_url"):
+                        entry["source"] = "custom"
+                        entry["custom_url"] = str(slot["custom_url"])[:2048]
+                    out_typo[key] = entry
 
     roles_in = raw.get("color_roles")
     roles: list[dict[str, Any]] = []

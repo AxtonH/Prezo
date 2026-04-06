@@ -284,13 +284,14 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
               <div key={key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <FontPickerField
                   label={label}
-                  value={ui.typography[key].family}
-                  onChange={(family) =>
+                  slotKey={key}
+                  value={ui.typography[key]}
+                  onChange={(slot) =>
                     setUi((u) => ({
                       ...u,
                       typography: {
                         ...u.typography,
-                        [key]: { family }
+                        [key]: slot
                       }
                     }))
                   }
