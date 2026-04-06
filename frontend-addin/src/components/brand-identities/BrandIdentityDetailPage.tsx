@@ -122,7 +122,7 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-slate-50">
+    <div className="bg-slate-50">
       <div className="border-b border-slate-200 bg-white px-6 py-5 md:px-10">
         <button
           type="button"
