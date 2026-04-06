@@ -375,6 +375,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- By default, produce a polished, presentation-quality artifact scene rather than a rough experiment.",
         "- Favor balanced composition, clear alignment, and strong visual hierarchy across the full 16:9 frame.",
         "- Keep important content comfortably inside the canvas with safe padding so nothing critical is clipped.",
+        "- For layout in the sandboxed iframe, avoid vh/vw for primary bar heights and other critical vertical sizing: the host measures document size and resizes the iframe, which changes vh/vw and can cause jitter or feedback loops. Prefer % of a fixed scene root, flex, CSS grid with minmax(0, 1fr), or clamp(..., px, ...) — not vh — for vote bars and main columns.",
         "- Be expressive and creative, but avoid messy, chaotic, or gimmicky layouts unless the user explicitly asks for that.",
         "- Prioritize readability at all times: titles, poll labels, values, and motion should remain easy to understand at a glance.",
         "- Use animation with purpose: smooth, cinematic, and responsive to vote changes, but not noisy or distracting.",

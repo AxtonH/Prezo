@@ -236,9 +236,11 @@ export function createPollGameArtifactBridge({
       Number.isFinite(rawHeight) && rawHeight > 0 && rawHeight <= maxHeight
         ? Math.max(stageHeight, rawHeight)
         : stageHeight
+    // Ignore sub-pixel / transition jitter from iframe content (bars animating, vh reflow).
+    const epsilon = 10
     if (
-      Math.abs(normalizedWidth - artifactState.reportedContentWidth) < 2 &&
-      Math.abs(normalizedHeight - artifactState.reportedContentHeight) < 2
+      Math.abs(normalizedWidth - artifactState.reportedContentWidth) < epsilon &&
+      Math.abs(normalizedHeight - artifactState.reportedContentHeight) < epsilon
     ) {
       return
     }
