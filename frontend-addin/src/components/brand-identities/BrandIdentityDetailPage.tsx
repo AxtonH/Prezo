@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { getBrandProfile, saveBrandProfile } from '../../api/client'
 import type { BrandProfile, BrandUiIdentity } from '../../api/types'
 import { parseBrandUiIdentity } from '../../utils/brandUiIdentity'
+import { FontPickerField } from './FontPickerField'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
 
 type Props = {
@@ -281,29 +282,19 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
               ] as const
             ).map(([key, label]) => (
               <div key={key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <label className="mb-2 block text-sm font-semibold text-primary">{label}</label>
-                <input
-                  type="text"
+                <FontPickerField
+                  label={label}
                   value={ui.typography[key].family}
-                  onChange={(e) =>
+                  onChange={(family) =>
                     setUi((u) => ({
                       ...u,
                       typography: {
                         ...u.typography,
-                        [key]: { family: e.target.value.slice(0, 120) }
+                        [key]: { family }
                       }
                     }))
                   }
-                  className="mb-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900"
                 />
-                <p
-                  className="text-sm leading-relaxed text-slate-700"
-                  style={{
-                    fontFamily: `${ui.typography[key].family}, system-ui, sans-serif`
-                  }}
-                >
-                  The quick brown fox jumps over the lazy dog
-                </p>
               </div>
             ))}
           </div>
