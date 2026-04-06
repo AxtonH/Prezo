@@ -1,4 +1,10 @@
-import type { BrandUiIdentity, BrandColorRole, BrandToneCalibration } from '../api/types'
+import type {
+  BrandUiIdentity,
+  BrandColorRole,
+  BrandToneCalibration,
+  BrandVisualStyle,
+  BrandDesignElements
+} from '../api/types'
 
 const DEFAULT_ROLES: Omit<BrandColorRole, 'hex'>[] = [
   { role: 'Slide Background', usage: 'Main slide background', hierarchy_rank: 1, surface: 'background' },
@@ -14,6 +20,45 @@ const DEFAULT_TONE: BrandToneCalibration = {
   formal_casual: 50,
   respectful_irreverent: 50,
   matter_of_fact_enthusiastic: 50
+}
+
+const VISUAL_TEXT_MAX = 8000
+
+const EMPTY_DESIGN_ELEMENTS: BrandDesignElements = {
+  patterns_textures: '',
+  icon_style: '',
+  image_treatment: '',
+  decorative_elements: ''
+}
+
+const EMPTY_VISUAL_STYLE: BrandVisualStyle = {
+  visual_mood_aesthetic: '',
+  style_guidelines: '',
+  design_elements: { ...EMPTY_DESIGN_ELEMENTS }
+}
+
+function clipVisual(s: unknown): string {
+  const t = typeof s === 'string' ? s.trim() : ''
+  return t.slice(0, VISUAL_TEXT_MAX)
+}
+
+function parseVisualStyle(raw: unknown): BrandVisualStyle {
+  const o = asRecord(raw)
+  if (!o) {
+    return { ...EMPTY_VISUAL_STYLE, design_elements: { ...EMPTY_DESIGN_ELEMENTS } }
+  }
+  const deIn = asRecord(o.design_elements)
+  const de: BrandDesignElements = { ...EMPTY_DESIGN_ELEMENTS }
+  if (deIn) {
+    for (const k of Object.keys(EMPTY_DESIGN_ELEMENTS) as (keyof BrandDesignElements)[]) {
+      de[k] = clipVisual(deIn[k])
+    }
+  }
+  return {
+    visual_mood_aesthetic: clipVisual(o.visual_mood_aesthetic),
+    style_guidelines: clipVisual(o.style_guidelines),
+    design_elements: de
+  }
 }
 
 function clampTone(n: unknown): number {
@@ -49,7 +94,11 @@ export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity 
       heading_2: { family: 'Inter', source: 'google' },
       body: { family: 'Inter', source: 'google' }
     },
-    tone_calibration: { ...DEFAULT_TONE }
+    tone_calibration: { ...DEFAULT_TONE },
+    visual_style: {
+      ...EMPTY_VISUAL_STYLE,
+      design_elements: { ...EMPTY_DESIGN_ELEMENTS }
+    }
   }
 }
 
@@ -70,6 +119,7 @@ export function parseBrandUiIdentity(
   }
 
   const tone_calibration = parseToneCalibration(ui.tone_calibration)
+  const visual_style = parseVisualStyle(ui.visual_style)
 
   const name = typeof ui.brand_name === 'string' && ui.brand_name.trim() ? ui.brand_name.trim() : base.brand_name
 
@@ -122,7 +172,8 @@ export function parseBrandUiIdentity(
       brand_name: name,
       color_roles: base.color_roles.map((b, i) => roles[i] ?? b),
       typography,
-      tone_calibration
+      tone_calibration,
+      visual_style
     }
   }
 
@@ -131,7 +182,8 @@ export function parseBrandUiIdentity(
     brand_name: name,
     color_roles: sorted,
     typography,
-    tone_calibration
+    tone_calibration,
+    visual_style
   }
 }
 

@@ -208,7 +208,13 @@ PASS3_SYSTEM = (
     "- formal_casual: 0 = formal, 100 = casual\n"
     "- respectful_irreverent: 0 = respectful, 100 = irreverent\n"
     "- matter_of_fact_enthusiastic: 0 = matter-of-fact, 100 = enthusiastic\n"
-    "Infer from tone of voice, messaging, audience, and style cues in the document."
+    "Infer from tone of voice, messaging, audience, and style cues in the document.\n\n"
+    "visual_style — concise text summaries (about one or two short paragraphs each; plain sentences, no markdown):\n"
+    "- visual_mood_aesthetic: overall look, mood, and aesthetic in a few sentences.\n"
+    "- style_guidelines: how composition, type treatment, and emphasis should read on slides.\n"
+    "- design_elements: an object with four short summaries — patterns_textures, icon_style, "
+    "image_treatment, decorative_elements — each describing that aspect of the system.\n"
+    "Infer from visual style, imagery, and layout rules in the document. Use empty strings if not stated."
 )
 
 PASS3_SCHEMA: dict[str, Any] = {
@@ -273,8 +279,33 @@ PASS3_SCHEMA: dict[str, Any] = {
             ],
             "additionalProperties": False,
         },
+        "visual_style": {
+            "type": "object",
+            "properties": {
+                "visual_mood_aesthetic": {"type": "string"},
+                "style_guidelines": {"type": "string"},
+                "design_elements": {
+                    "type": "object",
+                    "properties": {
+                        "patterns_textures": {"type": "string"},
+                        "icon_style": {"type": "string"},
+                        "image_treatment": {"type": "string"},
+                        "decorative_elements": {"type": "string"},
+                    },
+                    "required": [
+                        "patterns_textures",
+                        "icon_style",
+                        "image_treatment",
+                        "decorative_elements",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["visual_mood_aesthetic", "style_guidelines", "design_elements"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["brand_name", "color_roles", "typography", "tone_calibration"],
+    "required": ["brand_name", "color_roles", "typography", "tone_calibration", "visual_style"],
     "additionalProperties": False,
 }
 
@@ -295,6 +326,47 @@ _TONE_KEYS = (
     "respectful_irreverent",
     "matter_of_fact_enthusiastic",
 )
+
+_DESIGN_ELEMENT_KEYS = (
+    "patterns_textures",
+    "icon_style",
+    "image_treatment",
+    "decorative_elements",
+)
+
+_VISUAL_TEXT_MAX = 8000
+
+
+def _normalize_visual_style(raw: Any) -> dict[str, Any]:
+    """Short prose summaries for visual identity; empty strings allowed."""
+    empty_de = {k: "" for k in _DESIGN_ELEMENT_KEYS}
+    defaults: dict[str, Any] = {
+        "visual_mood_aesthetic": "",
+        "style_guidelines": "",
+        "design_elements": empty_de,
+    }
+    if not isinstance(raw, dict):
+        return defaults
+
+    def clip(s: Any) -> str:
+        t = str(s or "").strip()
+        return t[:_VISUAL_TEXT_MAX]
+
+    out = dict(defaults)
+    out["visual_mood_aesthetic"] = clip(raw.get("visual_mood_aesthetic"))
+    out["style_guidelines"] = clip(raw.get("style_guidelines"))
+
+    de_in = raw.get("design_elements")
+    de_out = dict(empty_de)
+    if isinstance(de_in, dict):
+        for k in _DESIGN_ELEMENT_KEYS:
+            de_out[k] = clip(de_in.get(k))
+    out["design_elements"] = de_out
+    return out
+
+
+def _empty_visual_style() -> dict[str, Any]:
+    return _normalize_visual_style({})
 
 
 def _normalize_tone_calibration(raw: Any) -> dict[str, int]:
@@ -378,6 +450,7 @@ def _ui_identity_fallback_from_guidelines(
             "body": {"family": body},
         },
         "tone_calibration": {k: 50 for k in _TONE_KEYS},
+        "visual_style": _empty_visual_style(),
     }
 
 
@@ -386,7 +459,7 @@ def _normalize_ui_identity(
     merged_guidelines: dict[str, Any],
     brand_hint: str,
 ) -> dict[str, Any]:
-    """Ensure ui_identity has 6 roles, valid hex, ranks 1–6, typography keys, and tone_calibration."""
+    """Ensure ui_identity has roles, typography, tone_calibration, and visual_style."""
     base = _ui_identity_fallback_from_guidelines(merged_guidelines, brand_hint)
     if not isinstance(raw, dict):
         return base
@@ -444,6 +517,7 @@ def _normalize_ui_identity(
         "color_roles": roles,
         "typography": out_typo,
         "tone_calibration": _normalize_tone_calibration(raw.get("tone_calibration")),
+        "visual_style": _normalize_visual_style(raw.get("visual_style")),
     }
 
 

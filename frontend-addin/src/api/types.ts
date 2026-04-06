@@ -132,6 +132,20 @@ export interface BrandToneCalibration {
   matter_of_fact_enthusiastic: number
 }
 
+export interface BrandDesignElements {
+  patterns_textures: string
+  icon_style: string
+  image_treatment: string
+  decorative_elements: string
+}
+
+/** Short prose summaries from pass-3 extraction; editable on the brand detail page. */
+export interface BrandVisualStyle {
+  visual_mood_aesthetic: string
+  style_guidelines: string
+  design_elements: BrandDesignElements
+}
+
 export interface BrandUiIdentity {
   brand_name: string
   color_roles: BrandColorRole[]
@@ -141,4 +155,5 @@ export interface BrandUiIdentity {
     body: BrandTypographySlot
   }
   tone_calibration: BrandToneCalibration
+  visual_style: BrandVisualStyle
 }

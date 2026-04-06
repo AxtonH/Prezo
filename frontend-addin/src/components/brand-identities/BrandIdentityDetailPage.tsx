@@ -5,6 +5,7 @@ import { parseBrandUiIdentity } from '../../utils/brandUiIdentity'
 import { FontPickerField } from './FontPickerField'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
 import { ToneCalibrationPanel } from './ToneCalibrationPanel'
+import { VisualStylePanel } from './VisualStylePanel'
 
 type Props = {
   /** Library profile name (URL key). */
@@ -306,6 +307,13 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
           <ToneCalibrationPanel
             value={ui.tone_calibration}
             onChange={(tone_calibration) => setUi((u) => ({ ...u, tone_calibration }))}
+          />
+        </section>
+
+        <section>
+          <VisualStylePanel
+            value={ui.visual_style}
+            onChange={(visual_style) => setUi((u) => ({ ...u, visual_style }))}
           />
         </section>
       </div>
