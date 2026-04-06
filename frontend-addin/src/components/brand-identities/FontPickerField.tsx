@@ -24,20 +24,15 @@ function filterFonts(query: string, list: GoogleFontEntry[]): GoogleFontEntry[] 
   )
 }
 
+/** Searchable Google Fonts list; extraction may supply a name we don’t ship—user replaces it by picking from the list. */
 export function FontPickerField({ label, value, onChange }: Props) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const [customDraft, setCustomDraft] = useState(value)
   const rootRef = useRef<HTMLDivElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
 
-  const customMode = !isCatalogFontFamily(value)
+  const extractedNotInList = Boolean(value) && !isCatalogFontFamily(value)
   const filtered = useMemo(() => filterFonts(search, GOOGLE_FONT_CATALOG), [search])
-
-  useEffect(() => {
-    setCustomDraft(value)
-  }, [value])
 
   useEffect(() => {
     if (open) {
@@ -66,14 +61,6 @@ export function FontPickerField({ label, value, onChange }: Props) {
     },
     [onChange]
   )
-
-  const applyCustom = useCallback(() => {
-    const t = customDraft.trim()
-    if (t) {
-      onChange(t.slice(0, 120))
-    }
-    setOpen(false)
-  }, [customDraft, onChange])
 
   return (
     <div ref={rootRef} className="relative">
@@ -118,40 +105,7 @@ export function FontPickerField({ label, value, onChange }: Props) {
             </div>
           </div>
 
-          <div className="max-h-56 overflow-y-auto overscroll-contain" ref={listRef}>
-            <div className="border-b border-slate-100 px-3 py-2">
-              <p className="mb-2 text-xs font-medium text-primary">
-                <span className="material-symbols-outlined mr-1 align-text-bottom text-base">edit</span>
-                Custom font name
-              </p>
-              <p className="mb-2 text-[11px] text-slate-500">
-                Type any CSS font family (e.g. from your brand kit). Pick from the list below when possible for
-                reliable previews.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={customDraft}
-                  onChange={(e) => setCustomDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      applyCustom()
-                    }
-                  }}
-                  placeholder="e.g. Calibri, Georgia"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={applyCustom}
-                  className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary/90"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-
+          <div className="max-h-56 overflow-y-auto overscroll-contain">
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-slate-500">No fonts match your search.</p>
             ) : (
@@ -187,8 +141,11 @@ export function FontPickerField({ label, value, onChange }: Props) {
         The quick brown fox jumps over the lazy dog
       </p>
 
-      {customMode && open === false ? (
-        <p className="mt-2 text-xs text-slate-500">Using a custom family name (not in the Google list above).</p>
+      {extractedNotInList && !open ? (
+        <p className="mt-2 text-xs text-slate-500">
+          This font came from your guidelines and isn’t in our list yet. Choose a close match above to use for
+          previews and generation.
+        </p>
       ) : null}
     </div>
   )
