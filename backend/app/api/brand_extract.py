@@ -344,6 +344,23 @@ _DESIGN_ELEMENT_KEYS = (
     "decorative_elements",
 )
 
+# Keep in sync with frontend `brandUiIdentity.VISUAL_PARAGRAPH_SPLIT` (same pattern).
+_MULTILINE_PARAGRAPH_SPLIT = re.compile(r"\n\s*\n+")
+
+
+def _normalize_visual_prose_whitespace(text: str) -> str:
+    """Turn stray single line breaks (e.g. legacy one-keyword-per-line) into spaces; keep paragraph breaks."""
+    s = (text or "").replace("\r\n", "\n").strip()
+    if not s:
+        return ""
+    blocks = _MULTILINE_PARAGRAPH_SPLIT.split(s)
+    out: list[str] = []
+    for block in blocks:
+        inner = re.sub(r"\s+", " ", block.replace("\n", " ")).strip()
+        if inner:
+            out.append(inner)
+    return "\n\n".join(out)
+
 
 def _clip_visual_prose(raw: Any) -> str:
     """Short prose for visual_style; legacy keyword arrays joined into one string."""
@@ -352,8 +369,8 @@ def _clip_visual_prose(raw: Any) -> str:
         if not parts:
             return ""
         joined = " ".join(parts)
-        return joined[:_VISUAL_STYLE_TEXT_MAX]
-    return str(raw or "").strip()[:_VISUAL_STYLE_TEXT_MAX]
+        return _normalize_visual_prose_whitespace(joined)[:_VISUAL_STYLE_TEXT_MAX]
+    return _normalize_visual_prose_whitespace(str(raw or ""))[:_VISUAL_STYLE_TEXT_MAX]
 
 
 def _normalize_visual_style(raw: Any) -> dict[str, Any]:

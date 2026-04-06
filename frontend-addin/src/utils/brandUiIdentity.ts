@@ -37,6 +37,25 @@ const EMPTY_VISUAL_STYLE: BrandVisualStyle = {
   design_elements: { ...EMPTY_DESIGN_ELEMENTS }
 }
 
+/** Must match `brand_extract._MULTILINE_PARAGRAPH_SPLIT` (`\n\s*\n+`). */
+const VISUAL_PARAGRAPH_SPLIT = /\n\s*\n+/
+
+/**
+ * Collapse stray single line breaks (legacy keyword-per-line / bad exports) into spaces;
+ * keeps blank-line paragraph breaks.
+ */
+function normalizeVisualProseWhitespace(s: string): string {
+  const t = s.replace(/\r\n/g, '\n').trim()
+  if (!t) {
+    return ''
+  }
+  return t
+    .split(VISUAL_PARAGRAPH_SPLIT)
+    .map((block) => block.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 /** Prose string; legacy arrays from older extractions are joined. */
 function clipVisualProse(raw: unknown): string {
   if (Array.isArray(raw)) {
@@ -44,12 +63,27 @@ function clipVisualProse(raw: unknown): string {
       .map((x) => (typeof x === 'string' ? x.trim() : String(x).trim()))
       .filter(Boolean)
       .join(' ')
-    return joined.slice(0, VISUAL_TEXT_MAX)
+    return normalizeVisualProseWhitespace(joined).slice(0, VISUAL_TEXT_MAX)
   }
   if (typeof raw === 'string') {
-    return raw.trim().slice(0, VISUAL_TEXT_MAX)
+    return normalizeVisualProseWhitespace(raw).slice(0, VISUAL_TEXT_MAX)
   }
   return ''
+}
+
+/** Use when saving so stray mid-sentence line breaks are not persisted. */
+export function normalizeVisualStyleForSave(v: BrandVisualStyle): BrandVisualStyle {
+  const de = v.design_elements
+  return {
+    visual_mood_aesthetic: normalizeVisualProseWhitespace(v.visual_mood_aesthetic).slice(0, VISUAL_TEXT_MAX),
+    style_guidelines: normalizeVisualProseWhitespace(v.style_guidelines).slice(0, VISUAL_TEXT_MAX),
+    design_elements: {
+      patterns_textures: normalizeVisualProseWhitespace(de.patterns_textures).slice(0, VISUAL_TEXT_MAX),
+      icon_style: normalizeVisualProseWhitespace(de.icon_style).slice(0, VISUAL_TEXT_MAX),
+      image_treatment: normalizeVisualProseWhitespace(de.image_treatment).slice(0, VISUAL_TEXT_MAX),
+      decorative_elements: normalizeVisualProseWhitespace(de.decorative_elements).slice(0, VISUAL_TEXT_MAX)
+    }
+  }
 }
 
 function parseVisualStyle(raw: unknown): BrandVisualStyle {

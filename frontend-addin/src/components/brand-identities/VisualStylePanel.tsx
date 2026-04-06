@@ -33,7 +33,7 @@ function ProseField({
           rows={rows}
           spellCheck
           placeholder={placeholder}
-          className={`w-full resize-y border-0 bg-transparent p-0 text-sm leading-relaxed ${BOX_TEXT} focus:outline-none focus:ring-0`}
+          className={`w-full resize-y border-0 bg-transparent p-0 font-sans text-sm leading-relaxed ${BOX_TEXT} focus:outline-none focus:ring-0`}
         />
       </div>
     </div>

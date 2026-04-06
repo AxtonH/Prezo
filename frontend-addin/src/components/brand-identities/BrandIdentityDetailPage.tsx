@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getBrandProfile, saveBrandProfile } from '../../api/client'
 import type { BrandProfile, BrandUiIdentity } from '../../api/types'
-import { parseBrandUiIdentity } from '../../utils/brandUiIdentity'
+import { normalizeVisualStyleForSave, parseBrandUiIdentity } from '../../utils/brandUiIdentity'
 import { FontPickerField } from './FontPickerField'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
 import { ToneCalibrationPanel } from './ToneCalibrationPanel'
@@ -76,7 +76,7 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
     try {
       const guidelines = {
         ...((profile.guidelines ?? {}) as Record<string, unknown>),
-        ui_identity: ui
+        ui_identity: { ...ui, visual_style: normalizeVisualStyleForSave(ui.visual_style) }
       }
       await saveBrandProfile(profile.name, {
         guidelines,
