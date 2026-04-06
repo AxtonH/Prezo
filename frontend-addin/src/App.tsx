@@ -1173,7 +1173,7 @@ function HostConsole({
     (readStoredHostSession() !== null || isAddinHost)
 
   return (
-    <div className="flex h-screen overflow-hidden font-sans">
+    <div className="flex h-screen min-h-0 w-full overflow-hidden font-sans">
       {!isAddinHost && !hostRestoreInProgress ? (
         <SideNav
           onLogout={onLogout}
