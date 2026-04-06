@@ -1211,112 +1211,116 @@ function HostConsole({
       ) : null}
 
       <main
-        className={`flex-1 min-h-0 overflow-y-auto bg-white ${isAddinHost || hostRestoreInProgress ? '' : 'ml-64'}`}
+        className={`flex-1 min-h-0 overflow-y-auto ${
+          hostConsoleView === 'brandIdentities' && !isAddinHost ? 'bg-slate-50' : 'bg-white'
+        } ${isAddinHost || hostRestoreInProgress ? '' : 'ml-64'}`}
       >
-        {/* Top App Bar */}
-        <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
-          {hostRestoreInProgress && hostConsoleView === 'host' ? (
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <PrezoWordmark
-                logoSize={isAddinHost ? 20 : 24}
-                textClassName={`${isAddinHost ? 'text-base' : 'text-lg'} font-bold tracking-tight text-[#004080]`}
-                className="min-w-0 truncate"
-              />
-            </div>
-          ) : isAddinHost ? (
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              {hostConsoleView === 'settings' ? (
-                <button
-                  type="button"
-                  onClick={() => setHostConsoleView('host')}
-                  className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
-                  title="Back to workspace"
-                  aria-label="Back to workspace"
-                >
-                  <span className="material-symbols-outlined text-xl">arrow_back</span>
-                </button>
-              ) : hostConsoleView !== 'brandIdentities' && session ? (
-                <button
-                  type="button"
-                  onClick={goToAllSessions}
-                  className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
-                  title="Back to all sessions"
-                  aria-label="Back to all sessions"
-                >
-                  <span className="material-symbols-outlined text-xl">arrow_back</span>
-                </button>
-              ) : null}
-              <PrezoWordmark
-                logoSize={20}
-                textClassName="text-base font-bold tracking-tight text-[#004080]"
-                className="min-w-0 truncate"
-              />
-              {hostConsoleView === 'host' ? (
-                <button
-                  type="button"
-                  onClick={() => setHostConsoleView('settings')}
-                  className="!inline-flex !items-center !gap-1 !ml-auto !shrink-0 !bg-transparent !border-0 !p-1.5 !rounded-lg !text-slate-600 hover:!bg-slate-100 hover:!text-primary !shadow-none"
-                  title="Settings"
-                  aria-label="Settings"
-                >
-                  <span className="material-symbols-outlined text-xl">settings</span>
-                </button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
-              {hostConsoleView === 'settings' ? (
-                <button
-                  type="button"
-                  onClick={() => setHostConsoleView('host')}
-                  className="!inline-flex !items-center !gap-2 !shrink-0 !bg-transparent !border-0 !p-0 !shadow-none !text-primary !font-semibold !text-sm"
-                >
-                  <span className="material-symbols-outlined text-xl">arrow_back</span>
-                  Workspace
-                </button>
-              ) : (
-                <HostSearchBar
-                  value={sessionSearchQuery}
-                  onChange={setSessionSearchQuery}
-                  sessionMatches={filteredRecentSessions}
-                  activityHits={activityHits}
-                  activitiesLoading={searchActivitiesLoading}
-                  debouncedQuery={debouncedSearch}
-                  onSelectSession={(selected) => void resumeSession(selected)}
+        {/* Web Brand identity: full-width page next to SideNav only — no session search bar / duplicate shell */}
+        {!(hostConsoleView === 'brandIdentities' && !isAddinHost) ? (
+          <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
+            {hostRestoreInProgress && hostConsoleView === 'host' ? (
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <PrezoWordmark
+                  logoSize={isAddinHost ? 20 : 24}
+                  textClassName={`${isAddinHost ? 'text-base' : 'text-lg'} font-bold tracking-tight text-[#004080]`}
+                  className="min-w-0 truncate"
                 />
-              )}
+              </div>
+            ) : isAddinHost ? (
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {hostConsoleView === 'settings' ? (
+                  <button
+                    type="button"
+                    onClick={() => setHostConsoleView('host')}
+                    className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
+                    title="Back to workspace"
+                    aria-label="Back to workspace"
+                  >
+                    <span className="material-symbols-outlined text-xl">arrow_back</span>
+                  </button>
+                ) : hostConsoleView !== 'brandIdentities' && session ? (
+                  <button
+                    type="button"
+                    onClick={goToAllSessions}
+                    className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
+                    title="Back to all sessions"
+                    aria-label="Back to all sessions"
+                  >
+                    <span className="material-symbols-outlined text-xl">arrow_back</span>
+                  </button>
+                ) : null}
+                <PrezoWordmark
+                  logoSize={20}
+                  textClassName="text-base font-bold tracking-tight text-[#004080]"
+                  className="min-w-0 truncate"
+                />
+                {hostConsoleView === 'host' ? (
+                  <button
+                    type="button"
+                    onClick={() => setHostConsoleView('settings')}
+                    className="!inline-flex !items-center !gap-1 !ml-auto !shrink-0 !bg-transparent !border-0 !p-1.5 !rounded-lg !text-slate-600 hover:!bg-slate-100 hover:!text-primary !shadow-none"
+                    title="Settings"
+                    aria-label="Settings"
+                  >
+                    <span className="material-symbols-outlined text-xl">settings</span>
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
+                {hostConsoleView === 'settings' ? (
+                  <button
+                    type="button"
+                    onClick={() => setHostConsoleView('host')}
+                    className="!inline-flex !items-center !gap-2 !shrink-0 !bg-transparent !border-0 !p-0 !shadow-none !text-primary !font-semibold !text-sm"
+                  >
+                    <span className="material-symbols-outlined text-xl">arrow_back</span>
+                    Workspace
+                  </button>
+                ) : (
+                  <HostSearchBar
+                    value={sessionSearchQuery}
+                    onChange={setSessionSearchQuery}
+                    sessionMatches={filteredRecentSessions}
+                    activityHits={activityHits}
+                    activitiesLoading={searchActivitiesLoading}
+                    debouncedQuery={debouncedSearch}
+                    onSelectSession={(selected) => void resumeSession(selected)}
+                  />
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {isAddinHost &&
+              !session &&
+              hostConsoleView === 'host' &&
+              !hostRestoreInProgress ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowJoinByCodeForm(false)
+                    setJoinByCodeError(null)
+                    setShowCreateForm(true)
+                  }}
+                  className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs"
+                >
+                  <span className="material-symbols-outlined text-lg">add</span>
+                  <span className="max-[380px]:hidden">Start a new session</span>
+                  <span className="hidden max-[380px]:inline">New session</span>
+                </button>
+              ) : null}
+              {isAddinHost ? (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-3 !py-1.5 !rounded-lg !text-xs !font-semibold hover:!border-slate-300 !transition-all !shadow-none"
+                >
+                  Sign out
+                </button>
+              ) : null}
             </div>
-          )}
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {isAddinHost &&
-            !session &&
-            hostConsoleView === 'host' &&
-            !hostRestoreInProgress ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowJoinByCodeForm(false)
-                  setJoinByCodeError(null)
-                  setShowCreateForm(true)
-                }}
-                className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs"
-              >
-                <span className="material-symbols-outlined text-lg">add</span>
-                <span className="max-[380px]:hidden">Start a new session</span>
-                <span className="hidden max-[380px]:inline">New session</span>
-              </button>
-            ) : null}
-            {isAddinHost ? (
-              <button
-                type="button"
-                onClick={onLogout}
-                className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-3 !py-1.5 !rounded-lg !text-xs !font-semibold hover:!border-slate-300 !transition-all !shadow-none"
-              >
-                Sign out
-              </button>
-            ) : null}
-          </div>
-        </header>
+          </header>
+        ) : null}
 
         {/* Content */}
         <div
