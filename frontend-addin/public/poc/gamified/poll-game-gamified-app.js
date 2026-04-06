@@ -1762,8 +1762,8 @@ import {
     setBrandAttachBusy(true)
     setBrandAttachStatus(file ? `Extracting from ${file.name}…` : 'Extracting from URL…')
     try {
-      const payload = await brandExtractor.extract({ file, url })
-      const text = brandExtractor.formatGuidelinesText(payload)
+      const payload = await brandExtractor.extract({ file, url, purpose: 'artifact' })
+      const text = brandExtractor.formatGuidelinesText(payload, { mode: 'artifact' })
       if (text) {
         el.artifactPromptInput.value = text
         el.artifactPromptInput.focus()

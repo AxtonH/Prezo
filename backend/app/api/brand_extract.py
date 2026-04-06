@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 import io
 import json as _json
@@ -178,6 +179,122 @@ PASS2_SCHEMA: dict[str, Any] = {
     ],
     "additionalProperties": False,
 }
+
+
+# ---------------------------------------------------------------------------
+# Artifact mode — concise extraction for interactive HTML poll slides
+# (avoids "exhaustive" deck dumps that overwhelm the artifact LLM)
+# ---------------------------------------------------------------------------
+
+PASS1_ARTIFACT_SYSTEM = (
+    "You extract VISUAL design hints for ONE small interactive HTML poll slide (web UI), "
+    "not a full brand manual or strategy deck.\n\n"
+    "CRITICAL RULES:\n"
+    "- Be SHORT. One line per list item where possible (hex + brief role, under ~100 chars per line).\n"
+    "- Do NOT copy long paragraphs, roadmap bullets, governance text, or slide content from the document.\n"
+    "- Colours: capture the main palette only (dominant backgrounds, text, accent). Skip exhaustive lists.\n"
+    "- Fonts: at most 3 families; usage is a few words (e.g. 'titles', 'body').\n"
+    "- For every string field: at most 2–3 sentences OR stay under the schema maxLength.\n"
+    "- Ignore photography subjects, cityscapes, and narrative unless they change UI style in one phrase.\n"
+    "- gradient_styles: at most 2 short entries.\n\n"
+    "Return JSON matching the schema exactly."
+)
+
+PASS2_ARTIFACT_SYSTEM = (
+    "You extract voice and HIGH-LEVEL visual direction for ONE small interactive HTML poll slide.\n\n"
+    "CRITICAL RULES:\n"
+    "- visual_style and tone_of_voice: each must stay under the schema maxLength — concise prose only.\n"
+    "- key_principles: at most 5 items. Each item ONE short line about look, feel, or voice. "
+    "Do NOT paste deck bullets, QEF roadmaps, objectives, or long quotes.\n"
+    "- messaging_framework: at most 2 short phrases (taglines), not paragraphs.\n"
+    "- dos_and_donts: at most 3 short design-related rules.\n"
+    "- Skip business strategy, implementation plans, and document-specific content.\n\n"
+    "Return JSON matching the schema exactly."
+)
+
+ARTIFACT_MAX_OUTPUT_TOKENS = 4096
+
+
+def _pass1_schema_for_artifact() -> dict[str, Any]:
+    """Tighter arrays and string caps so Gemini cannot return book-length fields."""
+    s = copy.deepcopy(PASS1_SCHEMA)
+    props = s["properties"]
+    short_line = {"type": "string", "maxLength": 120}
+    med_line = {"type": "string", "maxLength": 200}
+
+    props["primary_colors"] = {
+        "type": "array",
+        "maxItems": 6,
+        "items": short_line,
+        "description": "Dominant colours with hex and brief usage (one line each)",
+    }
+    props["secondary_colors"] = {"type": "array", "maxItems": 4, "items": short_line}
+    props["accent_colors"] = {"type": "array", "maxItems": 4, "items": short_line}
+    props["gradient_styles"] = {"type": "array", "maxItems": 2, "items": med_line}
+    props["fonts"] = {
+        "type": "array",
+        "maxItems": 3,
+        "items": {
+            "type": "object",
+            "properties": {
+                "family": {"type": "string", "maxLength": 80},
+                "weights": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {"type": "string", "maxLength": 24},
+                },
+                "usage": {"type": "string", "maxLength": 120},
+            },
+            "required": ["family"],
+            "additionalProperties": False,
+        },
+    }
+    props["typography_hierarchy"] = {"type": "string", "maxLength": 320}
+    props["logo_description"] = {"type": "string", "maxLength": 180}
+    props["logo_colors"] = {"type": "array", "maxItems": 6, "items": short_line}
+    props["patterns_and_textures"] = {"type": "string", "maxLength": 200}
+    props["brand_shapes"] = {"type": "string", "maxLength": 200}
+    props["background_styles"] = {"type": "string", "maxLength": 260}
+    props["iconography_style"] = {"type": "string", "maxLength": 200}
+    props["illustration_style"] = {"type": "string", "maxLength": 160}
+    props["photography_style"] = {"type": "string", "maxLength": 160}
+    props["spacing_and_layout"] = {"type": "string", "maxLength": 260}
+    props["animation_motion"] = {"type": "string", "maxLength": 120}
+    return s
+
+
+def _pass2_schema_for_artifact() -> dict[str, Any]:
+    s = copy.deepcopy(PASS2_SCHEMA)
+    props = s["properties"]
+    props["visual_style"] = {
+        "type": "string",
+        "maxLength": 400,
+        "description": "Brief visual mood for a web slide (not a full brand essay)",
+    }
+    props["tone_of_voice"] = {
+        "type": "string",
+        "maxLength": 320,
+        "description": "Brief tone summary for UI copy",
+    }
+    props["key_principles"] = {
+        "type": "array",
+        "maxItems": 5,
+        "items": {"type": "string", "maxLength": 140},
+        "description": "At most 5 short lines; design/voice only, not deck strategy bullets",
+    }
+    props["messaging_framework"] = {
+        "type": "array",
+        "maxItems": 2,
+        "items": {"type": "string", "maxLength": 100},
+        "description": "Short taglines only",
+    }
+    props["dos_and_donts"] = {
+        "type": "array",
+        "maxItems": 3,
+        "items": {"type": "string", "maxLength": 120},
+        "description": "Short design-related rules only",
+    }
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +526,7 @@ async def _gemini_extract_pass(
     system_instruction: str,
     response_schema: dict[str, Any],
     pass_name: str,
+    max_output_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Run a single schema-enforced Gemini extraction pass.
 
@@ -431,7 +549,7 @@ async def _gemini_extract_pass(
         "systemInstruction": {"parts": [{"text": system_instruction}]},
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 12000,
+            "maxOutputTokens": max_output_tokens if max_output_tokens is not None else 12000,
             "responseMimeType": "application/json",
             "responseJsonSchema": response_schema,
         },
@@ -515,6 +633,7 @@ async def extract_brand_profile(
     user: AuthUser = Depends(get_library_user),
     file: UploadFile | None = File(default=None),
     url: str | None = Form(default=None),
+    purpose: str = Form(default="full"),
 ) -> dict[str, Any]:
     """Extract brand guidelines from an uploaded file or a website URL.
 
@@ -524,7 +643,16 @@ async def extract_brand_profile(
 
     Both passes run concurrently with schema enforcement so Gemini is forced
     to populate every field instead of dumping into raw_notes.
+
+    `purpose`:
+      - `full` (default): exhaustive extraction for saved brand profiles / reference.
+      - `artifact`: concise caps and prompts for interactive poll HTML (avoid deck dumps).
     """
+
+    purpose_norm = (purpose or "full").strip().lower()
+    if purpose_norm not in ("full", "artifact"):
+        purpose_norm = "full"
+    artifact_mode = purpose_norm == "artifact"
 
     if file and url:
         raise HTTPException(
@@ -596,19 +724,27 @@ async def extract_brand_profile(
             source_type = "file"
             source_filename = file.filename or ""
 
+            pass1_sys = PASS1_ARTIFACT_SYSTEM if artifact_mode else PASS1_SYSTEM
+            pass2_sys = PASS2_ARTIFACT_SYSTEM if artifact_mode else PASS2_SYSTEM
+            pass1_schema = _pass1_schema_for_artifact() if artifact_mode else PASS1_SCHEMA
+            pass2_schema = _pass2_schema_for_artifact() if artifact_mode else PASS2_SCHEMA
+            tok = ARTIFACT_MAX_OUTPUT_TOKENS if artifact_mode else None
+
             # --- Run both passes in parallel ---
             pass1_result, pass2_result = await asyncio.gather(
                 _gemini_extract_pass(
                     parts=parts,
-                    system_instruction=PASS1_SYSTEM,
-                    response_schema=PASS1_SCHEMA,
+                    system_instruction=pass1_sys,
+                    response_schema=pass1_schema,
                     pass_name="visual",
+                    max_output_tokens=tok,
                 ),
                 _gemini_extract_pass(
                     parts=parts,
-                    system_instruction=PASS2_SYSTEM,
-                    response_schema=PASS2_SCHEMA,
+                    system_instruction=pass2_sys,
+                    response_schema=pass2_schema,
                     pass_name="voice",
+                    max_output_tokens=tok,
                 ),
             )
         finally:
@@ -661,18 +797,26 @@ async def extract_brand_profile(
         source_type = "url"
         source_filename = url
 
+        pass1_sys = PASS1_ARTIFACT_SYSTEM if artifact_mode else PASS1_SYSTEM
+        pass2_sys = PASS2_ARTIFACT_SYSTEM if artifact_mode else PASS2_SYSTEM
+        pass1_schema = _pass1_schema_for_artifact() if artifact_mode else PASS1_SCHEMA
+        pass2_schema = _pass2_schema_for_artifact() if artifact_mode else PASS2_SCHEMA
+        tok = ARTIFACT_MAX_OUTPUT_TOKENS if artifact_mode else None
+
         pass1_result, pass2_result = await asyncio.gather(
             _gemini_extract_pass(
                 parts=parts,
-                system_instruction=PASS1_SYSTEM,
-                response_schema=PASS1_SCHEMA,
+                system_instruction=pass1_sys,
+                response_schema=pass1_schema,
                 pass_name="visual",
+                max_output_tokens=tok,
             ),
             _gemini_extract_pass(
                 parts=parts,
-                system_instruction=PASS2_SYSTEM,
-                response_schema=PASS2_SCHEMA,
+                system_instruction=pass2_sys,
+                response_schema=pass2_schema,
                 pass_name="voice",
+                max_output_tokens=tok,
             ),
         )
 
@@ -688,6 +832,7 @@ async def extract_brand_profile(
         "source_filename": source_filename,
         "guidelines": guidelines,
         "raw_summary": "",
+        "extraction_purpose": purpose_norm,
     }
 
     if extracted_images:
