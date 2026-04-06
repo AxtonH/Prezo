@@ -7,8 +7,11 @@ import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
 import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 
 export interface SessionActiveActivitiesPanelProps {
-  /** `'polls-only'` shows only poll cards (polls workspace). Default: full activity mix. */
-  activitiesScope?: 'all' | 'polls-only'
+  /**
+   * `'polls-only'` — polls workspace; `'discussions-only'` — open discussion workspace.
+   * Default: full activity mix.
+   */
+  activitiesScope?: 'all' | 'polls-only' | 'discussions-only'
   openPolls: Poll[]
   /** Stopped polls — shown in the inactive block, oldest first when merged. */
   closedPolls: Poll[]
@@ -120,10 +123,23 @@ export function SessionActiveActivitiesPanel({
 
   const mergedActiveRows = useMemo((): MergedActiveRow[] => {
     const rows: MergedActiveRow[] = []
-    for (const poll of sortedOpenPolls) {
-      rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+    if (activitiesScope !== 'discussions-only') {
+      for (const poll of sortedOpenPolls) {
+        rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+      }
     }
     if (activitiesScope === 'polls-only') {
+      rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+      return rows
+    }
+    if (activitiesScope === 'discussions-only') {
+      for (const prompt of sortedOpenPrompts) {
+        rows.push({
+          kind: 'discussion',
+          sortAt: prompt.created_at,
+          block: discussionBlockFor(prompt)
+        })
+      }
       rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
       return rows
     }
@@ -150,10 +166,23 @@ export function SessionActiveActivitiesPanel({
 
   const mergedInactiveRows = useMemo((): MergedInactiveRow[] => {
     const rows: MergedInactiveRow[] = []
-    for (const poll of sortedClosedPolls) {
-      rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+    if (activitiesScope !== 'discussions-only') {
+      for (const poll of sortedClosedPolls) {
+        rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+      }
     }
     if (activitiesScope === 'polls-only') {
+      rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+      return rows
+    }
+    if (activitiesScope === 'discussions-only') {
+      for (const prompt of sortedClosedPrompts) {
+        rows.push({
+          kind: 'discussion',
+          sortAt: prompt.created_at,
+          block: discussionBlockFor(prompt)
+        })
+      }
       rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
       return rows
     }
@@ -227,7 +256,9 @@ export function SessionActiveActivitiesPanel({
           <p className="text-sm text-muted">
             {activitiesScope === 'polls-only'
               ? 'No polls yet. Create one with the poll builder on the left.'
-              : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
+              : activitiesScope === 'discussions-only'
+                ? 'No discussions yet. Create one with the discussion builder on the left.'
+                : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
           </p>
         </div>
       ) : (
