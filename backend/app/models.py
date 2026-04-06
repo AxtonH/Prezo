@@ -223,6 +223,26 @@ class BrandProfileUpsert(BaseModel):
     raw_summary: str = ""
 
 
+class BrandContextPackage(BaseModel):
+    """Structured package for LLM prompts + HTML/CSS injection (see `brand_context.build_brand_context`)."""
+
+    brand_name: str
+    css_block: str = ""
+    font_links_html: str = ""
+    llm_prompt: str = ""
+    logo_url: str | None = None
+    reference_excerpt: str = ""
+    mode: str = "legacy"  # "semantic" | "legacy"
+
+
+class BrandContextPreviewRequest(BaseModel):
+    """Preview `build_brand_context` without saving a profile."""
+
+    brand_name: str = "Brand"
+    guidelines: dict[str, Any] = Field(default_factory=dict)
+    raw_summary: str = ""
+
+
 class HostJoinRequest(BaseModel):
     code: str = Field(min_length=1, max_length=32)
 

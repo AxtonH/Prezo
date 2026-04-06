@@ -275,6 +275,7 @@ import {
     brandAttachUrl: must('brand-attach-url'),
     brandAttachExtract: must('brand-attach-extract'),
     brandAttachStatus: must('brand-attach-status'),
+    brandAttachProfileName: document.getElementById('artifact-brand-profile-name'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -1307,6 +1308,9 @@ import {
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
+    if (el.brandAttachProfileName) {
+      el.brandAttachProfileName.disabled = Boolean(state.artifact.busy)
+    }
     el.artifactPromptSubmit.textContent = state.artifact.busy
       ? 'Working...'
       : canEditArtifact
@@ -2901,18 +2905,37 @@ import {
     return base.includes(suffix) ? base : `${base} ${suffix}`
   }
 
+  function libraryAuthHeaders() {
+    const token = getLibraryAccessToken()
+    if (!token) {
+      return {}
+    }
+    return { Authorization: `Bearer ${token}` }
+  }
+
+  function getArtifactBrandProfileName() {
+    const input = el.brandAttachProfileName
+    if (!input || !(input instanceof HTMLInputElement)) {
+      return ''
+    }
+    return asText(input.value).trim()
+  }
+
   async function requestAiArtifactBuild(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
+    const brandProfileName = getArtifactBrandProfileName()
     const body = {
       prompt,
       context,
-      model
+      model,
+      ...(brandProfileName ? { brand_profile_name: brandProfileName } : {})
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...libraryAuthHeaders()
       },
       body: JSON.stringify(body)
     }, ARTIFACT_BUILD_TIMEOUT_MS)
@@ -2942,15 +2965,18 @@ import {
   async function requestAiArtifactAnswer(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
+    const brandProfileName = getArtifactBrandProfileName()
     const body = {
       prompt,
       context,
-      model
+      model,
+      ...(brandProfileName ? { brand_profile_name: brandProfileName } : {})
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...libraryAuthHeaders()
       },
       body: JSON.stringify(body)
     })

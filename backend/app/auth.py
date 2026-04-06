@@ -149,3 +149,16 @@ async def get_library_user(
     if sync_user is not None:
         return sync_user
     return await get_current_user_from_supabase_token(token)
+
+
+async def get_optional_library_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> AuthUser | None:
+    """Same identity resolution as `get_library_user`, but returns None if no Bearer token."""
+    if credentials is None:
+        return None
+    token = credentials.credentials
+    sync_user = verify_library_sync_token(token)
+    if sync_user is not None:
+        return sync_user
+    return await get_current_user_from_supabase_token(token)

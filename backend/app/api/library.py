@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..artifact_package import resolve_saved_artifact_html
 from ..auth import AuthUser, get_current_user, get_library_user, issue_library_sync_token
+from ..brand_context import build_brand_context, build_brand_context_from_profile
 from ..deps import get_store
 from ..models import (
+    BrandContextPackage,
+    BrandContextPreviewRequest,
     BrandProfile,
     BrandProfileUpsert,
     LibrarySyncToken,
@@ -199,3 +202,35 @@ async def delete_brand_profile(
         return await store.delete_brand_profile(user.id, normalized_name)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/brand-profiles/{name}/context", response_model=BrandContextPackage)
+async def get_brand_profile_context(
+    name: str,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> BrandContextPackage:
+    """Return bounded CSS + font links + LLM prompt for generation (see `brand_context`)."""
+    normalized_name = normalize_library_name(name)
+    profiles = await store.list_brand_profiles(user.id)
+    profile = next((p for p in profiles if p.name == normalized_name), None)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="brand profile not found",
+        )
+    return build_brand_context_from_profile(profile)
+
+
+@router.post("/brand-profiles/preview-context", response_model=BrandContextPackage)
+async def preview_brand_profile_context(
+    payload: BrandContextPreviewRequest,
+    user: AuthUser = Depends(get_library_user),
+) -> BrandContextPackage:
+    """Build a context package from ad-hoc guidelines without persisting."""
+    _ = user  # auth ensures library access
+    return build_brand_context(
+        brand_name=payload.brand_name.strip() or "Brand",
+        guidelines=payload.guidelines,
+        raw_summary=payload.raw_summary,
+    )

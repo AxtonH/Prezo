@@ -1926,6 +1926,15 @@ h1 {
    Brand attach zone
    ---------------------------------------------------------------- */
 
+.artifact-brand-profile-row {
+  margin-top: 10px;
+}
+
+.artifact-brand-profile-row .brand-attach-label {
+  display: block;
+  margin-bottom: 6px;
+}
+
 .brand-attach-zone {
   margin-top: 8px;
   padding: 8px 10px;

@@ -10,8 +10,16 @@ from typing import Any, Callable
 logger = logging.getLogger("prezo.ai")
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+
+from ..auth import AuthUser, get_optional_library_user
+from ..brand_context import (
+    build_brand_context_from_profile,
+    merge_brand_package_with_design_guidelines,
+)
+from ..deps import get_store
+from ..store import InMemoryStore
 
 from ..artifact_css_tree import extract_selector_property_map
 from ..artifact_package import (
@@ -64,6 +72,8 @@ ARTIFACT_CONTEXT_COMBINED_CHAR_LIMIT = 32000
 ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT = 12000
 ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
+# After brand injection, designGuidelines should stay a short executive summary + small user slice.
+ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT = 1400
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
 ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
 ARTIFACT_PATCH_BATCH_SIZE = 30
@@ -586,6 +596,7 @@ class PollGameArtifactBuildRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=16000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
+    brand_profile_name: str | None = Field(default=None, max_length=64)
 
 
 class PollGameArtifactBuildResponse(BaseModel):
@@ -599,6 +610,41 @@ class PollGameArtifactBuildResponse(BaseModel):
 class PollGameArtifactAssistantResponse(BaseModel):
     text: str
     model: str
+
+
+async def apply_brand_profile_name_to_context(
+    request_context: dict[str, Any],
+    brand_profile_name: str | None,
+    library_user: AuthUser | None,
+    store: InMemoryStore,
+) -> None:
+    """Merge saved brand profile guidelines into `artifact.designGuidelines` when requested."""
+    if brand_profile_name is None:
+        return
+    normalized_name = " ".join(str(brand_profile_name).split()).strip()[:64]
+    if not normalized_name:
+        return
+    if library_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization required when brand_profile_name is set",
+        )
+    profiles = await store.list_brand_profiles(library_user.id)
+    profile = next((p for p in profiles if p.name == normalized_name), None)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="brand profile not found",
+        )
+    pkg = build_brand_context_from_profile(profile)
+    artifact = request_context.get("artifact")
+    if not isinstance(artifact, dict):
+        artifact = {}
+        request_context["artifact"] = artifact
+    existing = artifact.get("designGuidelines")
+    artifact["designGuidelines"] = merge_brand_package_with_design_guidelines(
+        existing, pkg
+    )
 
 
 def build_provider_timeout_detail(
@@ -874,11 +920,19 @@ async def create_poll_game_edit_plan(
 @router.post("/poll-game-artifact-build", response_model=PollGameArtifactBuildResponse)
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
+    store: InMemoryStore = Depends(get_store),
+    library_user: AuthUser | None = Depends(get_optional_library_user),
 ) -> PollGameArtifactBuildResponse:
     request_context = (
         json.loads(json.dumps(payload.context, ensure_ascii=False))
         if isinstance(payload.context, dict)
         else {}
+    )
+    await apply_brand_profile_name_to_context(
+        request_context,
+        payload.brand_profile_name,
+        library_user,
+        store,
     )
     artifact_context = (
         request_context.get("artifact")
@@ -1260,6 +1314,8 @@ async def create_poll_game_artifact_build(
 @router.post("/poll-game-artifact-answer", response_model=PollGameArtifactAssistantResponse)
 async def create_poll_game_artifact_answer(
     payload: PollGameArtifactBuildRequest,
+    store: InMemoryStore = Depends(get_store),
+    library_user: AuthUser | None = Depends(get_optional_library_user),
 ) -> PollGameArtifactAssistantResponse:
     api_key = (settings.gemini_api_key or "").strip()
     if not api_key:
@@ -1268,13 +1324,25 @@ async def create_poll_game_artifact_answer(
             detail="AI editor is not configured. Set GEMINI_API_KEY on backend.",
         )
 
+    request_context = (
+        json.loads(json.dumps(payload.context, ensure_ascii=False))
+        if isinstance(payload.context, dict)
+        else {}
+    )
+    await apply_brand_profile_name_to_context(
+        request_context,
+        payload.brand_profile_name,
+        library_user,
+        store,
+    )
+
     model = resolve_gemini_artifact_answer_model()
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
         system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
         prompt_text=json.dumps(
-            {"prompt": payload.prompt, "context": payload.context},
+            {"prompt": payload.prompt, "context": request_context},
             indent=2,
         ),
         temperature=0.25,
@@ -6306,10 +6374,13 @@ def prepare_artifact_context_for_model(
         if isinstance(value, str):
             artifact_context[key] = trim_artifact_context_text(value, 1200)
     # Cap design guidelines to avoid overwhelming the model and crowding out
-    # critical instructions (e.g. live poll-state consumption).
+    # critical instructions (e.g. live poll-state consumption). Brand injection
+    # uses an executive summary; this is a final safety net.
     dg = artifact_context.get("designGuidelines")
-    if isinstance(dg, str) and len(dg) > 3000:
-        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
+    if isinstance(dg, str) and len(dg) > ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(
+            dg, ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT
+        )
     raw_style = artifact_context.get("styleOverrides") or artifact_context.get("style_overrides")
     summary = format_style_overrides_for_prompt(raw_style)
     if summary:
@@ -6349,8 +6420,10 @@ def build_stable_artifact_recovery_context(
         1200,
     )
     dg = artifact_context.get("designGuidelines")
-    if isinstance(dg, str) and len(dg) > 3000:
-        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
+    if isinstance(dg, str) and len(dg) > ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(
+            dg, ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT
+        )
     return prepared
 
 
@@ -6392,8 +6465,10 @@ def build_artifact_completion_followup_context(
             1200,
         )
     dg = artifact_context.get("designGuidelines")
-    if isinstance(dg, str) and len(dg) > 3000:
-        artifact_context["designGuidelines"] = trim_artifact_context_text(dg, 3000)
+    if isinstance(dg, str) and len(dg) > ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT:
+        artifact_context["designGuidelines"] = trim_artifact_context_text(
+            dg, ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT
+        )
     return prepared
 
 
