@@ -135,10 +135,6 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
     setOpen(false)
   }, [isCustom])
 
-  const clearCustom = useCallback(() => {
-    onChange({ family: 'Inter', source: 'google', custom_url: null })
-  }, [onChange])
-
   const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -208,7 +204,7 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
           className="absolute left-0 right-0 z-[100] mt-1 flex max-h-[min(70vh,26rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
           role="listbox"
         >
-          {/* Upload — top of panel (reference layout) */}
+          {/* Upload — compact single row */}
           <div className="shrink-0 border-b border-slate-100">
             <button
               type="button"
@@ -218,69 +214,56 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
                 e.stopPropagation()
                 fileRef.current?.click()
               }}
-              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-slate-50 disabled:opacity-60"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left transition hover:bg-slate-50 disabled:opacity-60"
             >
-              <span className="flex min-w-0 items-center gap-2 text-primary">
-                {uploading ? (
-                  <span className="material-symbols-outlined shrink-0 animate-spin text-xl">progress_activity</span>
-                ) : (
-                  <span className="material-symbols-outlined shrink-0 text-xl">upload</span>
-                )}
-                <span className="text-sm font-medium">
-                  {uploading ? 'Uploading…' : 'Upload custom font…'}
+              {uploading ? (
+                <span className="material-symbols-outlined shrink-0 animate-spin text-base text-primary">
+                  progress_activity
                 </span>
+              ) : (
+                <span className="material-symbols-outlined shrink-0 text-base text-primary">upload</span>
+              )}
+              <span className="min-w-0 flex-1 truncate text-xs font-medium leading-tight text-primary">
+                {uploading ? 'Uploading…' : 'Upload custom font…'}
               </span>
-              <span className="shrink-0 text-[11px] text-slate-400">.woff2 / .ttf / .otf</span>
+              <span className="shrink-0 whitespace-nowrap text-[10px] leading-tight text-slate-400">
+                .woff2 / .ttf / .otf
+              </span>
             </button>
             {uploadError ? (
-              <p className="border-t border-slate-50 px-3 py-2 text-xs text-red-600" role="alert">
+              <p className="border-t border-slate-50 px-3 py-1.5 text-xs text-red-600" role="alert">
                 {uploadError}
               </p>
             ) : null}
           </div>
 
-          {isCustom ? (
-            <div className="shrink-0 border-b border-slate-100 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-slate-500">
-                  Display name
-                  <input
-                    type="text"
-                    value={value.family}
-                    onChange={(e) =>
-                      onChange({
-                        ...value,
-                        family: e.target.value.slice(0, 120)
-                      })
-                    }
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="ml-1.5 rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    clearCustom()
-                  }}
-                  className="text-xs font-semibold text-primary hover:underline"
-                >
-                  Use Google fonts instead
-                </button>
-              </div>
+          <div className="shrink-0 border-b border-slate-100 px-3 py-2">
+            <div className="relative">
+              <span className="material-symbols-outlined pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-base text-slate-400">
+                search
+              </span>
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search fonts…"
+                className="w-full rounded-lg border border-slate-200 py-1.5 pl-8 pr-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+                autoComplete="off"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
-          ) : null}
+          </div>
 
-          {/* Custom font row sits directly under upload (reference layout); then search; then catalog. */}
-          {showCustomRow ? (
-            <div className="shrink-0 border-b border-slate-100">
+          {/* Custom font + Google list — one scroll region; search filters both */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            {showCustomRow ? (
               <button
                 type="button"
                 role="option"
                 aria-selected={isCustom}
                 onClick={() => selectCustomFont()}
-                className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
+                className={`flex w-full items-center justify-between gap-3 border-b border-slate-50 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
                   isCustom ? 'bg-primary/5' : ''
                 }`}
               >
@@ -292,28 +275,7 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
                 </span>
                 <span className="shrink-0 text-xs font-medium text-primary">custom</span>
               </button>
-            </div>
-          ) : null}
-
-          <div className="shrink-0 border-b border-slate-100 px-3 py-2">
-            <div className="relative">
-              <span className="material-symbols-outlined pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-lg text-slate-400">
-                search
-              </span>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search fonts…"
-                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
-                autoComplete="off"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            ) : null}
             {filtered.length === 0 && !showCustomRow ? (
               <p className="px-3 py-6 text-center text-sm text-slate-500">No fonts match your search.</p>
             ) : (
