@@ -177,13 +177,6 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
         </section>
 
         <section>
-          <ToneCalibrationPanel
-            value={ui.tone_calibration}
-            onChange={(tone_calibration) => setUi((u) => ({ ...u, tone_calibration }))}
-          />
-        </section>
-
-        <section>
           <div className="mb-4 flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">palette</span>
             <h2 className="text-lg font-semibold text-slate-900">Color roles</h2>
@@ -307,6 +300,13 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
               </div>
             ))}
           </div>
+        </section>
+
+        <section>
+          <ToneCalibrationPanel
+            value={ui.tone_calibration}
+            onChange={(tone_calibration) => setUi((u) => ({ ...u, tone_calibration }))}
+          />
         </section>
       </div>
 
