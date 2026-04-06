@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { resolveBrandAssetUrl, uploadBrandLogo } from '../../api/client'
 import type { BrandLogoRef } from '../../api/types'
 
@@ -11,7 +11,6 @@ type Props = {
 }
 
 export function LogoPanel({ value, onChange }: Props) {
-  const id = useId()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,12 +47,13 @@ export function LogoPanel({ value, onChange }: Props) {
         WebP, or GIF.
       </p>
 
+      {/* Programmatic click only — do not use <label htmlFor>; activating a label focuses the input and scrolls it into view. */}
       <input
         ref={fileRef}
-        id={id}
         type="file"
         accept={ACCEPT}
         className="sr-only"
+        tabIndex={-1}
         onChange={onPickFile}
       />
 
@@ -87,6 +87,7 @@ export function LogoPanel({ value, onChange }: Props) {
                   type="button"
                   disabled={uploading}
                   onClick={() => fileRef.current?.click()}
+                  aria-label="Replace logo with an uploaded file"
                   className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
                 >
                   {uploading ? (
@@ -101,13 +102,16 @@ export function LogoPanel({ value, onChange }: Props) {
           </div>
         ) : (
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <label
-              htmlFor={id}
-              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+              aria-label="Upload logo file"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:opacity-60"
             >
               <span className="material-symbols-outlined text-lg">add_photo_alternate</span>
               {uploading ? 'Uploading…' : 'Upload logo'}
-            </label>
+            </button>
             <p className="text-xs text-slate-500">PNG, SVG, JPEG, WebP, or GIF (max 10 MB)</p>
           </div>
         )}
