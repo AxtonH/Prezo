@@ -28,7 +28,7 @@ interface SideNavProps {
   onOpenSettings?: () => void
   /**
    * When true (user has a live session open in the host console), show Dashboard / Polls /
-   * Open discussion / Q&A instead of My Sessions / Join / Team / Analytics / Integrations.
+   * Open discussion / Q&A instead of My Sessions / Join / Brand identity / Analytics / Integrations.
    */
   workspaceMode?: boolean
   activeWorkspaceNav?: WorkspaceNavId
@@ -38,7 +38,7 @@ interface SideNavProps {
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
 
 const NAV_ITEMS_LEGACY = [
-  { icon: 'group', label: 'Team' },
+  { icon: 'palette', label: 'Brand identity' },
   { icon: 'analytics', label: 'Analytics' },
   { icon: 'extension', label: 'Integrations' }
 ]
