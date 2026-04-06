@@ -1,40 +1,61 @@
 import type { BrandVisualStyle } from '../../api/types'
 
-const VISUAL_TEXT_MAX = 8000
+const KEYWORD_MAX = 40
+const KEYWORD_LEN_MAX = 120
 
 type Props = {
   value: BrandVisualStyle
   onChange: (next: BrandVisualStyle) => void
 }
 
-function Field({
+function KeywordField({
   label,
-  text,
-  onText
+  keywords,
+  onChange
 }: {
   label: string
-  text: string
-  onText: (v: string) => void
+  keywords: string[]
+  onChange: (next: string[]) => void
 }) {
   return (
     <div>
       <label className="mb-2 block text-xs font-medium text-slate-500">{label}</label>
       <textarea
-        value={text}
-        onChange={(e) => onText(e.target.value.slice(0, VISUAL_TEXT_MAX))}
-        rows={5}
-        placeholder="Short summary (about one or two paragraphs)…"
-        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
+        value={keywords.join('\n')}
+        onChange={(e) => {
+          const parts = e.target.value
+            .split(/\n/)
+            .map((s) => s.trim().slice(0, KEYWORD_LEN_MAX))
+            .filter(Boolean)
+          const seen = new Set<string>()
+          const out: string[] = []
+          for (const p of parts) {
+            const k = p.toLowerCase()
+            if (seen.has(k)) {
+              continue
+            }
+            seen.add(k)
+            out.push(p)
+            if (out.length >= KEYWORD_MAX) {
+              break
+            }
+          }
+          onChange(out)
+        }}
+        rows={Math.min(10, Math.max(3, keywords.length + 2))}
+        placeholder="One keyword per line"
+        className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm leading-relaxed text-slate-800 placeholder:text-slate-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
       />
+      <p className="mt-1.5 text-[11px] text-slate-400">Short phrases or single words — up to {KEYWORD_MAX} lines.</p>
     </div>
   )
 }
 
 export function VisualStylePanel({ value, onChange }: Props) {
-  const setDesign = (key: keyof BrandVisualStyle['design_elements'], v: string) => {
+  const setDesign = (key: keyof BrandVisualStyle['design_elements'], next: string[]) => {
     onChange({
       ...value,
-      design_elements: { ...value.design_elements, [key]: v }
+      design_elements: { ...value.design_elements, [key]: next }
     })
   }
 
@@ -45,43 +66,43 @@ export function VisualStylePanel({ value, onChange }: Props) {
         <h2 className="text-lg font-semibold text-primary">Visual style</h2>
       </div>
       <p className="mb-8 text-sm text-slate-600">
-        Concise summaries of how the brand should look. Filled from guidelines extraction; edit as needed.
+        Keywords for how the brand should look. Populated from guidelines extraction; edit as needed.
       </p>
 
       <div className="space-y-8">
-        <Field
+        <KeywordField
           label="Visual mood / aesthetic"
-          text={value.visual_mood_aesthetic}
-          onText={(visual_mood_aesthetic) => onChange({ ...value, visual_mood_aesthetic })}
+          keywords={value.visual_mood_aesthetic}
+          onChange={(visual_mood_aesthetic) => onChange({ ...value, visual_mood_aesthetic })}
         />
-        <Field
+        <KeywordField
           label="Style guidelines"
-          text={value.style_guidelines}
-          onText={(style_guidelines) => onChange({ ...value, style_guidelines })}
+          keywords={value.style_guidelines}
+          onChange={(style_guidelines) => onChange({ ...value, style_guidelines })}
         />
 
         <div>
           <h3 className="mb-4 text-sm font-semibold text-slate-800">Design elements</h3>
           <div className="space-y-6">
-            <Field
+            <KeywordField
               label="Patterns & textures"
-              text={value.design_elements.patterns_textures}
-              onText={(v) => setDesign('patterns_textures', v)}
+              keywords={value.design_elements.patterns_textures}
+              onChange={(v) => setDesign('patterns_textures', v)}
             />
-            <Field
+            <KeywordField
               label="Icon style"
-              text={value.design_elements.icon_style}
-              onText={(v) => setDesign('icon_style', v)}
+              keywords={value.design_elements.icon_style}
+              onChange={(v) => setDesign('icon_style', v)}
             />
-            <Field
+            <KeywordField
               label="Image treatment"
-              text={value.design_elements.image_treatment}
-              onText={(v) => setDesign('image_treatment', v)}
+              keywords={value.design_elements.image_treatment}
+              onChange={(v) => setDesign('image_treatment', v)}
             />
-            <Field
+            <KeywordField
               label="Decorative elements"
-              text={value.design_elements.decorative_elements}
-              onText={(v) => setDesign('decorative_elements', v)}
+              keywords={value.design_elements.decorative_elements}
+              onChange={(v) => setDesign('decorative_elements', v)}
             />
           </div>
         </div>

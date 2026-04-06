@@ -209,13 +209,22 @@ PASS3_SYSTEM = (
     "- respectful_irreverent: 0 = respectful, 100 = irreverent\n"
     "- matter_of_fact_enthusiastic: 0 = matter-of-fact, 100 = enthusiastic\n"
     "Infer from tone of voice, messaging, audience, and style cues in the document.\n\n"
-    "visual_style — concise text summaries (about one or two short paragraphs each; plain sentences, no markdown):\n"
-    "- visual_mood_aesthetic: overall look, mood, and aesthetic in a few sentences.\n"
-    "- style_guidelines: how composition, type treatment, and emphasis should read on slides.\n"
-    "- design_elements: an object with four short summaries — patterns_textures, icon_style, "
-    "image_treatment, decorative_elements — each describing that aspect of the system.\n"
-    "Infer from visual style, imagery, and layout rules in the document. Use empty strings if not stated."
+    "visual_style — keyword lists (short phrases or single words; no long prose):\n"
+    "- visual_mood_aesthetic: keywords for overall look, mood, and aesthetic.\n"
+    "- style_guidelines: keywords for composition, type treatment, and emphasis.\n"
+    "- design_elements: four arrays — patterns_textures, icon_style, image_treatment, "
+    "decorative_elements — keywords for each aspect.\n"
+    "Infer from visual style, imagery, and layout rules. Use empty arrays if nothing is stated."
 )
+
+_KEYWORD_MAX_ITEMS = 40
+_KEYWORD_MAX_LEN = 120
+
+_KEYWORD_ARRAY_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {"type": "string", "maxLength": _KEYWORD_MAX_LEN},
+    "maxItems": _KEYWORD_MAX_ITEMS,
+}
 
 PASS3_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -282,15 +291,15 @@ PASS3_SCHEMA: dict[str, Any] = {
         "visual_style": {
             "type": "object",
             "properties": {
-                "visual_mood_aesthetic": {"type": "string"},
-                "style_guidelines": {"type": "string"},
+                "visual_mood_aesthetic": _KEYWORD_ARRAY_SCHEMA,
+                "style_guidelines": _KEYWORD_ARRAY_SCHEMA,
                 "design_elements": {
                     "type": "object",
                     "properties": {
-                        "patterns_textures": {"type": "string"},
-                        "icon_style": {"type": "string"},
-                        "image_treatment": {"type": "string"},
-                        "decorative_elements": {"type": "string"},
+                        "patterns_textures": _KEYWORD_ARRAY_SCHEMA,
+                        "icon_style": _KEYWORD_ARRAY_SCHEMA,
+                        "image_treatment": _KEYWORD_ARRAY_SCHEMA,
+                        "decorative_elements": _KEYWORD_ARRAY_SCHEMA,
                     },
                     "required": [
                         "patterns_textures",
@@ -334,33 +343,54 @@ _DESIGN_ELEMENT_KEYS = (
     "decorative_elements",
 )
 
-_VISUAL_TEXT_MAX = 8000
+
+def _normalize_keyword_list(raw: Any) -> list[str]:
+    """Lists of short keywords; accepts legacy comma/newline-separated strings."""
+    if isinstance(raw, list):
+        out: list[str] = []
+        seen: set[str] = set()
+        for x in raw:
+            s = str(x).strip()[:_KEYWORD_MAX_LEN]
+            if not s:
+                continue
+            key = s.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(s)
+            if len(out) >= _KEYWORD_MAX_ITEMS:
+                break
+        return out
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return []
+        # Legacy prose or delimiter-separated phrases (not arbitrary word-splitting).
+        parts = re.split(r"[,;\n]+", s)
+        return _normalize_keyword_list([p.strip() for p in parts if p and str(p).strip()])
+    return []
 
 
 def _normalize_visual_style(raw: Any) -> dict[str, Any]:
-    """Short prose summaries for visual identity; empty strings allowed."""
-    empty_de = {k: "" for k in _DESIGN_ELEMENT_KEYS}
+    """Keyword lists for visual identity."""
+    empty_de = {k: [] for k in _DESIGN_ELEMENT_KEYS}
     defaults: dict[str, Any] = {
-        "visual_mood_aesthetic": "",
-        "style_guidelines": "",
+        "visual_mood_aesthetic": [],
+        "style_guidelines": [],
         "design_elements": empty_de,
     }
     if not isinstance(raw, dict):
         return defaults
 
-    def clip(s: Any) -> str:
-        t = str(s or "").strip()
-        return t[:_VISUAL_TEXT_MAX]
-
     out = dict(defaults)
-    out["visual_mood_aesthetic"] = clip(raw.get("visual_mood_aesthetic"))
-    out["style_guidelines"] = clip(raw.get("style_guidelines"))
+    out["visual_mood_aesthetic"] = _normalize_keyword_list(raw.get("visual_mood_aesthetic"))
+    out["style_guidelines"] = _normalize_keyword_list(raw.get("style_guidelines"))
 
     de_in = raw.get("design_elements")
     de_out = dict(empty_de)
     if isinstance(de_in, dict):
         for k in _DESIGN_ELEMENT_KEYS:
-            de_out[k] = clip(de_in.get(k))
+            de_out[k] = _normalize_keyword_list(de_in.get(k))
     out["design_elements"] = de_out
     return out
 

@@ -133,16 +133,16 @@ export interface BrandToneCalibration {
 }
 
 export interface BrandDesignElements {
-  patterns_textures: string
-  icon_style: string
-  image_treatment: string
-  decorative_elements: string
+  patterns_textures: string[]
+  icon_style: string[]
+  image_treatment: string[]
+  decorative_elements: string[]
 }
 
-/** Short prose summaries from pass-3 extraction; editable on the brand detail page. */
+/** Keyword lists from pass-3 extraction; editable on the brand detail page. */
 export interface BrandVisualStyle {
-  visual_mood_aesthetic: string
-  style_guidelines: string
+  visual_mood_aesthetic: string[]
+  style_guidelines: string[]
   design_elements: BrandDesignElements
 }
 
