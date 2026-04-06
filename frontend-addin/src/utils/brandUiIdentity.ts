@@ -3,7 +3,8 @@ import type {
   BrandColorRole,
   BrandToneCalibration,
   BrandVisualStyle,
-  BrandDesignElements
+  BrandDesignElements,
+  BrandLogoRef
 } from '../api/types'
 
 const DEFAULT_ROLES: Omit<BrandColorRole, 'hex'>[] = [
@@ -126,6 +127,19 @@ function parseToneCalibration(raw: unknown): BrandToneCalibration {
   }
 }
 
+function parseLogo(raw: unknown): BrandLogoRef | null {
+  const o = asRecord(raw)
+  if (!o) {
+    return null
+  }
+  const url = typeof o.url === 'string' ? o.url.trim() : ''
+  if (!url) {
+    return null
+  }
+  const source: BrandLogoRef['source'] = o.source === 'extracted' ? 'extracted' : 'upload'
+  return { url: url.slice(0, 2048), source }
+}
+
 export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity {
   return {
     brand_name: fallbackName,
@@ -142,7 +156,8 @@ export function defaultBrandUiIdentity(fallbackName = 'Brand'): BrandUiIdentity 
     visual_style: {
       ...EMPTY_VISUAL_STYLE,
       design_elements: { ...EMPTY_DESIGN_ELEMENTS }
-    }
+    },
+    logo: null
   }
 }
 
@@ -161,6 +176,8 @@ export function parseBrandUiIdentity(
   if (!ui) {
     return base
   }
+
+  const logo = parseLogo(ui.logo) ?? base.logo
 
   const tone_calibration = parseToneCalibration(ui.tone_calibration)
   const visual_style = parseVisualStyle(ui.visual_style)
@@ -217,7 +234,8 @@ export function parseBrandUiIdentity(
       color_roles: base.color_roles.map((b, i) => roles[i] ?? b),
       typography,
       tone_calibration,
-      visual_style
+      visual_style,
+      logo
     }
   }
 
@@ -227,7 +245,8 @@ export function parseBrandUiIdentity(
     color_roles: sorted,
     typography,
     tone_calibration,
-    visual_style
+    visual_style,
+    logo
   }
 }
 

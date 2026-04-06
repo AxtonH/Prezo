@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from ..auth import AuthUser, get_library_user
 from ..config import settings
@@ -217,7 +217,9 @@ PASS3_SYSTEM = (
     "- design_elements: four STRING fields (patterns_textures, icon_style, image_treatment, decorative_elements). "
     "Each must be one or two sentences of descriptive prose (how that aspect should look), not comma-separated "
     "keyword lists or labels only. Quote or closely paraphrase the guidelines when possible.\n"
-    "If the document is silent on a field, use an empty string. Do not invent contradictory details."
+    "If the document is silent on a field, use an empty string. Do not invent contradictory details.\n\n"
+    "logo_image_index: integer index into embedded images listed in the separate user message "
+    "(0-based), or -1 if none is clearly the primary brand logo. Prefer wordmarks and lockups over photos."
 )
 
 _VISUAL_STYLE_TEXT_MAX = 8000
@@ -314,8 +316,20 @@ PASS3_SCHEMA: dict[str, Any] = {
             "required": ["visual_mood_aesthetic", "style_guidelines", "design_elements"],
             "additionalProperties": False,
         },
+        "logo_image_index": {
+            "type": "integer",
+            "minimum": -1,
+            "maximum": 15,
+        },
     },
-    "required": ["brand_name", "color_roles", "typography", "tone_calibration", "visual_style"],
+    "required": [
+        "brand_name",
+        "color_roles",
+        "typography",
+        "tone_calibration",
+        "visual_style",
+        "logo_image_index",
+    ],
     "additionalProperties": False,
 }
 
@@ -401,6 +415,77 @@ def _empty_visual_style() -> dict[str, Any]:
     return _normalize_visual_style({})
 
 
+def _normalize_logo(raw: Any) -> dict[str, Any] | None:
+    """Persisted logo reference; None means no logo."""
+    if not isinstance(raw, dict):
+        return None
+    url = raw.get("url")
+    if url is None or not str(url).strip():
+        return None
+    src = str(raw.get("source") or "upload").strip()
+    if src not in ("extracted", "upload"):
+        src = "upload"
+    return {"url": str(url).strip()[:2048], "source": src}
+
+
+def _append_logo_candidate_hint(
+    parts: list[dict[str, Any]],
+    extracted_images: list[dict[str, Any]],
+    *,
+    from_url: bool = False,
+) -> None:
+    """Extra user message so pass-3 can set logo_image_index."""
+    if not extracted_images:
+        ctx = "URL extraction" if from_url else "file"
+        parts.append({
+            "text": (
+                f"Embedded images: none available for this {ctx}. "
+                "You MUST set logo_image_index to -1."
+            ),
+        })
+        return
+    lines = [
+        f"Embedded images from this file (use logo_image_index as 0–{len(extracted_images) - 1}):",
+    ]
+    for i, img in enumerate(extracted_images):
+        w = img.get("width", "?")
+        h = img.get("height", "?")
+        pg = img.get("page", "?")
+        lines.append(f"  Candidate {i}: {w}×{h} px (page/slide {pg})")
+    lines.append(
+        "Set logo_image_index to the index of the PRIMARY brand logo (wordmark, lockup, or icon) "
+        "if clearly present; otherwise -1."
+    )
+    parts.append({"text": "\n".join(lines)})
+
+
+async def _apply_extracted_logo(
+    ui: dict[str, Any],
+    extracted_images: list[dict[str, Any]],
+    ui_raw: dict[str, Any],
+    user_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """If pass-3 chose a candidate, upload it and set ui_identity.logo."""
+    from .brand_logos import upload_brand_logo_from_data_url
+
+    try:
+        idx = int(ui_raw.get("logo_image_index", -1))
+    except (TypeError, ValueError):
+        idx = -1
+    if idx < 0 or idx >= len(extracted_images):
+        return ui
+    data_url = extracted_images[idx].get("data_url")
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        return ui
+    url = await upload_brand_logo_from_data_url(user_id, data_url, request)
+    if not url:
+        return ui
+    out = dict(ui)
+    out["logo"] = {"url": url, "source": "extracted"}
+    return out
+
+
 def _normalize_tone_calibration(raw: Any) -> dict[str, int]:
     """0 = left pole, 100 = right pole, 50 = balanced."""
     defaults = {k: 50 for k in _TONE_KEYS}
@@ -483,6 +568,7 @@ def _ui_identity_fallback_from_guidelines(
         },
         "tone_calibration": {k: 50 for k in _TONE_KEYS},
         "visual_style": _empty_visual_style(),
+        "logo": None,
     }
 
 
@@ -544,12 +630,15 @@ def _normalize_ui_identity(
     # Sort by hierarchy_rank so UI can show most-used first
     roles.sort(key=lambda r: int(r.get("hierarchy_rank", 6)))
 
+    logo_merged = _normalize_logo(raw.get("logo"))
+
     return {
         "brand_name": name[:200],
         "color_roles": roles,
         "typography": out_typo,
         "tone_calibration": _normalize_tone_calibration(raw.get("tone_calibration")),
         "visual_style": _normalize_visual_style(raw.get("visual_style")),
+        "logo": logo_merged,
     }
 
 
@@ -1047,6 +1136,7 @@ async def _call_gemini(
 
 @router.post("/extract")
 async def extract_brand_profile(
+    request: Request,
     user: AuthUser = Depends(get_library_user),
     file: UploadFile | None = File(default=None),
     url: str | None = Form(default=None),
@@ -1138,6 +1228,7 @@ async def extract_brand_profile(
             parts.append({
                 "text": f"Extract brand guidelines from this uploaded file ({file.filename or 'file'})."
             })
+            _append_logo_candidate_hint(parts, extracted_images)
 
             source_type = "file"
             source_filename = file.filename or ""
@@ -1195,6 +1286,8 @@ async def extract_brand_profile(
         source_type = "url"
         source_filename = url
 
+        _append_logo_candidate_hint(parts, [], from_url=True)
+
         pass1_result, pass2_result, pass3_result = await _run_brand_extract_passes(
             parts, artifact_mode
         )
@@ -1226,6 +1319,14 @@ async def extract_brand_profile(
         guidelines,
         brand_hint,
     )
+    if not artifact_mode:
+        guidelines["ui_identity"] = await _apply_extracted_logo(
+            guidelines["ui_identity"],
+            extracted_images,
+            ui_raw,
+            user.id,
+            request,
+        )
 
     result: dict[str, Any] = {
         "source_type": source_type,

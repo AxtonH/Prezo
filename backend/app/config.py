@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     # Storage bucket for brand font files. Create it in Supabase Dashboard → Storage; enable public
     # read (or a SELECT policy) so browser @font-face can load URLs. Set to "" to use local disk only.
     supabase_brand_fonts_bucket: str = "brand-fonts"
+    # Storage bucket for brand logo images (PNG, SVG, etc.). Public read for <img src>.
+    supabase_brand_logos_bucket: str = "brand-logos"
     library_sync_secret: str | None = None
     library_sync_ttl_seconds: int = 604800
     anthropic_api_key: str | None = None

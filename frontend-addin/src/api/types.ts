@@ -146,6 +146,12 @@ export interface BrandVisualStyle {
   design_elements: BrandDesignElements
 }
 
+/** Primary logo asset under `guidelines.ui_identity.logo`. */
+export interface BrandLogoRef {
+  url: string
+  source: 'extracted' | 'upload'
+}
+
 export interface BrandUiIdentity {
   brand_name: string
   color_roles: BrandColorRole[]
@@ -156,4 +162,6 @@ export interface BrandUiIdentity {
   }
   tone_calibration: BrandToneCalibration
   visual_style: BrandVisualStyle
+  /** Optional primary logo (extracted from guidelines or uploaded). */
+  logo: BrandLogoRef | null
 }

@@ -17,6 +17,20 @@ import type {
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.toString() ?? 'http://localhost:8000'
 
+/** Resolve stored API paths or relative URLs to an absolute URL for <img> / @font-face. */
+export function resolveBrandAssetUrl(pathOrUrl: string): string {
+  const t = pathOrUrl.trim()
+  if (!t) {
+    return ''
+  }
+  if (t.startsWith('http://') || t.startsWith('https://')) {
+    return t
+  }
+  const base = API_BASE_URL.replace(/\/$/, '')
+  const p = t.startsWith('/') ? t : `/${t}`
+  return `${base}${p}`
+}
+
 const jsonHeaders = {
   'Content-Type': 'application/json'
 }
@@ -121,6 +135,39 @@ export async function uploadBrandFont(file: File): Promise<{
     storage: 'supabase' | 'local'
     path: string
     url: string
+  }
+}
+
+export async function uploadBrandLogo(file: File): Promise<{
+  logo_url: string
+  url: string
+  source: 'upload'
+}> {
+  const token = await getAccessToken()
+  if (!token) {
+    throw new Error('Sign in required')
+  }
+  const form = new FormData()
+  form.append('file', file)
+
+  const response = await fetch(`${API_BASE_URL}/library/poll-game/brand-logos/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: form
+  })
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    const detail = (body as { detail?: string }).detail
+    throw new Error(detail ?? `Upload failed (${response.status})`)
+  }
+
+  return JSON.parse(await response.text()) as {
+    logo_url: string
+    url: string
+    source: 'upload'
   }
 }
 

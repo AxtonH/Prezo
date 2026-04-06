@@ -3,6 +3,7 @@ import { getBrandProfile, saveBrandProfile } from '../../api/client'
 import type { BrandProfile, BrandUiIdentity } from '../../api/types'
 import { normalizeVisualStyleForSave, parseBrandUiIdentity } from '../../utils/brandUiIdentity'
 import { FontPickerField } from './FontPickerField'
+import { LogoPanel } from './LogoPanel'
 import { NewBrandIdentityModal } from './NewBrandIdentityModal'
 import { ToneCalibrationPanel } from './ToneCalibrationPanel'
 import { VisualStylePanel } from './VisualStylePanel'
@@ -176,6 +177,8 @@ export function BrandIdentityDetailPage({ profileName, onBack, onUpdated }: Prop
             autoComplete="off"
           />
         </section>
+
+        <LogoPanel value={ui.logo} onChange={(logo) => setUi((u) => ({ ...u, logo }))} />
 
         <section>
           <div className="mb-4 flex items-center gap-2">
