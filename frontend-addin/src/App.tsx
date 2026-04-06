@@ -21,7 +21,7 @@ import { PrezoLogo } from './components/PrezoLogo'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { JoinSessionModal } from './components/JoinSessionModal'
 import { OnboardingModal } from './components/OnboardingModal'
-import { SessionDashboardPage } from './components/session-dashboard'
+import { SessionDashboardPage, SessionPollsDashboardPage } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
 import { SettingsPage } from './components/settings'
 import { SideNav, type WorkspaceNavId } from './components/SideNav'
@@ -1325,7 +1325,7 @@ function HostConsole({
           ) : (
             <>
               {/* Page header: list + live-session sub-pages (not the session Dashboard — that uses SessionDashboardPage) */}
-              {!(session && workspaceNav === 'dashboard') ? (
+              {!(session && (workspaceNav === 'dashboard' || workspaceNav === 'polls')) ? (
                 <div className="mb-8">
                   <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
                     {!session
@@ -1417,14 +1417,31 @@ function HostConsole({
                       : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
                   }
                 />
+              ) : workspaceNav === 'polls' ? (
+                <SessionPollsDashboardPage
+                  session={session}
+                  hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
+                  polls={polls}
+                  onConfigurePoll={(pollId) => {
+                    if (!session) {
+                      return
+                    }
+                    const url = buildEditingStationUrl({
+                      sessionId: session.id,
+                      code: session.code,
+                      pollId
+                    })
+                    window.open(url, '_blank', 'noopener,noreferrer')
+                  }}
+                  onStopPoll={(pollId) => closePoll(pollId)}
+                  onResumePoll={(pollId) => void openPoll(pollId)}
+                  onDeletePoll={deletePoll}
+                  onCreatePoll={createPoll}
+                />
               ) : workspaceNav !== 'dashboard' ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">
                   <span className="material-symbols-outlined text-4xl text-slate-300 mb-3 block">
-                    {workspaceNav === 'polls'
-                      ? 'bar_chart'
-                      : workspaceNav === 'discussion'
-                        ? 'forum'
-                        : 'question_answer'}
+                    {workspaceNav === 'discussion' ? 'forum' : 'question_answer'}
                   </span>
                   <p className="text-slate-600 font-medium mb-1">This area is under construction</p>
                   <p className="text-muted text-sm max-w-md mx-auto">

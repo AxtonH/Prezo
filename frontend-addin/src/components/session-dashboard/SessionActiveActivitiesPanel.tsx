@@ -7,6 +7,8 @@ import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
 import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 
 export interface SessionActiveActivitiesPanelProps {
+  /** `'polls-only'` shows only poll cards (polls workspace). Default: full activity mix. */
+  activitiesScope?: 'all' | 'polls-only'
   openPolls: Poll[]
   /** Stopped polls — shown in the inactive block, oldest first when merged. */
   closedPolls: Poll[]
@@ -68,6 +70,7 @@ type MergedInactiveRow =
   | { kind: 'discussion'; sortAt: string; block: DiscussionBlock }
 
 export function SessionActiveActivitiesPanel({
+  activitiesScope = 'all',
   openPolls,
   closedPolls,
   qnaOpen,
@@ -120,6 +123,10 @@ export function SessionActiveActivitiesPanel({
     for (const poll of sortedOpenPolls) {
       rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
     }
+    if (activitiesScope === 'polls-only') {
+      rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+      return rows
+    }
     if (qnaOpen) {
       rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
     }
@@ -132,12 +139,23 @@ export function SessionActiveActivitiesPanel({
     }
     rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
     return rows
-  }, [sortedOpenPolls, sortedOpenPrompts, qnaOpen, audienceQnaSortKey, questions])
+  }, [
+    activitiesScope,
+    sortedOpenPolls,
+    sortedOpenPrompts,
+    qnaOpen,
+    audienceQnaSortKey,
+    questions
+  ])
 
   const mergedInactiveRows = useMemo((): MergedInactiveRow[] => {
     const rows: MergedInactiveRow[] = []
     for (const poll of sortedClosedPolls) {
       rows.push({ kind: 'poll', sortAt: poll.created_at, poll })
+    }
+    if (activitiesScope === 'polls-only') {
+      rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+      return rows
     }
     /** Never show inactive Q&amp;A while the channel is open — avoids duplicating the same question lists. */
     if (showInactiveQna && !qnaOpen) {
@@ -152,7 +170,15 @@ export function SessionActiveActivitiesPanel({
     }
     rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
     return rows
-  }, [sortedClosedPolls, sortedClosedPrompts, showInactiveQna, qnaOpen, audienceQnaSortKey, questions])
+  }, [
+    activitiesScope,
+    sortedClosedPolls,
+    sortedClosedPrompts,
+    showInactiveQna,
+    qnaOpen,
+    audienceQnaSortKey,
+    questions
+  ])
 
   const hasAnyActivity =
     mergedActiveRows.length > 0 || mergedInactiveRows.length > 0
@@ -199,8 +225,9 @@ export function SessionActiveActivitiesPanel({
       {!hasAnyActivity ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
           <p className="text-sm text-muted">
-            No active activities right now. Open a poll, Q&amp;A, or discussion from the moderation tools
-            below.
+            {activitiesScope === 'polls-only'
+              ? 'No polls yet. Create one with the poll builder on the left.'
+              : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
           </p>
         </div>
       ) : (

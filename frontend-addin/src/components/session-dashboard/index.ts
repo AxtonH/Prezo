@@ -1,5 +1,7 @@
 export { SessionDashboardPage } from './SessionDashboardPage'
 export type { SessionDashboardPageProps } from './SessionDashboardPage'
+export { SessionPollsDashboardPage } from './SessionPollsDashboardPage'
+export type { SessionPollsDashboardPageProps } from './SessionPollsDashboardPage'
 export { SessionDashboardHeader } from './SessionDashboardHeader'
 export { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 export { SessionStatCard } from './SessionStatCard'
