@@ -103,7 +103,7 @@ export function SessionPollsDashboardPage({
           <div ref={pollBuilderStackRef} className="min-w-0 space-y-4 lg:[grid-area:stack]">
             <SessionPollBuilderCard onCreatePoll={handleCreatePoll} isBusy={creatingPoll} />
           </div>
-          <div className="min-w-0 lg:[grid-area:participants]">
+          <div className="min-w-0 w-full lg:[grid-area:participants]">
             <SessionPollMetricsGrid openPollCount={openPollCount} pollVoteTotal={pollVoteTotal} />
           </div>
           <div
