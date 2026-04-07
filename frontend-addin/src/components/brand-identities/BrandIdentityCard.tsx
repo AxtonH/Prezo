@@ -95,11 +95,11 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
         ) : null}
 
         {palette.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-3">
-            {palette.slice(0, 8).map((hex) => (
-              <div key={hex} className="flex items-center gap-1.5">
+          <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-3">
+            {accentColors.map((hex, i) => (
+              <div key={`${hex}-${i}`} className="flex items-center gap-1.5">
                 <span
-                  className="h-7 w-7 rounded-full border border-slate-200 shadow-inner"
+                  className="h-7 w-7 shrink-0 rounded-full border border-slate-200 shadow-inner"
                   style={{ backgroundColor: hex }}
                   title={hex}
                 />
