@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .artifact_package import build_saved_artifact_snapshot_signature
+from .prompt_brand_guidelines import build_prompt_brand_guidelines
 from .models import (
     BrandProfile,
     HostDashboardStats,
@@ -116,6 +117,7 @@ class BrandProfileData:
     source_filename: str
     guidelines: dict[str, Any]
     raw_summary: str
+    prompt_brand_guidelines: str
     created_at: datetime
     updated_at: datetime
 
@@ -704,6 +706,7 @@ class InMemoryStore:
         raw_summary: str,
     ) -> BrandProfile:
         async with self._lock:
+            prompt_bg = build_prompt_brand_guidelines(guidelines)
             existing = self._brand_profiles_by_user[user_id].get(name)
             now = utc_now()
             if existing:
@@ -711,6 +714,7 @@ class InMemoryStore:
                 existing.source_filename = source_filename
                 existing.guidelines = clone_dict(guidelines)
                 existing.raw_summary = raw_summary
+                existing.prompt_brand_guidelines = prompt_bg
                 existing.updated_at = now
                 return self._to_brand_profile(existing)
             created = BrandProfileData(
@@ -721,6 +725,7 @@ class InMemoryStore:
                 source_filename=source_filename,
                 guidelines=clone_dict(guidelines),
                 raw_summary=raw_summary,
+                prompt_brand_guidelines=prompt_bg,
                 created_at=now,
                 updated_at=now,
             )
@@ -977,6 +982,7 @@ class InMemoryStore:
             source_filename=data.source_filename,
             guidelines=clone_dict(data.guidelines),
             raw_summary=data.raw_summary,
+            prompt_brand_guidelines=data.prompt_brand_guidelines,
             created_at=data.created_at,
             updated_at=data.updated_at,
         )

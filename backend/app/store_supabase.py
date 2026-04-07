@@ -14,6 +14,7 @@ SNAPSHOT_STALE_MAX_SECONDS = 30.0
 SUPABASE_TRANSPORT_BACKOFF_SECONDS = 15.0
 
 from .artifact_package import build_saved_artifact_snapshot_signature
+from .prompt_brand_guidelines import build_prompt_brand_guidelines
 from .models import (
     BrandProfile,
     HostDashboardStats,
@@ -326,6 +327,8 @@ class SupabaseStore:
 
     def _to_brand_profile(self, data: dict[str, Any]) -> BrandProfile:
         payload = {key: value for key, value in data.items() if key != "user_id"}
+        if payload.get("prompt_brand_guidelines") is None:
+            payload["prompt_brand_guidelines"] = ""
         return BrandProfile(**payload)
 
     def _to_saved_artifact(self, data: dict[str, Any]) -> SavedArtifact:
@@ -1230,6 +1233,7 @@ class SupabaseStore:
         guidelines: dict[str, Any],
         raw_summary: str,
     ) -> BrandProfile:
+        prompt_bg = build_prompt_brand_guidelines(guidelines)
         response = await self._request(
             "POST",
             "brand_profiles",
@@ -1241,6 +1245,7 @@ class SupabaseStore:
                 "source_filename": source_filename,
                 "guidelines": guidelines,
                 "raw_summary": raw_summary,
+                "prompt_brand_guidelines": prompt_bg,
             },
             prefer="resolution=merge-duplicates,return=representation",
         )

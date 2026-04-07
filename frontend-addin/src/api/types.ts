@@ -85,6 +85,8 @@ export interface BrandProfile {
   source_filename: string
   guidelines: Record<string, unknown>
   raw_summary: string
+  /** Plain-text LLM brief (colors, type, tone, visual, logo); regenerated on every save. */
+  prompt_brand_guidelines?: string
   created_at: string
   updated_at: string
 }

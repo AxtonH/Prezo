@@ -212,6 +212,10 @@ class BrandProfile(BaseModel):
     source_filename: str = ""
     guidelines: dict[str, Any] = Field(default_factory=dict)
     raw_summary: str = ""
+    prompt_brand_guidelines: str = Field(
+        default="",
+        description="Curated plain-text brief for LLM injection; regenerated on save.",
+    )
     created_at: datetime
     updated_at: datetime
 
