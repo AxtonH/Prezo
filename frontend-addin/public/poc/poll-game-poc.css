@@ -450,7 +450,7 @@ body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-pan
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  padding: 12px 14px 14px;
+  padding: 0 14px 14px;
 }
 
 /* Artifact mode: panel stays hidden (JS controls it), composer takes over */
@@ -465,7 +465,7 @@ body.artifact-mode-active .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hid
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-header {
-  padding-bottom: 10px;
+  padding-bottom: 0;
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-collapse {
@@ -2323,7 +2323,7 @@ h1 {
 
 .ai-chat-message.message-assistant {
   margin-right: auto;
-  background: var(--chrome-bg);
+  background: var(--chrome-surface);
   color: var(--chrome-text);
   border: 1px solid var(--chrome-border);
 }
@@ -2559,7 +2559,7 @@ body.editor-docked .artifact-chat-message {
 
 body.editor-docked .ai-chat-message.message-assistant,
 body.editor-docked .artifact-chat-message.assistant {
-  background: var(--chrome-bg);
+  background: var(--chrome-surface);
   border: 1px solid var(--chrome-border);
   color: var(--chrome-text);
 }
