@@ -2724,9 +2724,11 @@ import {
     if (items.length === 0) {
       el.aiChatQueue.classList.add('hidden')
       el.aiChatQueue.replaceChildren()
+      el.aiChatPanel.classList.add('ai-chat-panel--queue-hidden')
       return
     }
     el.aiChatQueue.classList.remove('hidden')
+    el.aiChatPanel.classList.remove('ai-chat-panel--queue-hidden')
     el.aiChatQueue.replaceChildren()
     const label = document.createElement('span')
     label.className = 'ai-chat-queue-label'
@@ -2762,7 +2764,9 @@ import {
     while (el.aiChatMessages.children.length > AI_CHAT_MAX_MESSAGES) {
       el.aiChatMessages.removeChild(el.aiChatMessages.firstElementChild)
     }
-    el.aiChatMessages.scrollTop = el.aiChatMessages.scrollHeight
+    const box = el.aiChatMessages
+    const maxScroll = Math.max(0, box.scrollHeight - box.clientHeight)
+    box.scrollTop = maxScroll
   }
 
   function updateAiChatStatus(text, type = 'idle') {
