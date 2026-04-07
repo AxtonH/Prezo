@@ -332,6 +332,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         '- Host posts message: { "type":"prezo-poll-state", "payload": state }',
         "- State shape: state.poll.question, state.poll.options[], state.totalVotes, state.meta.",
         "- If available, use state.meta.expectedMaxVotes, state.meta.recommendedVisibleUnits, state.meta.recommendedVotesPerUnit, and state.meta.avoidOneToOneVoteObjects when designing scalable vote visuals.",
+        "- Default poll visuals: use each option's votes and percentage (share of cast votes) from state.poll.options for bar/pie fill and labels; infer scaling from live data. Heuristic meta.expectedMaxVotes is optional for clustered or bucketed visuals, not a user-provided audience answer.",
         "- Prefer registering your renderer with window.prezoSetPollRenderer(fn) when available. You may also define window.prezoRenderPoll(state).",
         "- Do not implement your own window message listener or websocket logic for poll updates unless the user explicitly asks.",
         '- Use a stable main scene container marked with data-prezo-scene-root="true" whenever you build or substantially revise the artifact structure.',

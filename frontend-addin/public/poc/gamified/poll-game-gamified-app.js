@@ -1418,7 +1418,7 @@ import {
         ? ARTIFACT_EDIT_PLACEHOLDER
         : ARTIFACT_DEFAULT_PLACEHOLDER
     el.artifactComposerSubtitle.textContent = currentStep
-      ? 'Answer 3 short questions to generate the first artifact.'
+      ? 'Answer 2 short questions to generate the first artifact.'
       : canEditArtifact
         ? 'Refine the current artifact with targeted changes. Small edits work best.'
         : 'Answer the first question to begin building an artifact.'
@@ -1560,23 +1560,20 @@ import {
   function cloneArtifactConversationAnswers(answers) {
     return {
       artifactType: asText(answers?.artifactType),
-      audienceSize: asText(answers?.audienceSize),
       designGuidelines: asText(answers?.designGuidelines),
-      brandProfileName: asText(answers?.brandProfileName)
+      brandProfileName: asText(answers?.brandProfileName),
+      /** Legacy: older saved artifacts may still include this; no longer collected in the wizard. */
+      audienceSize: asText(answers?.audienceSize)
     }
   }
 
   function buildArtifactConversationSummary(answers) {
     const artifactType = asText(answers?.artifactType).trim()
-    const audienceSize = asText(answers?.audienceSize).trim()
     const designGuidelines = asText(answers?.designGuidelines).trim()
     const brandProfileName = asText(answers?.brandProfileName).trim()
     const parts = []
     if (artifactType) {
       parts.push(`Type: ${artifactType}`)
-    }
-    if (audienceSize) {
-      parts.push(`Audience: ${audienceSize}`)
     }
     if (brandProfileName) {
       parts.push(`Brand: ${brandProfileName}`)
@@ -2382,7 +2379,6 @@ import {
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
-      audienceSize: answers.audienceSize,
       designGuidelines: answers.designGuidelines,
       expectedMaxVotes: voteCapacity.expectedMaxVotes,
       recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,

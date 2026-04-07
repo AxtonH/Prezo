@@ -45,11 +45,6 @@ export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
     placeholder: 'Example: 1920s, cinematic, black and white poll'
   },
   {
-    key: 'audienceSize',
-    question: 'What is your expected audience size?',
-    placeholder: 'Example: 5'
-  },
-  {
     key: 'designGuidelines',
     question: 'What design guidelines would you like me to use?',
     placeholder: 'Example: black and white'
@@ -59,7 +54,6 @@ export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
 export function createEmptyArtifactAnswers() {
   return {
     artifactType: '',
-    audienceSize: '',
     designGuidelines: '',
     /** Saved brand profile name when library auth is available; sent as brand_profile_name on artifact build. */
     brandProfileName: ''
@@ -69,8 +63,6 @@ export function createEmptyArtifactAnswers() {
 export function buildArtifactConversationPrompt(answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const audienceSize =
-    typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
   const designGuidelines =
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
   const brandProfileName =
@@ -78,7 +70,6 @@ export function buildArtifactConversationPrompt(answers = {}) {
 
   return [
     artifactType ? `Artifact type: ${artifactType}` : '',
-    audienceSize ? `Expected audience size: ${audienceSize}` : '',
     brandProfileName ? `Saved brand profile: ${brandProfileName}` : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     'Build a complete artifact experience that satisfies all of these requirements.'
@@ -115,8 +106,6 @@ function isBackgroundAtmosphereEditRequest(value) {
 export function buildArtifactEditPrompt(editRequest, answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const audienceSize =
-    typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
   const designGuidelines =
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
@@ -124,7 +113,6 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
-    audienceSize ? `Expected audience size: ${audienceSize}` : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     'Revise the current artifact instead of starting from scratch.',
@@ -160,8 +148,6 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
 export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const audienceSize =
-    typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
   const designGuidelines =
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
@@ -170,7 +156,6 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
-    audienceSize ? `Expected audience size: ${audienceSize}` : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     errorText ? `Runtime failure to fix: ${errorText}` : '',
@@ -279,6 +264,7 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     endpointLines.length > 0
       ? `Live poll data endpoints:\n${endpointLines.join('\n')}`
       : '',
+    'Poll math: drive bars and labels from option.percentage and votes vs totalVotes (classic share of cast votes). The host may still send heuristic capacity hints in state.meta for clustered visuals; no fixed audience-size answer is collected.',
     runtimeRenderError ? `Latest runtime render failure: ${runtimeRenderError}` : '',
     `User request: ${promptText || 'Build a custom artifact-style poll experience around the live data.'}`
   ]
