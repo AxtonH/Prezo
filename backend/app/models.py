@@ -216,6 +216,10 @@ class BrandProfile(BaseModel):
         default="",
         description="Curated plain-text brief for LLM injection; regenerated on save.",
     )
+    brand_facts: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Compact structured facts (colors, typography, logo) for LLM injection; regenerated on save.",
+    )
     created_at: datetime
     updated_at: datetime
 

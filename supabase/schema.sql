@@ -155,6 +155,7 @@ create table if not exists brand_profiles (
   guidelines jsonb not null default '{}'::jsonb,
   raw_summary text not null default '',
   prompt_brand_guidelines text not null default '',
+  brand_facts jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, name)

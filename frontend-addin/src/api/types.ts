@@ -77,6 +77,23 @@ export interface SessionActivity {
   ts: string
 }
 
+/** Compact structured facts for LLM injection; regenerated on every save. */
+export interface BrandFacts {
+  colors?: Array<{
+    role: string
+    hex: string
+    hierarchy_rank: number
+    usage?: string
+    surface?: string
+    label?: string
+  }>
+  typography?: Record<
+    string,
+    { family: string; source?: string; custom_url?: string }
+  >
+  logo?: { url: string; source?: string } | null
+}
+
 /** Saved brand profile from GET/PUT/DELETE `/library/poll-game/brand-profiles`. */
 export interface BrandProfile {
   id: string
@@ -87,6 +104,8 @@ export interface BrandProfile {
   raw_summary: string
   /** Plain-text LLM brief (colors, type, tone, visual, logo); regenerated on every save. */
   prompt_brand_guidelines?: string
+  /** Structured colors / typography / logo for LLM injection; regenerated on every save. */
+  brand_facts?: BrandFacts
   created_at: string
   updated_at: string
 }
