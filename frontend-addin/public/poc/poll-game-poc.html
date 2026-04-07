@@ -323,8 +323,10 @@
             <div id="ai-chat-panel" class="ai-chat-panel hidden">
               <header class="ai-chat-header">
                 <div>
-                  <p class="ai-chat-kicker">Prezo Assistant</p>
-                  <strong>Edit With Prompt</strong>
+                  <p class="artifact-kicker">Poll design</p>
+                  <p class="artifact-composer-subtitle">
+                    Refine the poll theme with targeted changes. Small edits work best.
+                  </p>
                 </div>
                 <button
                   id="ai-chat-collapse"
@@ -335,12 +337,27 @@
                   Collapse
                 </button>
               </header>
-              <p id="ai-chat-status" class="ai-chat-status">Ready. Ask for edits like "make bars teal and increase label size."</p>
+              <div class="poll-editor-info-stack" aria-label="Poll editor context">
+                <div class="poll-editor-info-card poll-editor-info-card--brief">
+                  <p class="poll-editor-info-label">Current theme</p>
+                  <p id="ai-chat-brief" class="poll-editor-info-body">
+                    Classic poll · Theme: loading…
+                  </p>
+                </div>
+                <div class="poll-editor-info-card poll-editor-info-card--hint">
+                  <p class="poll-editor-info-body">
+                    Ask for one focused change at a time. For larger reworks, say so explicitly.
+                  </p>
+                </div>
+              </div>
               <div id="ai-chat-queue" class="ai-chat-queue hidden"></div>
               <div id="ai-chat-messages" class="ai-chat-messages"></div>
               <div class="ai-chat-quick-actions">
                 <button type="button" class="ai-quick-action" data-ai-prompt="Make the design cleaner and improve text readability.">
                   Improve Readability
+                </button>
+                <button type="button" class="ai-quick-action" data-ai-prompt="Tighten spacing and alignment. Keep the same colors and overall style.">
+                  Tighten Layout
                 </button>
                 <button type="button" class="ai-quick-action" data-ai-prompt="Make the visuals bold and high energy.">
                   Bold Theme
@@ -349,13 +366,16 @@
               <form id="ai-chat-form" class="ai-chat-form">
                 <textarea
                   id="ai-chat-input"
-                  class="ai-chat-input"
-                  rows="2"
-                  placeholder="Tell me what to change..."
+                  class="ai-chat-input artifact-prompt-input"
+                  rows="3"
+                  placeholder="Example: make the bars teal and increase label size. Keep the rest unchanged."
                   aria-label="Prompt to edit poll game"
                 ></textarea>
-                <button id="ai-chat-send" class="ai-chat-send" type="submit">Send</button>
+                <button id="ai-chat-send" class="ai-chat-send artifact-prompt-submit" type="submit">Apply</button>
               </form>
+              <p id="ai-chat-status" class="artifact-prompt-status ai-chat-footer-status">
+                Poll edit mode is active. Ask for targeted changes, or say &quot;redesign it&quot; for a broader rework.
+              </p>
             </div>
             <button
               id="artifact-composer-fab"

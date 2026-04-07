@@ -1837,7 +1837,7 @@ h1 {
 
 .artifact-chat-message.user {
   align-self: flex-end;
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(37, 99, 235, 0.22);
   background: var(--chrome-active-bg);
   color: var(--chrome-text);
 }
@@ -2228,7 +2228,7 @@ h1 {
   height: 9px;
   border-radius: 999px;
   background: var(--chrome-btn-primary);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
 .ai-chat-fab.hidden {
@@ -2243,7 +2243,7 @@ h1 {
 
 .ai-chat-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(130px, 1fr) auto auto;
+  grid-template-rows: auto auto auto minmax(130px, 1fr) auto auto auto;
   gap: 8px;
   width: min(420px, calc(100vw - 24px));
   min-height: 360px;
@@ -2266,19 +2266,59 @@ h1 {
   gap: 12px;
 }
 
-.ai-chat-kicker {
+.ai-chat-header .artifact-kicker {
+  margin: 0 0 2px;
+}
+
+.ai-chat-header .artifact-composer-subtitle {
   margin: 0;
-  font-size: 9px;
-  letter-spacing: 0.14em;
+  max-width: 32ch;
+}
+
+/* Match artifact editor: brief + hint cards */
+.poll-editor-info-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.poll-editor-info-card {
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+.poll-editor-info-card--brief {
+  border: 1px dashed rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.poll-editor-info-card--hint {
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-surface);
+}
+
+.poll-editor-info-label {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--chrome-text-muted);
 }
 
-.ai-chat-header strong {
-  display: block;
-  margin-top: 2px;
+.poll-editor-info-body {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--chrome-text-secondary);
+}
+
+.poll-editor-info-card--brief .poll-editor-info-body {
   color: var(--chrome-text);
-  font-size: 13px;
+}
+
+.ai-chat-footer-status {
+  margin: 0;
 }
 
 .ai-chat-collapse {
@@ -2297,17 +2337,15 @@ h1 {
   background: var(--chrome-hover);
 }
 
-.ai-chat-status {
-  margin: 0;
-  min-height: 18px;
-  color: var(--chrome-text-secondary);
-  font-size: 12px;
-  line-height: 1.35;
+.ai-chat-footer-status.status-success {
+  color: #16a34a;
 }
-
-.ai-chat-status.status-success { color: #16a34a; }
-.ai-chat-status.status-error   { color: #dc2626; }
-.ai-chat-status.status-pending { color: var(--chrome-text-muted); }
+.ai-chat-footer-status.status-error {
+  color: #dc2626;
+}
+.ai-chat-footer-status.status-pending {
+  color: var(--chrome-text-muted);
+}
 
 .ai-chat-queue {
   display: flex;
@@ -2364,7 +2402,7 @@ h1 {
   margin-left: auto;
   background: var(--chrome-active-bg);
   color: var(--chrome-text);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(37, 99, 235, 0.22);
 }
 
 .ai-chat-message.message-assistant {
@@ -2441,7 +2479,7 @@ h1 {
 .ai-chat-input:focus-visible {
   outline: none;
   border-color: var(--chrome-input-focus);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
 .ai-chat-send {
@@ -2539,7 +2577,7 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
 }
 
 body.editor-docked .ai-chat-panel {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
 }
 
 body.editor-docked .ai-chat-messages {
@@ -2565,25 +2603,42 @@ body.editor-docked .artifact-composer-header > div {
   min-width: 0;
 }
 
-body.editor-docked .ai-chat-kicker,
 body.editor-docked .artifact-kicker {
   color: var(--chrome-text-muted);
   font-size: 9px;
   letter-spacing: 0.14em;
 }
 
-body.editor-docked .ai-chat-header strong {
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--chrome-text);
+body.editor-docked .ai-chat-header .artifact-composer-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--chrome-text-secondary);
+  line-height: 1.45;
+  max-width: none;
 }
 
-body.editor-docked .artifact-composer-subtitle,
-body.editor-docked .ai-chat-status,
-body.editor-docked .artifact-prompt-status {
+body.editor-docked .artifact-composer-subtitle {
   color: var(--chrome-text-secondary);
   font-size: 11px;
   line-height: 1.45;
+}
+
+body.editor-docked .artifact-prompt-status:not(.status-success):not(.status-error):not(.status-pending) {
+  color: var(--chrome-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+body.editor-docked .artifact-prompt-status.status-success {
+  color: #16a34a;
+}
+
+body.editor-docked .artifact-prompt-status.status-error {
+  color: #dc2626;
+}
+
+body.editor-docked .artifact-prompt-status.status-pending {
+  color: var(--chrome-text-muted);
 }
 
 body.editor-docked .ai-chat-collapse,
@@ -2626,7 +2681,7 @@ body.editor-docked .artifact-chat-message.assistant {
 body.editor-docked .ai-chat-message.message-user,
 body.editor-docked .artifact-chat-message.user {
   background: var(--chrome-active-bg);
-  border: 1px solid rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(37, 99, 235, 0.22);
   color: var(--chrome-text);
 }
 

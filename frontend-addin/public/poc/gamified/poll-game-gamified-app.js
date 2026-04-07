@@ -250,6 +250,7 @@ import {
     aiChatPanel: must('ai-chat-panel'),
     aiChatCollapse: must('ai-chat-collapse'),
     aiChatStatus: must('ai-chat-status'),
+    aiChatBrief: must('ai-chat-brief'),
     aiChatQueue: must('ai-chat-queue'),
     aiChatMessages: must('ai-chat-messages'),
     aiChatForm: must('ai-chat-form'),
@@ -1011,12 +1012,17 @@ import {
     for (const quickAction of el.aiQuickActions) {
       quickAction.addEventListener('click', handleAiQuickActionClick)
     }
+    el.themeName.addEventListener('input', syncPollEditorBriefCard)
 
     appendAiChatMessage(
       'assistant',
-      'AI editor is ready. Ask for design or text changes and I will apply them directly.'
+      'Poll AI is ready. Ask for design or text changes and I will apply them to the theme.'
     )
-    updateAiChatStatus('Ready for edits.', 'success')
+    updateAiChatStatus(
+      'Poll edit mode is active. Ask for targeted changes, or say "redesign it" for a broader rework.',
+      'success'
+    )
+    syncPollEditorBriefCard()
     scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
@@ -8870,7 +8876,19 @@ import {
     })
     applyDeletedStaticTargets(theme)
     syncArtifactComposerVisibility()
+    syncPollEditorBriefCard()
     scheduleResizeSelectionUpdate()
+  }
+
+  function syncPollEditorBriefCard() {
+    if (!el.aiChatBrief) {
+      return
+    }
+    const modeLabel =
+      currentTheme.visualMode === ARTIFACT_VISUAL_MODE ? 'Artifact / visual mode' : 'Classic poll'
+    const saved = asText(el.themeName.value).trim()
+    const themePart = saved ? `Theme name: ${saved}` : 'Theme name: (unsaved)'
+    el.aiChatBrief.textContent = `${modeLabel} · ${themePart}`
   }
 
   function applyElementOffset(node, offsetX, offsetY, scaleX = 1, scaleY = 1) {
