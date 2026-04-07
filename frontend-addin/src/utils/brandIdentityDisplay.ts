@@ -8,6 +8,109 @@ function safeStr(v: unknown): string {
   return typeof v === 'string' ? v.trim() : ''
 }
 
+/** Truncate at a word boundary so we never end mid-word (e.g. "arroga…"). */
+function truncateAtWord(text: string, maxLen: number): string {
+  const t = text.trim()
+  if (t.length <= maxLen) {
+    return t
+  }
+  const slice = t.slice(0, maxLen)
+  const lastSpace = slice.lastIndexOf(' ')
+  if (lastSpace > maxLen * 0.55) {
+    return `${slice.slice(0, lastSpace).trimEnd()}…`
+  }
+  return `${slice.trimEnd()}…`
+}
+
+const MAX_TONE_CHARS = 320
+
+function takeFirstWords(text: string, wordCount: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) {
+    return ''
+  }
+  return words.slice(0, wordCount).join(' ')
+}
+
+/**
+ * Turn one key_principles line into short keyword(s) for card chips (not full manifestos).
+ */
+function splitPrincipleToKeywords(raw: string): string[] {
+  const s = raw.trim()
+  if (!s) {
+    return []
+  }
+
+  const colon = s.indexOf(':')
+  if (colon !== -1) {
+    const label = s.slice(0, colon).trim()
+    const after = s.slice(colon + 1).trim()
+    if (after.includes(',')) {
+      const parts = after
+        .split(',')
+        .map((x) => x.trim())
+        .map((x) => x.replace(/\.$/, ''))
+        .filter(Boolean)
+      if (parts.length > 1) {
+        return parts.map((p) => (p.length > 44 ? takeFirstWords(p, 6) : p))
+      }
+    }
+    const parenIdx = after.indexOf('(')
+    const head = (parenIdx === -1 ? after : after.slice(0, parenIdx)).trim()
+    const one = head.length > 48 ? takeFirstWords(head, 7) : head
+    return one ? [one] : label ? [label] : []
+  }
+
+  if (s.includes('—') || s.includes('–')) {
+    const sep = s.includes('—') ? '—' : '–'
+    const [a, b] = s.split(sep).map((x) => x.trim())
+    const left = a.replace(/^[("']+/, '').trim()
+    const right = (b || '').replace(/\)[.,]?$/, '').trim()
+    const candidates = [right, left].filter(Boolean)
+    const short = candidates.find((c) => c.length >= 8 && c.length <= 52)
+    if (short) {
+      return [short]
+    }
+    const pick = left.length <= right.length ? left : right
+    return [pick.length > 48 ? takeFirstWords(pick, 6) : pick]
+  }
+
+  if (s.length <= 44) {
+    return [s]
+  }
+  const dot = s.indexOf('.')
+  if (dot > 12 && dot < 90) {
+    const first = s.slice(0, dot + 1).trim()
+    if (first.length >= 12 && first.length <= 88) {
+      return [first]
+    }
+  }
+  return [takeFirstWords(s, 6)]
+}
+
+export function extractKeywordsForCard(guidelines: Record<string, unknown>, max = 8): string[] {
+  const kp = guidelines.key_principles
+  if (!Array.isArray(kp)) {
+    return []
+  }
+  const out: string[] = []
+  for (const item of kp) {
+    if (typeof item !== 'string' || out.length >= max) {
+      break
+    }
+    for (const kw of splitPrincipleToKeywords(item)) {
+      if (out.length >= max) {
+        break
+      }
+      const t = kw.trim()
+      if (t && !out.some((x) => x.toLowerCase() === t.toLowerCase())) {
+        out.push(t)
+      }
+    }
+  }
+  return out
+}
+
 export function extractPaletteHex(guidelines: Record<string, unknown>): string[] {
   const semantic = guidelines.semantic
   if (semantic && typeof semantic === 'object') {
@@ -104,7 +207,7 @@ export function extractTagline(guidelines: Record<string, unknown>): string {
 export function extractToneLine(guidelines: Record<string, unknown>): string {
   const t = safeStr(guidelines.tone_of_voice)
   if (t) {
-    return t.length > 160 ? `${t.slice(0, 157)}…` : t
+    return t.length > MAX_TONE_CHARS ? truncateAtWord(t, MAX_TONE_CHARS) : t
   }
   const sem = guidelines.semantic
   if (sem && typeof sem === 'object') {
@@ -120,20 +223,14 @@ export function extractToneLine(guidelines: Record<string, unknown>): string {
 }
 
 export function extractTags(guidelines: Record<string, unknown>, max = 6): string[] {
-  const kp = guidelines.key_principles
-  if (Array.isArray(kp)) {
-    return kp
-      .map((x) => (typeof x === 'string' ? x.trim() : ''))
-      .filter(Boolean)
-      .slice(0, max)
-  }
-  return []
+  return extractKeywordsForCard(guidelines, max)
 }
 
 export function extractAudienceLine(guidelines: Record<string, unknown>): string {
   const v = guidelines.target_audience ?? guidelines.audience
   if (typeof v === 'string' && v.trim()) {
-    return v.length > 120 ? `${v.trim().slice(0, 117)}…` : v.trim()
+    const trimmed = v.trim()
+    return trimmed.length > 120 ? truncateAtWord(trimmed, 120) : trimmed
   }
   return ''
 }

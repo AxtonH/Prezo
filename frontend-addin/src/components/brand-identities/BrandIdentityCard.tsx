@@ -3,8 +3,8 @@ import {
   extractAudienceLine,
   extractFontsLine,
   extractPaletteHex,
+  extractKeywordsForCard,
   extractTagline,
-  extractTags,
   extractToneLine,
   formatBrandDate
 } from '../../utils/brandIdentityDisplay'
@@ -23,7 +23,7 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
   const fonts = extractFontsLine(g)
   const tagline = extractTagline(g)
   const tone = extractToneLine(g)
-  const tags = extractTags(g)
+  const tags = extractKeywordsForCard(g)
   const audience = extractAudienceLine(g)
   const initial = profile.name.trim().charAt(0).toUpperCase() || '?'
   const updated = formatBrandDate(profile.updated_at)
@@ -70,13 +70,15 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
           <p className="text-sm font-medium italic text-primary">&ldquo;{tagline}&rdquo;</p>
         ) : null}
 
-        {tone ? <p className="text-sm text-slate-700">{tone}</p> : null}
+        {tone ? (
+          <p className="whitespace-normal break-words text-sm leading-relaxed text-slate-700">{tone}</p>
+        ) : null}
 
         {tags.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            {tags.map((t) => (
+            {tags.map((t, i) => (
               <span
-                key={t}
+                key={`${i}-${t}`}
                 className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-700"
               >
                 {t}
