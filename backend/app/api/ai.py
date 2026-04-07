@@ -851,7 +851,9 @@ async def request_gemini_text(
     if response_json_schema:
         generation_config["responseJsonSchema"] = response_json_schema
     if thinking_budget is not None:
-        generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+        generation_config["thinkingConfig"] = {
+            "thinkingBudget": effective_gemini_thinking_budget(model, thinking_budget)
+        }
 
     try:
         async with httpx.AsyncClient(
@@ -2046,6 +2048,23 @@ def normalize_gemini_model_name(value: str | None) -> str:
     if text.startswith("models/"):
         return text[len("models/") :].strip()
     return text
+
+
+# Patch / JSON artifact paths pass thinking_budget=0 to skip thinking on Flash. Gemini 3.x Pro
+# returns 400: "Budget 0 is invalid. This model only works in thinking mode."
+GEMINI_THINKING_ONLY_MODEL_MIN_BUDGET = 8192
+
+
+def effective_gemini_thinking_budget(model: str, requested: int | None) -> int | None:
+    """Map requested budget; upgrade 0 → minimum for thinking-only Gemini 3.x models."""
+    if requested is None:
+        return None
+    if requested > 0:
+        return requested
+    name = (normalize_gemini_model_name(model) or "").lower()
+    if "gemini-3" in name or "3.1" in name:
+        return GEMINI_THINKING_ONLY_MODEL_MIN_BUDGET
+    return 0
 
 
 def resolve_gemini_base_url() -> str:

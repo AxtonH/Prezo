@@ -2727,5 +2727,21 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("opacity: 0", updated)
 
 
+class TestGeminiThinkingBudget(unittest.TestCase):
+    def test_zero_budget_upgraded_for_gemini_3(self) -> None:
+        self.assertEqual(
+            ai_api.effective_gemini_thinking_budget("gemini-3.1-pro-preview", 0),
+            ai_api.GEMINI_THINKING_ONLY_MODEL_MIN_BUDGET,
+        )
+
+    def test_zero_budget_unchanged_for_flash(self) -> None:
+        self.assertEqual(ai_api.effective_gemini_thinking_budget("gemini-2.5-flash", 0), 0)
+
+    def test_none_budget_stays_none(self) -> None:
+        self.assertIsNone(
+            ai_api.effective_gemini_thinking_budget("gemini-3.1-pro-preview", None)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
