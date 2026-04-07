@@ -466,7 +466,6 @@ body.artifact-mode-active .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hid
 
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-header {
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--chrome-border);
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-collapse {
@@ -2480,7 +2479,11 @@ body.editor-docked .ai-chat-shell {
   box-shadow: none;
 }
 
-body.editor-docked .ai-chat-header,
+body.editor-docked .ai-chat-header {
+  align-items: flex-start;
+  padding-bottom: 12px;
+}
+
 body.editor-docked .artifact-composer-header {
   align-items: flex-start;
   padding-bottom: 12px;
