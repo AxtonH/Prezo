@@ -440,7 +440,7 @@ body.ribbon-hidden .settings-panel {
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel,
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
   display: grid !important;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   gap: 8px;
   width: 100%;
   height: 100%;
@@ -2379,6 +2379,7 @@ h1 {
 
 .ai-chat-quick-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
   overflow-x: auto;
   padding-bottom: 2px;
