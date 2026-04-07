@@ -30,7 +30,6 @@ import {
 import {
   ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
-  ARTIFACT_EDIT_QUICK_ACTIONS,
   ARTIFACT_EDIT_PLACEHOLDER,
   ARTIFACT_EDIT_READY_STATUS,
   ARTIFACT_LAYOUT_HORIZONTAL,
@@ -261,7 +260,6 @@ import {
     artifactComposerFab: must('artifact-composer-fab'),
     artifactComposerSubtitle: must('artifact-composer-subtitle'),
     artifactChatLog: must('artifact-chat-log'),
-    artifactEditQuickActions: must('artifact-edit-quick-actions'),
     artifactPromptForm: must('artifact-prompt-form'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
@@ -311,8 +309,7 @@ import {
     pollHead: must('poll-head'),
     headLeft: must('head-left'),
     headRight: must('head-right'),
-    metaBar: must('meta-bar'),
-    aiQuickActions: [...document.querySelectorAll('.ai-quick-action')]
+    metaBar: must('meta-bar')
   }
   const ribbonTabs = [...document.querySelectorAll('.ribbon-tab')]
   const ribbonPanes = [...document.querySelectorAll('.ribbon-pane')]
@@ -1008,9 +1005,6 @@ import {
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.addEventListener('transitionend', handleEditorDockShellTransitionEnd)
     window.addEventListener('resize', handleEditorDockViewportResize)
-    for (const quickAction of el.aiQuickActions) {
-      quickAction.addEventListener('click', handleAiQuickActionClick)
-    }
 
     appendAiChatMessage(
       'assistant',
@@ -1173,7 +1167,6 @@ import {
     syncArtifactComposerVisibility()
     resetArtifactConversation({ preserveInput: false })
     syncArtifactComposerBusyState()
-    renderArtifactEditQuickActions()
     hideArtifactStagePlaceholder()
     hideArtifactStage()
     artifactBridge.setFrameHeight(state.artifact.frameHeight, { force: true })
@@ -1184,7 +1177,6 @@ import {
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
-    el.artifactEditQuickActions.addEventListener('click', handleArtifactEditQuickActionClick)
   }
 
   function syncArtifactComposerVisibility() {
@@ -1425,7 +1417,6 @@ import {
         ? 'Refine the current artifact with targeted changes. Small edits work best.'
         : 'Answer the first question to begin building an artifact.'
     renderArtifactConversation()
-    renderArtifactEditQuickActions()
     syncArtifactComposerBusyState()
     syncArtifactBrandProfileRow()
     if (state.artifact.busy) {
@@ -1516,39 +1507,6 @@ import {
     }
     node.textContent = asText(text)
     return node
-  }
-
-  function renderArtifactEditQuickActions() {
-    const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
-    el.artifactEditQuickActions.classList.toggle('hidden', !canEditArtifact)
-    if (!canEditArtifact) {
-      el.artifactEditQuickActions.replaceChildren()
-      return
-    }
-    const fragment = document.createDocumentFragment()
-    for (const action of ARTIFACT_EDIT_QUICK_ACTIONS) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.className = 'artifact-edit-quick-action'
-      button.dataset.artifactPrompt = asText(action?.prompt)
-      button.textContent = asText(action?.label)
-      fragment.appendChild(button)
-    }
-    el.artifactEditQuickActions.replaceChildren(fragment)
-  }
-
-  function handleArtifactEditQuickActionClick(event) {
-    const button = event.target instanceof HTMLElement ? event.target.closest('button') : null
-    if (!(button instanceof HTMLButtonElement)) {
-      return
-    }
-    const prompt = asText(button.dataset.artifactPrompt).trim()
-    if (!prompt || state.artifact.busy) {
-      return
-    }
-    el.artifactPromptInput.value = prompt
-    el.artifactPromptInput.focus()
-    setArtifactComposerStatus('Suggested edit loaded. Review it and click Apply.', 'idle')
   }
 
   function getArtifactConversationStep(index = state.artifact.conversationStepIndex) {
@@ -2648,18 +2606,6 @@ import {
       return
     }
     el.aiChatInput.value = ''
-    enqueueAiPrompt(prompt)
-  }
-
-  function handleAiQuickActionClick(event) {
-    const button = event.currentTarget
-    if (!(button instanceof HTMLButtonElement)) {
-      return
-    }
-    const prompt = asText(button.dataset.aiPrompt)
-    if (!prompt) {
-      return
-    }
     enqueueAiPrompt(prompt)
   }
 
@@ -9993,7 +9939,6 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
-    el.artifactEditQuickActions.removeEventListener('click', handleArtifactEditQuickActionClick)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('resize', handleEditorDockViewportResize)
@@ -10002,9 +9947,6 @@ import {
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
     artifactBridge.dispose()
     disposeLibrarySyncManager()
-    for (const quickAction of el.aiQuickActions) {
-      quickAction.removeEventListener('click', handleAiQuickActionClick)
-    }
     document.removeEventListener('selectionchange', handleRichTextSelectionChange)
     document.removeEventListener('pointerdown', handleRichTextPointerDown, true)
     document.removeEventListener('pointerdown', handleResizeSelectionPointerDown, true)

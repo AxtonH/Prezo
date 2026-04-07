@@ -440,7 +440,7 @@ body.ribbon-hidden .settings-panel {
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel,
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
   display: grid !important;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   gap: 8px;
   width: 100%;
   height: 100%;
@@ -1848,44 +1848,6 @@ h1 {
   background: var(--chrome-surface);
 }
 
-.artifact-edit-quick-actions {
-  margin-top: 7px;
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.artifact-edit-quick-actions.hidden {
-  display: none;
-}
-
-.artifact-edit-quick-actions::-webkit-scrollbar {
-  height: 5px;
-}
-
-.artifact-edit-quick-actions::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 4px;
-}
-
-.artifact-edit-quick-action {
-  flex: 0 0 auto;
-  border: 1px solid var(--chrome-border);
-  border-radius: 999px;
-  min-height: 28px;
-  padding: 5px 10px;
-  background: var(--chrome-bg);
-  color: var(--chrome-text);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.artifact-edit-quick-action:hover {
-  background: var(--chrome-hover);
-}
-
 .artifact-prompt-form {
   margin-top: 7px;
   display: grid;
@@ -2027,10 +1989,6 @@ h1 {
   min-height: 0;
   max-height: min(32vh, 280px);
   padding-right: 3px;
-}
-
-.artifact-composer.is-floating .artifact-edit-quick-actions {
-  margin-top: 0;
 }
 
 .artifact-composer.is-floating .artifact-chat-message {
@@ -2243,7 +2201,7 @@ h1 {
 
 .ai-chat-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(130px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
   gap: 8px;
   width: min(420px, calc(100vw - 24px));
   min-height: 360px;
@@ -2377,40 +2335,13 @@ h1 {
   border: 1px solid var(--chrome-border);
 }
 
-.ai-chat-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.ai-chat-quick-actions::-webkit-scrollbar,
 .ai-chat-queue::-webkit-scrollbar {
   height: 5px;
 }
 
-.ai-chat-quick-actions::-webkit-scrollbar-thumb,
 .ai-chat-queue::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.12);
   border-radius: 4px;
-}
-
-.ai-quick-action {
-  flex: 0 0 auto;
-  border: 1px solid var(--chrome-border);
-  border-radius: 999px;
-  min-height: 28px;
-  padding: 5px 10px;
-  background: var(--chrome-bg);
-  color: var(--chrome-text);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.ai-quick-action:hover {
-  background: var(--chrome-hover);
 }
 
 .ai-chat-form {
@@ -2536,7 +2467,7 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
 }
 
 body.editor-docked .ai-chat-panel {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
 
 body.editor-docked .ai-chat-messages {
@@ -2649,21 +2580,6 @@ body.editor-docked .artifact-chat-message.summary {
   background: var(--chrome-surface);
   border: 1px dashed var(--chrome-border);
   color: var(--chrome-text-secondary);
-}
-
-body.editor-docked .ai-quick-action,
-body.editor-docked .artifact-edit-quick-action {
-  border: 1px solid var(--chrome-border);
-  background: var(--chrome-bg);
-  color: var(--chrome-text);
-  min-height: 26px;
-  padding: 4px 10px;
-  font-size: 11px;
-}
-
-body.editor-docked .ai-quick-action:hover,
-body.editor-docked .artifact-edit-quick-action:hover {
-  background: var(--chrome-hover);
 }
 
 body.editor-docked .ai-chat-input,

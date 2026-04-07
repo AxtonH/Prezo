@@ -11,33 +11,6 @@ export const ARTIFACT_WAITING_STATUS =
 export const ARTIFACT_EDIT_READY_STATUS =
   'Edit mode is active. Ask for targeted changes, or say "redesign it" for a broader rework.'
 
-export const ARTIFACT_EDIT_QUICK_ACTIONS = Object.freeze([
-  {
-    label: 'Improve Readability',
-    prompt: 'Improve readability. Keep the current concept, layout, and scene style.'
-  },
-  {
-    label: 'Tighten Layout',
-    prompt: 'Tighten the layout and spacing. Do not redesign the artifact.'
-  },
-  {
-    label: 'Soften Motion',
-    prompt: 'Make the motion smoother and less distracting. Keep the current visuals.'
-  },
-  {
-    label: 'Smaller Title',
-    prompt: 'Make the title smaller and rebalance the composition without changing the overall concept.'
-  },
-  {
-    label: 'Reduce Clutter',
-    prompt: 'Reduce clutter and simplify decorative elements while keeping the same concept.'
-  },
-  {
-    label: 'Broader Redesign',
-    prompt: 'Redesign the artifact more broadly while preserving live poll functionality.'
-  }
-])
-
 export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
   {
     key: 'artifactType',
