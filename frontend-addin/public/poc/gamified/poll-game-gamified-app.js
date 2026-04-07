@@ -61,8 +61,7 @@ import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
   extractCopyFromStyleOverrides,
-  mergeCopyIntoStyleOverrides,
-  rebuildStyleOverridesKeepingCopyOnly
+  mergeCopyIntoStyleOverrides
 } from './poll-game-gamified-artifact-copy.js'
 
 ;(() => {
@@ -3025,7 +3024,9 @@ import {
       )
       pendingArtifactStyleOverrides = {}
       pendingArtifactCopyOverrides = {}
-      state.artifact.savedStyleOverrides = rebuildStyleOverridesKeepingCopyOnly(merged)
+      const nextOverrides = { ...merged }
+      pruneStalePollStyleOverridesInStore(nextOverrides, state.currentPoll)
+      state.artifact.savedStyleOverrides = nextOverrides
     }
     return true
   }
@@ -4274,6 +4275,55 @@ import {
   }
 
   /**
+   * Drop question / option-label override entries whose embedded plain text no longer
+   * matches the live poll (same rules everywhere we merge or persist overrides).
+   *
+   * @param {Record<string, unknown>} store
+   * @param {object | null | undefined} poll
+   */
+  function pruneStalePollStyleOverridesInStore(store, poll) {
+    if (!poll || typeof poll !== 'object') {
+      return
+    }
+    if (!store || typeof store !== 'object') {
+      return
+    }
+    const expectedQuestion = normalizeWhitespace(asText(poll.question)).toLowerCase()
+    const options = Array.isArray(poll.options) ? poll.options : []
+    const optionById = new Map(
+      options.map((opt) => [asText(opt?.id), opt]).filter(([id]) => Boolean(id))
+    )
+
+    const qHtml = store.question
+    if (typeof qHtml === 'string' && qHtml.trim()) {
+      const got = normalizeWhitespace(extractPlainTextFromHtml(qHtml)).toLowerCase()
+      if (got !== expectedQuestion) {
+        delete store.question
+      }
+    }
+    for (const key of Object.keys(store)) {
+      if (!key.startsWith('option-label:')) {
+        continue
+      }
+      const optionId = key.slice('option-label:'.length)
+      const opt = optionById.get(optionId)
+      const html = store[key]
+      if (typeof html !== 'string' || !html.trim()) {
+        continue
+      }
+      if (!opt) {
+        delete store[key]
+        continue
+      }
+      const got = normalizeWhitespace(extractPlainTextFromHtml(html)).toLowerCase()
+      const want = normalizeWhitespace(asText(opt.label)).toLowerCase()
+      if (got !== want) {
+        delete store[key]
+      }
+    }
+  }
+
+  /**
    * Saved style overrides embed full HTML for question / option labels. When the same
    * artifact is used for another poll, those keys still hold the previous poll's copy;
    * applyArtifactStyleOverrides would overwrite the renderer's correct text until the
@@ -4283,50 +4333,8 @@ import {
    * @param {object | null | undefined} poll
    */
   function pruneStalePollStyleOverrides(poll) {
-    if (!poll || typeof poll !== 'object') {
-      return
-    }
-    const expectedQuestion = normalizeWhitespace(asText(poll.question)).toLowerCase()
-    const options = Array.isArray(poll.options) ? poll.options : []
-    const optionById = new Map(
-      options.map((opt) => [asText(opt?.id), opt]).filter(([id]) => Boolean(id))
-    )
-
-    const pruneStore = (store) => {
-      if (!store || typeof store !== 'object') {
-        return
-      }
-      const qHtml = store.question
-      if (typeof qHtml === 'string' && qHtml.trim()) {
-        const got = normalizeWhitespace(extractPlainTextFromHtml(qHtml)).toLowerCase()
-        if (got !== expectedQuestion) {
-          delete store.question
-        }
-      }
-      for (const key of Object.keys(store)) {
-        if (!key.startsWith('option-label:')) {
-          continue
-        }
-        const optionId = key.slice('option-label:'.length)
-        const opt = optionById.get(optionId)
-        const html = store[key]
-        if (typeof html !== 'string' || !html.trim()) {
-          continue
-        }
-        if (!opt) {
-          delete store[key]
-          continue
-        }
-        const got = normalizeWhitespace(extractPlainTextFromHtml(html)).toLowerCase()
-        const want = normalizeWhitespace(asText(opt.label)).toLowerCase()
-        if (got !== want) {
-          delete store[key]
-        }
-      }
-    }
-
-    pruneStore(state.artifact.savedStyleOverrides)
-    pruneStore(pendingArtifactStyleOverrides)
+    pruneStalePollStyleOverridesInStore(state.artifact.savedStyleOverrides, poll)
+    pruneStalePollStyleOverridesInStore(pendingArtifactStyleOverrides, poll)
   }
 
   function pushArtifactStyleOverrides() {

@@ -88,8 +88,10 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
 }
 
 /**
- * After an AI artifact edit, drop manual HTML/style overrides for poll fields so the
- * new base artifact wins, but keep subtitle/footer copy keys (namespaced).
+ * Keep only namespaced subtitle/footer copy keys from a merged style-overrides object.
+ * (The artifact host may instead merge saved + pending + copy and prune stale
+ * question/option-label entries against the live poll after an AI edit so unsaved
+ * manual rich-text still applies when the underlying copy still matches.)
  *
  * @param {Record<string, unknown> | null | undefined} styleOverrides
  * @returns {Record<string, string>}
