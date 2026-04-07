@@ -2243,7 +2243,7 @@ h1 {
 
 .ai-chat-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(130px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(130px, 1fr) auto auto auto;
   gap: 8px;
   width: min(420px, calc(100vw - 24px));
   min-height: 360px;
@@ -2273,48 +2273,6 @@ h1 {
 .ai-chat-header .artifact-composer-subtitle {
   margin: 0;
   max-width: 32ch;
-}
-
-/* Match artifact editor: brief + hint cards */
-.poll-editor-info-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.poll-editor-info-card {
-  border-radius: 10px;
-  padding: 9px 11px;
-}
-
-.poll-editor-info-card--brief {
-  border: 1px dashed rgba(37, 99, 235, 0.35);
-  background: rgba(37, 99, 235, 0.04);
-}
-
-.poll-editor-info-card--hint {
-  border: 1px solid var(--chrome-border);
-  background: var(--chrome-surface);
-}
-
-.poll-editor-info-label {
-  margin: 0 0 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--chrome-text-muted);
-}
-
-.poll-editor-info-body {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--chrome-text-secondary);
-}
-
-.poll-editor-info-card--brief .poll-editor-info-body {
-  color: var(--chrome-text);
 }
 
 .ai-chat-footer-status {
@@ -2577,7 +2535,7 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
 }
 
 body.editor-docked .ai-chat-panel {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
 }
 
 body.editor-docked .ai-chat-messages {
