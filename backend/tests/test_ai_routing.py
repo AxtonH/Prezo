@@ -1673,6 +1673,26 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("#track-bg", artifact_context["currentArtifactHtml"])
         self.assertNotIn("currentArtifactFullHtml", artifact_context)
 
+    def test_prepare_artifact_context_surfaces_brand_fields_first(self) -> None:
+        prepared = ai_api.prepare_artifact_context_for_model(
+            {
+                "artifact": {
+                    "requestMode": "build",
+                    "designGuidelines": "User notes",
+                    "brandProfileName": "Acme",
+                    "brandEnforcement": "strict",
+                    "promptBrandGuidelines": "## Colors\n- #fff",
+                    "brandFacts": {"colors": [{"hex": "#fff"}]},
+                }
+            },
+            "build",
+        )
+        keys = list(prepared["artifact"].keys())
+        self.assertEqual(
+            keys[:4],
+            ["brandEnforcement", "brandProfileName", "promptBrandGuidelines", "brandFacts"],
+        )
+
     async def test_local_edit_prefers_patch_flow_before_full_regeneration(self) -> None:
         anthropic_mock = AsyncMock()
         gemini_mock = AsyncMock(

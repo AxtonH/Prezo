@@ -183,7 +183,12 @@ def build_prompt_brand_guidelines(guidelines: dict[str, Any]) -> str:
     else:
         sections.append("## Logo\n- (none specified)")
 
-    body = "\n\n".join(sections).strip()
+    banner = (
+        "## BRAND PACKAGE (LOCK-IN)\n\n"
+        "Apply this package to every visual and voice decision: use the listed hex colors, font families, "
+        "logo URL, and tone. Prefer brand fidelity over generic decorative novelty.\n\n"
+    )
+    body = (banner + "\n\n".join(sections)).strip()
     if len(body) > MAX_PROMPT_BRAND_GUIDELINES_CHARS:
         return body[: MAX_PROMPT_BRAND_GUIDELINES_CHARS - 1].rstrip() + "…"
     return body

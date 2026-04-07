@@ -375,9 +375,12 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- When context.artifact.promptBrandGuidelines is present, treat it as authoritative saved brand constraints (colors, typography, tone, voice, logo) for this artifact.",
         "- When context.artifact.brandFacts is present, use exact hex values, color role names, typography slots, and logo URL from it; brandFacts wins over vague paraphrases for those fields.",
         "- When context.artifact.brandProfileName is present, the host linked a saved brand profile; combine it with any free-text context.artifact.designGuidelines from the user.",
+        "- Brand lock-in: when brandProfileName is present, palette, typography, logo placement, and voice from the brand package outrank decorative novelty. Do not substitute generic purple/teal gradients, stock fonts, or placeholder logos for specified hex colors, families, and logo URLs.",
+        "- When context.artifact.brandEnforcement is 'strict', treat deviation from promptBrandGuidelines or brandFacts as a defect unless the user prompt explicitly overrides them or the brand package is technically impossible for HTML/CSS in the sandbox.",
+        "- If brandFacts specifies a logo URL, include that logo in the artifact (placement per guidelines) unless the brand text explicitly says not to show it.",
         "- Prioritize user prompt intent over default templates.",
         "- Assume base poll chrome can be replaced by your artifact scene composition.",
-        "- You have full creative freedom with HTML, CSS, and JavaScript animation.",
+        "- Express creative layout and motion in HTML, CSS, and JavaScript; when a brand package is present, it takes priority over generic creative defaults.",
         "- By default, produce a polished, presentation-quality artifact scene rather than a rough experiment.",
         "- Favor balanced composition, clear alignment, and strong visual hierarchy across the full 16:9 frame.",
         "- Keep important content comfortably inside the canvas with safe padding so nothing critical is clipped.",
@@ -664,6 +667,7 @@ async def apply_brand_profile_name_to_context(
     narrative = (profile.prompt_brand_guidelines or "").strip()
     facts = profile.brand_facts if isinstance(profile.brand_facts, dict) else {}
     artifact["brandProfileName"] = normalized_name
+    artifact["brandEnforcement"] = "strict"
     artifact["promptBrandGuidelines"] = narrative
     artifact["brandFacts"] = compact_brand_facts_for_prompt(facts)
 
@@ -6449,6 +6453,23 @@ def prepare_artifact_context_for_model(
         artifact_context.pop("styleOverridesSummary", None)
     artifact_context.pop("styleOverrides", None)
     artifact_context.pop("style_overrides", None)
+    # Surface brand fields early in JSON so the model sees them before long HTML.
+    bpn = artifact_context.get("brandProfileName")
+    if isinstance(bpn, str) and bpn.strip():
+        brand_first = (
+            "brandEnforcement",
+            "brandProfileName",
+            "promptBrandGuidelines",
+            "brandFacts",
+        )
+        ordered_artifact: dict[str, Any] = {}
+        for key in brand_first:
+            if key in artifact_context:
+                ordered_artifact[key] = artifact_context[key]
+        for key, value in artifact_context.items():
+            if key not in ordered_artifact:
+                ordered_artifact[key] = value
+        prepared["artifact"] = ordered_artifact
     return prepared
 
 

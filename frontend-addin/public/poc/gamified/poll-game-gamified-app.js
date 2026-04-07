@@ -2379,6 +2379,7 @@ import {
       pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
+      brandProfileName: asText(answers?.brandProfileName).trim() || undefined,
       designGuidelines: answers.designGuidelines,
       expectedMaxVotes: voteCapacity.expectedMaxVotes,
       recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,

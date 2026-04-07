@@ -70,7 +70,9 @@ export function buildArtifactConversationPrompt(answers = {}) {
 
   return [
     artifactType ? `Artifact type: ${artifactType}` : '',
-    brandProfileName ? `Saved brand profile: ${brandProfileName}` : '',
+    brandProfileName
+      ? `Saved brand profile (mandatory — follow palette, type, logo, and voice from context): ${brandProfileName}`
+      : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     'Build a complete artifact experience that satisfies all of these requirements.'
   ]
@@ -87,7 +89,7 @@ function formatDesignGuidelinesBlock(text) {
     return ''
   }
   return [
-    '--- BRAND / DESIGN GUIDELINES (apply these as hard constraints) ---',
+    '--- BRAND / DESIGN GUIDELINES (non-negotiable unless the user prompt explicitly overrides) ---',
     text,
     '--- END GUIDELINES ---'
   ].join('\n')
@@ -113,6 +115,9 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
+    typeof answers.brandProfileName === 'string' && answers.brandProfileName.trim()
+      ? `Saved brand profile (mandatory): ${answers.brandProfileName.trim()}`
+      : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     'Revise the current artifact instead of starting from scratch.',
@@ -156,6 +161,9 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
 
   return [
     artifactType ? `Current artifact type: ${artifactType}` : '',
+    typeof answers.brandProfileName === 'string' && answers.brandProfileName.trim()
+      ? `Saved brand profile (mandatory): ${answers.brandProfileName.trim()}`
+      : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     errorText ? `Runtime failure to fix: ${errorText}` : '',
@@ -219,6 +227,10 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
     typeof artifactContext?.originalEditRequest === 'string'
       ? artifactContext.originalEditRequest.trim()
       : ''
+  const brandProfileName =
+    typeof artifactContext?.brandProfileName === 'string'
+      ? artifactContext.brandProfileName.trim()
+      : ''
   const hasFailedArtifact = Boolean(
     typeof artifactContext?.failedArtifactHtml === 'string' &&
       artifactContext.failedArtifactHtml.trim()
@@ -232,6 +244,9 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
 
   return [
     'Artifact mode is active.',
+    brandProfileName
+      ? `Saved brand profile is linked (${brandProfileName}). Match promptBrandGuidelines and brandFacts in the server context: palette, fonts, logo, and voice are mandatory unless this user prompt explicitly contradicts them.`
+      : '',
     isEditLike
       ? 'Edit mode: revise the existing artifact conservatively. Treat context.artifact.originalEditRequest as the source of truth. Keep unrelated parts unchanged. Preserve concept, composition, SVG, typography, palette, motion, and live poll behavior unless explicitly asked to change them. Prefer minimal diffs.'
       : 'Generate a full creative artifact experience with complete control over layout, visuals, and motion. Do not constrain to existing poll game templates.',

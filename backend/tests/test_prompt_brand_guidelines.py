@@ -50,6 +50,7 @@ def test_build_includes_colors_typography_tone_visual_logo() -> None:
         },
     }
     text = build_prompt_brand_guidelines(guidelines)
+    assert "## BRAND PACKAGE (LOCK-IN)" in text
     assert "## Brand colors (hierarchy)" in text
     assert "#111111" in text and "Hierarchy 1" in text
     assert "## Typography" in text and "Fraunces" in text and "Inter" in text
