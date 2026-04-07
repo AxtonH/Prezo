@@ -108,7 +108,7 @@ export function JoinSessionModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
+      className="fixed inset-0 z-[200] flex items-center justify-center"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           onClose()
@@ -204,7 +204,7 @@ export function JoinSessionModal({
               <div
                 id="join-session-search-results"
                 role="listbox"
-                className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-[110] max-h-[min(24rem,70vh)] overflow-y-auto rounded-xl border border-slate-200/95 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+                className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-[210] max-h-[min(24rem,70vh)] overflow-y-auto rounded-xl border border-slate-200/95 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
               >
                 {fullMatchCount > 0 ? (
                   <div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { api } from './api/client'
 import type {
@@ -867,6 +868,8 @@ function HostConsole({
     setQuestions([])
     setPolls([])
     setPrompts([])
+    setHostConsoleView('host')
+    setWorkspaceNav('dashboard')
     setRecentSessions((prev) => {
       const next = upsertById(prev, created)
       const keep = prev.length || maxSessionsLimit
@@ -908,6 +911,8 @@ function HostConsole({
     setPrompts([])
     try {
       await hydrateSession(selected)
+      setHostConsoleView('host')
+      setWorkspaceNav('dashboard')
       setShowJoinByCodeForm(false)
     } catch (err) {
       setJoinByCodeError(err instanceof Error ? err.message : 'Failed to load session')
@@ -921,6 +926,8 @@ function HostConsole({
     setJoinByCodeError(null)
     try {
       await joinSessionByCode(code, { setPageError: false })
+      setHostConsoleView('host')
+      setWorkspaceNav('dashboard')
       setShowJoinByCodeForm(false)
     } catch (err) {
       setJoinByCodeError(err instanceof Error ? err.message : 'Failed to join session')
@@ -1548,85 +1555,102 @@ function HostConsole({
             </>
           )}
 
-          {showCreateForm ? (
-            <div
-              className="fixed inset-0 z-[100] flex items-center justify-center"
-              onClick={(e) => { if (e.target === e.currentTarget) { setShowCreateForm(false); setNewSessionTitle('') } }}
-            >
-              <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-              <div className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-w-md mx-4 overflow-hidden">
-                <div className="px-7 pt-7 pb-2">
-                  <div className="flex items-center gap-3 mb-1">
-                    <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
-                      <span className="material-symbols-outlined text-primary text-xl">add_circle</span>
+          {createPortal(
+            <>
+              {showCreateForm ? (
+                <div
+                  className="fixed inset-0 z-[200] flex items-center justify-center"
+                  onClick={(e) => {
+                    if (e.target === e.currentTarget) {
+                      setShowCreateForm(false)
+                      setNewSessionTitle('')
+                    }
+                  }}
+                >
+                  <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+                  <div className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.18)] w-full max-w-md mx-4 overflow-hidden">
+                    <div className="px-7 pt-7 pb-2">
+                      <div className="flex items-center gap-3 mb-1">
+                        <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center">
+                          <span className="material-symbols-outlined text-primary text-xl">add_circle</span>
+                        </div>
+                        <h2 className="text-lg font-bold text-slate-900 !m-0">New Session</h2>
+                      </div>
+                      <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
+                        Give your session a name so participants know what it's about.
+                      </p>
                     </div>
-                    <h2 className="text-lg font-bold text-slate-900 !m-0">New Session</h2>
-                  </div>
-                  <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
-                    Give your session a name so participants know what it's about.
-                  </p>
-                </div>
-                <div className="px-7 py-5 space-y-4">
-                  <input
-                    autoFocus
-                    value={newSessionTitle}
-                    onChange={(e) => setNewSessionTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !isCreating) {
-                        setIsCreating(true)
-                        void createSession(newSessionTitle.trim()).then(() => {
-                          setNewSessionTitle('')
+                    <div className="px-7 py-5 space-y-4">
+                      <input
+                        autoFocus
+                        value={newSessionTitle}
+                        onChange={(e) => setNewSessionTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !isCreating) {
+                            setIsCreating(true)
+                            void createSession(newSessionTitle.trim())
+                              .then(() => {
+                                setNewSessionTitle('')
+                                setShowCreateForm(false)
+                              })
+                              .finally(() => setIsCreating(false))
+                          }
+                          if (e.key === 'Escape') {
+                            setShowCreateForm(false)
+                            setNewSessionTitle('')
+                          }
+                        }}
+                        placeholder="Session name"
+                        className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all placeholder:!text-slate-400"
+                      />
+                    </div>
+                    <div className="px-7 pb-7 flex gap-3">
+                      <button
+                        onClick={() => {
+                          setIsCreating(true)
+                          void createSession(newSessionTitle.trim())
+                            .then(() => {
+                              setNewSessionTitle('')
+                              setShowCreateForm(false)
+                            })
+                            .finally(() => setIsCreating(false))
+                        }}
+                        disabled={isCreating}
+                        className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
+                      >
+                        {isCreating ? 'Starting...' : 'Start session'}
+                      </button>
+                      <button
+                        onClick={() => {
                           setShowCreateForm(false)
-                        }).finally(() => setIsCreating(false))
-                      }
-                      if (e.key === 'Escape') {
-                        setShowCreateForm(false)
-                        setNewSessionTitle('')
-                      }
-                    }}
-                    placeholder="Session name"
-                    className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !px-4 !py-3 !text-[15px] focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all placeholder:!text-slate-400"
-                  />
+                          setNewSessionTitle('')
+                        }}
+                        className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="px-7 pb-7 flex gap-3">
-                  <button
-                    onClick={() => {
-                      setIsCreating(true)
-                      void createSession(newSessionTitle.trim()).then(() => {
-                        setNewSessionTitle('')
-                        setShowCreateForm(false)
-                      }).finally(() => setIsCreating(false))
-                    }}
-                    disabled={isCreating}
-                    className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0"
-                  >
-                    {isCreating ? 'Starting...' : 'Start session'}
-                  </button>
-                  <button
-                    onClick={() => { setShowCreateForm(false); setNewSessionTitle('') }}
-                    className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-5 !py-3 !rounded-xl !text-sm !font-semibold hover:!bg-slate-50 !transition-all !shadow-none"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+              ) : null}
 
-          <JoinSessionModal
-            open={showJoinByCodeForm}
-            onClose={() => {
-              setShowJoinByCodeForm(false)
-              setJoinByCodeError(null)
-            }}
-            sessions={recentSessions}
-            sessionsLoading={sessionsLoading}
-            isBusy={isJoiningByCode}
-            error={joinByCodeError}
-            onClearError={clearJoinByCodeError}
-            onJoinWithSession={handleJoinWithSessionFromModal}
-            onJoinWithCode={handleJoinWithCodeFromModal}
-          />
+              <JoinSessionModal
+                open={showJoinByCodeForm}
+                onClose={() => {
+                  setShowJoinByCodeForm(false)
+                  setJoinByCodeError(null)
+                }}
+                sessions={recentSessions}
+                sessionsLoading={sessionsLoading}
+                isBusy={isJoiningByCode}
+                error={joinByCodeError}
+                onClearError={clearJoinByCodeError}
+                onJoinWithSession={handleJoinWithSessionFromModal}
+                onJoinWithCode={handleJoinWithCodeFromModal}
+              />
+            </>,
+            document.body
+          )}
         </div>
       </main>
     </div>
