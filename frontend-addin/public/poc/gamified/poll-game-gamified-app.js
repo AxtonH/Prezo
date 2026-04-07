@@ -251,6 +251,7 @@ import {
     aiChatStatus: must('ai-chat-status'),
     aiChatQueue: must('ai-chat-queue'),
     aiChatMessages: must('ai-chat-messages'),
+    aiChatMessagesInner: must('ai-chat-messages-inner'),
     aiChatForm: must('ai-chat-form'),
     aiChatInput: must('ai-chat-input'),
     aiChatSend: must('ai-chat-send'),
@@ -2638,8 +2639,13 @@ import {
         } catch {}
     }
     if (state.ai.open) {
+      requestAnimationFrame(() => {
+        syncAiChatMessagesScroll()
+        requestAnimationFrame(syncAiChatMessagesScroll)
+      })
       window.setTimeout(() => {
         el.aiChatInput.focus()
+        syncAiChatMessagesScroll()
       }, 0)
     }
   }
@@ -2742,6 +2748,20 @@ import {
     }
   }
 
+  function syncAiChatMessagesScroll() {
+    const box = el.aiChatMessages
+    const inner = el.aiChatMessagesInner
+    if (!box || !inner) {
+      return
+    }
+    const count = inner.children.length
+    if (count <= 1) {
+      box.scrollTop = 0
+      return
+    }
+    box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight)
+  }
+
   function trimForQueueLabel(text, maxLength = 40) {
     const value = asText(text)
     if (value.length <= maxLength) {
@@ -2760,13 +2780,15 @@ import {
     const node = document.createElement('article')
     node.className = `ai-chat-message message-${normalizedRole}`
     node.textContent = message
-    el.aiChatMessages.appendChild(node)
-    while (el.aiChatMessages.children.length > AI_CHAT_MAX_MESSAGES) {
-      el.aiChatMessages.removeChild(el.aiChatMessages.firstElementChild)
+    el.aiChatMessagesInner.appendChild(node)
+    while (el.aiChatMessagesInner.children.length > AI_CHAT_MAX_MESSAGES) {
+      el.aiChatMessagesInner.removeChild(el.aiChatMessagesInner.firstElementChild)
     }
-    const box = el.aiChatMessages
-    const maxScroll = Math.max(0, box.scrollHeight - box.clientHeight)
-    box.scrollTop = maxScroll
+    syncAiChatMessagesScroll()
+    requestAnimationFrame(() => {
+      syncAiChatMessagesScroll()
+      requestAnimationFrame(syncAiChatMessagesScroll)
+    })
   }
 
   function updateAiChatStatus(text, type = 'idle') {
