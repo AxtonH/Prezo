@@ -2293,15 +2293,16 @@ h1 {
 }
 
 .ai-chat-messages {
-  min-height: 130px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  background: var(--chrome-surface);
-  padding: 8px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .ai-chat-message {
@@ -2549,14 +2550,6 @@ body.editor-docked .artifact-composer-collapse {
 body.editor-docked .ai-chat-collapse:hover,
 body.editor-docked .artifact-composer-collapse:hover {
   background: var(--chrome-hover);
-}
-
-body.editor-docked .ai-chat-messages,
-body.editor-docked .artifact-chat-log {
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  background: var(--chrome-surface);
-  box-shadow: none;
 }
 
 body.editor-docked .ai-chat-message,
