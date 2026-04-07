@@ -4,7 +4,8 @@
    ================================================================ */
 
 :root {
-  --font-family: "Inter", "Segoe UI", "Trebuchet MS", sans-serif;
+  /* Match host console (index.html tailwind.config + index.css) */
+  --font-family: "Inter", "Sora", "Segoe UI", system-ui, sans-serif;
 
   /* --- Canvas theme variables (set by user themes) --- */
   --bg-a: #f4f8ff;
@@ -48,22 +49,22 @@
   --panel-grab-corner: 40px;
   --panel-grab-inset: 6px;
 
-  /* --- Editor chrome colors --- */
+  /* --- Editor chrome (host console: primary/surface/border/muted) --- */
   --chrome-bg: #ffffff;
-  --chrome-border: #e5e7eb;
-  --chrome-text: #111827;
-  --chrome-text-secondary: #6b7280;
-  --chrome-text-muted: #9ca3af;
-  --chrome-hover: #f3f4f6;
-  --chrome-active-bg: #eef2ff;
-  --chrome-active-border: #6366f1;
+  --chrome-border: #e2e8f0;
+  --chrome-text: #0f172a;
+  --chrome-text-secondary: #64748b;
+  --chrome-text-muted: #94a3b8;
+  --chrome-hover: #f1f5f9;
+  --chrome-active-bg: rgba(37, 99, 235, 0.12);
+  --chrome-active-border: #2563eb;
   --chrome-input-bg: #ffffff;
-  --chrome-input-border: #d1d5db;
-  --chrome-input-focus: #6366f1;
-  --chrome-btn-primary: #6366f1;
-  --chrome-btn-primary-hover: #4f46e5;
+  --chrome-input-border: #e2e8f0;
+  --chrome-input-focus: #2563eb;
+  --chrome-btn-primary: #2563eb;
+  --chrome-btn-primary-hover: #1d4ed8;
   --chrome-btn-danger: #ef4444;
-  --chrome-surface: #f9fafb;
+  --chrome-surface: #f8fafc;
 }
 
 * {
@@ -165,7 +166,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   height: var(--header-height);
   border-bottom: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   transition: left 190ms ease, right 190ms ease;
 }
 
@@ -191,19 +192,32 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   flex-shrink: 0;
 }
 
+.ribbon-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.15;
+}
+
 .ribbon-logo {
   flex-shrink: 0;
 }
 
 .ribbon-kicker {
-  display: none;
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--chrome-text-muted);
 }
 
 .ribbon-brand strong {
   display: block;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   color: var(--chrome-text);
   white-space: nowrap;
 }
@@ -227,7 +241,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: transparent;
   color: var(--chrome-text-muted);
   width: 36px;
@@ -276,7 +290,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   border: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
   color: var(--chrome-text-secondary);
-  border-radius: 8px;
+  border-radius: 10px;
   min-height: 34px;
   padding: 6px 10px;
   font-size: 12px;
@@ -330,7 +344,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   width: var(--sidebar-width);
   border-left: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.04);
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.06);
   overflow: hidden;
   display: none;
   transition: right 190ms ease;
