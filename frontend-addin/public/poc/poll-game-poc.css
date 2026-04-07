@@ -1849,6 +1849,8 @@ h1 {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   gap: 7px;
 }
 
@@ -2336,6 +2338,8 @@ h1 {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   gap: 7px;
 }
 
