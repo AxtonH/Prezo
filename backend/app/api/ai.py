@@ -74,6 +74,8 @@ ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 # After brand injection, designGuidelines should stay a short executive summary + small user slice.
 ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT = 1400
+# Stored plain-text brand brief from BrandProfile.prompt_brand_guidelines (separate from designGuidelines).
+ARTIFACT_PROMPT_BRAND_GUIDELINES_CHAR_LIMIT = 8000
 ARTIFACT_PATCH_HTML_CHAR_LIMIT = 120000
 ARTIFACT_PATCH_CANDIDATE_MAX_EDITS = 64
 ARTIFACT_PATCH_BATCH_SIZE = 30
@@ -369,6 +371,9 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.",
         "- If the scene contains moving objects such as cars, runners, avatars, or tokens, keep the same DOM nodes mounted and animate them forward from prior state instead of destroying and recreating them.",
         "Design guidance:",
+        "- When context.artifact.promptBrandGuidelines is present, treat it as authoritative saved brand constraints (colors, typography, tone, voice, logo) for this artifact.",
+        "- When context.artifact.brandFacts is present, use exact hex values, color role names, typography slots, and logo URL from it; brandFacts wins over vague paraphrases for those fields.",
+        "- When context.artifact.brandProfileName is present, the host linked a saved brand profile; combine it with any free-text context.artifact.designGuidelines from the user.",
         "- Prioritize user prompt intent over default templates.",
         "- Assume base poll chrome can be replaced by your artifact scene composition.",
         "- You have full creative freedom with HTML, CSS, and JavaScript animation.",
@@ -613,13 +618,24 @@ class PollGameArtifactAssistantResponse(BaseModel):
     model: str
 
 
+def compact_brand_facts_for_prompt(facts: Any) -> dict[str, Any]:
+    """Keep artifact JSON small; colors list is the main growth vector."""
+    if not isinstance(facts, dict):
+        return {}
+    out = dict(facts)
+    colors = out.get("colors")
+    if isinstance(colors, list) and len(colors) > 24:
+        out["colors"] = colors[:24]
+    return out
+
+
 async def apply_brand_profile_name_to_context(
     request_context: dict[str, Any],
     brand_profile_name: str | None,
     library_user: AuthUser | None,
     store: InMemoryStore,
 ) -> None:
-    """Merge saved brand profile guidelines into `artifact.designGuidelines` when requested."""
+    """Load saved brand profile into artifact context: promptBrandGuidelines, brandFacts, optional designGuidelines merge."""
     if brand_profile_name is None:
         return
     normalized_name = " ".join(str(brand_profile_name).split()).strip()[:64]
@@ -643,9 +659,22 @@ async def apply_brand_profile_name_to_context(
         artifact = {}
         request_context["artifact"] = artifact
     existing = artifact.get("designGuidelines")
-    artifact["designGuidelines"] = merge_brand_package_with_design_guidelines(
-        existing, pkg
-    )
+
+    narrative = (profile.prompt_brand_guidelines or "").strip()
+    facts = profile.brand_facts if isinstance(profile.brand_facts, dict) else {}
+    artifact["brandProfileName"] = normalized_name
+    artifact["promptBrandGuidelines"] = narrative
+    artifact["brandFacts"] = compact_brand_facts_for_prompt(facts)
+
+    if narrative:
+        # User free text stays in designGuidelines only; authoritative brief is promptBrandGuidelines.
+        if not isinstance(existing, str):
+            artifact["designGuidelines"] = ""
+    else:
+        # No stored brief: legacy path — executive summary merged into designGuidelines (may duplicate tone in prompt).
+        artifact["designGuidelines"] = merge_brand_package_with_design_guidelines(
+            existing, pkg
+        )
 
 
 def build_provider_timeout_detail(
@@ -6382,6 +6411,14 @@ def prepare_artifact_context_for_model(
         artifact_context["designGuidelines"] = trim_artifact_context_text(
             dg, ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT
         )
+    pbg = artifact_context.get("promptBrandGuidelines")
+    if isinstance(pbg, str) and len(pbg) > ARTIFACT_PROMPT_BRAND_GUIDELINES_CHAR_LIMIT:
+        artifact_context["promptBrandGuidelines"] = trim_artifact_context_text(
+            pbg, ARTIFACT_PROMPT_BRAND_GUIDELINES_CHAR_LIMIT
+        )
+    bf = artifact_context.get("brandFacts")
+    if bf is not None:
+        artifact_context["brandFacts"] = compact_brand_facts_for_prompt(bf)
     raw_style = artifact_context.get("styleOverrides") or artifact_context.get("style_overrides")
     summary = format_style_overrides_for_prompt(raw_style)
     if summary:

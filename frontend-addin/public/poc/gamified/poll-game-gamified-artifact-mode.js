@@ -60,7 +60,9 @@ export function createEmptyArtifactAnswers() {
   return {
     artifactType: '',
     audienceSize: '',
-    designGuidelines: ''
+    designGuidelines: '',
+    /** Saved brand profile name when library auth is available; sent as brand_profile_name on artifact build. */
+    brandProfileName: ''
   }
 }
 
@@ -71,10 +73,13 @@ export function buildArtifactConversationPrompt(answers = {}) {
     typeof answers.audienceSize === 'string' ? answers.audienceSize.trim() : ''
   const designGuidelines =
     typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  const brandProfileName =
+    typeof answers.brandProfileName === 'string' ? answers.brandProfileName.trim() : ''
 
   return [
     artifactType ? `Artifact type: ${artifactType}` : '',
     audienceSize ? `Expected audience size: ${audienceSize}` : '',
+    brandProfileName ? `Saved brand profile: ${brandProfileName}` : '',
     designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
     'Build a complete artifact experience that satisfies all of these requirements.'
   ]

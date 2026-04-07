@@ -519,6 +519,22 @@
           aria-label="Artifact edit suggestions"
         ></div>
         <form id="artifact-prompt-form" class="artifact-prompt-form">
+          <div
+            id="artifact-brand-profile-row"
+            class="artifact-brand-profile-row hidden"
+            aria-hidden="true"
+          >
+            <label class="artifact-brand-profile-label" for="artifact-brand-profile-select"
+              >Saved brand (optional)</label
+            >
+            <select
+              id="artifact-brand-profile-select"
+              class="artifact-brand-profile-select"
+              aria-label="Saved brand profile for design guidelines"
+            >
+              <option value="">None</option>
+            </select>
+          </div>
           <textarea
             id="artifact-prompt-input"
             class="artifact-prompt-input"

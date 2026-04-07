@@ -264,6 +264,8 @@ import {
     artifactChatLog: must('artifact-chat-log'),
     artifactEditQuickActions: must('artifact-edit-quick-actions'),
     artifactPromptForm: must('artifact-prompt-form'),
+    artifactBrandProfileRow: must('artifact-brand-profile-row'),
+    artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
@@ -1179,6 +1181,7 @@ import {
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
     el.artifactEditQuickActions.addEventListener('click', handleArtifactEditQuickActionClick)
   }
 
@@ -1291,6 +1294,7 @@ import {
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
     el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
+    el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy)
     el.artifactPromptSubmit.textContent = state.artifact.busy
       ? 'Working...'
       : canEditArtifact
@@ -1317,7 +1321,92 @@ import {
     if (!options.preserveInput) {
       el.artifactPromptInput.value = ''
     }
+    el.artifactBrandProfileSelect.value = ''
     syncArtifactConversationUi()
+  }
+
+  function handleArtifactBrandProfileSelectChange() {
+    state.artifact.conversationAnswers.brandProfileName = asText(el.artifactBrandProfileSelect.value).trim()
+  }
+
+  let artifactBrandProfilesFetchPromise = null
+
+  async function ensureArtifactBrandProfilesLoaded() {
+    const token = getLibraryAccessToken()
+    if (!token) {
+      return
+    }
+    if (artifactBrandProfilesFetchPromise) {
+      return artifactBrandProfilesFetchPromise
+    }
+    const base = asText(state.apiBase)
+    if (!base) {
+      return
+    }
+    artifactBrandProfilesFetchPromise = (async () => {
+      try {
+        const response = await fetch(`${base}/library/poll-game/brand-profiles`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !Array.isArray(payload)) {
+          return
+        }
+        const select = el.artifactBrandProfileSelect
+        const keep = select.querySelector('option[value=""]')
+        while (select.lastChild) {
+          select.removeChild(select.lastChild)
+        }
+        if (keep) {
+          select.appendChild(keep)
+        } else {
+          const none = document.createElement('option')
+          none.value = ''
+          none.textContent = 'None'
+          select.appendChild(none)
+        }
+        for (const row of payload) {
+          const name = asText(row?.name).trim()
+          if (!name) {
+            continue
+          }
+          const option = document.createElement('option')
+          option.value = name
+          option.textContent = name
+          select.appendChild(option)
+        }
+      } catch {
+        artifactBrandProfilesFetchPromise = null
+      }
+    })()
+    return artifactBrandProfilesFetchPromise
+  }
+
+  function syncArtifactBrandProfileRow() {
+    const currentStep = getArtifactConversationStep()
+    const token = getLibraryAccessToken()
+    const show =
+      Boolean(currentStep) &&
+      currentStep.key === 'designGuidelines' &&
+      !state.artifact.busy &&
+      Boolean(token)
+    el.artifactBrandProfileRow.classList.toggle('hidden', !show)
+    el.artifactBrandProfileRow.setAttribute('aria-hidden', show ? 'false' : 'true')
+    if (show) {
+      void ensureArtifactBrandProfilesLoaded().finally(() => {
+        const saved = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+        const hasOption = Array.from(el.artifactBrandProfileSelect.options).some((o) => o.value === saved)
+        if (saved && hasOption) {
+          el.artifactBrandProfileSelect.value = saved
+        } else if (saved) {
+          const option = document.createElement('option')
+          option.value = saved
+          option.textContent = saved
+          el.artifactBrandProfileSelect.appendChild(option)
+          el.artifactBrandProfileSelect.value = saved
+        }
+      })
+    }
   }
 
   function syncArtifactConversationUi() {
@@ -1336,6 +1425,7 @@ import {
     renderArtifactConversation()
     renderArtifactEditQuickActions()
     syncArtifactComposerBusyState()
+    syncArtifactBrandProfileRow()
     if (state.artifact.busy) {
       return
     }
@@ -1352,6 +1442,19 @@ import {
         : ARTIFACT_WAITING_STATUS,
       'success'
     )
+  }
+
+  function formatDesignGuidelinesConversationDisplay(answers) {
+    const text = asText(answers?.designGuidelines).trim()
+    const brand = asText(answers?.brandProfileName).trim()
+    const parts = []
+    if (brand) {
+      parts.push(`Saved brand: ${brand}`)
+    }
+    if (text) {
+      parts.push(text)
+    }
+    return parts.join('\n')
   }
 
   function renderArtifactConversation() {
@@ -1374,17 +1477,20 @@ import {
     } else {
       for (let index = 0; index < ARTIFACT_CONVERSATION_STEPS.length; index += 1) {
         const step = ARTIFACT_CONVERSATION_STEPS[index]
-        const answer = asText(state.artifact.conversationAnswers?.[step.key]).trim()
-        if (index > currentStepIndex && !answer) {
+        const displayAnswer =
+          step.key === 'designGuidelines'
+            ? formatDesignGuidelinesConversationDisplay(state.artifact.conversationAnswers)
+            : asText(state.artifact.conversationAnswers?.[step.key]).trim()
+        if (index > currentStepIndex && !displayAnswer) {
           break
         }
         if (index < currentStepIndex || index === currentStepIndex) {
           fragment.appendChild(createArtifactChatMessage(step.question, 'assistant'))
         }
-        if (answer) {
-          fragment.appendChild(createArtifactChatMessage(answer, 'user'))
+        if (displayAnswer) {
+          fragment.appendChild(createArtifactChatMessage(displayAnswer, 'user'))
         }
-        if (index === currentStepIndex && !answer) {
+        if (index === currentStepIndex && !displayAnswer) {
           break
         }
       }
@@ -1455,7 +1561,8 @@ import {
     return {
       artifactType: asText(answers?.artifactType),
       audienceSize: asText(answers?.audienceSize),
-      designGuidelines: asText(answers?.designGuidelines)
+      designGuidelines: asText(answers?.designGuidelines),
+      brandProfileName: asText(answers?.brandProfileName)
     }
   }
 
@@ -1463,12 +1570,16 @@ import {
     const artifactType = asText(answers?.artifactType).trim()
     const audienceSize = asText(answers?.audienceSize).trim()
     const designGuidelines = asText(answers?.designGuidelines).trim()
+    const brandProfileName = asText(answers?.brandProfileName).trim()
     const parts = []
     if (artifactType) {
       parts.push(`Type: ${artifactType}`)
     }
     if (audienceSize) {
       parts.push(`Audience: ${audienceSize}`)
+    }
+    if (brandProfileName) {
+      parts.push(`Brand: ${brandProfileName}`)
     }
     if (designGuidelines) {
       parts.push(`Guidelines: ${designGuidelines}`)
@@ -1671,8 +1782,21 @@ import {
 
   function handleArtifactPromptFormSubmit(event) {
     event.preventDefault()
+    const currentStep = getArtifactConversationStep()
+    if (currentStep?.key === 'designGuidelines') {
+      state.artifact.conversationAnswers.brandProfileName = asText(el.artifactBrandProfileSelect.value).trim()
+    }
     const answer = asText(el.artifactPromptInput.value).trim()
-    if (!answer) {
+    const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+    if (currentStep?.key === 'designGuidelines') {
+      if (!answer && !brandName) {
+        setArtifactComposerStatus(
+          'Add design notes and/or choose a saved brand profile.',
+          'error'
+        )
+        return
+      }
+    } else if (!answer) {
       setArtifactComposerStatus('Answer the current artifact question first.', 'error')
       return
     }
@@ -2766,10 +2890,14 @@ import {
   async function requestAiArtifactBuild(prompt, context) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
+    const brandProfileName = asText(state.artifact.lastAnswers?.brandProfileName).trim()
     const body = {
       prompt,
       context,
       model
+    }
+    if (brandProfileName) {
+      body.brand_profile_name = brandProfileName
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
