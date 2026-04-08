@@ -890,6 +890,12 @@ import {
       const paneId = asText(pane.dataset.ribbonPane)
       pane.classList.toggle('active', paneId === nextTab)
     }
+    if (nextTab === 'ai') {
+      requestAnimationFrame(() => {
+        syncAiChatMessagesScroll()
+        requestAnimationFrame(syncAiChatMessagesScroll)
+      })
+    }
     if (persist) {
       try {
         localStorage.setItem(RIBBON_TAB_KEY, nextTab)

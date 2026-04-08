@@ -424,8 +424,12 @@ body.ribbon-hidden .settings-panel {
 .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-shell.hidden {
   display: flex !important;
   flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
   position: static;
   width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
   max-width: none;
   max-height: none;
@@ -436,11 +440,18 @@ body.ribbon-hidden .settings-panel {
   box-shadow: none;
 }
 
-/* Classic mode: force panel visible regardless of state.ai.open */
+.ribbon-pane[data-ribbon-pane="ai"] .ai-chat-shell > .ai-chat-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-self: stretch;
+  width: 100%;
+}
+
+/* Classic mode: ribbon sizing only — grid tracks/areas come from .ai-chat-panel rules near .ai-chat-fab */
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel,
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hidden {
   display: grid !important;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   width: 100%;
   height: 100%;
@@ -451,13 +462,7 @@ body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-pan
   background: transparent;
   box-shadow: none;
   padding: 12px 14px 14px;
-}
-
-/* Queue hidden = not a grid item; four rows so the scroll row is minmax(0,1fr). Class set in HTML + renderAiChatQueue. */
-body:not(.artifact-mode-active)
-  .ribbon-pane[data-ribbon-pane="ai"]
-  .ai-chat-panel.ai-chat-panel--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  align-content: start;
 }
 
 /* Artifact mode: panel stays hidden (JS controls it), composer takes over */
@@ -2236,8 +2241,9 @@ h1 {
 
 .ai-chat-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
+  align-content: start;
   width: min(420px, calc(100vw - 24px));
   min-height: 360px;
   max-height: min(68vh, 620px);
@@ -2248,12 +2254,75 @@ h1 {
   padding: 11px;
 }
 
+/* Explicit areas so the 1fr row always maps to #ai-chat-messages (queue hidden skips the queue row). */
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) {
+  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
+  grid-template-areas:
+    "head"
+    "queue"
+    "msgs"
+    "form"
+    "foot";
+}
+
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) .ai-chat-header {
+  grid-area: head;
+}
+
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-queue {
+  grid-area: queue;
+}
+
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-messages {
+  grid-area: msgs;
+  min-height: 0;
+}
+
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-form {
+  grid-area: form;
+}
+
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-status {
+  grid-area: foot;
+}
+
 .ai-chat-panel.ai-chat-panel--queue-hidden {
   grid-template-rows: auto minmax(130px, 1fr) auto auto;
+  grid-template-areas:
+    "head"
+    "msgs"
+    "form"
+    "foot";
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden .ai-chat-header {
+  grid-area: head;
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden #ai-chat-messages {
+  grid-area: msgs;
+  min-height: 0;
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden #ai-chat-form {
+  grid-area: form;
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden #ai-chat-status {
+  grid-area: foot;
 }
 
 .ai-chat-panel.hidden {
   display: none;
+}
+
+/* Ribbon sidebar: tighter min row so the flex column does not leave a dead band above the composer. */
+body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel:not(.ai-chat-panel--queue-hidden) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+}
+
+body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.ai-chat-panel--queue-hidden {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .ai-chat-header {
@@ -2472,6 +2541,7 @@ body.editor-docked .ai-chat-shell {
   height: calc(100vh - var(--ribbon-offset));
   max-height: calc(100vh - var(--ribbon-offset));
   align-items: stretch;
+  justify-content: flex-start;
   gap: 0;
   padding: 16px 14px 14px;
   border-left: 0;
@@ -2502,6 +2572,13 @@ body.editor-docked .artifact-composer.is-floating {
   box-shadow: none;
 }
 
+body.editor-docked .ai-chat-shell > .ai-chat-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-self: stretch;
+  width: 100%;
+}
+
 body.editor-docked .artifact-composer.is-floating {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -2528,6 +2605,7 @@ body.editor-docked .ai-chat-shell {
   padding: 0;
   background: var(--chrome-bg);
   box-shadow: none;
+  justify-content: flex-start;
 }
 
 body.editor-docked .ai-chat-header {
