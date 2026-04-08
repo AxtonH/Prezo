@@ -320,7 +320,6 @@ import {
     bgB: '#dff0ff',
     overlayColor: '#eef5ff',
     overlayOpacity: 0.22,
-    gridVisible: true,
     gridOpacity: 0.1,
     panelColor: '#ffffff',
     panelOpacity: 0.82,
@@ -398,13 +397,11 @@ import {
   })
 
   const themeControls = [
-    { id: 'theme-bg-image-url', key: 'bgImageUrl', type: 'text' },
     { id: 'theme-bg-a', key: 'bgA', type: 'color' },
     { id: 'theme-bg-b', key: 'bgB', type: 'color' },
     { id: 'theme-overlay-color', key: 'overlayColor', type: 'color' },
     { id: 'theme-bg-image-opacity', key: 'bgImageOpacity', type: 'number' },
     { id: 'theme-overlay-opacity', key: 'overlayOpacity', type: 'number' },
-    { id: 'theme-grid-visible', key: 'gridVisible', type: 'checkbox' },
     { id: 'theme-grid-opacity', key: 'gridOpacity', type: 'number' },
     { id: 'theme-panel-color', key: 'panelColor', type: 'color' },
     { id: 'theme-panel-opacity', key: 'panelOpacity', type: 'number' },
@@ -993,6 +990,7 @@ import {
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
     bindImageUpload('theme-asset-upload', 'assetUrl', 'Overlay asset applied.')
+    setupBackgroundDropzone()
   }
 
   function setupAiChat() {
@@ -3370,9 +3368,6 @@ import {
     if (Object.prototype.hasOwnProperty.call(AI_THEME_NUMBER_RANGES, key)) {
       const [min, max] = AI_THEME_NUMBER_RANGES[key]
       return clamp(value, min, max, currentTheme[key])
-    }
-    if (key === 'gridVisible') {
-      return Boolean(value)
     }
     if (key === 'visualMode') {
       return sanitizeVisualMode(value, currentTheme.visualMode)
@@ -8156,6 +8151,100 @@ import {
     })
   }
 
+  function syncBgDropzoneUi() {
+    const zone = document.getElementById('theme-bg-image-dropzone')
+    const clearBtn = document.getElementById('theme-bg-image-clear')
+    if (!zone) {
+      return
+    }
+    const url = asText(currentTheme.bgImageUrl)
+    const has = Boolean(url)
+    zone.classList.toggle('theme-bg-dropzone--has-image', has)
+    if (has) {
+      const safe = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+      zone.style.backgroundImage = `url("${safe}")`
+    } else {
+      zone.style.backgroundImage = ''
+    }
+    const label = zone.querySelector('.theme-bg-dropzone-label')
+    const hint = zone.querySelector('.theme-bg-dropzone-hint')
+    if (label) {
+      label.textContent = has
+        ? 'Image applied — drop or click to replace'
+        : 'Drop an image here, or click to browse'
+    }
+    if (hint) {
+      if (has) {
+        hint.style.display = 'none'
+      } else {
+        hint.style.display = 'block'
+        hint.textContent = 'PNG, JPG, WebP, GIF, SVG'
+      }
+    }
+    if (clearBtn) {
+      clearBtn.hidden = !has
+    }
+  }
+
+  function setupBackgroundDropzone() {
+    const zone = document.getElementById('theme-bg-image-dropzone')
+    const input = document.getElementById('theme-bg-image-upload')
+    const clearBtn = document.getElementById('theme-bg-image-clear')
+    if (!zone || !input) {
+      return
+    }
+    const prevent = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    ;['dragenter', 'dragover'].forEach((eventName) => {
+      zone.addEventListener(eventName, (event) => {
+        prevent(event)
+        zone.classList.add('theme-bg-dropzone--drag')
+      })
+    })
+    zone.addEventListener('dragleave', (event) => {
+      prevent(event)
+      zone.classList.remove('theme-bg-dropzone--drag')
+    })
+    zone.addEventListener('drop', async (event) => {
+      prevent(event)
+      zone.classList.remove('theme-bg-dropzone--drag')
+      const file = event.dataTransfer?.files?.[0]
+      if (!file || !file.type.startsWith('image/')) {
+        showThemeFeedback('Drop an image file.', 'error')
+        return
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        updateTheme({ bgImageUrl: dataUrl }, { historyLabel: 'Update design' })
+        showThemeFeedback('Background image applied.', 'success')
+      } catch {
+        showThemeFeedback('Could not read that image.', 'error')
+      }
+    })
+    zone.addEventListener('click', (event) => {
+      if (event.target === clearBtn || (clearBtn && clearBtn.contains(event.target))) {
+        return
+      }
+      input.click()
+    })
+    zone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        input.click()
+      }
+    })
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (event) => {
+        event.stopPropagation()
+        event.preventDefault()
+        updateTheme({ bgImageUrl: '' }, { historyLabel: 'Clear background image' })
+        showThemeFeedback('Background image removed.', 'success')
+      })
+    }
+  }
+
   async function saveTheme() {
     const name = normalizeThemeName(el.themeName.value)
     if (!name) {
@@ -8777,7 +8866,7 @@ import {
     el.bgImage.style.opacity = `${theme.bgImageOpacity}`
     el.bgOverlay.style.backgroundColor = theme.overlayColor
     el.bgOverlay.style.opacity = `${theme.overlayOpacity}`
-    el.gridBg.style.display = theme.gridVisible ? 'block' : 'none'
+    el.gridBg.style.display = Number(theme.gridOpacity) > 0 ? 'block' : 'none'
     el.gridBg.style.opacity = `${theme.gridOpacity}`
     applyElementOffset(
       el.bgImage,
@@ -8824,6 +8913,7 @@ import {
     applyDeletedStaticTargets(theme)
     syncArtifactComposerVisibility()
     scheduleResizeSelectionUpdate()
+    syncBgDropzoneUi()
   }
 
   function applyElementOffset(node, offsetX, offsetY, scaleX = 1, scaleY = 1) {
@@ -9025,6 +9115,7 @@ import {
         input.value = value == null ? '' : String(value)
       }
     }
+    syncBgDropzoneUi()
   }
 
   function syncSingleControlValue(themeKey, value) {
@@ -9497,6 +9588,10 @@ import {
 
   function sanitizeTheme(theme) {
     const incoming = migrateLegacyTitleThemeFields(theme)
+    let gridOpacity = clamp(incoming.gridOpacity, 0, 0.5, defaultTheme.gridOpacity)
+    if (incoming.gridVisible === false) {
+      gridOpacity = 0
+    }
     return {
       bgImageUrl: sanitizeUrl(incoming.bgImageUrl, defaultTheme.bgImageUrl),
       bgImageOpacity: clamp(incoming.bgImageOpacity, 0, 1, defaultTheme.bgImageOpacity),
@@ -9504,8 +9599,7 @@ import {
       bgB: sanitizeHex(incoming.bgB, defaultTheme.bgB),
       overlayColor: sanitizeHex(incoming.overlayColor, defaultTheme.overlayColor),
       overlayOpacity: clamp(incoming.overlayOpacity, 0, 1, defaultTheme.overlayOpacity),
-      gridVisible: Boolean(incoming.gridVisible ?? defaultTheme.gridVisible),
-      gridOpacity: clamp(incoming.gridOpacity, 0, 0.5, defaultTheme.gridOpacity),
+      gridOpacity,
       panelColor: sanitizeHex(incoming.panelColor, defaultTheme.panelColor),
       panelOpacity: clamp(incoming.panelOpacity, 0, 1, defaultTheme.panelOpacity),
       panelBorder: sanitizeHex(incoming.panelBorder, defaultTheme.panelBorder),

@@ -309,7 +309,7 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
         "trackColor, fillA, fillB, bgImageOpacity, overlayOpacity, gridOpacity, "
         "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, "
         "logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
-        "gridVisible, visualMode, artifactLayout, logoUrl, assetUrl, fontFamily.",
+        "visualMode, artifactLayout, logoUrl, assetUrl, fontFamily.",
         "visualMode values: classic, artifact.",
         "artifactLayout values: horizontal, vertical.",
         "Allowed move targets: panel, eyebrow, question, meta, footer, options, logo, asset, bgImage, overlay, grid.",

@@ -52,7 +52,6 @@ export const AI_THEME_ALLOWED_KEYS = new Set([
   ...Object.keys(AI_THEME_NUMBER_RANGES),
   ...AI_THEME_COLOR_KEYS,
   'bgImageUrl',
-  'gridVisible',
   'visualMode',
   'artifactLayout',
   'logoUrl',

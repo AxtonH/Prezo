@@ -254,38 +254,86 @@
           <article class="ribbon-group">
             <h3 class="sidebar-section-title">Background</h3>
             <div class="sidebar-section-body">
-              <label>Image URL<input id="theme-bg-image-url" type="text" placeholder="https://..." /></label>
-              <label>Upload image<input id="theme-bg-image-upload" type="file" accept="image/*" /></label>
-              <div class="sidebar-controls-grid">
-                <label class="advanced-control">Gradient A<input id="theme-bg-a" type="color" /></label>
-                <label class="advanced-control">Gradient B<input id="theme-bg-b" type="color" /></label>
-                <label class="advanced-control">Overlay color<input id="theme-overlay-color" type="color" /></label>
-                <label>Image opacity<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                <label>Overlay opacity<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                <label class="advanced-control">Grid opacity<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" /></label>
-                <label class="check">Show grid<input id="theme-grid-visible" type="checkbox" /></label>
+              <div
+                id="theme-bg-image-dropzone"
+                class="theme-bg-dropzone"
+                role="button"
+                tabindex="0"
+                aria-label="Background image: drop a file or click to browse"
+              >
+                <input
+                  id="theme-bg-image-upload"
+                  class="theme-bg-dropzone-file"
+                  type="file"
+                  accept="image/*"
+                  tabindex="-1"
+                  aria-hidden="true"
+                />
+                <div class="theme-bg-dropzone-inner">
+                  <span class="material-symbols-outlined theme-bg-dropzone-icon" aria-hidden="true">image</span>
+                  <p class="theme-bg-dropzone-label">Drop an image here, or click to browse</p>
+                  <p class="theme-bg-dropzone-hint">PNG, JPG, WebP, GIF, SVG</p>
+                </div>
               </div>
+              <div class="theme-bg-dropzone-actions">
+                <button id="theme-bg-image-clear" type="button" class="ghost theme-bg-clear-btn" hidden>
+                  Remove background image
+                </button>
+              </div>
+
+              <details class="design-collapse">
+                <summary>Gradient &amp; overlay</summary>
+                <div class="design-collapse-body sidebar-controls-grid design-controls-tight">
+                  <label>Gradient A<input id="theme-bg-a" type="color" /></label>
+                  <label>Gradient B<input id="theme-bg-b" type="color" /></label>
+                  <label>Overlay<input id="theme-overlay-color" type="color" /></label>
+                </div>
+              </details>
+
+              <details class="design-collapse">
+                <summary>Opacity &amp; grid</summary>
+                <div class="design-collapse-body sidebar-controls-grid design-controls-tight">
+                  <label>Photo<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" title="Background photo strength" /></label>
+                  <label>Tint<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" title="Color overlay strength" /></label>
+                  <label>Grid<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" title="Guide grid visibility (0 = off)" /></label>
+                </div>
+              </details>
             </div>
           </article>
 
           <article class="ribbon-group">
-            <h3 class="sidebar-section-title">Poll Style</h3>
+            <h3 class="sidebar-section-title">Poll style</h3>
             <div class="sidebar-section-body">
-              <div class="sidebar-controls-grid">
-                <label>Panel color<input id="theme-panel-color" type="color" /></label>
-                <label class="advanced-control">Panel opacity<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                <label class="advanced-control">Panel border<input id="theme-panel-border" type="color" /></label>
-                <label>Main text<input id="theme-text-main" type="color" /></label>
-                <label class="advanced-control">Muted text<input id="theme-text-sub" type="color" /></label>
-                <label class="advanced-control">Track color<input id="theme-track-color" type="color" /></label>
-                <label class="advanced-control">Track opacity<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
-                <label>Fill A<input id="theme-fill-a" type="color" /></label>
-                <label>Fill B<input id="theme-fill-b" type="color" /></label>
-                <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
-                <label class="advanced-control">Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
-                <label class="advanced-control">Question size<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
-                <label>Label size<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
-              </div>
+              <details class="design-collapse" open>
+                <summary>Panel &amp; text</summary>
+                <div class="design-collapse-body sidebar-controls-grid design-controls-tight">
+                  <label>Panel<input id="theme-panel-color" type="color" /></label>
+                  <label>Border<input id="theme-panel-border" type="color" /></label>
+                  <label>Main text<input id="theme-text-main" type="color" /></label>
+                  <label>Muted<input id="theme-text-sub" type="color" /></label>
+                  <label>Panel α<input id="theme-panel-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                </div>
+              </details>
+
+              <details class="design-collapse">
+                <summary>Bars &amp; track</summary>
+                <div class="design-collapse-body sidebar-controls-grid design-controls-tight">
+                  <label>Fill A<input id="theme-fill-a" type="color" /></label>
+                  <label>Fill B<input id="theme-fill-b" type="color" /></label>
+                  <label>Track<input id="theme-track-color" type="color" /></label>
+                  <label>Track α<input id="theme-track-opacity" type="range" min="0" max="1" step="0.01" /></label>
+                </div>
+              </details>
+
+              <details class="design-collapse">
+                <summary>Sizes</summary>
+                <div class="design-collapse-body sidebar-controls-grid design-controls-tight">
+                  <label>Bar height<input id="theme-bar-height" type="range" min="8" max="44" step="1" /></label>
+                  <label>Bar radius<input id="theme-bar-radius" type="range" min="0" max="999" step="1" /></label>
+                  <label>Question<input id="theme-question-size" type="range" min="42" max="90" step="1" /></label>
+                  <label>Label<input id="theme-label-size" type="range" min="14" max="36" step="1" /></label>
+                </div>
+              </details>
             </div>
           </article>
         </section>

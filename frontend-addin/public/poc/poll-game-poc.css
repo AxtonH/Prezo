@@ -960,6 +960,191 @@ body.artifact-mode-active .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hid
   grid-template-columns: none;
 }
 
+/* ----------------------------------------------------------------
+   Design tab: collapsible groups & background dropzone
+   ---------------------------------------------------------------- */
+
+.design-collapse {
+  margin-top: 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: var(--chrome-surface);
+  overflow: hidden;
+}
+
+.design-collapse:first-of-type {
+  margin-top: 4px;
+}
+
+.design-collapse > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chrome-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.design-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.design-collapse > summary::after {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--chrome-text-muted);
+  flex: 0 0 auto;
+  transition: transform 0.2s ease;
+}
+
+.design-collapse[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.design-collapse > summary:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.design-collapse-body {
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.design-controls-tight label {
+  grid-template-columns: 64px minmax(0, 1fr);
+  font-size: 11px;
+}
+
+.design-controls-tight label input[type='color'] {
+  min-height: 28px;
+  padding: 2px;
+}
+
+.theme-bg-dropzone {
+  position: relative;
+  min-height: 96px;
+  border: 1.5px dashed var(--chrome-input-border);
+  border-radius: 10px;
+  background: var(--chrome-input-bg);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.theme-bg-dropzone:hover,
+.theme-bg-dropzone:focus-visible {
+  border-color: var(--chrome-input-focus);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+  outline: none;
+}
+
+.theme-bg-dropzone.theme-bg-dropzone--drag {
+  border-style: solid;
+  border-color: var(--chrome-input-focus);
+  background-color: rgba(99, 102, 241, 0.06);
+}
+
+.theme-bg-dropzone--has-image .theme-bg-dropzone-inner {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.78) 100%
+  );
+  border-radius: 8px;
+  margin: 6px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.theme-bg-dropzone-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.theme-bg-dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 88px;
+  padding: 10px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.theme-bg-dropzone--has-image .theme-bg-dropzone-inner {
+  pointer-events: none;
+}
+
+.theme-bg-dropzone-icon {
+  font-size: 28px;
+  color: var(--chrome-text-muted);
+  opacity: 0.85;
+}
+
+.theme-bg-dropzone--has-image .theme-bg-dropzone-icon {
+  display: none;
+}
+
+.theme-bg-dropzone-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chrome-text);
+  line-height: 1.3;
+  max-width: 16rem;
+}
+
+.theme-bg-dropzone-hint {
+  margin: 0;
+  font-size: 10px;
+  color: var(--chrome-text-muted);
+}
+
+.theme-bg-dropzone-actions {
+  margin-top: 6px;
+}
+
+.theme-bg-clear-btn {
+  width: 100%;
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--chrome-surface);
+  color: var(--chrome-text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.theme-bg-clear-btn:hover {
+  background: var(--chrome-input-bg);
+  border-color: var(--chrome-input-border);
+  color: var(--chrome-text);
+}
+
 /* Legacy .grid class support (kept for any remaining uses) */
 .grid {
   display: grid;
