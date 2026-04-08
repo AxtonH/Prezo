@@ -2,11 +2,14 @@ import { PrezoWordmark } from './PrezoWordmark'
 import { ProfileAvatar } from './ProfileAvatar'
 
 /** Primary areas while hosting a live session (sidebar replaces legacy items). */
-export type WorkspaceNavId = 'dashboard' | 'polls' | 'discussion' | 'qna'
+export type WorkspaceNavId = 'dashboard' | 'polls' | 'discussion' | 'qna' | 'editor'
 
 interface SideNavProps {
   onLogout: () => void
+  /** @deprecated Kept for optional fallback; workspace Editor uses `onOpenEditorInline`. */
   editorLink: string | null
+  /** Opens the Prezo Editor in the session workspace (in-app), e.g. from the footer while Settings is open. */
+  onOpenEditorInline?: () => void
   isAddinHost: boolean
   displayName: string
   avatarUrl: string | null
@@ -48,12 +51,14 @@ const WORKSPACE_NAV_ITEMS: { id: WorkspaceNavId; icon: string; label: string }[]
   { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
   { id: 'polls', icon: 'bar_chart', label: 'Polls' },
   { id: 'discussion', icon: 'forum', label: 'Open discussion' },
-  { id: 'qna', icon: 'chat_bubble', label: 'Q&A' }
+  { id: 'qna', icon: 'chat_bubble', label: 'Q&A' },
+  { id: 'editor', icon: 'edit', label: 'Editor' }
 ]
 
 export function SideNav({
   onLogout,
   editorLink,
+  onOpenEditorInline,
   isAddinHost,
   displayName,
   avatarUrl,
@@ -210,32 +215,32 @@ export function SideNav({
                 <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
               </button>
             ))}
-            {editorLink ? (
-              <a
-                href={editorLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${workspaceSubmenuBase} text-slate-900/70 hover:bg-slate-200 border-l-2 border-slate-300/80`}
-              >
-                <span className="material-symbols-outlined text-[1.25rem] shrink-0">edit</span>
-                <span>Editor</span>
-              </a>
-            ) : null}
           </>
         )}
       </nav>
 
       <div className="mt-auto p-4 border-t border-border/30 flex flex-col">
         {editorLink && !workspaceMode ? (
-          <a
-            href={editorLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1"
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">edit</span>
-            <span>Editor</span>
-          </a>
+          onOpenEditorInline ? (
+            <button
+              type="button"
+              onClick={onOpenEditorInline}
+              className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1 w-full text-left"
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">edit</span>
+              <span>Editor</span>
+            </button>
+          ) : (
+            <a
+              href={editorLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1"
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">edit</span>
+              <span>Editor</span>
+            </a>
+          )
         ) : null}
 
         <div className="space-y-1 mt-1">

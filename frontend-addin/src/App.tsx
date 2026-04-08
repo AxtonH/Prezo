@@ -25,6 +25,7 @@ import { OnboardingModal } from './components/OnboardingModal'
 import {
   SessionDashboardPage,
   SessionDiscussionDashboardPage,
+  SessionEditorEmbed,
   SessionPollsDashboardPage
 } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
@@ -54,7 +55,7 @@ import { isPowerPointAddinHost } from './utils/officeHost'
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
 
-const WORKSPACE_NAV_IDS: WorkspaceNavId[] = ['dashboard', 'polls', 'discussion', 'qna']
+const WORKSPACE_NAV_IDS: WorkspaceNavId[] = ['dashboard', 'polls', 'discussion', 'qna', 'editor']
 
 function parseWorkspaceNav(value: string | null): WorkspaceNavId {
   if (value && WORKSPACE_NAV_IDS.includes(value as WorkspaceNavId)) {
@@ -336,6 +337,8 @@ function HostConsole({
   )
   /** Primary area while hosting a live session (sidebar workspace tabs). */
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
+  /** When opening the in-app editor from “Configure poll”, pass `pollId` into the iframe URL. */
+  const [editorFocusPollId, setEditorFocusPollId] = useState<string | null>(null)
   /** False until we finish trying to restore the last open session (e.g. after browser refresh). */
   const [hostRestoreComplete, setHostRestoreComplete] = useState(false)
   /** Bumped after a successful audience Q&A delete so the dashboard can clear the “inactive Q&A” ref. */
@@ -344,6 +347,15 @@ function HostConsole({
   useEffect(() => {
     setQnaDeletedEpoch(0)
   }, [session?.id])
+
+  const prevWorkspaceNavRef = useRef<WorkspaceNavId>(workspaceNav)
+  useEffect(() => {
+    const prev = prevWorkspaceNavRef.current
+    prevWorkspaceNavRef.current = workspaceNav
+    if (prev === 'editor' && workspaceNav !== 'editor') {
+      setEditorFocusPollId(null)
+    }
+  }, [workspaceNav])
 
   useEffect(() => {
     if (!session?.id) {
@@ -1138,6 +1150,13 @@ function HostConsole({
   const editorLink = session
     ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
     : null
+
+  const goToEmbeddedEditor = useCallback((pollId?: string | null) => {
+    if (pollId) {
+      setEditorFocusPollId(pollId)
+    }
+    setWorkspaceNav('editor')
+  }, [])
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<
     'active' | 'host' | 'cohost'
@@ -1185,6 +1204,10 @@ function HostConsole({
         <SideNav
           onLogout={onLogout}
           editorLink={editorLink}
+          onOpenEditorInline={() => {
+            setHostConsoleView('host')
+            setWorkspaceNav('editor')
+          }}
           isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
@@ -1218,7 +1241,11 @@ function HostConsole({
       ) : null}
 
       <main
-        className={`flex-1 min-h-0 overflow-y-auto ${
+        className={`flex-1 min-h-0 ${
+          session && workspaceNav === 'editor'
+            ? 'flex flex-col overflow-hidden'
+            : 'overflow-y-auto'
+        } ${
           hostConsoleView === 'brandIdentities' && !isAddinHost ? 'bg-slate-50' : 'bg-white'
         } ${isAddinHost || hostRestoreInProgress ? '' : 'ml-64'}`}
       >
@@ -1248,10 +1275,20 @@ function HostConsole({
                 ) : hostConsoleView !== 'brandIdentities' && session ? (
                   <button
                     type="button"
-                    onClick={goToAllSessions}
+                    onClick={() => {
+                      if (workspaceNav === 'editor') {
+                        setWorkspaceNav('dashboard')
+                      } else {
+                        goToAllSessions()
+                      }
+                    }}
                     className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1 !mr-1 !rounded-lg !text-primary hover:!bg-primary/10 !shadow-none"
-                    title="Back to all sessions"
-                    aria-label="Back to all sessions"
+                    title={
+                      workspaceNav === 'editor' ? 'Back to session overview' : 'Back to all sessions'
+                    }
+                    aria-label={
+                      workspaceNav === 'editor' ? 'Back to session overview' : 'Back to all sessions'
+                    }
                   >
                     <span className="material-symbols-outlined text-xl">arrow_back</span>
                   </button>
@@ -1259,19 +1296,33 @@ function HostConsole({
                 <PrezoWordmark
                   logoSize={20}
                   textClassName="text-base font-bold tracking-tight text-[#004080]"
-                  className="min-w-0 truncate"
+                  className="min-w-0 truncate flex-1"
                 />
-                {hostConsoleView === 'host' ? (
-                  <button
-                    type="button"
-                    onClick={() => setHostConsoleView('settings')}
-                    className="!inline-flex !items-center !gap-1 !ml-auto !shrink-0 !bg-transparent !border-0 !p-1.5 !rounded-lg !text-slate-600 hover:!bg-slate-100 hover:!text-primary !shadow-none"
-                    title="Settings"
-                    aria-label="Settings"
-                  >
-                    <span className="material-symbols-outlined text-xl">settings</span>
-                  </button>
-                ) : null}
+                <div className="flex shrink-0 items-center gap-0.5 ml-auto">
+                  {hostConsoleView === 'host' && session && workspaceNav !== 'editor' ? (
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceNav('editor')}
+                      className="!inline-flex !items-center !gap-1 !bg-transparent !border-0 !px-2 !py-1.5 !rounded-lg !text-slate-700 hover:!bg-slate-100 !text-xs !font-bold !uppercase !tracking-wide"
+                      title="Open Prezo Editor"
+                      aria-label="Open Prezo Editor"
+                    >
+                      <span className="material-symbols-outlined text-xl">edit</span>
+                      <span className="max-[380px]:hidden">Editor</span>
+                    </button>
+                  ) : null}
+                  {hostConsoleView === 'host' ? (
+                    <button
+                      type="button"
+                      onClick={() => setHostConsoleView('settings')}
+                      className="!inline-flex !items-center !gap-1 !shrink-0 !bg-transparent !border-0 !p-1.5 !rounded-lg !text-slate-600 hover:!bg-slate-100 hover:!text-primary !shadow-none"
+                      title="Settings"
+                      aria-label="Settings"
+                    >
+                      <span className="material-symbols-outlined text-xl">settings</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
@@ -1334,7 +1385,9 @@ function HostConsole({
           className={
             hostConsoleView === 'brandIdentities' && !isAddinHost
               ? 'mx-auto w-full max-w-none px-0 py-0'
-              : `mx-auto w-full max-w-[min(96rem,calc(100vw-1.5rem))] ${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'}`
+              : session && workspaceNav === 'editor'
+                ? 'flex min-h-0 flex-1 flex-col w-full max-w-none px-0 py-0'
+                : `mx-auto w-full max-w-[min(96rem,calc(100vw-1.5rem))] ${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'}`
           }
         >
           {hostConsoleView === 'settings' ? (
@@ -1365,7 +1418,8 @@ function HostConsole({
                 session &&
                 (workspaceNav === 'dashboard' ||
                   workspaceNav === 'polls' ||
-                  workspaceNav === 'discussion')
+                  workspaceNav === 'discussion' ||
+                  workspaceNav === 'editor')
               ) ? (
                 <div className="mb-8">
                   <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
@@ -1458,6 +1512,12 @@ function HostConsole({
                       : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
                   }
                 />
+              ) : workspaceNav === 'editor' ? (
+                <SessionEditorEmbed
+                  sessionId={session.id}
+                  code={session.code}
+                  focusPollId={editorFocusPollId}
+                />
               ) : workspaceNav === 'polls' ? (
                 <SessionPollsDashboardPage
                   session={session}
@@ -1467,12 +1527,7 @@ function HostConsole({
                     if (!session) {
                       return
                     }
-                    const url = buildEditingStationUrl({
-                      sessionId: session.id,
-                      code: session.code,
-                      pollId
-                    })
-                    window.open(url, '_blank', 'noopener,noreferrer')
+                    goToEmbeddedEditor(pollId)
                   }}
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onResumePoll={(pollId) => void openPoll(pollId)}
@@ -1519,12 +1574,7 @@ function HostConsole({
                     if (!session) {
                       return
                     }
-                    const url = buildEditingStationUrl({
-                      sessionId: session.id,
-                      code: session.code,
-                      pollId
-                    })
-                    window.open(url, '_blank', 'noopener,noreferrer')
+                    goToEmbeddedEditor(pollId)
                   }}
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onStopQna={() => void closeQna()}
