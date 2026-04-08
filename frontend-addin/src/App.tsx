@@ -1283,7 +1283,8 @@ function HostConsole({
         }`}
       >
         {/* Web Brand identity: full-width page next to SideNav only — no session search bar / duplicate shell */}
-        {!(hostConsoleView === 'brandIdentities' && !isAddinHost) ? (
+        {!(hostConsoleView === 'brandIdentities' && !isAddinHost) &&
+        !(session && !isAddinHost && hostConsoleView === 'host') ? (
           <header className={`flex items-center justify-between w-full h-16 sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-100 gap-4 ${isAddinHost ? 'px-5' : 'px-12'}`}>
             {hostRestoreInProgress && hostConsoleView === 'host' ? (
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1370,25 +1371,15 @@ function HostConsole({
                   </button>
                 ) : (
                   <div className="min-w-0 flex-1">
-                    {session ? (
-                      <div className="flex min-w-0 items-center">
-                        <PrezoWordmark
-                          logoSize={24}
-                          textClassName="text-lg font-bold tracking-tight text-[#004080]"
-                          className="min-w-0 truncate"
-                        />
-                      </div>
-                    ) : (
-                      <HostSearchBar
-                        value={sessionSearchQuery}
-                        onChange={setSessionSearchQuery}
-                        sessionMatches={filteredRecentSessions}
-                        activityHits={activityHits}
-                        activitiesLoading={searchActivitiesLoading}
-                        debouncedQuery={debouncedSearch}
-                        onSelectSession={(selected) => void resumeSession(selected)}
-                      />
-                    )}
+                    <HostSearchBar
+                      value={sessionSearchQuery}
+                      onChange={setSessionSearchQuery}
+                      sessionMatches={filteredRecentSessions}
+                      activityHits={activityHits}
+                      activitiesLoading={searchActivitiesLoading}
+                      debouncedQuery={debouncedSearch}
+                      onSelectSession={(selected) => void resumeSession(selected)}
+                    />
                   </div>
                 )}
               </div>
