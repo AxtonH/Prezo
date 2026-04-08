@@ -38,6 +38,8 @@ interface SideNavProps {
   workspaceMode?: boolean
   activeWorkspaceNav?: WorkspaceNavId
   onWorkspaceNav?: (id: WorkspaceNavId) => void
+  /** When true, the nav slides off-screen (web host console); main content uses full width. */
+  collapsed?: boolean
 }
 
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
@@ -73,7 +75,8 @@ export function SideNav({
   onBrandIdentities,
   workspaceMode = false,
   activeWorkspaceNav = 'dashboard',
-  onWorkspaceNav
+  onWorkspaceNav,
+  collapsed = false
 }: SideNavProps) {
   const joinModalOpen = joinSessionModalOpen
   const createModalOpen = createSessionModalOpen
@@ -101,7 +104,13 @@ export function SideNav({
     'w-full text-left flex items-center gap-3 pl-8 pr-4 py-3 ml-4 border-l-2 transition-all duration-200 ease-in-out'
 
   return (
-    <aside className="fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50">
+    <aside
+      id="host-sidenav"
+      aria-hidden={collapsed}
+      className={`fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50 transition-transform duration-200 ease-out ${
+        collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'
+      }`}
+    >
       <div className="p-8 pb-10">
         <div className="mb-1">
           <PrezoWordmark

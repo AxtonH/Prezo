@@ -54,6 +54,18 @@ import { isPowerPointAddinHost } from './utils/officeHost'
 
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
+const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
+
+function readStoredHostSideNavCollapsed(): boolean {
+  try {
+    if (typeof window === 'undefined') {
+      return false
+    }
+    return window.localStorage.getItem(HOST_SIDENAV_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 const WORKSPACE_NAV_IDS: WorkspaceNavId[] = ['dashboard', 'polls', 'discussion', 'qna', 'editor']
 
@@ -343,10 +355,23 @@ function HostConsole({
   const [hostRestoreComplete, setHostRestoreComplete] = useState(false)
   /** Bumped after a successful audience Q&A delete so the dashboard can clear the “inactive Q&A” ref. */
   const [qnaDeletedEpoch, setQnaDeletedEpoch] = useState(0)
+  /** Web host console: hide the fixed left nav to give the main column more room (persisted). */
+  const [hostSideNavCollapsed, setHostSideNavCollapsed] = useState(() => readStoredHostSideNavCollapsed())
 
   useEffect(() => {
     setQnaDeletedEpoch(0)
   }, [session?.id])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    try {
+      window.localStorage.setItem(HOST_SIDENAV_COLLAPSED_KEY, hostSideNavCollapsed ? '1' : '0')
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [hostSideNavCollapsed])
 
   const prevWorkspaceNavRef = useRef<WorkspaceNavId>(workspaceNav)
   useEffect(() => {
@@ -1208,6 +1233,7 @@ function HostConsole({
             setHostConsoleView('host')
             setWorkspaceNav('editor')
           }}
+          collapsed={hostSideNavCollapsed}
           isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
@@ -1247,7 +1273,9 @@ function HostConsole({
             : 'overflow-y-auto'
         } ${
           hostConsoleView === 'brandIdentities' && !isAddinHost ? 'bg-slate-50' : 'bg-white'
-        } ${isAddinHost || hostRestoreInProgress ? '' : 'ml-64'}`}
+        } ${
+          isAddinHost || hostRestoreInProgress || hostSideNavCollapsed ? '' : 'ml-64'
+        }`}
       >
         {/* Web Brand identity: full-width page next to SideNav only — no session search bar / duplicate shell */}
         {!(hostConsoleView === 'brandIdentities' && !isAddinHost) ? (
@@ -1325,7 +1353,22 @@ function HostConsole({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
+              <div className="flex items-center gap-2 flex-1 min-w-0 max-w-xl">
+                <button
+                  type="button"
+                  onClick={() => setHostSideNavCollapsed((c) => !c)}
+                  className="!inline-flex !items-center !justify-center !shrink-0 !w-10 !h-10 !rounded-xl !bg-transparent !border !border-slate-200 !text-slate-600 hover:!bg-slate-50 hover:!border-slate-300 !transition-colors !shadow-none"
+                  aria-expanded={!hostSideNavCollapsed}
+                  aria-controls="host-sidenav"
+                  title={hostSideNavCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+                >
+                  <span className="material-symbols-outlined text-[22px]" aria-hidden>
+                    {hostSideNavCollapsed ? 'menu' : 'left_panel_close'}
+                  </span>
+                  <span className="sr-only">
+                    {hostSideNavCollapsed ? 'Show navigation sidebar' : 'Hide navigation sidebar'}
+                  </span>
+                </button>
                 {hostConsoleView === 'settings' ? (
                   <button
                     type="button"
@@ -1336,15 +1379,17 @@ function HostConsole({
                     Workspace
                   </button>
                 ) : (
-                  <HostSearchBar
-                    value={sessionSearchQuery}
-                    onChange={setSessionSearchQuery}
-                    sessionMatches={filteredRecentSessions}
-                    activityHits={activityHits}
-                    activitiesLoading={searchActivitiesLoading}
-                    debouncedQuery={debouncedSearch}
-                    onSelectSession={(selected) => void resumeSession(selected)}
-                  />
+                  <div className="min-w-0 flex-1">
+                    <HostSearchBar
+                      value={sessionSearchQuery}
+                      onChange={setSessionSearchQuery}
+                      sessionMatches={filteredRecentSessions}
+                      activityHits={activityHits}
+                      activitiesLoading={searchActivitiesLoading}
+                      debouncedQuery={debouncedSearch}
+                      onSelectSession={(selected) => void resumeSession(selected)}
+                    />
+                  </div>
                 )}
               </div>
             )}
