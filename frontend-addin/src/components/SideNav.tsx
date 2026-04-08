@@ -40,6 +40,8 @@ interface SideNavProps {
   onWorkspaceNav?: (id: WorkspaceNavId) => void
   /** When true, the nav slides off-screen (web host console); main content uses full width. */
   collapsed?: boolean
+  /** Toggles sidebar visibility (replaces the Help control in the footer when set). */
+  onToggleSidebarCollapse?: () => void
 }
 
 const MY_SESSIONS_ITEM = { icon: 'layers', label: 'My Sessions' }
@@ -76,7 +78,8 @@ export function SideNav({
   workspaceMode = false,
   activeWorkspaceNav = 'dashboard',
   onWorkspaceNav,
-  collapsed = false
+  collapsed = false,
+  onToggleSidebarCollapse
 }: SideNavProps) {
   const joinModalOpen = joinSessionModalOpen
   const createModalOpen = createSessionModalOpen
@@ -272,14 +275,30 @@ export function SideNav({
               <span>Settings</span>
             </a>
           )}
-          <a
-            href="#"
-            className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
-            onClick={(e) => e.preventDefault()}
-          >
-            <span className="material-symbols-outlined text-[1.25rem]">help</span>
-            <span>Help</span>
-          </a>
+          {onToggleSidebarCollapse ? (
+            <button
+              type="button"
+              onClick={onToggleSidebarCollapse}
+              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg w-full text-left"
+              aria-expanded={!collapsed}
+              aria-controls="host-sidenav"
+              title="Hide sidebar"
+            >
+              <span className="material-symbols-outlined text-[1.25rem]" aria-hidden>
+                left_panel_close
+              </span>
+              <span>Collapse sidebar</span>
+            </button>
+          ) : (
+            <a
+              href="#"
+              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+              onClick={(e) => e.preventDefault()}
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">help</span>
+              <span>Help</span>
+            </a>
+          )}
         </div>
 
         <div className="mt-3 px-4 py-4 bg-slate-100/50 rounded-xl flex items-center gap-3">

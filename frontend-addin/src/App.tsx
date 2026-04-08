@@ -1263,7 +1263,23 @@ function HostConsole({
           workspaceMode={Boolean(session) && hostConsoleView === 'host'}
           activeWorkspaceNav={workspaceNav}
           onWorkspaceNav={setWorkspaceNav}
+          onToggleSidebarCollapse={() => setHostSideNavCollapsed((c) => !c)}
         />
+      ) : null}
+
+      {!isAddinHost && !hostRestoreInProgress && hostSideNavCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setHostSideNavCollapsed(false)}
+          className="fixed left-3 top-20 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+          aria-controls="host-sidenav"
+          title="Show sidebar"
+        >
+          <span className="material-symbols-outlined text-[22px]" aria-hidden>
+            menu
+          </span>
+          <span className="sr-only">Show navigation sidebar</span>
+        </button>
       ) : null}
 
       <main
@@ -1353,22 +1369,7 @@ function HostConsole({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 flex-1 min-w-0 max-w-xl">
-                <button
-                  type="button"
-                  onClick={() => setHostSideNavCollapsed((c) => !c)}
-                  className="!inline-flex !items-center !justify-center !shrink-0 !w-10 !h-10 !rounded-xl !bg-transparent !border !border-slate-200 !text-slate-600 hover:!bg-slate-50 hover:!border-slate-300 !transition-colors !shadow-none"
-                  aria-expanded={!hostSideNavCollapsed}
-                  aria-controls="host-sidenav"
-                  title={hostSideNavCollapsed ? 'Show sidebar' : 'Hide sidebar'}
-                >
-                  <span className="material-symbols-outlined text-[22px]" aria-hidden>
-                    {hostSideNavCollapsed ? 'menu' : 'left_panel_close'}
-                  </span>
-                  <span className="sr-only">
-                    {hostSideNavCollapsed ? 'Show navigation sidebar' : 'Hide navigation sidebar'}
-                  </span>
-                </button>
+              <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
                 {hostConsoleView === 'settings' ? (
                   <button
                     type="button"
