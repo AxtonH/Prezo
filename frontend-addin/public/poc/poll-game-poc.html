@@ -342,14 +342,19 @@
                 <div id="ai-chat-messages-inner" class="ai-chat-messages-inner" aria-live="polite"></div>
               </div>
               <form id="ai-chat-form" class="ai-chat-form">
-                <textarea
-                  id="ai-chat-input"
-                  class="ai-chat-input artifact-prompt-input"
-                  rows="3"
-                  placeholder="Example: make the bars teal and increase label size. Keep the rest unchanged."
-                  aria-label="Prompt to edit poll game"
-                ></textarea>
-                <button id="ai-chat-send" class="ai-chat-send artifact-prompt-submit" type="submit">Apply</button>
+                <div class="composer-input-field">
+                  <textarea
+                    id="ai-chat-input"
+                    class="ai-chat-input artifact-prompt-input"
+                    rows="4"
+                    placeholder="Example: make the bars teal and increase label size. Keep the rest unchanged."
+                    aria-label="Prompt to edit poll game. Press Enter to send, Shift+Enter for a new line."
+                  ></textarea>
+                  <p class="composer-enter-hint" aria-hidden="true">
+                    <span class="composer-enter-kbd" title="Enter">↵</span>
+                    Enter to send · Shift+Enter newline
+                  </p>
+                </div>
               </form>
               <p id="ai-chat-status" class="artifact-prompt-status ai-chat-footer-status">
                 Poll edit mode is active. Ask for targeted changes, or say &quot;redesign it&quot; for a broader rework.
@@ -550,15 +555,20 @@
               <option value="">None</option>
             </select>
           </div>
-          <textarea
-            id="artifact-prompt-input"
-            class="artifact-prompt-input"
-            placeholder="Type your answer here."
-            rows="3"
-            maxlength="2000"
-            aria-label="Describe artifact editor request"
-          ></textarea>
-          <button id="artifact-prompt-submit" class="artifact-prompt-submit" type="submit">Send</button>
+          <div class="composer-input-field">
+            <textarea
+              id="artifact-prompt-input"
+              class="artifact-prompt-input"
+              placeholder="Type your answer here."
+              rows="4"
+              maxlength="2000"
+              aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
+            ></textarea>
+            <p class="composer-enter-hint" aria-hidden="true">
+              <span class="composer-enter-kbd" title="Enter">↵</span>
+              Enter to send · Shift+Enter newline
+            </p>
+          </div>
         </form>
         <p id="artifact-prompt-status" class="artifact-prompt-status">
           Artifact editor is ready. Answer the first question to begin.

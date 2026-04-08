@@ -257,7 +257,6 @@ import {
     aiChatMessagesInner: must('ai-chat-messages-inner'),
     aiChatForm: must('ai-chat-form'),
     aiChatInput: must('ai-chat-input'),
-    aiChatSend: must('ai-chat-send'),
     artifactComposer: must('artifact-composer'),
     artifactComposerAnchor: must('artifact-composer-anchor'),
     artifactComposerCollapse: must('artifact-composer-collapse'),
@@ -269,7 +268,6 @@ import {
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactPromptInput: must('artifact-prompt-input'),
-    artifactPromptSubmit: must('artifact-prompt-submit'),
     artifactPromptStatus: must('artifact-prompt-status'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
@@ -1008,7 +1006,6 @@ import {
     state.ai.model = resolveAiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
-    updateAiComposerState()
 
     el.aiChatFab.addEventListener('click', handleAiChatFabClick)
     el.aiChatCollapse.addEventListener('click', handleAiChatCollapseClick)
@@ -1187,6 +1184,7 @@ import {
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
   }
 
@@ -1301,23 +1299,8 @@ import {
       canEditArtifact && state.artifact.editPromptQueue.length >= 12
     const conversationBlocked = !canEditArtifact && state.artifact.busy
 
-    el.artifactPromptSubmit.disabled = Boolean(queueFull || conversationBlocked)
     el.artifactPromptInput.disabled = Boolean(queueFull || conversationBlocked)
     el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy)
-
-    const editHasPipeline =
-      canEditArtifact &&
-      (state.artifact.busy ||
-        Boolean(state.artifact.editQueueActivePrompt) ||
-        state.artifact.editPromptQueue.length > 0)
-
-    el.artifactPromptSubmit.textContent = canEditArtifact
-      ? editHasPipeline
-        ? 'Queue'
-        : 'Apply'
-      : state.artifact.busy
-        ? 'Working...'
-        : 'Send'
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -2032,12 +2015,7 @@ import {
       }
       renderFromSnapshot(true)
       showArtifactStageFrame()
-      const statusMessage = appendArtifactModelLabel(
-        asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
-          ? 'Artifact repaired and updated.'
-          : asText(buildResult.assistantMessage) || 'Artifact repaired and updated.',
-        buildResult.model
-      )
+      const statusMessage = 'Artifact updated.'
       state.artifact.pendingSuccessMessage = statusMessage
       setArtifactComposerStatus('Artifact repair applied. Verifying updated render...', 'pending')
     } catch (error) {
@@ -2349,22 +2327,13 @@ import {
       } else {
         renderFromSnapshot(true)
         showArtifactStageFrame()
-        const statusMessage = appendArtifactModelLabel(
-          requestKind === 'edit'
-            ? asText(buildResult.assistantMessage) === 'Artifact ready. Keep prompting to iterate.'
-              ? 'Artifact updated. Keep prompting to iterate.'
-              : asText(buildResult.assistantMessage) || 'Artifact updated. Keep prompting to iterate.'
-            : asText(buildResult.assistantMessage) || 'Artifact generated. Keep prompting to iterate.',
-          buildResult.model
-        )
+        const statusMessage =
+          requestKind === 'edit' ? 'Artifact updated.' : 'Artifact generated.'
         if (requestKind === 'edit') {
           state.artifact.pendingSuccessMessage = statusMessage
           setArtifactComposerStatus('Artifact update applied. Verifying updated render...', 'pending')
         } else {
           setArtifactComposerStatus(statusMessage, 'success')
-        }
-        if (buildResult.debugPatchPlan) {
-          appendArtifactEditMessage('assistant', buildResult.debugPatchPlan)
         }
       }
     } catch (error) {
@@ -2714,12 +2683,15 @@ import {
       return
     }
     event.preventDefault()
-    const prompt = asText(el.aiChatInput.value)
-    if (!prompt) {
+    el.aiChatForm.requestSubmit()
+  }
+
+  function handleArtifactPromptInputKeydown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) {
       return
     }
-    el.aiChatInput.value = ''
-    enqueueAiPrompt(prompt)
+    event.preventDefault()
+    el.artifactPromptForm.requestSubmit()
   }
 
   function setAiChatOpen(open, options = {}) {
@@ -2791,12 +2763,10 @@ import {
     const next = state.ai.queue.shift()
     if (!next) {
       renderAiChatQueue()
-      updateAiComposerState()
       return
     }
     state.ai.busy = true
     state.ai.activePrompt = next.prompt
-    updateAiComposerState()
     renderAiChatQueue()
     updateAiChatStatus('Applying your edit request...', 'pending')
 
@@ -2817,7 +2787,6 @@ import {
     } finally {
       state.ai.busy = false
       state.ai.activePrompt = ''
-      updateAiComposerState()
       renderAiChatQueue()
       if (state.ai.queue.length > 0) {
         window.setTimeout(() => {
@@ -2825,10 +2794,6 @@ import {
         }, 0)
       }
     }
-  }
-
-  function updateAiComposerState() {
-    el.aiChatSend.textContent = state.ai.busy ? 'Queue' : 'Send'
   }
 
   function renderAiChatQueue() {
@@ -2947,19 +2912,6 @@ import {
       throw new Error('AI service returned an empty response.')
     }
     return parseAiJsonResponse(text)
-  }
-
-  function appendArtifactModelLabel(message, model) {
-    const base = asText(message).trim()
-    const normalizedModel = asText(model).trim()
-    if (!normalizedModel) {
-      return base
-    }
-    const suffix = `[Model: ${normalizedModel}]`
-    if (!base) {
-      return suffix
-    }
-    return base.includes(suffix) ? base : `${base} ${suffix}`
   }
 
   function libraryAuthHeaders() {
@@ -3457,10 +3409,9 @@ import {
     }
   }
 
-  function summarizeAiOutcome(plan, outcome) {
-    const assistantMessage = asText(plan?.assistantMessage)
+  function summarizeAiOutcome(_plan, outcome) {
     if (!outcome.changed) {
-      return assistantMessage || 'No editable change was applied from that prompt.'
+      return 'No editable change was applied from that prompt.'
     }
     const summaryParts = []
     if (outcome.themeActionCount > 0) {
@@ -3472,11 +3423,7 @@ import {
     if (outcome.warningCount > 0) {
       summaryParts.push(`${outcome.warningCount} ignored action${outcome.warningCount === 1 ? '' : 's'}`)
     }
-    const builtSummary = summaryParts.length > 0 ? `Applied ${summaryParts.join(', ')}.` : 'Applied edits.'
-    if (!assistantMessage) {
-      return builtSummary
-    }
-    return `${assistantMessage}\n\n${builtSummary}`
+    return summaryParts.length > 0 ? `Applied ${summaryParts.join(', ')}.` : 'Applied edits.'
   }
 
   function sanitizeAiThemePatch(rawTheme) {
@@ -10079,6 +10026,7 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('resize', handleEditorDockViewportResize)
