@@ -159,6 +159,9 @@ import {
       lastRuntimeError: '',
       floatingOpen: false,
       editHistory: [],
+      editPromptQueue: [],
+      editQueueSeq: 0,
+      editQueueActivePrompt: '',
       stageSurface: ARTIFACT_STAGE_SURFACE_HIDDEN,
       instanceId: 0,
       pendingRequestKind: '',
@@ -260,6 +263,7 @@ import {
     artifactComposerCollapse: must('artifact-composer-collapse'),
     artifactComposerFab: must('artifact-composer-fab'),
     artifactComposerSubtitle: must('artifact-composer-subtitle'),
+    artifactPromptQueue: must('artifact-prompt-queue'),
     artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
@@ -1293,13 +1297,26 @@ import {
 
   function syncArtifactComposerBusyState() {
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
-    el.artifactPromptSubmit.disabled = Boolean(state.artifact.busy)
-    el.artifactPromptInput.disabled = Boolean(state.artifact.busy)
+    const queueFull =
+      canEditArtifact && state.artifact.editPromptQueue.length >= 12
+    const conversationBlocked = !canEditArtifact && state.artifact.busy
+
+    el.artifactPromptSubmit.disabled = Boolean(queueFull || conversationBlocked)
+    el.artifactPromptInput.disabled = Boolean(queueFull || conversationBlocked)
     el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy)
-    el.artifactPromptSubmit.textContent = state.artifact.busy
-      ? 'Working...'
-      : canEditArtifact
-        ? 'Apply'
+
+    const editHasPipeline =
+      canEditArtifact &&
+      (state.artifact.busy ||
+        Boolean(state.artifact.editQueueActivePrompt) ||
+        state.artifact.editPromptQueue.length > 0)
+
+    el.artifactPromptSubmit.textContent = canEditArtifact
+      ? editHasPipeline
+        ? 'Queue'
+        : 'Apply'
+      : state.artifact.busy
+        ? 'Working...'
         : 'Send'
   }
 
@@ -1319,6 +1336,7 @@ import {
     if (options.clearEditHistory !== false) {
       state.artifact.editHistory = []
     }
+    clearArtifactEditPromptQueue()
     if (!options.preserveInput) {
       el.artifactPromptInput.value = ''
     }
@@ -1765,7 +1783,7 @@ import {
       return
     }
     if (Boolean(state.artifact.html) && isArtifactConversationComplete()) {
-      void submitArtifactEditRequest(answer)
+      void enqueueArtifactEditPrompt(answer)
       return
     }
     if (isArtifactConversationComplete()) {
@@ -2120,23 +2138,84 @@ import {
     await submitArtifactPrompt(prompt, { conversationAnswers })
   }
 
-  async function submitArtifactEditRequest(request) {
-    const normalizedRequest = asText(request).trim()
+  function clearArtifactEditPromptQueue() {
+    state.artifact.editPromptQueue = []
+    state.artifact.editQueueActivePrompt = ''
+    renderArtifactPromptQueue()
+    syncArtifactComposerBusyState()
+  }
+
+  function renderArtifactPromptQueue() {
+    const items = []
+    if (state.artifact.editQueueActivePrompt) {
+      items.push({ label: 'Running', text: state.artifact.editQueueActivePrompt })
+    }
+    for (const item of state.artifact.editPromptQueue.slice(0, 4)) {
+      items.push({ label: 'Queued', text: item.prompt })
+    }
+    if (items.length === 0) {
+      el.artifactPromptQueue.classList.add('hidden')
+      el.artifactPromptQueue.replaceChildren()
+      el.artifactComposer.classList.add('artifact-composer--queue-hidden')
+      return
+    }
+    el.artifactPromptQueue.classList.remove('hidden')
+    el.artifactComposer.classList.remove('artifact-composer--queue-hidden')
+    el.artifactPromptQueue.replaceChildren()
+    const label = document.createElement('span')
+    label.className = 'ai-chat-queue-label'
+    label.textContent = 'Prompt Queue'
+    el.artifactPromptQueue.appendChild(label)
+    for (const item of items) {
+      const chip = document.createElement('span')
+      chip.className = 'ai-chat-queue-item'
+      chip.textContent = `${item.label}: ${trimForQueueLabel(item.text)}`
+      el.artifactPromptQueue.appendChild(chip)
+    }
+  }
+
+  async function enqueueArtifactEditPrompt(raw) {
+    const normalizedRequest = asText(raw).trim()
     if (!normalizedRequest) {
       return
     }
+    if (isArtifactQuestionRequest(normalizedRequest)) {
+      const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
+      state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
+      state.artifact.autoRepairInFlight = false
+      state.artifact.repairAttemptCount = 0
+      state.artifact.lastRuntimeError = ''
+      appendArtifactEditMessage('user', normalizedRequest)
+      el.artifactPromptInput.value = ''
+      state.artifact.activeEditRequest = ''
+      await submitArtifactQuestionRequest(normalizedRequest)
+      return
+    }
+    if (state.artifact.editPromptQueue.length >= 12) {
+      setArtifactComposerStatus(
+        'Artifact edit queue is full. Wait for pending edits to finish.',
+        'error'
+      )
+      return
+    }
+    state.artifact.editQueueSeq += 1
+    state.artifact.editPromptQueue.push({
+      id: state.artifact.editQueueSeq,
+      prompt: normalizedRequest
+    })
+    appendArtifactEditMessage('user', normalizedRequest)
+    el.artifactPromptInput.value = ''
+    renderArtifactPromptQueue()
+    syncArtifactComposerBusyState()
+    void processArtifactEditPromptQueue()
+  }
+
+  async function runQueuedArtifactEdit(normalizedRequest) {
     const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
     state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
     state.artifact.autoRepairInFlight = false
     state.artifact.repairAttemptCount = 0
     state.artifact.lastRuntimeError = ''
-    appendArtifactEditMessage('user', normalizedRequest)
-    el.artifactPromptInput.value = ''
-    if (isArtifactQuestionRequest(normalizedRequest)) {
-      state.artifact.activeEditRequest = ''
-      await submitArtifactQuestionRequest(normalizedRequest)
-      return
-    }
     const prompt = buildArtifactEditPrompt(
       resolvedRequest || normalizedRequest,
       state.artifact.lastAnswers
@@ -2146,6 +2225,33 @@ import {
       requestKind: 'edit',
       originalEditRequest: resolvedRequest || normalizedRequest
     })
+  }
+
+  async function processArtifactEditPromptQueue() {
+    if (state.artifact.busy || state.artifact.editPromptQueue.length === 0 || state.isUnloading) {
+      return
+    }
+    const next = state.artifact.editPromptQueue.shift()
+    if (!next) {
+      renderArtifactPromptQueue()
+      syncArtifactComposerBusyState()
+      return
+    }
+    state.artifact.editQueueActivePrompt = next.prompt
+    renderArtifactPromptQueue()
+    syncArtifactComposerBusyState()
+    try {
+      await runQueuedArtifactEdit(next.prompt)
+    } finally {
+      state.artifact.editQueueActivePrompt = ''
+      renderArtifactPromptQueue()
+      syncArtifactComposerBusyState()
+      if (state.artifact.editPromptQueue.length > 0) {
+        window.setTimeout(() => {
+          void processArtifactEditPromptQueue()
+        }, 0)
+      }
+    }
   }
 
   async function submitArtifactQuestionRequest(request) {
@@ -3035,6 +3141,7 @@ import {
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = false
     pendingArtifactCopyOverrides = {}
+    clearArtifactEditPromptQueue()
     artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
     syncArtifactComposerVisibility()
@@ -8315,6 +8422,7 @@ import {
     )
     state.artifact.conversationStepIndex = ARTIFACT_CONVERSATION_STEPS.length
     state.artifact.editHistory = []
+    clearArtifactEditPromptQueue()
     state.artifact.activeEditRequest = ''
     state.artifact.autoRepairInFlight = false
     state.artifact.repairAttemptCount = 0
