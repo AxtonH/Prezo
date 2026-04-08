@@ -1267,21 +1267,6 @@ function HostConsole({
         />
       ) : null}
 
-      {!isAddinHost && !hostRestoreInProgress && hostSideNavCollapsed ? (
-        <button
-          type="button"
-          onClick={() => setHostSideNavCollapsed(false)}
-          className="fixed left-3 top-20 z-[60] inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-600 shadow-sm backdrop-blur-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
-          aria-controls="host-sidenav"
-          title="Show sidebar"
-        >
-          <span className="material-symbols-outlined text-[22px]" aria-hidden>
-            menu
-          </span>
-          <span className="sr-only">Show navigation sidebar</span>
-        </button>
-      ) : null}
-
       <main
         className={`flex-1 min-h-0 ${
           session && workspaceNav === 'editor'
@@ -1290,7 +1275,11 @@ function HostConsole({
         } ${
           hostConsoleView === 'brandIdentities' && !isAddinHost ? 'bg-slate-50' : 'bg-white'
         } ${
-          isAddinHost || hostRestoreInProgress || hostSideNavCollapsed ? '' : 'ml-64'
+          isAddinHost || hostRestoreInProgress
+            ? ''
+            : hostSideNavCollapsed
+              ? 'ml-16'
+              : 'ml-64'
         }`}
       >
         {/* Web Brand identity: full-width page next to SideNav only — no session search bar / duplicate shell */}

@@ -1,3 +1,4 @@
+import { PrezoLogo } from './PrezoLogo'
 import { PrezoWordmark } from './PrezoWordmark'
 import { ProfileAvatar } from './ProfileAvatar'
 
@@ -38,7 +39,7 @@ interface SideNavProps {
   workspaceMode?: boolean
   activeWorkspaceNav?: WorkspaceNavId
   onWorkspaceNav?: (id: WorkspaceNavId) => void
-  /** When true, the nav slides off-screen (web host console); main content uses full width. */
+  /** When true, the nav is a narrow icon rail (labels hidden; still clickable). */
   collapsed?: boolean
   /** Toggles sidebar visibility (replaces the Help control in the footer when set). */
   onToggleSidebarCollapse?: () => void
@@ -106,36 +107,74 @@ export function SideNav({
   const workspaceSubmenuBase =
     'w-full text-left flex items-center gap-3 pl-8 pr-4 py-3 ml-4 border-l-2 transition-all duration-200 ease-in-out'
 
+  function workspaceBtnClass(id: WorkspaceNavId): string {
+    const active = workspaceItemActive(id)
+    if (collapsed) {
+      return active
+        ? 'w-full flex justify-center items-center px-2 py-2.5 rounded-lg transition-all duration-200 bg-white text-primary shadow-sm ring-1 ring-primary/20'
+        : 'w-full flex justify-center items-center px-2 py-2.5 rounded-lg transition-all duration-200 text-slate-900/70 hover:bg-slate-200'
+    }
+    return active
+      ? `${workspaceSubmenuBase} bg-white text-primary border-l-4 border-primary`
+      : `${workspaceSubmenuBase} text-slate-900/70 hover:bg-slate-200 border-l-2 border-slate-300/80`
+  }
+
+  const sessionNavBtn = (active: boolean) =>
+    collapsed
+      ? `w-full flex justify-center items-center px-2 py-3 rounded-lg transition-all duration-200 ${
+          active
+            ? 'bg-white text-primary ring-1 ring-primary/20 border-l-0'
+            : 'text-slate-900/70 hover:bg-slate-200'
+        }`
+      : active
+        ? navActiveClass
+        : navIdleClass
+
   return (
     <aside
       id="host-sidenav"
-      aria-hidden={collapsed}
-      className={`fixed left-0 top-0 h-full flex flex-col bg-surface-2 h-screen w-64 border-r border-border font-sans antialiased tracking-tight z-50 transition-transform duration-200 ease-out ${
-        collapsed ? '-translate-x-full pointer-events-none' : 'translate-x-0'
+      className={`fixed left-0 top-0 z-50 flex h-screen shrink-0 flex-col overflow-hidden border-r border-border bg-surface-2 font-sans antialiased tracking-tight transition-[width] duration-200 ease-out ${
+        collapsed ? 'w-16' : 'w-64'
       }`}
     >
-      <div className="p-8 pb-10">
-        <div className="mb-1">
-          <PrezoWordmark
-            logoSize={24}
-            textClassName="text-xl font-bold tracking-tighter text-[#004080]"
-          />
+      <div className={`${collapsed ? 'px-2 pb-4 pt-6' : 'p-8 pb-10'}`}>
+        <div className={`mb-1 flex ${collapsed ? 'justify-center' : ''}`}>
+          {collapsed ? (
+            <PrezoLogo size={28} decorative />
+          ) : (
+            <PrezoWordmark
+              logoSize={24}
+              textClassName="text-xl font-bold tracking-tighter text-[#004080]"
+            />
+          )}
         </div>
-        <p className="text-[0.7rem] uppercase tracking-widest text-muted/60 font-medium">Live Sessions</p>
+        {!collapsed ? (
+          <p className="text-[0.7rem] font-medium uppercase tracking-widest text-muted/60">Live Sessions</p>
+        ) : null}
       </div>
 
-      <nav className="flex-1 px-4 space-y-1 min-h-0">
+      <nav className={`min-h-0 flex-1 space-y-1 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-4'}`}>
         {!workspaceMode ? (
           <>
             {onMySessions ? (
               <button
                 type="button"
                 onClick={onMySessions}
-                className={sessionsNavActive ? navActiveClass : navIdleClass}
-                title={hasLiveSession ? 'Back to all sessions' : undefined}
+                className={sessionNavBtn(sessionsNavActive)}
+                title={
+                  collapsed
+                    ? hasLiveSession
+                      ? 'Back to all sessions'
+                      : 'My Sessions'
+                    : hasLiveSession
+                      ? 'Back to all sessions'
+                      : undefined
+                }
               >
                 <span className="material-symbols-outlined text-[1.25rem]">{MY_SESSIONS_ITEM.icon}</span>
-                <span className={sessionsNavActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+                {!collapsed ? (
+                  <span className={sessionsNavActive ? 'font-medium' : ''}>{MY_SESSIONS_ITEM.label}</span>
+                ) : null}
               </button>
             ) : (
               <a
@@ -152,11 +191,13 @@ export function SideNav({
               <button
                 type="button"
                 onClick={onCreateSession}
-                className={createNavActive ? navActiveClass : navIdleClass}
-                title="Create a new session"
+                className={sessionNavBtn(createNavActive)}
+                title={collapsed ? 'Create a new session' : undefined}
               >
                 <span className="material-symbols-outlined text-[1.25rem]">add</span>
-                <span className={createNavActive ? 'font-medium' : ''}>Create a session</span>
+                {!collapsed ? (
+                  <span className={createNavActive ? 'font-medium' : ''}>Create a session</span>
+                ) : null}
               </button>
             ) : null}
 
@@ -164,10 +205,13 @@ export function SideNav({
               <button
                 type="button"
                 onClick={onJoinSession}
-                className={joinNavActive ? navActiveClass : navIdleClass}
+                className={sessionNavBtn(joinNavActive)}
+                title={collapsed ? 'Join a session' : undefined}
               >
                 <span className="material-symbols-outlined text-[1.25rem]">login</span>
-                <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
+                {!collapsed ? (
+                  <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
+                ) : null}
               </button>
             ) : null}
 
@@ -175,10 +219,13 @@ export function SideNav({
               <button
                 type="button"
                 onClick={onBrandIdentities}
-                className={brandIdentitiesNavActive ? navActiveClass : navIdleClass}
+                className={sessionNavBtn(brandIdentitiesNavActive)}
+                title={collapsed ? 'Brand identity' : undefined}
               >
                 <span className="material-symbols-outlined text-[1.25rem]">palette</span>
-                <span className={brandIdentitiesNavActive ? 'font-medium' : ''}>Brand identity</span>
+                {!collapsed ? (
+                  <span className={brandIdentitiesNavActive ? 'font-medium' : ''}>Brand identity</span>
+                ) : null}
               </button>
             ) : null}
 
@@ -186,11 +233,16 @@ export function SideNav({
               <a
                 key={item.label}
                 href="#"
-                className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out"
+                className={
+                  collapsed
+                    ? 'flex items-center justify-center px-2 py-3 text-slate-900/70 transition-all duration-200 hover:bg-slate-200 rounded-lg'
+                    : 'flex items-center gap-3 px-4 py-3 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200'
+                }
+                title={collapsed ? item.label : undefined}
                 onClick={(e) => e.preventDefault()}
               >
                 <span className="material-symbols-outlined text-[1.25rem]">{item.icon}</span>
-                <span>{item.label}</span>
+                {!collapsed ? <span>{item.label}</span> : null}
               </a>
             ))}
           </>
@@ -200,12 +252,16 @@ export function SideNav({
               <button
                 type="button"
                 onClick={onMySessions}
-                className={navIdleClass}
+                className={
+                  collapsed
+                    ? 'flex w-full items-center justify-center rounded-lg px-2 py-3 text-slate-900/70 transition-all duration-200 hover:bg-slate-200'
+                    : navIdleClass
+                }
                 title="Back to all sessions"
                 aria-label="Back to all sessions"
               >
                 <span
-                  className="material-symbols-outlined text-[1.25rem] inline-block -rotate-90"
+                  className={`material-symbols-outlined text-[1.25rem] ${collapsed ? '' : 'inline-block -rotate-90'}`}
                   aria-hidden
                 >
                   {MY_SESSIONS_ITEM.icon}
@@ -217,58 +273,72 @@ export function SideNav({
                 key={item.id}
                 type="button"
                 onClick={() => onWorkspaceNav?.(item.id)}
-                className={
-                  workspaceItemActive(item.id)
-                    ? `${workspaceSubmenuBase} bg-white text-primary border-l-4 border-primary`
-                    : `${workspaceSubmenuBase} text-slate-900/70 hover:bg-slate-200 border-l-2 border-slate-300/80`
-                }
+                className={workspaceBtnClass(item.id)}
+                title={collapsed ? item.label : undefined}
               >
-                <span className="material-symbols-outlined text-[1.25rem] shrink-0">{item.icon}</span>
-                <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
+                <span className="material-symbols-outlined shrink-0 text-[1.25rem]">{item.icon}</span>
+                {!collapsed ? (
+                  <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
+                ) : null}
               </button>
             ))}
           </>
         )}
       </nav>
 
-      <div className="mt-auto p-4 border-t border-border/30 flex flex-col">
+      <div
+        className={`mt-auto flex flex-col border-t border-border/30 ${collapsed ? 'p-2' : 'p-4'}`}
+      >
         {editorLink && !workspaceMode ? (
           onOpenEditorInline ? (
             <button
               type="button"
               onClick={onOpenEditorInline}
-              className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1 w-full text-left"
+              className={
+                collapsed
+                  ? 'mb-1 flex w-full items-center justify-center rounded-lg px-2 py-3 text-slate-900/70 transition-all duration-200 hover:bg-slate-200'
+                  : 'mb-1 flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200'
+              }
+              title={collapsed ? 'Editor' : undefined}
             >
               <span className="material-symbols-outlined text-[1.25rem]">edit</span>
-              <span>Editor</span>
+              {!collapsed ? <span>Editor</span> : null}
             </button>
           ) : (
             <a
               href={editorLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg mb-1"
+              className={
+                collapsed
+                  ? 'mb-1 flex items-center justify-center rounded-lg px-2 py-3 text-slate-900/70 transition-all duration-200 hover:bg-slate-200'
+                  : 'mb-1 flex items-center gap-3 rounded-lg px-4 py-3 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200'
+              }
+              title={collapsed ? 'Editor' : undefined}
             >
               <span className="material-symbols-outlined text-[1.25rem]">edit</span>
-              <span>Editor</span>
+              {!collapsed ? <span>Editor</span> : null}
             </a>
           )
         ) : null}
 
-        <div className="space-y-1 mt-1">
+        <div className="mt-1 space-y-1">
           {onOpenSettings ? (
             <button
               type="button"
               onClick={onOpenSettings}
-              className={settingsNavActive ? navActiveClass : navIdleClass}
+              className={sessionNavBtn(settingsNavActive)}
+              title={collapsed ? 'Settings' : undefined}
             >
               <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-              <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
+              {!collapsed ? (
+                <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
+              ) : null}
             </button>
           ) : (
             <a
               href="#"
-              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+              className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
               onClick={(e) => e.preventDefault()}
             >
               <span className="material-symbols-outlined text-[1.25rem]">settings</span>
@@ -279,20 +349,24 @@ export function SideNav({
             <button
               type="button"
               onClick={onToggleSidebarCollapse}
-              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg w-full text-left"
+              className={
+                collapsed
+                  ? 'flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-slate-900/70 transition-all duration-200 hover:bg-slate-200'
+                  : 'flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200'
+              }
               aria-expanded={!collapsed}
               aria-controls="host-sidenav"
-              title="Hide sidebar"
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               <span className="material-symbols-outlined text-[1.25rem]" aria-hidden>
-                left_panel_close
+                {collapsed ? 'right_panel_open' : 'left_panel_close'}
               </span>
-              <span>Collapse sidebar</span>
+              {!collapsed ? <span>Collapse sidebar</span> : null}
             </button>
           ) : (
             <a
               href="#"
-              className="flex items-center gap-3 px-4 py-2.5 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out rounded-lg"
+              className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
               onClick={(e) => e.preventDefault()}
             >
               <span className="material-symbols-outlined text-[1.25rem]">help</span>
@@ -301,16 +375,22 @@ export function SideNav({
           )}
         </div>
 
-        <div className="mt-3 px-4 py-4 bg-slate-100/50 rounded-xl flex items-center gap-3">
+        <div
+          className={`mt-3 flex items-center rounded-xl bg-slate-100/50 ${
+            collapsed ? 'flex-col gap-2 px-1 py-3' : 'gap-3 px-4 py-4'
+          }`}
+        >
           <ProfileAvatar avatarUrl={avatarUrl} displayName={displayName} />
-          <div className="overflow-hidden flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate text-slate-900">{displayName}</p>
-            <p className="text-xs text-muted truncate">Prezo Workspace</p>
-          </div>
+          {!collapsed ? (
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+              <p className="text-muted truncate text-xs">Prezo Workspace</p>
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={onLogout}
-            className="!bg-transparent !border-0 !p-1 !shadow-none text-muted hover:text-danger transition-colors"
+            className="!border-0 !bg-transparent !p-1 !shadow-none text-muted transition-colors hover:text-danger"
             title="Sign out"
           >
             <span className="material-symbols-outlined text-[1.25rem]">logout</span>
