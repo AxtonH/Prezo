@@ -1370,15 +1370,25 @@ function HostConsole({
                   </button>
                 ) : (
                   <div className="min-w-0 flex-1">
-                    <HostSearchBar
-                      value={sessionSearchQuery}
-                      onChange={setSessionSearchQuery}
-                      sessionMatches={filteredRecentSessions}
-                      activityHits={activityHits}
-                      activitiesLoading={searchActivitiesLoading}
-                      debouncedQuery={debouncedSearch}
-                      onSelectSession={(selected) => void resumeSession(selected)}
-                    />
+                    {session ? (
+                      <div className="flex min-w-0 items-center">
+                        <PrezoWordmark
+                          logoSize={24}
+                          textClassName="text-lg font-bold tracking-tight text-[#004080]"
+                          className="min-w-0 truncate"
+                        />
+                      </div>
+                    ) : (
+                      <HostSearchBar
+                        value={sessionSearchQuery}
+                        onChange={setSessionSearchQuery}
+                        sessionMatches={filteredRecentSessions}
+                        activityHits={activityHits}
+                        activitiesLoading={searchActivitiesLoading}
+                        debouncedQuery={debouncedSearch}
+                        onSelectSession={(selected) => void resumeSession(selected)}
+                      />
+                    )}
                   </div>
                 )}
               </div>
