@@ -210,12 +210,23 @@ export function SideNav({
                 <span className={workspaceItemActive(item.id) ? 'font-medium' : ''}>{item.label}</span>
               </button>
             ))}
+            {editorLink ? (
+              <a
+                href={editorLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${workspaceSubmenuBase} text-slate-900/70 hover:bg-slate-200 border-l-2 border-slate-300/80`}
+              >
+                <span className="material-symbols-outlined text-[1.25rem] shrink-0">edit</span>
+                <span>Editor</span>
+              </a>
+            ) : null}
           </>
         )}
       </nav>
 
       <div className="mt-auto p-4 border-t border-border/30 flex flex-col">
-        {editorLink ? (
+        {editorLink && !workspaceMode ? (
           <a
             href={editorLink}
             target="_blank"
