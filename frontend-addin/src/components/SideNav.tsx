@@ -153,7 +153,9 @@ export function SideNav({
         ) : null}
       </div>
 
-      <nav className={`min-h-0 flex-1 space-y-1 overflow-y-auto ${collapsed ? 'px-1.5' : 'px-4'}`}>
+      <nav
+        className={`min-h-0 min-w-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto ${collapsed ? 'px-1.5' : 'px-4'}`}
+      >
         {!workspaceMode ? (
           <>
             {onMySessions ? (

@@ -1268,10 +1268,10 @@ function HostConsole({
       ) : null}
 
       <main
-        className={`flex-1 min-h-0 ${
+        className={`flex-1 min-h-0 min-w-0 ${
           session && workspaceNav === 'editor'
             ? 'flex flex-col overflow-hidden'
-            : 'overflow-y-auto'
+            : 'overflow-x-hidden overflow-y-auto'
         } ${
           hostConsoleView === 'brandIdentities' && !isAddinHost ? 'bg-slate-50' : 'bg-white'
         } ${
