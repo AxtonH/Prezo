@@ -560,6 +560,12 @@ body.artifact-mode-active .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hid
   border-bottom: 0;
 }
 
+/* Text Edit strip: controls must remain in the DOM for poll-game-gamified-app.js (must / setupRichTextEditor).
+   Formatting is still available from the canvas mini toolbar and artifact text tools. */
+.ribbon-group.home-text-tools-group {
+  display: none;
+}
+
 .sidebar-section-title {
   display: flex;
   align-items: center;
