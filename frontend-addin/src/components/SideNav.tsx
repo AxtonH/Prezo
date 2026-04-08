@@ -263,7 +263,7 @@ export function SideNav({
                 aria-label="Back to all sessions"
               >
                 <span
-                  className={`material-symbols-outlined text-[1.25rem] ${collapsed ? '' : 'inline-block -rotate-90'}`}
+                  className="material-symbols-outlined inline-block -rotate-90 text-[1.25rem]"
                   aria-hidden
                 >
                   {MY_SESSIONS_ITEM.icon}
