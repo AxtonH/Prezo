@@ -533,11 +533,11 @@ body.artifact-mode-active .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.hid
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .artifact-composer.is-floating.artifact-composer--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .ribbon-pane[data-ribbon-pane="ai"] .artifact-composer .artifact-composer-collapse {
@@ -1962,29 +1962,6 @@ h1 {
 }
 
 /* ----------------------------------------------------------------
-   Artifact prompt status
-   ---------------------------------------------------------------- */
-
-.artifact-prompt-status {
-  margin: 7px 0 0;
-  min-height: 17px;
-  font-size: 11px;
-  color: var(--chrome-text-secondary);
-}
-
-.artifact-prompt-status.status-success {
-  color: #16a34a;
-}
-
-.artifact-prompt-status.status-error {
-  color: #dc2626;
-}
-
-.artifact-prompt-status.status-pending {
-  color: var(--chrome-text-muted);
-}
-
-/* ----------------------------------------------------------------
    Artifact composer floating state
    ---------------------------------------------------------------- */
 
@@ -2004,13 +1981,12 @@ h1 {
 
 /* Match Poll AI prompt queue layout: explicit areas so the 1fr row maps to #artifact-chat-log. */
 .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
-  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(130px, 1fr) auto;
   grid-template-areas:
     "ahead"
     "aqueue"
     "amsgs"
-    "aform"
-    "afoot";
+    "aform";
 }
 
 .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) .artifact-composer-header {
@@ -2030,17 +2006,12 @@ h1 {
   grid-area: aform;
 }
 
-.artifact-composer.is-floating:not(.artifact-composer--queue-hidden) .artifact-prompt-status {
-  grid-area: afoot;
-}
-
 .artifact-composer.is-floating.artifact-composer--queue-hidden {
-  grid-template-rows: auto minmax(130px, 1fr) auto auto;
+  grid-template-rows: auto minmax(130px, 1fr) auto;
   grid-template-areas:
     "ahead"
     "amsgs"
-    "aform"
-    "afoot";
+    "aform";
 }
 
 .artifact-composer.is-floating.artifact-composer--queue-hidden .artifact-composer-header {
@@ -2053,10 +2024,6 @@ h1 {
 
 .artifact-composer.is-floating.artifact-composer--queue-hidden .artifact-prompt-form {
   grid-area: aform;
-}
-
-.artifact-composer.is-floating.artifact-composer--queue-hidden .artifact-prompt-status {
-  grid-area: afoot;
 }
 
 .artifact-composer.hidden {
@@ -2073,7 +2040,7 @@ h1 {
   margin-top: 0;
   overflow-y: auto;
   min-height: 0;
-  max-height: min(42vh, 360px);
+  max-height: min(48vh, 420px);
   padding-right: 3px;
 }
 
@@ -2081,8 +2048,7 @@ h1 {
   max-width: 92%;
 }
 
-.artifact-composer.is-floating .artifact-prompt-form,
-.artifact-composer.is-floating .artifact-prompt-status {
+.artifact-composer.is-floating .artifact-prompt-form {
   margin-top: 0;
 }
 
@@ -2302,13 +2268,12 @@ h1 {
 
 /* Explicit areas so the 1fr row always maps to #ai-chat-messages (queue hidden skips the queue row). */
 .ai-chat-panel:not(.ai-chat-panel--queue-hidden) {
-  grid-template-rows: auto auto minmax(130px, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(130px, 1fr) auto;
   grid-template-areas:
     "head"
     "queue"
     "msgs"
-    "form"
-    "foot";
+    "form";
 }
 
 .ai-chat-panel:not(.ai-chat-panel--queue-hidden) .ai-chat-header {
@@ -2328,17 +2293,12 @@ h1 {
   grid-area: form;
 }
 
-.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-status {
-  grid-area: foot;
-}
-
 .ai-chat-panel.ai-chat-panel--queue-hidden {
-  grid-template-rows: auto minmax(130px, 1fr) auto auto;
+  grid-template-rows: auto minmax(130px, 1fr) auto;
   grid-template-areas:
     "head"
     "msgs"
-    "form"
-    "foot";
+    "form";
 }
 
 .ai-chat-panel.ai-chat-panel--queue-hidden .ai-chat-header {
@@ -2354,21 +2314,17 @@ h1 {
   grid-area: form;
 }
 
-.ai-chat-panel.ai-chat-panel--queue-hidden #ai-chat-status {
-  grid-area: foot;
-}
-
 .ai-chat-panel.hidden {
   display: none;
 }
 
 /* Ribbon sidebar: tighter min row so the flex column does not leave a dead band above the composer. */
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel:not(.ai-chat-panel--queue-hidden) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-panel.ai-chat-panel--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .ai-chat-header {
@@ -2401,16 +2357,6 @@ body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-pan
 
 .ai-chat-collapse:hover {
   background: var(--chrome-hover);
-}
-
-.ai-chat-footer-status.status-success {
-  color: #16a34a;
-}
-.ai-chat-footer-status.status-error {
-  color: #dc2626;
-}
-.ai-chat-footer-status.status-pending {
-  color: var(--chrome-text-muted);
 }
 
 .ai-chat-queue {
@@ -2640,12 +2586,12 @@ body.editor-docked .ai-chat-shell > .ai-chat-panel {
 
 body.editor-docked .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
 }
 
 body.editor-docked .artifact-composer.is-floating.artifact-composer--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 10px;
 }
 
@@ -2654,11 +2600,11 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
 }
 
 body.editor-docked .ai-chat-panel {
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 body.editor-docked .ai-chat-panel.ai-chat-panel--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 body.editor-docked .ai-chat-messages {
@@ -2707,24 +2653,6 @@ body.editor-docked .artifact-composer-subtitle {
   color: var(--chrome-text-secondary);
   font-size: 11px;
   line-height: 1.45;
-}
-
-body.editor-docked .artifact-prompt-status:not(.status-success):not(.status-error):not(.status-pending) {
-  color: var(--chrome-text-secondary);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-body.editor-docked .artifact-prompt-status.status-success {
-  color: #16a34a;
-}
-
-body.editor-docked .artifact-prompt-status.status-error {
-  color: #dc2626;
-}
-
-body.editor-docked .artifact-prompt-status.status-pending {
-  color: var(--chrome-text-muted);
 }
 
 body.editor-docked .ai-chat-collapse,

@@ -31,9 +31,7 @@ import {
   ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
   ARTIFACT_EDIT_PLACEHOLDER,
-  ARTIFACT_EDIT_READY_STATUS,
   ARTIFACT_LAYOUT_HORIZONTAL,
-  ARTIFACT_WAITING_STATUS,
   ARTIFACT_VISUAL_MODE,
   buildArtifactConversationPrompt,
   buildArtifactEditPrompt,
@@ -251,7 +249,6 @@ import {
     aiChatFab: must('ai-chat-fab'),
     aiChatPanel: must('ai-chat-panel'),
     aiChatCollapse: must('ai-chat-collapse'),
-    aiChatStatus: must('ai-chat-status'),
     aiChatQueue: must('ai-chat-queue'),
     aiChatMessages: must('ai-chat-messages'),
     aiChatMessagesInner: must('ai-chat-messages-inner'),
@@ -268,7 +265,6 @@ import {
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactPromptInput: must('artifact-prompt-input'),
-    artifactPromptStatus: must('artifact-prompt-status'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -1018,10 +1014,6 @@ import {
       'assistant',
       'Poll AI is ready. Ask for design or text changes and I will apply them to the theme.'
     )
-    updateAiChatStatus(
-      'Poll edit mode is active. Ask for targeted changes, or say "redesign it" for a broader rework.',
-      'success'
-    )
     scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
@@ -1431,18 +1423,8 @@ import {
       return
     }
     if (currentStep) {
-      setArtifactComposerStatus(
-        `Question ${state.artifact.conversationStepIndex + 1} of ${ARTIFACT_CONVERSATION_STEPS.length}`,
-        'pending'
-      )
       return
     }
-    setArtifactComposerStatus(
-      canEditArtifact
-        ? ARTIFACT_EDIT_READY_STATUS
-        : ARTIFACT_WAITING_STATUS,
-      'success'
-    )
   }
 
   function formatDesignGuidelinesConversationDisplay(answers) {
@@ -1553,22 +1535,6 @@ import {
       return ''
     }
     return `Current artifact brief\n${parts.join('\n')}`
-  }
-
-  function setArtifactComposerStatus(text, type = 'idle') {
-    el.artifactPromptStatus.textContent = asText(text) || ARTIFACT_WAITING_STATUS
-    el.artifactPromptStatus.classList.remove('status-success', 'status-error', 'status-pending')
-    if (type === 'success') {
-      el.artifactPromptStatus.classList.add('status-success')
-      return
-    }
-    if (type === 'error') {
-      el.artifactPromptStatus.classList.add('status-error')
-      return
-    }
-    if (type === 'pending') {
-      el.artifactPromptStatus.classList.add('status-pending')
-    }
   }
 
   function setArtifactStagePlaceholder(text, type = 'pending') {
@@ -1755,14 +1721,14 @@ import {
     const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
     if (currentStep?.key === 'designGuidelines') {
       if (!answer && !brandName) {
-        setArtifactComposerStatus(
-          'Add design notes and/or choose a saved brand profile.',
-          'error'
+        appendArtifactEditMessage(
+          'assistant',
+          'Add design notes and/or choose a saved brand profile.'
         )
         return
       }
     } else if (!answer) {
-      setArtifactComposerStatus('Answer the current artifact question first.', 'error')
+      appendArtifactEditMessage('assistant', 'Answer the current artifact question first.')
       return
     }
     if (Boolean(state.artifact.html) && isArtifactConversationComplete()) {
@@ -1870,8 +1836,6 @@ import {
       return
     }
     artifactBridge.clearRenderWatchdog()
-    const completedRequestKind = state.artifact.pendingRequestKind
-    const successMessage = asText(state.artifact.pendingSuccessMessage)
     state.artifact.renderConfirmed = true
     state.artifact.renderErrorCount = 0
     if (state.artifact.html) {
@@ -1885,12 +1849,6 @@ import {
     state.artifact.activeEditRequest = ''
     state.artifact.pendingSuccessMessage = ''
     state.artifact.pendingRequestKind = ''
-    if (successMessage) {
-      setArtifactComposerStatus(successMessage, 'success')
-      if (completedRequestKind === 'edit') {
-        appendArtifactEditMessage('assistant', successMessage)
-      }
-    }
     // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
     setTimeout(pushArtifactStyleOverrides, 300)
   }
@@ -1941,7 +1899,6 @@ import {
       state.artifact.autoRepairInFlight = true
       const retryMessage =
         'The edited artifact failed at runtime. Retrying the edit against the last working artifact.'
-      setArtifactComposerStatus(retryMessage, 'pending')
       appendArtifactEditMessage(
         'assistant',
         detail ? `${retryMessage} ${detail}` : retryMessage
@@ -1956,7 +1913,6 @@ import {
       })
       return
     }
-    setArtifactComposerStatus(statusMessage, 'error')
     appendArtifactEditMessage(
       'assistant',
       detail ? `${statusMessage} ${detail}` : statusMessage
@@ -2009,7 +1965,6 @@ import {
       if (!applied) {
         const message =
           'Artifact repair failed because the AI returned empty markup. The previous working artifact was kept.'
-        setArtifactComposerStatus(message, 'error')
         appendArtifactEditMessage('assistant', message)
         return
       }
@@ -2017,11 +1972,9 @@ import {
       showArtifactStageFrame()
       const statusMessage = 'Artifact updated.'
       state.artifact.pendingSuccessMessage = statusMessage
-      setArtifactComposerStatus('Artifact repair applied. Verifying updated render...', 'pending')
     } catch (error) {
       const message = `Artifact repair failed: ${errorToMessage(error)}`
       state.artifact.pendingSuccessMessage = ''
-      setArtifactComposerStatus(message, 'error')
       appendArtifactEditMessage('assistant', message)
     } finally {
       state.artifact.busy = false
@@ -2170,9 +2123,9 @@ import {
       return
     }
     if (state.artifact.editPromptQueue.length >= 12) {
-      setArtifactComposerStatus(
-        'Artifact edit queue is full. Wait for pending edits to finish.',
-        'error'
+      appendArtifactEditMessage(
+        'assistant',
+        'Artifact edit queue is full. Wait for pending edits to finish.'
       )
       return
     }
@@ -2234,13 +2187,15 @@ import {
 
   async function submitArtifactQuestionRequest(request) {
     if (state.artifact.busy) {
-      setArtifactComposerStatus('Artifact request is already running. Wait for it to finish.', 'error')
+      appendArtifactEditMessage(
+        'assistant',
+        'Artifact request is already running. Wait for it to finish.'
+      )
       return
     }
 
     state.artifact.busy = true
     syncArtifactComposerBusyState()
-    setArtifactComposerStatus('Answering your artifact question...', 'pending')
 
     try {
       const context = buildAiEditorContext()
@@ -2254,11 +2209,9 @@ import {
       )
       const answer = await requestAiArtifactAnswer(request, context)
       appendArtifactEditMessage('assistant', answer.text)
-      setArtifactComposerStatus('Question answered.', 'success')
     } catch (error) {
       const message = `Artifact question failed: ${errorToMessage(error)}`
       appendArtifactEditMessage('assistant', message)
-      setArtifactComposerStatus(message, 'error')
     } finally {
       state.artifact.busy = false
       syncArtifactComposerBusyState()
@@ -2267,7 +2220,10 @@ import {
 
   async function submitArtifactPrompt(prompt, options = {}) {
     if (state.artifact.busy) {
-      setArtifactComposerStatus('Artifact request is already running. Wait for it to finish.', 'error')
+      appendArtifactEditMessage(
+        'assistant',
+        'Artifact request is already running. Wait for it to finish.'
+      )
       return
     }
 
@@ -2281,12 +2237,6 @@ import {
     syncArtifactComposerBusyState()
     state.artifact.lastPrompt = prompt
     state.artifact.lastAnswers = cloneArtifactConversationAnswers(conversationAnswers)
-    setArtifactComposerStatus(
-      requestKind === 'edit'
-        ? 'Applying your artifact edits...'
-        : 'Generating artifact from your answers...',
-      'pending'
-    )
     showArtifactStageLoader(
       requestKind === 'edit' ? 'Updating artifact canvas...' : 'Generating artifact canvas...'
     )
@@ -2313,10 +2263,6 @@ import {
       })
       if (!applied) {
         state.artifact.pendingSuccessMessage = ''
-        setArtifactComposerStatus(
-          'Artifact request returned empty markup. Try a more specific prompt.',
-          'error'
-        )
         showArtifactStagePlaceholder('Artifact request returned empty markup.', 'error')
         if (requestKind === 'edit') {
           appendArtifactEditMessage(
@@ -2331,15 +2277,11 @@ import {
           requestKind === 'edit' ? 'Artifact updated.' : 'Artifact generated.'
         if (requestKind === 'edit') {
           state.artifact.pendingSuccessMessage = statusMessage
-          setArtifactComposerStatus('Artifact update applied. Verifying updated render...', 'pending')
-        } else {
-          setArtifactComposerStatus(statusMessage, 'success')
         }
       }
     } catch (error) {
       const message = `Artifact request failed: ${errorToMessage(error)}`
       state.artifact.pendingSuccessMessage = ''
-      setArtifactComposerStatus(message, 'error')
       showArtifactStagePlaceholder(message, 'error')
       if (requestKind === 'edit') {
         appendArtifactEditMessage('assistant', message)
@@ -2741,7 +2683,6 @@ import {
     }
     if (state.ai.queue.length >= 12) {
       appendAiChatMessage('system', 'AI queue is full. Wait for pending prompts to complete.')
-      updateAiChatStatus('Queue is full. Wait for current edits to finish.', 'error')
       return
     }
     state.ai.queue.push({
@@ -2768,22 +2709,15 @@ import {
     state.ai.busy = true
     state.ai.activePrompt = next.prompt
     renderAiChatQueue()
-    updateAiChatStatus('Applying your edit request...', 'pending')
 
     try {
       const context = buildAiEditorContext()
       const plan = await requestAiEditPlan(next.prompt, context)
       const outcome = applyAiPlanActions(plan)
       appendAiChatMessage('assistant', summarizeAiOutcome(plan, outcome))
-      if (outcome.changed) {
-        updateAiChatStatus('Edit applied.', 'success')
-      } else {
-        updateAiChatStatus('No visible change was applied for that prompt.', 'error')
-      }
     } catch (error) {
       const message = errorToMessage(error)
       appendAiChatMessage('system', `Unable to apply edit: ${message}`)
-      updateAiChatStatus(`AI request failed: ${message}`, 'error')
     } finally {
       state.ai.busy = false
       state.ai.activePrompt = ''
@@ -2866,22 +2800,6 @@ import {
       syncAiChatMessagesScroll()
       requestAnimationFrame(syncAiChatMessagesScroll)
     })
-  }
-
-  function updateAiChatStatus(text, type = 'idle') {
-    el.aiChatStatus.textContent = asText(text) || 'Ready'
-    el.aiChatStatus.classList.remove('status-success', 'status-error', 'status-pending')
-    if (type === 'success') {
-      el.aiChatStatus.classList.add('status-success')
-      return
-    }
-    if (type === 'error') {
-      el.aiChatStatus.classList.add('status-error')
-      return
-    }
-    if (type === 'pending') {
-      el.aiChatStatus.classList.add('status-pending')
-    }
   }
 
   async function requestAiEditPlan(prompt, context) {
@@ -8314,7 +8232,6 @@ import {
       'pending'
     )
     el.artifactName.value = ''
-    setArtifactComposerStatus(ARTIFACT_WAITING_STATUS, 'success')
   }
 
   async function saveArtifactToLibrary() {
