@@ -588,15 +588,24 @@ body:not(.artifact-mode-active)
   padding: 10px 12px 12px;
 }
 
-#ai-chat-shell:not(.editor-shell--expanded)
-  .ai-prompt-bar--with-shell-toggle
-  .ai-prompt-bar-field
-  .ai-chat-input,
-#ai-chat-shell:not(.editor-shell--expanded)
-  .artifact-prompt-bar--with-shell-toggle
-  .artifact-prompt-bar-field
-  .artifact-prompt-input {
-  min-height: 56px;
+/* Prompt field: same height collapsed vs expanded; expansion only grows history + queue. */
+#ai-chat-shell .ai-prompt-bar-field .ai-chat-input,
+#ai-chat-shell .artifact-prompt-bar-field .artifact-prompt-input {
+  min-height: 72px;
+  max-height: 72px;
+  height: 72px;
+  resize: none;
+  box-sizing: border-box;
+}
+
+#ai-chat-shell .ai-chat-form,
+#ai-chat-shell .artifact-prompt-form {
+  flex: 0 0 auto;
+}
+
+#ai-chat-shell .ai-prompt-bar--with-shell-toggle .composer-input-field {
+  flex: 0 1 auto;
+  align-self: flex-start;
 }
 
 /* ----------------------------------------------------------------
