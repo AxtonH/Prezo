@@ -41,6 +41,7 @@
   --editor-dock-reserve: 0px;
   --editor-dock-shift: 0px;
   --wrap-width-limit: 2400px;
+  --editor-panel-max-height: 260px;
   --panel-offset-x: 0px;
   --panel-offset-y: 0px;
   --panel-scale-x: 1;
@@ -445,7 +446,7 @@ body:not(.artifact-mode-active)
   width: 100%;
   max-width: none;
   min-height: 0;
-  max-height: min(26vh, 240px);
+  max-height: var(--editor-panel-max-height);
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -461,6 +462,49 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-fab,
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer-fab {
   display: none !important;
+}
+
+/* Resize handle — direct child of shell; visible only when expanded + floating */
+#ai-chat-shell.ai-chat-shell--viewport-fixed > .editor-panel-resize-handle {
+  flex: 0 0 6px;
+  display: none;
+  width: 100%;
+  cursor: ns-resize;
+  touch-action: none;
+  position: relative;
+}
+
+#ai-chat-shell.ai-chat-shell--viewport-fixed.editor-shell--expanded > .editor-panel-resize-handle {
+  display: block;
+}
+
+body.editor-docked .editor-panel-resize-handle {
+  display: none !important;
+}
+
+#ai-chat-shell.ai-chat-shell--viewport-fixed > .editor-panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--chrome-border);
+  transition: background 120ms ease, width 120ms ease;
+}
+
+#ai-chat-shell.ai-chat-shell--viewport-fixed > .editor-panel-resize-handle:hover::after,
+body.editor-panel-resizing #ai-chat-shell.ai-chat-shell--viewport-fixed > .editor-panel-resize-handle::after {
+  background: var(--chrome-text-muted);
+  width: 48px;
+}
+
+body.editor-panel-resizing {
+  cursor: ns-resize !important;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-header {
@@ -489,6 +533,11 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   min-height: 0;
   margin-top: 0;
   overflow-y: auto;
+}
+
+#ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-queue,
+#ai-chat-shell.ai-chat-shell--viewport-fixed #artifact-prompt-queue {
+  flex: 0 0 auto;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-chat-log {
@@ -525,7 +574,7 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   width: 100%;
   max-width: none;
   min-height: 0;
-  max-height: min(26vh, 260px);
+  max-height: var(--editor-panel-max-height);
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -3393,7 +3442,7 @@ body.present-mode .present-mode-toggle {
   .artifact-composer.is-floating {
     width: 100%;
     max-width: none;
-    max-height: min(28vh, 260px);
+    max-height: var(--editor-panel-max-height);
     padding: 8px;
   }
 
@@ -3436,7 +3485,7 @@ body.present-mode .present-mode-toggle {
   .ai-chat-panel {
     width: 100%;
     min-height: 160px;
-    max-height: min(28vh, 260px);
+    max-height: var(--editor-panel-max-height);
     padding: 8px;
   }
 
@@ -3451,7 +3500,7 @@ body.present-mode .present-mode-toggle {
   body.editor-docked .ai-chat-panel,
   body.editor-docked .artifact-composer.is-floating {
     height: auto;
-    max-height: min(28vh, 260px);
+    max-height: var(--editor-panel-max-height);
     padding: 8px;
     border-radius: 16px;
     background: var(--chrome-bg);

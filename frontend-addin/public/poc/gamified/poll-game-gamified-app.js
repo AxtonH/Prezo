@@ -26,7 +26,8 @@ import {
   THEME_DRAFT_KEY,
   THEME_LIBRARY_KEY,
   AI_CHAT_OPEN_KEY,
-  EDITOR_SHELL_EXPANDED_KEY
+  EDITOR_SHELL_EXPANDED_KEY,
+  EDITOR_PANEL_HEIGHT_KEY
 } from './poll-game-gamified-constants.js'
 import {
   ARTIFACT_CONVERSATION_STEPS,
@@ -1094,7 +1095,9 @@ import {
     el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.addEventListener('transitionend', handleEditorDockShellTransitionEnd)
+    el.aiChatShell.addEventListener('pointerdown', handlePanelResizePointerDown)
     window.addEventListener('resize', handleEditorDockViewportResize)
+    restoreEditorPanelHeight()
     setupAiChatShellAnchorTracking()
 
     appendAiChatMessage(
@@ -2718,6 +2721,64 @@ import {
 
   function handleEditorShellToggleClick() {
     setEditorShellExpanded(!state.editorShellExpanded)
+  }
+
+  /* ------------------------------------------------------------------
+     Editor panel drag-to-resize
+     ------------------------------------------------------------------ */
+  const panelResize = { active: false, startY: 0, startH: 0, panel: null }
+  const PANEL_MIN_HEIGHT = 120
+  const PANEL_MAX_HEIGHT_VH = 0.7
+
+  function handlePanelResizePointerDown(event) {
+    if (!state.editorShellExpanded) return
+    if (document.body.classList.contains('editor-docked')) return
+    const handle = event.target.closest('.editor-panel-resize-handle')
+    if (!handle) return
+    const panel =
+      el.aiChatShell.querySelector('.artifact-composer:not(.hidden)') ||
+      el.aiChatShell.querySelector('.ai-chat-panel:not(.hidden)')
+    if (!panel) return
+    event.preventDefault()
+    panelResize.active = true
+    panelResize.startY = event.clientY
+    panelResize.startH = panel.getBoundingClientRect().height
+    panelResize.panel = panel
+    document.body.classList.add('editor-panel-resizing')
+    window.addEventListener('pointermove', handlePanelResizePointerMove)
+    window.addEventListener('pointerup', handlePanelResizePointerUp)
+    window.addEventListener('pointercancel', handlePanelResizePointerUp)
+  }
+
+  function handlePanelResizePointerMove(event) {
+    if (!panelResize.active) return
+    const delta = panelResize.startY - event.clientY
+    const maxH = Math.round(window.innerHeight * PANEL_MAX_HEIGHT_VH)
+    const newH = Math.round(
+      Math.max(PANEL_MIN_HEIGHT, Math.min(maxH, panelResize.startH + delta))
+    )
+    el.aiChatShell.style.setProperty('--editor-panel-max-height', `${newH}px`)
+  }
+
+  function handlePanelResizePointerUp() {
+    if (!panelResize.active) return
+    panelResize.active = false
+    panelResize.panel = null
+    document.body.classList.remove('editor-panel-resizing')
+    window.removeEventListener('pointermove', handlePanelResizePointerMove)
+    window.removeEventListener('pointerup', handlePanelResizePointerUp)
+    window.removeEventListener('pointercancel', handlePanelResizePointerUp)
+    const value = el.aiChatShell.style.getPropertyValue('--editor-panel-max-height').trim()
+    if (value) {
+      try { localStorage.setItem(EDITOR_PANEL_HEIGHT_KEY, value) } catch {}
+    }
+  }
+
+  function restoreEditorPanelHeight() {
+    const saved = safeStorageGet(EDITOR_PANEL_HEIGHT_KEY)
+    if (saved) {
+      el.aiChatShell.style.setProperty('--editor-panel-max-height', saved)
+    }
   }
 
   function handleAiChatFormSubmit(event) {

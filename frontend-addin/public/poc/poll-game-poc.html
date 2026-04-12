@@ -248,8 +248,7 @@
               <div
                 id="theme-bg-image-dropzone"
                 class="theme-bg-dropzone"
-                role="button"
-                tabindex="0"
+                role="group"
                 aria-label="Background image: drop a file or click to browse"
               >
                 <input
@@ -257,8 +256,7 @@
                   class="theme-bg-dropzone-file"
                   type="file"
                   accept="image/*"
-                  tabindex="-1"
-                  aria-hidden="true"
+                  aria-label="Upload background image"
                 />
                 <div class="theme-bg-dropzone-inner">
                   <span class="material-symbols-outlined theme-bg-dropzone-icon" aria-hidden="true">image</span>
@@ -601,6 +599,7 @@
       >
         AI Edit
       </button>
+      <div id="editor-panel-resize-handle" class="editor-panel-resize-handle" aria-hidden="true"></div>
       <div id="ai-chat-panel" class="ai-chat-panel ai-chat-panel--queue-hidden hidden">
         <header class="ai-chat-header">
           <div>
