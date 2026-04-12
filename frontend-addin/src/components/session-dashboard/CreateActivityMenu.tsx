@@ -9,6 +9,8 @@ export interface CreateActivityMenuProps {
   ) => Promise<void>
   onOpenAudienceQna: () => Promise<void>
   onCreateDiscussionPrompt: (prompt: string) => Promise<void>
+  /** `dashed` — full-width dashed CTA with an inline type picker (session dashboard). */
+  variant?: 'toolbar' | 'dashed'
 }
 
 /** Same Material Symbols as `WORKSPACE_NAV_ITEMS` in SideNav (polls, discussion, qna). */
@@ -37,12 +39,14 @@ export function CreateActivityMenu({
   qnaOpen,
   onCreatePoll,
   onOpenAudienceQna,
-  onCreateDiscussionPrompt
+  onCreateDiscussionPrompt,
+  variant = 'dashed'
 }: CreateActivityMenuProps) {
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState<'pick' | 'poll' | 'qna' | 'discussion'>('pick')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [dashedMenuOpen, setDashedMenuOpen] = useState(false)
 
   const [pollQuestion, setPollQuestion] = useState('')
   const [pollOptions, setPollOptions] = useState<string[]>(['', ''])
@@ -72,6 +76,37 @@ export function CreateActivityMenu({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, closeAll])
+
+  useEffect(() => {
+    if (!dashedMenuOpen) {
+      return
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDashedMenuOpen(false)
+      }
+    }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('[data-add-activity-dashed]')) {
+        return
+      }
+      setDashedMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [dashedMenuOpen])
+
+  const openModalFromDashed = (next: 'poll' | 'qna' | 'discussion') => {
+    setDashedMenuOpen(false)
+    setFormError(null)
+    setStep(next)
+    setOpen(true)
+  }
 
   const updatePollOption = (index: number, value: string) => {
     setPollOptions((prev) => prev.map((o, i) => (i === index ? value : o)))
@@ -166,22 +201,70 @@ export function CreateActivityMenu({
 
   return (
     <>
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => {
-            setStep('pick')
-            setFormError(null)
-            setOpen(true)
-          }}
-          className="!inline-flex !items-center !gap-2 !px-5 !py-2.5 !rounded-xl !text-sm !font-bold !bg-primary !text-white !border-0 !shadow-sm hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shrink-0"
-        >
-          <span className="material-symbols-outlined text-lg" aria-hidden>
-            add_circle
-          </span>
-          Create activity
-        </button>
-      </div>
+      {variant === 'dashed' ? (
+        <div className="relative mb-2" data-add-activity-dashed>
+          <button
+            type="button"
+            onClick={() => {
+              setDashedMenuOpen((v) => !v)
+            }}
+            className="group w-full p-6 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-3"
+          >
+            <div className="size-10 rounded-full bg-primary/10 group-hover:bg-primary/15 flex items-center justify-center transition-colors">
+              <span className="material-symbols-outlined text-2xl text-primary">add</span>
+            </div>
+            <span className="font-semibold text-slate-900">Add activity</span>
+          </button>
+
+          {dashedMenuOpen ? (
+            <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+              <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  Interactive activities
+                </div>
+              </div>
+              {ACTIVITY_TYPES.map((a, index) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => openModalFromDashed(a.id)}
+                  className={`flex w-full gap-3 p-4 text-left transition-colors hover:bg-slate-50 ${
+                    index < ACTIVITY_TYPES.length - 1 ? 'border-b border-slate-100' : ''
+                  }`}
+                >
+                  <span
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-primary"
+                    aria-hidden
+                  >
+                    <span className="material-symbols-outlined">{a.icon}</span>
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-medium text-slate-900">{a.title}</span>
+                    <span className="block text-sm text-muted mt-0.5 leading-snug">{a.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              setStep('pick')
+              setFormError(null)
+              setOpen(true)
+            }}
+            className="!inline-flex !items-center !gap-2 !px-5 !py-2.5 !rounded-xl !text-sm !font-bold !bg-primary !text-white !border-0 !shadow-sm hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shrink-0"
+          >
+            <span className="material-symbols-outlined text-lg" aria-hidden>
+              add_circle
+            </span>
+            Create activity
+          </button>
+        </div>
+      )}
 
       {open ? (
         <div

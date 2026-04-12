@@ -1571,7 +1571,6 @@ function HostConsole({
                   session={session}
                   qnaDeletedEpoch={qnaDeletedEpoch}
                   hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
-                  hostAvatarUrl={hostProfile.avatar_url}
                   sessionStats={sessionSessionStats}
                   polls={polls}
                   prompts={prompts}
