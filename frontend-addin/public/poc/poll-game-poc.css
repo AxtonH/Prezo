@@ -451,8 +451,8 @@ body:not(.artifact-mode-active)
   border-radius: 16px;
   background: var(--chrome-bg);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-  padding: 12px 14px 14px;
-  align-content: start;
+  /* Match collapsed dock padding so bottom inset does not grow when expanding. */
+  padding: 10px 12px 12px;
 }
 
 body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-panel,
@@ -498,6 +498,12 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   margin-top: 7px;
 }
 
+/* Expanded dock uses grid row gap; drop form margin so it does not stack under the prompt. */
+#ai-chat-shell.ai-chat-shell--viewport-fixed.editor-shell--expanded .ai-chat-form,
+#ai-chat-shell.ai-chat-shell--viewport-fixed.editor-shell--expanded .artifact-prompt-form {
+  margin-top: 0;
+}
+
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-message {
   max-width: min(86%, 720px);
   border-radius: 12px;
@@ -521,8 +527,7 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   border-radius: 16px;
   background: var(--chrome-bg);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-  padding: 12px 14px 14px;
-  align-content: start;
+  padding: 10px 12px 12px;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed
