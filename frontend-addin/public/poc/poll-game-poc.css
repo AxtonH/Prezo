@@ -93,8 +93,7 @@ body.ribbon-hidden:not(.editor-docked) {
   overflow: auto;
 }
 
-body.ribbon-hidden:not(.editor-docked) .wrap,
-body.ribbon-hidden:not(.editor-docked) .editor-mode-strip-anchor {
+body.ribbon-hidden:not(.editor-docked) .wrap {
   margin: 0;
 }
 
@@ -105,8 +104,7 @@ body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) {
   overflow: auto;
 }
 
-body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) .wrap,
-body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) .editor-mode-strip-anchor {
+body.ribbon-collapsed:not(.ribbon-hidden):not(.editor-docked) .wrap {
   margin: 0;
 }
 
@@ -120,9 +118,7 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
 }
 
 body.editor-docked.ribbon-hidden .wrap,
-body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap,
-body.editor-docked.ribbon-hidden .editor-mode-strip-anchor,
-body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .editor-mode-strip-anchor {
+body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) .wrap {
   margin-left: calc(var(--editor-dock-reserve) + 20px);
   margin-right: auto;
 }
@@ -1443,23 +1439,8 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 190ms ease, margin 190ms ease, width 190ms ease;
 }
 
-/* Mode label sits above the canvas (outside .wrap), aligned to the same column. */
-.editor-mode-strip-anchor {
-  display: block;
-  box-sizing: border-box;
-  width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - 40px));
-  margin: calc(var(--ribbon-offset) + 12px) auto 12px;
-}
-
-/* Anchor supplies top gap under the ribbon; avoid doubling when it sits above .wrap. */
-.editor-mode-strip-anchor + .wrap {
-  margin-top: 0;
-}
-
 /* When sidebar is open, shift canvas right to account for left sidebar */
-body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap,
-body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode)
-  .editor-mode-strip-anchor {
+body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--sidebar-width) - 40px));
   margin-left: calc(var(--sidebar-width) + 20px);
   margin-right: auto;
@@ -2891,15 +2872,6 @@ body.editor-docked .settings-minimized {
   right: auto;
 }
 
-body.editor-docked .editor-mode-strip-anchor {
-  width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - 40px));
-  margin-top: calc(var(--ribbon-offset) + var(--editor-docked-wrap-top-gap));
-  margin-bottom: 12px;
-  margin-left: calc(var(--editor-dock-reserve) + 20px);
-  margin-right: auto;
-  max-width: none;
-}
-
 body.editor-docked .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - 40px));
   margin-top: calc(var(--ribbon-offset) + var(--editor-docked-wrap-top-gap));
@@ -2908,14 +2880,8 @@ body.editor-docked .wrap {
   max-width: none;
 }
 
-body.editor-docked .editor-mode-strip-anchor + .wrap {
-  margin-top: 0;
-}
-
 /* When both editor sidebar and settings sidebar are open */
-body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed):not(.present-mode) .wrap,
-body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed):not(.present-mode)
-  .editor-mode-strip-anchor {
+body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed):not(.present-mode) .wrap {
   margin-left: calc(var(--sidebar-width) + 20px);
   margin-right: auto;
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - var(--sidebar-width) - 60px));
@@ -2930,10 +2896,6 @@ body.present-mode {
   place-items: initial;
   padding-top: 0;
   overflow: hidden;
-}
-
-body.present-mode .editor-mode-strip-anchor {
-  display: none !important;
 }
 
 body.present-mode .settings-ribbon,
@@ -3068,8 +3030,7 @@ body.present-mode .present-mode-toggle {
     right: auto;
   }
 
-  body.editor-docked .wrap,
-  body.editor-docked .editor-mode-strip-anchor {
+  body.editor-docked .wrap {
     margin-left: auto;
     margin-right: auto;
   }
@@ -3109,12 +3070,6 @@ body.present-mode .present-mode-toggle {
     right: auto;
   }
 
-  .editor-mode-strip-anchor {
-    margin-top: calc(var(--ribbon-offset) + 8px);
-    margin-bottom: 10px;
-    width: min(1160px, 95vw);
-  }
-
   .wrap {
     margin-top: calc(var(--ribbon-offset) + 8px);
     width: min(1160px, 95vw);
@@ -3122,13 +3077,7 @@ body.present-mode .present-mode-toggle {
     border-radius: 16px;
   }
 
-  .editor-mode-strip-anchor + .wrap {
-    margin-top: 0;
-  }
-
-  body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap,
-  body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode)
-    .editor-mode-strip-anchor {
+  body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
     width: min(1160px, calc(95vw - var(--sidebar-width)));
     margin-left: calc(var(--sidebar-width) + 8px);
     margin-right: auto;
@@ -3413,47 +3362,6 @@ body.artifact-mode-active .visual-mode-card-hint[data-visual-hint="artifact"] {
 
 body:not(.artifact-mode-active) .visual-mode-card-hint[data-visual-hint="classic"] {
   display: block;
-}
-
-.editor-mode-strip {
-  width: 100%;
-  margin: 0;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-}
-
-.editor-mode-strip-row {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-body:not(.artifact-mode-active) .editor-mode-strip-classic {
-  display: flex;
-}
-
-body.artifact-mode-active .editor-mode-strip-artifact {
-  display: flex;
-}
-
-.editor-mode-strip-icon {
-  font-size: 22px;
-  color: #7c3aed;
-}
-
-.editor-mode-strip-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #18181b;
-}
-
-.editor-mode-strip-sub {
-  font-size: 12px;
-  color: #71717a;
-  margin-left: auto;
 }
 
 @media (max-width: 640px) {
