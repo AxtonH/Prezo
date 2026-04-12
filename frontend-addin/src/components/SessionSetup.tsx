@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
-import type { Session } from '../api/types'
+import { api } from '../api/client'
+import type { Session, SessionSessionStats } from '../api/types'
 import { resolveJoinUrl } from '../utils/joinUrl'
 
 interface SessionSetupProps {
@@ -17,28 +18,18 @@ interface SessionSetupProps {
   onRefresh?: () => void
   deletingSessionId?: string | null
   isCompact?: boolean
+  /** Opens the existing “new session” modal (same as sidebar / header). */
+  onOpenCreateSession?: () => void
   /** Tailwind classes for the scrollable session list max height (default fits ~6 rows before scroll). */
   listMaxHeightClass?: string
   /** Shown when the list finished loading and has no rows (e.g. Owner vs Co-Host filter). */
   emptyListMessage?: string
 }
 
-const SESSION_ICONS = ['rocket_launch', 'palette', 'auto_graph', 'forum', 'interests', 'star']
-
-function getSessionIcon(index: number) {
-  return SESSION_ICONS[index % SESSION_ICONS.length]
-}
-
 function formatDate(value: string) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatTime(value: string) {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
 export function SessionSetup({
@@ -54,12 +45,81 @@ export function SessionSetup({
   onRefresh: _onRefresh,
   deletingSessionId = null,
   isCompact: _isCompact = false,
+  onOpenCreateSession,
   listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]',
   emptyListMessage = 'Ops looks like you dont have any active sessions yet, click "Start a new session" to start one!'
 }: SessionSetupProps) {
-  void _isCompact; void _onCreate; void _onJoinByCode; void _onRefresh
+  void _isCompact
+  void _onCreate
+  void _onJoinByCode
+  void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [statsBySessionId, setStatsBySessionId] = useState<
+    Partial<Record<string, SessionSessionStats | null>>
+  >({})
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
+
+  const sessionIdsKey = recentSessions?.map((s) => s.id).join('|') ?? ''
+
+  useEffect(() => {
+    if (!recentSessions?.length) {
+      setStatsBySessionId({})
+      return
+    }
+    setStatsBySessionId({})
+    let cancelled = false
+    const sessions = recentSessions
+
+    void (async () => {
+      const chunkSize = 8
+      for (let i = 0; i < sessions.length; i += chunkSize) {
+        if (cancelled) {
+          return
+        }
+        const slice = sessions.slice(i, i + chunkSize)
+        const chunkStats = await Promise.all(
+          slice.map(async (s) => {
+            try {
+              const st = await api.getSessionSessionStats(s.id)
+              return [s.id, st] as const
+            } catch {
+              return [s.id, null] as const
+            }
+          })
+        )
+        if (cancelled) {
+          return
+        }
+        setStatsBySessionId((prev) => {
+          const next = { ...prev }
+          for (const [id, st] of chunkStats) {
+            next[id] = st
+          }
+          return next
+        })
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionIdsKey])
+
+  useEffect(() => {
+    if (!menuSessionId) {
+      return
+    }
+    const onMouseDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('[data-session-card-menu]')) {
+        return
+      }
+      setMenuSessionId(null)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [menuSessionId])
 
   const handleHostJoinAccessToggle = async () => {
     if (!session || !onSetHostJoinAccess || session.is_original_host !== true) return
@@ -79,90 +139,185 @@ export function SessionSetup({
 
   if (!session) {
     return (
-      <div className="space-y-0">
+      <div className="space-y-6">
+        {onOpenCreateSession ? (
+          <button
+            type="button"
+            onClick={onOpenCreateSession}
+            className="group w-full p-8 rounded-2xl border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-3"
+          >
+            <div className="size-12 rounded-full bg-primary/10 group-hover:bg-primary/15 flex items-center justify-center transition-colors">
+              <span className="material-symbols-outlined text-3xl text-primary">add</span>
+            </div>
+            <div className="text-center">
+              <div className="font-semibold text-slate-900 mb-1">Create New Session</div>
+              <div className="text-sm text-muted">
+                Start building interactive activities for your next presentation
+              </div>
+            </div>
+          </button>
+        ) : null}
+
         {hasRecentSessions ? (
-          <div className="rounded-xl border border-slate-100 bg-surface-2/50 overflow-hidden shadow-sm">
-            <div
-              className={`${listMaxHeightClass} overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1.5 -mr-0.5 w-full`}
-            >
-              {recentSessions?.map((entry, index) => {
+          <div
+            className={`${listMaxHeightClass} overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1 -mr-0.5 w-full`}
+          >
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 pb-1">
+              {recentSessions?.map((entry) => {
                 const sessionTitle = entry.title?.trim() || 'Untitled session'
                 const dateStr = formatDate(entry.created_at)
-                const timeStr = formatTime(entry.created_at)
-                const isActive = entry.status === 'active'
+                const isLive = entry.status === 'active'
                 const isCoHost = entry.is_original_host === false
+                const stats = statsBySessionId[entry.id]
+                const interactions =
+                  stats === undefined ? undefined : stats === null ? null : stats.total_interactions
+                const participants =
+                  stats === undefined ? undefined : stats === null ? null : stats.unique_participants
+                const showOwnerActions = !isCoHost && onDelete
+
                 return (
                   <div
                     key={entry.id}
-                    className="group flex items-center justify-between py-5 px-4 hover:bg-white/80 transition-[background-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer border-b border-slate-100/80 last:border-b-0"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onResume?.(entry)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onResume?.(entry)
+                      }
+                    }}
+                    className="group relative cursor-pointer bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-lg transition-all p-6 text-left"
                   >
-                    <div className="flex items-center gap-5 flex-1 min-w-0">
-                      <div className={`w-11 h-11 ${isActive ? 'bg-primary/10' : 'bg-slate-100'} rounded-xl flex items-center justify-center ${isActive ? 'text-primary' : 'text-slate-400'} flex-shrink-0 transition-colors duration-300`}>
-                        <span className="material-symbols-outlined text-xl">{getSessionIcon(index)}</span>
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-[15px] font-semibold text-slate-900 truncate">{sessionTitle}</h3>
-                        <p className="text-sm text-muted truncate">
-                          Code: <span className="font-mono font-semibold text-xs tracking-wider">{entry.code}</span>
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-8 text-right flex-shrink-0">
-                      {dateStr ? (
-                        <div className="hidden sm:block">
-                          <p className="text-sm font-semibold text-slate-900">{dateStr}</p>
-                          {timeStr ? <p className="text-xs text-muted uppercase tracking-tight">{timeStr}</p> : null}
-                        </div>
-                      ) : null}
-                      <div className="w-20 flex justify-end">
-                        {isActive ? (
-                          <span className="bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                            Active
-                          </span>
-                        ) : (
-                          <span className="bg-slate-100 text-muted px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest">
-                            Ended
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {onResume ? (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); onResume(entry) }}
-                            disabled={deletingSessionId === entry.id}
-                            className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-primary transition-colors duration-200 ease-out flex h-10 w-10 items-center justify-center"
-                            title="Resume session"
-                          >
-                            <span className="material-symbols-outlined text-xl">play_arrow</span>
-                          </button>
-                        ) : (
-                          <span className="h-10 w-10 shrink-0" aria-hidden />
-                        )}
-                        {/* Fixed slot keeps rows aligned: delete (owner) or Co-Host pill (cohost). */}
-                        <div className="flex h-10 w-[6.75rem] min-w-[6.75rem] items-center justify-center">
+                    <div className="flex items-start justify-between gap-2 mb-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <h3 className="font-semibold text-slate-900 truncate group-hover:text-primary transition-colors">
+                            {sessionTitle}
+                          </h3>
                           {isCoHost ? (
-                            <span className="bg-orange-50 text-orange-800 border border-orange-200/90 px-2.5 py-1 rounded-full text-[0.65rem] font-bold uppercase tracking-widest whitespace-nowrap shadow-sm">
+                            <span className="shrink-0 bg-orange-50 text-orange-800 border border-orange-200/90 px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest">
                               Co-Host
                             </span>
                           ) : null}
-                          {!isCoHost && onDelete ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); onDelete(entry) }}
-                              disabled={deletingSessionId === entry.id}
-                              className="!bg-transparent !border-0 !p-2 !shadow-none text-muted hover:text-danger transition-colors duration-200 ease-out flex h-10 w-10 items-center justify-center"
-                              title={deletingSessionId === entry.id ? 'Deleting...' : 'Delete session'}
+                        </div>
+                        {dateStr ? (
+                          <div className="flex items-center gap-1.5 text-sm text-muted">
+                            <span className="material-symbols-outlined text-base leading-none">
+                              calendar_today
+                            </span>
+                            <span>{dateStr}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      {showOwnerActions ? (
+                        <div className="relative shrink-0" data-session-card-menu>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setMenuSessionId((id) => (id === entry.id ? null : entry.id))
+                            }}
+                            className={`p-1.5 rounded-lg transition-all ${
+                              menuSessionId === entry.id
+                                ? 'bg-slate-100 opacity-100'
+                                : 'opacity-0 group-hover:opacity-100 hover:bg-slate-100'
+                            }`}
+                            title="Session actions"
+                            aria-expanded={menuSessionId === entry.id}
+                            aria-haspopup="menu"
+                          >
+                            <span className="material-symbols-outlined text-lg text-slate-500">
+                              more_vert
+                            </span>
+                          </button>
+                          {menuSessionId === entry.id ? (
+                            <div
+                              className="absolute right-0 top-full z-20 mt-1 min-w-[10rem] rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                              role="menu"
                             >
-                              <span className="material-symbols-outlined text-xl">
-                                {deletingSessionId === entry.id ? 'hourglass_empty' : 'delete'}
-                              </span>
-                            </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-danger hover:bg-red-50"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMenuSessionId(null)
+                                  onDelete(entry)
+                                }}
+                                disabled={deletingSessionId === entry.id}
+                              >
+                                <span className="material-symbols-outlined text-lg">delete</span>
+                                {deletingSessionId === entry.id ? 'Deleting…' : 'Delete session'}
+                              </button>
+                            </div>
                           ) : null}
                         </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-4 mb-4 text-sm">
+                      <div className="flex items-center gap-1.5 text-slate-600">
+                        <span className="material-symbols-outlined text-lg leading-none">bolt</span>
+                        <span>
+                          {interactions === undefined
+                            ? '…'
+                            : interactions === null
+                              ? '—'
+                              : interactions}{' '}
+                          activities
+                        </span>
                       </div>
+                      <div className="flex items-center gap-1.5 text-slate-600">
+                        <span className="material-symbols-outlined text-lg leading-none">group</span>
+                        <span>
+                          {participants === undefined ? '…' : participants === null ? '—' : participants}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100 gap-2">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          isLive
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {isLive ? 'Live' : 'Ended'}
+                      </span>
+                      {entry.status === 'ended' && onResume ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onResume(entry)
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors text-sm font-medium shrink-0"
+                        >
+                          <span className="material-symbols-outlined text-base leading-none">
+                            bar_chart
+                          </span>
+                          View Results
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-muted min-w-0">
+                          <span className="font-mono truncate">{entry.code}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void navigator.clipboard.writeText(entry.code)
+                            }}
+                            className="p-1 hover:bg-slate-100 rounded transition-colors shrink-0"
+                            title="Copy join code"
+                          >
+                            <span className="material-symbols-outlined text-base text-slate-500">
+                              content_copy
+                            </span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )

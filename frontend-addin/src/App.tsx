@@ -1458,15 +1458,30 @@ function HostConsole({
                   workspaceNav === 'editor')
               ) ? (
                 <div className="mb-8">
-                  <h1 className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}>
-                    {!session
-                      ? 'All Sessions'
-                      : workspaceNav === 'polls'
-                        ? 'Polls'
-                        : workspaceNav === 'discussion'
-                          ? 'Open discussion'
-                          : 'Q&A'}
-                  </h1>
+                  {!session ? (
+                    <>
+                      <h1
+                        className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}
+                      >
+                        Your Sessions
+                      </h1>
+                      <p className="text-muted max-w-3xl leading-relaxed text-sm">
+                        Create and manage interactive experiences for your presentations
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h1
+                        className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}
+                      >
+                        {workspaceNav === 'polls'
+                          ? 'Polls'
+                          : workspaceNav === 'discussion'
+                            ? 'Open discussion'
+                            : 'Q&A'}
+                      </h1>
+                    </>
+                  )}
                   {!session ? null : workspaceNav === 'polls' ? (
                     <p className="text-muted max-w-3xl leading-relaxed text-sm">
                       Set up and launch polls for this session. Full layout is coming next.
@@ -1522,6 +1537,11 @@ function HostConsole({
                   onCreate={createSession}
                   onJoinByCode={joinSessionByCode}
                   onSetHostJoinAccess={setHostJoinAccess}
+                  onOpenCreateSession={() => {
+                    setShowJoinByCodeForm(false)
+                    setJoinByCodeError(null)
+                    setShowCreateForm(true)
+                  }}
                   recentSessions={filteredRecentSessions}
                   emptyListMessage={
                     sessionSearchQuery.trim()
