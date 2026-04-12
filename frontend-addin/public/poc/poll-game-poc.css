@@ -444,11 +444,10 @@ body:not(.artifact-mode-active)
   gap: 8px;
   width: 100%;
   max-width: none;
-  /* Let row tracks + 1fr fill the box; align-content:start + min-height used to leave a dead band under the prompt. */
   min-height: 0;
   max-height: min(26vh, 240px);
   height: auto;
-  align-content: stretch;
+  align-content: start;
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -524,7 +523,7 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   min-height: 0;
   max-height: min(26vh, 260px);
   height: auto;
-  align-content: stretch;
+  align-content: start;
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -3394,7 +3393,7 @@ body.present-mode .present-mode-toggle {
     max-width: none;
     max-height: min(28vh, 260px);
     padding: 8px;
-    align-content: stretch;
+    align-content: start;
   }
 
   .state.artifact-mode.artifact-layout-vertical {
@@ -3438,7 +3437,7 @@ body.present-mode .present-mode-toggle {
     min-height: 160px;
     max-height: min(28vh, 260px);
     padding: 8px;
-    align-content: stretch;
+    align-content: start;
   }
 
   .ai-chat-fab {
@@ -3457,6 +3456,7 @@ body.present-mode .present-mode-toggle {
     border-radius: 16px;
     background: var(--chrome-bg);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    align-content: start;
   }
 }
 
