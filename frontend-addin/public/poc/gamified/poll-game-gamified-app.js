@@ -658,16 +658,6 @@ import {
     el.settingsClose.addEventListener('click', () => {
       setRibbonHidden(true)
     })
-    const editorNavBack = document.getElementById('editor-nav-back')
-    if (editorNavBack) {
-      editorNavBack.addEventListener('click', () => {
-        try {
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'prezo:editor-exit' }, parentPostMessageOrigin)
-          }
-        } catch {}
-      })
-    }
     el.settingsMinimized.addEventListener('click', () => {
       setRibbonHidden(false)
       setRibbonCollapsed(false)

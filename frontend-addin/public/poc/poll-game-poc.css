@@ -192,45 +192,6 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
   overflow: hidden;
 }
 
-.ribbon-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  margin-right: 8px;
-  flex-shrink: 0;
-}
-
-.ribbon-brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  line-height: 1.15;
-}
-
-.ribbon-logo {
-  flex-shrink: 0;
-}
-
-.ribbon-kicker {
-  display: block;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--chrome-text-muted);
-}
-
-.ribbon-brand strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--chrome-text);
-  white-space: nowrap;
-}
-
 /* ----------------------------------------------------------------
    Sidebar tab icons (top of sidebar)
    ---------------------------------------------------------------- */
@@ -3119,15 +3080,6 @@ body.present-mode .present-mode-toggle {
     height: 100%;
   }
 
-  .ribbon-brand {
-    min-width: 0;
-    flex-shrink: 1;
-  }
-
-  .ribbon-brand strong {
-    font-size: 12px;
-  }
-
   .ribbon-tabs {
     padding: 6px 10px;
   }
@@ -3345,39 +3297,6 @@ body.present-mode .present-mode-toggle {
   gap: 10px;
 }
 
-.ribbon-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--chrome-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 10px;
-  flex-shrink: 0;
-  transition: background 120ms ease, color 120ms ease;
-}
-
-.ribbon-back:hover {
-  background: var(--chrome-hover);
-  color: var(--chrome-text);
-}
-
-.ribbon-strip-spacer {
-  flex: 1 1 auto;
-  min-width: 8px;
-}
-
-.ribbon-save-status {
-  margin: 0;
-  font-size: 13px;
-  color: var(--chrome-text-muted);
-  flex-shrink: 0;
-}
-
 .ribbon-btn--done {
   border: 0 !important;
   background: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%) !important;
@@ -3538,10 +3457,6 @@ body.artifact-mode-active .editor-mode-strip-artifact {
 }
 
 @media (max-width: 640px) {
-  .ribbon-back span:last-child {
-    display: none;
-  }
-
   .ribbon-tab-label {
     font-size: 10px;
   }
