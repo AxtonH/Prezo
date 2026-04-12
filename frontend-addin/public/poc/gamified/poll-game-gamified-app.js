@@ -576,6 +576,7 @@ import {
     rafId: 0,
     timerIds: []
   }
+  let aiChatShellAnchorRafId = 0
   const historyState = {
     initialized: false,
     applying: false,
@@ -787,8 +788,6 @@ import {
     }
     scheduleAiChatShellIframeAnchor()
   }
-
-  let aiChatShellAnchorRafId = 0
 
   /** Keep #ai-chat-shell horizontally centered on the preview iframe (or #canvas-wrap when stage hidden). */
   function scheduleAiChatShellIframeAnchor() {
