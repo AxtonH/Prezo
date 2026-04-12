@@ -131,8 +131,9 @@ async def list_saved_artifact_versions(
             normalized_name,
             safe_limit,
         )
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NotFoundError:
+        # Artifact not saved to this account yet — same as “no version history”.
+        return []
 
 
 @router.post("/artifacts/{name}/versions/{version}/restore", response_model=SavedArtifact)

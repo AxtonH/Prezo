@@ -400,9 +400,31 @@ export function createPollGameLibrarySyncManager({
 
   async function listArtifactVersionsFromAccount(name, limit = 30) {
     const safeLimit = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 30))
-    return fetchAuthedJson(
-      `/library/poll-game/artifacts/${encodeURIComponent(name)}/versions?limit=${safeLimit}`
-    )
+    const path = `/library/poll-game/artifacts/${encodeURIComponent(name)}/versions?limit=${safeLimit}`
+    const token = getLibraryAccessToken()
+    if (!token) {
+      throw new Error('Sign in through Prezo Host to sync saved items.')
+    }
+    const headers = new Headers()
+    headers.set('Authorization', `Bearer ${token}`)
+    let response
+    try {
+      response = await windowObj.fetch(`${getApiBase()}${path}`, { headers })
+    } catch (error) {
+      const message = errorToMessage(error)
+      throw new Error(`Unable to reach API base ${getApiBase()}: ${message}`)
+    }
+    // Older API: 404 when the artifact is not on the account yet — treat as no history.
+    if (response.status === 404) {
+      return []
+    }
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const detail =
+        typeof payload?.detail === 'string' ? payload.detail : `Request failed (${response.status})`
+      throw new Error(`${detail} [API ${getApiBase()}]`)
+    }
+    return payload
   }
 
   async function restoreArtifactVersionInAccount(name, version) {
