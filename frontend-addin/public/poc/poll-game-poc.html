@@ -350,7 +350,7 @@
 
         <section class="ribbon-pane ribbon-pane--ai-hint" data-ribbon-pane="ai">
           <p class="ribbon-ai-pane-hint">
-            Poll AI is in the <strong>bar below the canvas</strong> (scroll the page if needed).
+            Poll AI uses the <strong>floating bar</strong> at the bottom of the window (outside the poll preview).
           </p>
         </section>
       </div>
@@ -576,68 +576,6 @@
       <section id="options" class="state"></section>
       <p id="footer" class="footer"></p>
 
-      <section id="ai-chat-shell" class="ai-chat-shell hidden" aria-label="Prezo AI editor">
-        <button
-          id="ai-chat-fab"
-          class="ai-chat-fab"
-          type="button"
-          aria-controls="ai-chat-panel"
-          aria-expanded="false"
-        >
-          AI Edit
-        </button>
-        <div id="ai-chat-panel" class="ai-chat-panel ai-chat-panel--queue-hidden hidden">
-          <header class="ai-chat-header">
-            <div>
-              <p class="artifact-kicker">Poll design</p>
-              <p class="artifact-composer-subtitle">
-                Refine the poll theme with targeted changes. Small edits work best.
-              </p>
-            </div>
-            <button
-              id="ai-chat-collapse"
-              class="ai-chat-collapse"
-              type="button"
-              aria-label="Collapse AI editor"
-            >
-              Collapse
-            </button>
-          </header>
-          <div id="ai-chat-queue" class="ai-chat-queue hidden"></div>
-          <div id="ai-chat-messages" class="ai-chat-messages">
-            <div id="ai-chat-messages-inner" class="ai-chat-messages-inner" aria-live="polite"></div>
-          </div>
-          <form id="ai-chat-form" class="ai-chat-form">
-            <div class="ai-prompt-bar">
-              <div class="composer-input-field ai-prompt-bar-field">
-                <textarea
-                  id="ai-chat-input"
-                  class="ai-chat-input artifact-prompt-input"
-                  rows="3"
-                  placeholder="Describe how you'd like to change this activity… (e.g. colors, labels, layout)"
-                  aria-label="Prompt to edit poll game. Press Enter to send, Shift+Enter for a new line."
-                ></textarea>
-                <div class="ai-prompt-bar-footer">
-                  <p class="composer-enter-hint ai-prompt-hint">
-                    <span class="composer-enter-kbd" title="Enter">↵</span>
-                    Press Enter to send · Shift+Enter new line
-                  </p>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-        <button
-          id="artifact-composer-fab"
-          class="artifact-composer-fab hidden"
-          type="button"
-          aria-controls="artifact-composer"
-          aria-expanded="false"
-        >
-          Artifact Editor
-        </button>
-      </section>
-
       <button
         id="present-mode-toggle"
         class="present-mode-toggle"
@@ -649,6 +587,72 @@
         +
       </button>
     </main>
+
+    <section
+      id="ai-chat-shell"
+      class="ai-chat-shell ai-chat-shell--viewport-fixed hidden"
+      aria-label="Prezo AI editor"
+    >
+      <button
+        id="ai-chat-fab"
+        class="ai-chat-fab"
+        type="button"
+        aria-controls="ai-chat-panel"
+        aria-expanded="false"
+      >
+        AI Edit
+      </button>
+      <div id="ai-chat-panel" class="ai-chat-panel ai-chat-panel--queue-hidden hidden">
+        <header class="ai-chat-header">
+          <div>
+            <p class="artifact-kicker">Poll design</p>
+            <p class="artifact-composer-subtitle">
+              Refine the poll theme with targeted changes. Small edits work best.
+            </p>
+          </div>
+          <button
+            id="ai-chat-collapse"
+            class="ai-chat-collapse"
+            type="button"
+            aria-label="Collapse AI editor"
+          >
+            Collapse
+          </button>
+        </header>
+        <div id="ai-chat-queue" class="ai-chat-queue hidden"></div>
+        <div id="ai-chat-messages" class="ai-chat-messages">
+          <div id="ai-chat-messages-inner" class="ai-chat-messages-inner" aria-live="polite"></div>
+        </div>
+        <form id="ai-chat-form" class="ai-chat-form">
+          <div class="ai-prompt-bar">
+            <div class="composer-input-field ai-prompt-bar-field">
+              <textarea
+                id="ai-chat-input"
+                class="ai-chat-input artifact-prompt-input"
+                rows="3"
+                placeholder="Describe how you'd like to change this activity… (e.g. colors, labels, layout)"
+                aria-label="Prompt to edit poll game. Press Enter to send, Shift+Enter for a new line."
+              ></textarea>
+              <div class="ai-prompt-bar-footer">
+                <p class="composer-enter-hint ai-prompt-hint">
+                  <span class="composer-enter-kbd" title="Enter">↵</span>
+                  Press Enter to send · Shift+Enter new line
+                </p>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <button
+        id="artifact-composer-fab"
+        class="artifact-composer-fab hidden"
+        type="button"
+        aria-controls="artifact-composer"
+        aria-expanded="false"
+      >
+        Artifact Editor
+      </button>
+    </section>
 
     <div id="reset-positions-modal" class="confirm-modal" aria-hidden="true">
       <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="reset-positions-title">

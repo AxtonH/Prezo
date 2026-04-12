@@ -2665,11 +2665,12 @@ import {
     el.artifactPromptForm.requestSubmit()
   }
 
-  /** FAB is unused in canvas layout; when hidden, do not expose aria-expanded on a non-disclosure control. */
+  /** FAB is unused in viewport-fixed dock; when hidden, do not expose aria-expanded on a non-disclosure control. */
   function syncAiChatFabAccessibility() {
-    const shellInCanvas =
-      el.aiChatShell.parentElement && el.aiChatShell.parentElement.id === 'canvas-wrap'
-    if (shellInCanvas) {
+    const shellViewportDock = el.aiChatShell.classList.contains(
+      'ai-chat-shell--viewport-fixed',
+    )
+    if (shellViewportDock) {
       el.aiChatFab.removeAttribute('aria-expanded')
       return
     }
@@ -2684,8 +2685,9 @@ import {
     const persist = options.persist !== false
     const wantOpen = Boolean(open)
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-    const shellInCanvas =
-      el.aiChatShell.parentElement && el.aiChatShell.parentElement.id === 'canvas-wrap'
+    const shellViewportDock = el.aiChatShell.classList.contains(
+      'ai-chat-shell--viewport-fixed',
+    )
     el.aiChatShell.classList.toggle('hidden', isArtifactMode)
     if (isArtifactMode) {
       state.ai.open = wantOpen
@@ -2701,8 +2703,8 @@ import {
       }
       return
     }
-    /* Poll AI under the canvas: same open/close contract as floating shell; FAB stays unused (CSS + hidden). */
-    if (shellInCanvas) {
+    /* Poll AI in viewport-fixed dock: same open/close contract as before; FAB stays unused (CSS + hidden). */
+    if (shellViewportDock) {
       state.ai.open = wantOpen
       el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
       el.aiChatFab.classList.add('hidden')
