@@ -279,7 +279,6 @@ import {
     aiChatShell: must('ai-chat-shell'),
     aiChatFab: must('ai-chat-fab'),
     aiChatPanel: must('ai-chat-panel'),
-    aiChatCollapse: must('ai-chat-collapse'),
     aiChatQueue: must('ai-chat-queue'),
     aiChatMessages: must('ai-chat-messages'),
     aiChatMessagesInner: must('ai-chat-messages-inner'),
@@ -288,9 +287,7 @@ import {
     aiEditorShellToggle: must('ai-editor-shell-toggle'),
     artifactComposer: must('artifact-composer'),
     artifactComposerAnchor: must('artifact-composer-anchor'),
-    artifactComposerCollapse: must('artifact-composer-collapse'),
     artifactComposerFab: must('artifact-composer-fab'),
-    artifactComposerSubtitle: must('artifact-composer-subtitle'),
     artifactPromptQueue: must('artifact-prompt-queue'),
     artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
@@ -1094,7 +1091,6 @@ import {
     el.aiChatFab.addEventListener('click', handleAiChatFabClick)
     el.aiEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
     el.artifactEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
-    el.aiChatCollapse.addEventListener('click', handleAiChatCollapseClick)
     el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.addEventListener('transitionend', handleEditorDockShellTransitionEnd)
@@ -1269,7 +1265,6 @@ import {
     window.addEventListener('resize', artifactBridge.handleViewportResize)
     window.addEventListener('message', handleArtifactFrameMessage)
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
-    el.artifactComposerCollapse.addEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
@@ -1296,7 +1291,6 @@ import {
     }
     el.artifactComposer.classList.toggle('is-floating', shouldFloatComposer)
     el.artifactComposer.classList.toggle('hidden', !shouldShowComposer)
-    el.artifactComposerCollapse.classList.toggle('hidden', !shouldFloatComposer)
     el.artifactComposerFab.classList.toggle(
       'hidden',
       !(shouldFloatComposer && !state.artifact.floatingOpen)
@@ -1508,11 +1502,6 @@ import {
       : canEditArtifact
         ? ARTIFACT_EDIT_PLACEHOLDER
         : ARTIFACT_DEFAULT_PLACEHOLDER
-    el.artifactComposerSubtitle.textContent = currentStep
-      ? 'Answer 2 short questions to generate the first artifact.'
-      : canEditArtifact
-        ? 'Refine the current artifact with targeted changes. Small edits work best.'
-        : 'Answer the first question to begin building an artifact.'
     renderArtifactConversation()
     syncArtifactComposerBusyState()
     syncArtifactBrandProfileRow()
@@ -1858,17 +1847,6 @@ import {
       return
     }
     setArtifactComposerFloatingOpen(true)
-  }
-
-  function handleArtifactComposerCollapseClick() {
-    if (!state.artifact.html || currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
-      return
-    }
-    if (state.editorShellExpanded) {
-      setEditorShellExpanded(false)
-      return
-    }
-    setArtifactComposerFloatingOpen(false)
   }
 
   function handleArtifactFrameLoad() {
@@ -2736,20 +2714,10 @@ import {
     el.artifactEditorShellToggle.setAttribute('aria-label', label)
     el.artifactEditorShellToggle.setAttribute('title', label)
     el.artifactEditorShellToggle.textContent = icon
-    el.aiChatCollapse.textContent = expanded ? 'Show less' : 'Collapse'
-    el.artifactComposerCollapse.textContent = expanded ? 'Show less' : 'Collapse'
   }
 
   function handleEditorShellToggleClick() {
     setEditorShellExpanded(!state.editorShellExpanded)
-  }
-
-  function handleAiChatCollapseClick() {
-    if (state.editorShellExpanded) {
-      setEditorShellExpanded(false)
-      return
-    }
-    setAiChatOpen(false)
   }
 
   function handleAiChatFormSubmit(event) {
@@ -10227,7 +10195,6 @@ import {
     el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
     el.aiEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
     el.artifactEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
-    el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
     el.presentModeToggle.removeEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
     document.removeEventListener('fullscreenchange', handlePresentModeFullscreenChange)
@@ -10236,7 +10203,6 @@ import {
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
-    el.artifactComposerCollapse.removeEventListener('click', handleArtifactComposerCollapseClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
