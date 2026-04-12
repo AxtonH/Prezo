@@ -2665,15 +2665,34 @@ import {
     el.artifactPromptForm.requestSubmit()
   }
 
+  /** FAB is unused in canvas layout; when hidden, do not expose aria-expanded on a non-disclosure control. */
+  function syncAiChatFabAccessibility() {
+    const shellInCanvas =
+      el.aiChatShell.parentElement && el.aiChatShell.parentElement.id === 'canvas-wrap'
+    if (shellInCanvas) {
+      el.aiChatFab.removeAttribute('aria-expanded')
+      return
+    }
+    if (el.aiChatFab.classList.contains('hidden')) {
+      el.aiChatFab.removeAttribute('aria-expanded')
+      return
+    }
+    el.aiChatFab.setAttribute('aria-expanded', state.ai.open ? 'true' : 'false')
+  }
+
   function setAiChatOpen(open, options = {}) {
     const persist = options.persist !== false
-    state.ai.open = Boolean(open)
+    const wantOpen = Boolean(open)
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
+    const shellInCanvas =
+      el.aiChatShell.parentElement && el.aiChatShell.parentElement.id === 'canvas-wrap'
     el.aiChatShell.classList.toggle('hidden', isArtifactMode)
     if (isArtifactMode) {
+      state.ai.open = wantOpen
       el.aiChatPanel.classList.add('hidden')
       el.aiChatFab.classList.add('hidden')
       el.aiChatShell.classList.remove('is-open', 'is-collapsed')
+      syncAiChatFabAccessibility()
       syncEditorDockingState()
       if (persist) {
         try {
@@ -2682,11 +2701,38 @@ import {
       }
       return
     }
+    /* Poll AI under the canvas: same open/close contract as floating shell; FAB stays unused (CSS + hidden). */
+    if (shellInCanvas) {
+      state.ai.open = wantOpen
+      el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
+      el.aiChatFab.classList.add('hidden')
+      syncAiChatFabAccessibility()
+      el.aiChatShell.classList.toggle('is-open', state.ai.open)
+      el.aiChatShell.classList.toggle('is-collapsed', !state.ai.open)
+      syncEditorDockingState()
+      if (persist) {
+        try {
+          localStorage.setItem(AI_CHAT_OPEN_KEY, state.ai.open ? '1' : '0')
+        } catch {}
+      }
+      if (state.ai.open) {
+        requestAnimationFrame(() => {
+          syncAiChatMessagesScroll()
+          requestAnimationFrame(syncAiChatMessagesScroll)
+        })
+        window.setTimeout(() => {
+          el.aiChatInput.focus()
+          syncAiChatMessagesScroll()
+        }, 0)
+      }
+      return
+    }
+    state.ai.open = wantOpen
     el.aiChatPanel.classList.toggle('hidden', !state.ai.open)
     el.aiChatFab.classList.toggle('hidden', state.ai.open)
     el.aiChatShell.classList.toggle('is-open', state.ai.open)
     el.aiChatShell.classList.toggle('is-collapsed', !state.ai.open)
-    el.aiChatFab.setAttribute('aria-expanded', state.ai.open ? 'true' : 'false')
+    syncAiChatFabAccessibility()
     syncEditorDockingState()
     if (persist) {
       try {
