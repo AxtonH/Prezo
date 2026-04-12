@@ -485,14 +485,14 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-messages {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 0;
   overflow-y: auto;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-chat-log {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   margin-top: 0;
   overflow-y: auto;
