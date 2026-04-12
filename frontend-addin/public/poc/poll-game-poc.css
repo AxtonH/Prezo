@@ -398,14 +398,14 @@ body.ribbon-hidden .settings-panel {
   font-weight: 600;
 }
 
-/* Poll AI + artifact dock: fixed to viewport (sibling of #canvas-wrap, not inside poll preview) */
+/* Poll AI + artifact dock: fixed; horizontal center follows --ai-shell-anchor-center-x (iframe / canvas). */
 #ai-chat-shell.ai-chat-shell--viewport-fixed {
   display: flex !important;
   flex-direction: column;
   justify-content: flex-start;
   align-items: stretch;
   position: fixed;
-  left: 50%;
+  left: var(--ai-shell-anchor-center-x, 50%);
   bottom: 18px;
   transform: translateX(-50%);
   width: min(680px, calc(100vw - 32px));
@@ -3253,7 +3253,7 @@ body.present-mode .present-mode-toggle {
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
-    left: 50%;
+    left: var(--ai-shell-anchor-center-x, 50%);
     transform: translateX(-50%);
   }
 

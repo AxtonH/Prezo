@@ -747,6 +747,7 @@ import {
       if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
         scheduleArtifactLayoutRefit({ includeSettledPass: false })
       }
+      scheduleAiChatShellIframeAnchor()
       return
     }
     const activeDockPanel =
@@ -784,6 +785,61 @@ import {
     if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
       scheduleArtifactLayoutRefit({ includeSettledPass: false })
     }
+    scheduleAiChatShellIframeAnchor()
+  }
+
+  let aiChatShellAnchorRafId = 0
+
+  /** Keep #ai-chat-shell horizontally centered on the preview iframe (or #canvas-wrap when stage hidden). */
+  function scheduleAiChatShellIframeAnchor() {
+    if (aiChatShellAnchorRafId) {
+      return
+    }
+    aiChatShellAnchorRafId = window.requestAnimationFrame(() => {
+      aiChatShellAnchorRafId = 0
+      syncAiChatShellIframeAnchor()
+    })
+  }
+
+  function syncAiChatShellIframeAnchor() {
+    if (!el.aiChatShell.classList.contains('ai-chat-shell--viewport-fixed')) {
+      return
+    }
+    if (document.body.classList.contains('editor-docked')) {
+      el.aiChatShell.style.removeProperty('--ai-shell-anchor-center-x')
+      return
+    }
+    const stageVisible = !el.artifactStage.classList.contains('hidden')
+    const frameRect = el.artifactFrame.getBoundingClientRect()
+    const useFrame =
+      stageVisible &&
+      Number.isFinite(frameRect.width) &&
+      Number.isFinite(frameRect.height) &&
+      frameRect.width > 2 &&
+      frameRect.height > 2
+    const anchorEl = useFrame ? el.artifactFrame : el.wrap
+    const rect = anchorEl.getBoundingClientRect()
+    if (!(rect.width > 0) || !(rect.height > 0)) {
+      el.aiChatShell.style.removeProperty('--ai-shell-anchor-center-x')
+      return
+    }
+    const centerX = rect.left + rect.width * 0.5
+    el.aiChatShell.style.setProperty('--ai-shell-anchor-center-x', `${Math.round(centerX)}px`)
+  }
+
+  function setupAiChatShellAnchorTracking() {
+    scheduleAiChatShellIframeAnchor()
+    window.addEventListener('resize', scheduleAiChatShellIframeAnchor)
+    window.addEventListener('scroll', scheduleAiChatShellIframeAnchor, true)
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const ro = new ResizeObserver(() => scheduleAiChatShellIframeAnchor())
+    try {
+      ro.observe(el.wrap)
+      ro.observe(el.artifactStage)
+      ro.observe(el.artifactFrame)
+    } catch {}
   }
 
   function scheduleEditorDockLayoutRefresh(options = {}) {
@@ -1035,6 +1091,7 @@ import {
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.addEventListener('transitionend', handleEditorDockShellTransitionEnd)
     window.addEventListener('resize', handleEditorDockViewportResize)
+    setupAiChatShellAnchorTracking()
 
     appendAiChatMessage(
       'assistant',
@@ -1271,6 +1328,7 @@ import {
     document.body.classList.toggle('artifact-mode-active', isArtifactMode)
     document.body.classList.toggle('artifact-stage-active', shouldShowStage)
     applyEditorDockLayout()
+    scheduleAiChatShellIframeAnchor()
     syncPresentModeUi()
     el.options.classList.toggle('hidden-by-artifact', isArtifactMode)
     el.pollHead.classList.toggle('hidden-by-artifact', isArtifactMode)
@@ -1798,6 +1856,7 @@ import {
 
   function handleArtifactFrameLoad() {
     artifactBridge.handleFrameLoad()
+    scheduleAiChatShellIframeAnchor()
   }
 
   function handleArtifactFrameMessage(event) {
