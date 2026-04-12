@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 
 import { api } from './api/client'
 import type {
-  HostDashboardStats,
   Poll,
   QnaPrompt,
   Question,
@@ -16,7 +15,6 @@ import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { fetchHostProfile, type HostProfile } from './auth/profile'
 import { LoginPage } from './components/LoginPage'
 import { HostSearchBar } from './components/HostSearchBar'
-import { HostStatsCards } from './components/HostStatsCards'
 import { PrezoWordmark } from './components/PrezoWordmark'
 import { PrezoLogo } from './components/PrezoLogo'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
@@ -334,8 +332,6 @@ function HostConsole({
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
-  const [dashboardStats, setDashboardStats] = useState<HostDashboardStats | null>(null)
-  const [dashboardStatsLoading, setDashboardStatsLoading] = useState(false)
   const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
@@ -856,18 +852,7 @@ function HostConsole({
     }
   }, [])
 
-  const loadDashboardStats = useCallback(async () => {
-    setDashboardStatsLoading(true)
-    try {
-      setDashboardStats(await api.getHostDashboardStats())
-    } catch {
-      setDashboardStats(null)
-    } finally {
-      setDashboardStatsLoading(false)
-    }
-  }, [])
-
-  /** Load list + dashboard together; do not key dashboard on session-list length (that refetched stats when sessions arrived and felt out of sync). */
+  /** Load session list when viewing all sessions (after host restore completes). */
   useEffect(() => {
     if (session) {
       return
@@ -875,11 +860,8 @@ function HostConsole({
     if (!hostRestoreComplete) {
       return
     }
-    void Promise.all([
-      loadSessions(maxSessionsLimit),
-      loadDashboardStats(),
-    ])
-  }, [session, hostRestoreComplete, loadSessions, loadDashboardStats, maxSessionsLimit])
+    void loadSessions(maxSessionsLimit)
+  }, [session, hostRestoreComplete, loadSessions, maxSessionsLimit])
 
   useEffect(() => {
     if (!showJoinByCodeForm) {
@@ -1008,7 +990,6 @@ function HostConsole({
     try {
       await api.deleteSession(selected.id)
       setRecentSessions((prev) => prev.filter((entry) => entry.id !== selected.id))
-      void loadDashboardStats()
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to delete session')
     } finally {
@@ -1498,10 +1479,6 @@ function HostConsole({
                 </div>
               ) : null}
 
-              {!session ? (
-                <HostStatsCards stats={dashboardStats} isLoading={dashboardStatsLoading} />
-              ) : null}
-
               {/* Filter Tabs (all-sessions list only) */}
               {!session ? (
                 <div className="flex gap-8 mb-6 border-b border-slate-100">
@@ -1559,7 +1536,6 @@ function HostConsole({
                   deletingSessionId={deletingSessionId}
                   onRefresh={() => {
                     void loadSessions(maxSessionsLimit)
-                    void loadDashboardStats()
                   }}
                   isCompact={isAddinHost}
                   listMaxHeightClass={
