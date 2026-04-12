@@ -555,8 +555,9 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   display: none !important;
 }
 
-#ai-chat-shell:not(.editor-shell--expanded) .ai-prompt-bar-footer,
-#ai-chat-shell:not(.editor-shell--expanded) .artifact-prompt-bar-footer {
+/* Footer hint hidden in dock: keeps prompt bar height identical collapsed vs expanded. */
+#ai-chat-shell .ai-prompt-bar-footer,
+#ai-chat-shell .artifact-prompt-bar-footer {
   display: none !important;
 }
 
@@ -588,24 +589,37 @@ body:not(.artifact-mode-active)
   padding: 10px 12px 12px;
 }
 
-/* Prompt field: same height collapsed vs expanded; expansion only grows history + queue. */
+/* Prompt field: fixed size in dock; only messages/queue/log grow when expanded. */
 #ai-chat-shell .ai-prompt-bar-field .ai-chat-input,
 #ai-chat-shell .artifact-prompt-bar-field .artifact-prompt-input {
-  min-height: 72px;
-  max-height: 72px;
-  height: 72px;
+  min-height: 108px;
+  max-height: 108px;
+  height: 108px;
   resize: none;
   box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  line-height: 1.42;
 }
 
 #ai-chat-shell .ai-chat-form,
 #ai-chat-shell .artifact-prompt-form {
   flex: 0 0 auto;
+  min-height: 0;
+  align-self: start;
+}
+
+#ai-chat-shell .ai-prompt-bar--with-shell-toggle,
+#ai-chat-shell .artifact-prompt-bar--with-shell-toggle {
+  flex: 0 0 auto;
+  align-self: start;
+  width: 100%;
 }
 
 #ai-chat-shell .ai-prompt-bar--with-shell-toggle .composer-input-field {
   flex: 0 1 auto;
   align-self: flex-start;
+  max-height: 108px;
 }
 
 /* ----------------------------------------------------------------
@@ -2270,8 +2284,9 @@ h1 {
   border-radius: 0 12px 0 0;
 }
 
-#ai-chat-shell:not(.editor-shell--expanded) .ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
-#ai-chat-shell:not(.editor-shell--expanded)
+/* Floating dock: footer hidden — textarea is always the full rounded block on the right. */
+#ai-chat-shell .ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
+#ai-chat-shell
   .artifact-prompt-bar--with-shell-toggle
   .artifact-prompt-bar-field
   .artifact-prompt-input {
