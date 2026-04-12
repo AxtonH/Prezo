@@ -173,7 +173,7 @@ export function SessionDashboardPage({
   ])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
       {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (

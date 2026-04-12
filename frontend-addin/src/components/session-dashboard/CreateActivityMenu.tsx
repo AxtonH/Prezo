@@ -202,7 +202,7 @@ export function CreateActivityMenu({
   return (
     <>
       {variant === 'dashed' ? (
-        <div className="relative mb-2" data-add-activity-dashed>
+        <div className="relative mb-6" data-add-activity-dashed>
           <button
             type="button"
             onClick={() => {

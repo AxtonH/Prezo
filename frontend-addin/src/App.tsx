@@ -1404,7 +1404,9 @@ function HostConsole({
               ? 'mx-auto w-full max-w-none px-0 py-0'
               : session && workspaceNav === 'editor'
                 ? 'flex min-h-0 flex-1 flex-col w-full max-w-none px-0 py-0'
-                : `mx-auto w-full max-w-[min(96rem,calc(100vw-1.5rem))] ${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'}`
+                : session && workspaceNav === 'dashboard'
+                  ? `mx-auto w-full max-w-7xl ${isAddinHost ? 'px-5 py-8 pb-10 sm:px-6' : 'px-6 py-10 pb-14 sm:px-8 sm:py-12'}`
+                  : `mx-auto w-full max-w-[min(96rem,calc(100vw-1.5rem))] ${isAddinHost ? 'px-5 py-6' : 'px-12 py-10'}`
           }
         >
           {hostConsoleView === 'settings' ? (
