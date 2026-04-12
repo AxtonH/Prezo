@@ -481,6 +481,10 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   display: none;
 }
 
+#ai-chat-shell.ai-chat-shell--viewport-fixed.editor-shell--expanded .ai-chat-collapse {
+  display: inline-flex;
+}
+
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-messages {
   min-height: 0;
   margin-top: 0;
@@ -534,8 +538,65 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   display: none;
 }
 
+#ai-chat-shell.ai-chat-shell--viewport-fixed.editor-shell--expanded
+  .artifact-composer
+  .artifact-composer-collapse {
+  display: inline-flex;
+}
+
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer.is-floating .artifact-chat-log {
   max-height: min(36vh, 360px);
+}
+
+/* Poll AI / artifact dock: collapsed (default) = prompt input only; expanded = header + history + queue. */
+#ai-chat-shell:not(.editor-shell--expanded) .ai-chat-panel .ai-chat-header,
+#ai-chat-shell:not(.editor-shell--expanded) .ai-chat-panel .ai-chat-messages,
+#ai-chat-shell:not(.editor-shell--expanded) .ai-chat-panel .ai-chat-queue {
+  display: none !important;
+}
+
+#ai-chat-shell:not(.editor-shell--expanded) .ai-prompt-bar-footer,
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-prompt-bar-footer {
+  display: none !important;
+}
+
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-composer-header,
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating #artifact-prompt-queue,
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-chat-log,
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating #artifact-brand-profile-row {
+  display: none !important;
+}
+
+body:not(.artifact-mode-active)
+  #ai-chat-shell.ai-chat-shell--viewport-fixed:not(.editor-shell--expanded)
+  .ai-chat-panel:not(.hidden) {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: min(36vh, 280px);
+  padding: 10px 12px 12px;
+}
+
+#ai-chat-shell.ai-chat-shell--viewport-fixed:not(.editor-shell--expanded)
+  .artifact-composer.is-floating:not(.hidden) {
+  display: flex !important;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  max-height: min(36vh, 280px);
+  padding: 10px 12px 12px;
+}
+
+#ai-chat-shell:not(.editor-shell--expanded)
+  .ai-prompt-bar--with-shell-toggle
+  .ai-prompt-bar-field
+  .ai-chat-input,
+#ai-chat-shell:not(.editor-shell--expanded)
+  .artifact-prompt-bar--with-shell-toggle
+  .artifact-prompt-bar-field
+  .artifact-prompt-input {
+  min-height: 56px;
 }
 
 /* ----------------------------------------------------------------
@@ -2152,6 +2213,60 @@ h1 {
   background: var(--chrome-input-bg);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ai-prompt-bar--with-shell-toggle,
+.artifact-prompt-bar--with-shell-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ai-prompt-bar--with-shell-toggle .composer-input-field,
+.artifact-prompt-bar--with-shell-toggle .composer-input-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.editor-shell-toggle {
+  flex: 0 0 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--chrome-border);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--chrome-surface) 90%, transparent);
+  color: var(--chrome-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.editor-shell-toggle:hover {
+  background: var(--chrome-hover);
+  color: var(--chrome-text);
+}
+
+.ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
+.artifact-prompt-bar--with-shell-toggle .artifact-prompt-bar-field .artifact-prompt-input {
+  border-radius: 0 12px 0 0;
+}
+
+#ai-chat-shell:not(.editor-shell--expanded) .ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
+#ai-chat-shell:not(.editor-shell--expanded)
+  .artifact-prompt-bar--with-shell-toggle
+  .artifact-prompt-bar-field
+  .artifact-prompt-input {
+  border-radius: 0 12px 12px 0;
 }
 
 .artifact-prompt-bar:focus-within,

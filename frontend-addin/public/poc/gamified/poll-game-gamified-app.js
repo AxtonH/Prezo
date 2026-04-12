@@ -1103,7 +1103,8 @@ import {
 
     appendAiChatMessage(
       'assistant',
-      'Poll AI is ready. Ask for design or text changes and I will apply them to the theme.'
+      'Poll AI is ready. Ask for design or text changes and I will apply them to the theme.',
+      { skipShellExpand: true }
     )
     scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
@@ -2714,6 +2715,7 @@ import {
   function setEditorShellExpanded(expanded, options = {}) {
     state.editorShellExpanded = Boolean(expanded)
     syncEditorShellExpandedDom()
+    scheduleAiChatShellIframeAnchor()
     if (options.persist !== false) {
       try {
         localStorage.setItem(EDITOR_SHELL_EXPANDED_KEY, state.editorShellExpanded ? '1' : '0')
@@ -2882,7 +2884,6 @@ import {
     if (!state.ai.open) {
       setAiChatOpen(true)
     }
-    setEditorShellExpanded(true)
     void processAiPromptQueue()
   }
 
@@ -2971,7 +2972,7 @@ import {
     return `${value.slice(0, maxLength - 1)}...`
   }
 
-  function appendAiChatMessage(role, text) {
+  function appendAiChatMessage(role, text, options = {}) {
     const message = asText(text)
     if (!message) {
       return
@@ -2985,7 +2986,10 @@ import {
     while (el.aiChatMessagesInner.children.length > AI_CHAT_MAX_MESSAGES) {
       el.aiChatMessagesInner.removeChild(el.aiChatMessagesInner.firstElementChild)
     }
-    if (normalizedRole === 'assistant' || normalizedRole === 'system') {
+    if (
+      !options.skipShellExpand &&
+      (normalizedRole === 'assistant' || normalizedRole === 'system')
+    ) {
       setEditorShellExpanded(true)
     }
     syncAiChatMessagesScroll()
@@ -10221,6 +10225,8 @@ import {
     el.wrap.removeEventListener('paste', handleRichTextPaste)
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
     el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
+    el.aiEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
+    el.artifactEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
     el.aiChatCollapse.removeEventListener('click', handleAiChatCollapseClick)
     el.presentModeToggle.removeEventListener('pointerdown', handlePresentModeTogglePointerDown)
     el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
