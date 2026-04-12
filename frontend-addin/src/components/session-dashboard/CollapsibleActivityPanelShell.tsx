@@ -72,11 +72,11 @@ export function CollapsibleActivityPanelShell({
   return (
     <div
       ref={rootRef}
-      className={
+      className={`group overflow-hidden rounded-xl border transition-all ${
         inactive
-          ? 'bg-slate-200/60 rounded-2xl border border-slate-400/50 shadow-sm overflow-hidden ring-1 ring-slate-400/20'
-          : 'bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden'
-      }
+          ? 'border-slate-300/80 bg-slate-200/60 shadow-sm ring-1 ring-slate-400/15 hover:border-slate-400/90'
+          : 'border-slate-200 bg-white shadow-sm hover:border-slate-300 hover:shadow-md'
+      }`}
     >
       <button
         type="button"
@@ -86,11 +86,11 @@ export function CollapsibleActivityPanelShell({
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
-        <div className="flex items-start gap-3 min-w-0 flex-1">
+        <div className="flex items-start gap-4 min-w-0 flex-1">
           {icon}
           {titleBlock}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-start gap-2 shrink-0 pt-0.5">
           <span
             className={
               inactive

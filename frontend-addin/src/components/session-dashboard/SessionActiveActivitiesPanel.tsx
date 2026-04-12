@@ -262,7 +262,7 @@ export function SessionActiveActivitiesPanel({
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3">
           {mergedActiveRows.map((row) => {
             if (row.kind === 'poll') {
               return (
