@@ -439,15 +439,13 @@ body.ribbon-hidden .settings-panel {
 body:not(.artifact-mode-active)
   #ai-chat-shell.ai-chat-shell--viewport-fixed
   .ai-chat-panel:not(.hidden) {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex !important;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
   max-width: none;
   min-height: 0;
   max-height: min(26vh, 240px);
-  height: auto;
-  align-content: start;
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -466,6 +464,7 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-header {
+  flex: 0 0 auto;
   padding-bottom: 0;
 }
 
@@ -486,12 +485,17 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-messages {
+  flex: 1 1 0;
   min-height: 0;
   margin-top: 0;
+  overflow-y: auto;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-chat-log {
+  flex: 1 1 0;
+  min-height: 0;
   margin-top: 0;
+  overflow-y: auto;
 }
 
 /* UA + legacy margins stack with grid gap; keep shell forms flush to the grid tracks. */
@@ -515,15 +519,13 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
 /* Artifact composer docked into floating shell */
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer,
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer.hidden {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex !important;
+  flex-direction: column;
   gap: 8px;
   width: 100%;
   max-width: none;
   min-height: 0;
   max-height: min(26vh, 260px);
-  height: auto;
-  align-content: start;
   border: 1px solid var(--chrome-border);
   border-radius: 16px;
   background: var(--chrome-bg);
@@ -531,13 +533,8 @@ body.artifact-mode-active #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-
   padding: 10px 12px 10px;
 }
 
-#ai-chat-shell.ai-chat-shell--viewport-fixed
-  .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
-#ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer.is-floating.artifact-composer--queue-hidden {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+#ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer .artifact-composer-header {
+  flex: 0 0 auto;
 }
 
 #ai-chat-shell.ai-chat-shell--viewport-fixed .artifact-composer .artifact-composer-collapse {
@@ -1078,6 +1075,7 @@ body:not(.artifact-mode-active)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  -webkit-user-select: none;
   user-select: none;
   transition: background 0.15s ease;
 }
@@ -2880,6 +2878,7 @@ body:not(.artifact-mode-active)
   line-height: 1.3;
   letter-spacing: 0.02em;
   color: var(--chrome-text-muted);
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -2993,12 +2992,13 @@ body.editor-docked #ai-chat-shell.ai-chat-shell--viewport-fixed > .ai-chat-panel
 }
 
 body.editor-docked .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
-  display: grid;
+  display: grid !important;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 10px;
 }
 
 body.editor-docked .artifact-composer.is-floating.artifact-composer--queue-hidden {
+  display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 10px;
 }
@@ -3008,10 +3008,12 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
 }
 
 body.editor-docked .ai-chat-panel {
+  display: grid !important;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 body.editor-docked .ai-chat-panel.ai-chat-panel--queue-hidden {
+  display: grid !important;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
@@ -3393,7 +3395,6 @@ body.present-mode .present-mode-toggle {
     max-width: none;
     max-height: min(28vh, 260px);
     padding: 8px;
-    align-content: start;
   }
 
   .state.artifact-mode.artifact-layout-vertical {
@@ -3437,7 +3438,6 @@ body.present-mode .present-mode-toggle {
     min-height: 160px;
     max-height: min(28vh, 260px);
     padding: 8px;
-    align-content: start;
   }
 
   .ai-chat-fab {
@@ -3456,7 +3456,6 @@ body.present-mode .present-mode-toggle {
     border-radius: 16px;
     background: var(--chrome-bg);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-    align-content: start;
   }
 }
 
