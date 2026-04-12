@@ -1479,32 +1479,6 @@ function HostConsole({
                 </div>
               ) : null}
 
-              {/* Filter Tabs (all-sessions list only) */}
-              {!session ? (
-                <div className="flex gap-8 mb-6 border-b border-slate-100">
-                  {(
-                    [
-                      { id: 'active' as const, label: 'Active' },
-                      { id: 'host' as const, label: 'Host' },
-                      { id: 'cohost' as const, label: 'Co-Host' }
-                    ] as const
-                  ).map(({ id, label }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setSessionFilter(id)}
-                      className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
-                        sessionFilter === id
-                          ? '!text-primary !border-primary'
-                          : '!text-muted/50 hover:!text-slate-900 !border-transparent'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
               {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
 
               {/* All-sessions list: always show SessionSetup (no session). Live session: show SessionSetup + panels only on Dashboard; other tabs are placeholders. */}
@@ -1519,6 +1493,8 @@ function HostConsole({
                     setJoinByCodeError(null)
                     setShowCreateForm(true)
                   }}
+                  sessionListFilter={sessionFilter}
+                  onSessionListFilterChange={setSessionFilter}
                   recentSessions={filteredRecentSessions}
                   emptyListMessage={
                     sessionSearchQuery.trim()

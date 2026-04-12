@@ -24,6 +24,9 @@ interface SessionSetupProps {
   listMaxHeightClass?: string
   /** Shown when the list finished loading and has no rows (e.g. Owner vs Co-Host filter). */
   emptyListMessage?: string
+  /** Active / Host / Co-Host filter (all-sessions list). */
+  sessionListFilter?: 'active' | 'host' | 'cohost'
+  onSessionListFilterChange?: (id: 'active' | 'host' | 'cohost') => void
 }
 
 function formatDate(value: string) {
@@ -47,7 +50,9 @@ export function SessionSetup({
   isCompact: _isCompact = false,
   onOpenCreateSession,
   listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]',
-  emptyListMessage = 'Ops looks like you dont have any active sessions yet, click "Start a new session" to start one!'
+  emptyListMessage = 'Ops looks like you dont have any active sessions yet, click "Start a new session" to start one!',
+  sessionListFilter,
+  onSessionListFilterChange
 }: SessionSetupProps) {
   void _isCompact
   void _onCreate
@@ -156,6 +161,31 @@ export function SessionSetup({
               </div>
             </div>
           </button>
+        ) : null}
+
+        {onSessionListFilterChange && sessionListFilter !== undefined ? (
+          <div className="flex gap-8 border-b border-slate-100">
+            {(
+              [
+                { id: 'active' as const, label: 'Active' },
+                { id: 'host' as const, label: 'Host' },
+                { id: 'cohost' as const, label: 'Co-Host' }
+              ] as const
+            ).map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onSessionListFilterChange(id)}
+                className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
+                  sessionListFilter === id
+                    ? '!text-primary !border-primary'
+                    : '!text-muted/50 hover:!text-slate-900 !border-transparent'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         ) : null}
 
         {hasRecentSessions ? (
