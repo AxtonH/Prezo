@@ -25,7 +25,8 @@ import {
   TEXT_OVERRIDES_KEY,
   THEME_DRAFT_KEY,
   THEME_LIBRARY_KEY,
-  AI_CHAT_OPEN_KEY
+  AI_CHAT_OPEN_KEY,
+  EDITOR_SHELL_EXPANDED_KEY
 } from './poll-game-gamified-constants.js'
 import {
   ARTIFACT_CONVERSATION_STEPS,
@@ -221,7 +222,9 @@ import {
       detail: ''
     },
     presentMode: false,
-    presentModeUsingFullscreen: false
+    presentModeUsingFullscreen: false,
+    /** Poll AI + artifact dock: show header, history, queue (vs input-only). */
+    editorShellExpanded: false
   }
 
   const el = {
@@ -282,6 +285,7 @@ import {
     aiChatMessagesInner: must('ai-chat-messages-inner'),
     aiChatForm: must('ai-chat-form'),
     aiChatInput: must('ai-chat-input'),
+    aiEditorShellToggle: must('ai-editor-shell-toggle'),
     artifactComposer: must('artifact-composer'),
     artifactComposerAnchor: must('artifact-composer-anchor'),
     artifactComposerCollapse: must('artifact-composer-collapse'),
@@ -293,6 +297,7 @@ import {
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactPromptInput: must('artifact-prompt-input'),
+    artifactEditorShellToggle: must('artifact-editor-shell-toggle'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -1083,8 +1088,12 @@ import {
     state.ai.model = resolveAiModel()
     const storedOpen = safeStorageGet(AI_CHAT_OPEN_KEY)
     setAiChatOpen(storedOpen === '1', { persist: false })
+    const storedShellExpanded = safeStorageGet(EDITOR_SHELL_EXPANDED_KEY)
+    setEditorShellExpanded(storedShellExpanded === '1', { persist: false })
 
     el.aiChatFab.addEventListener('click', handleAiChatFabClick)
+    el.aiEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
+    el.artifactEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
     el.aiChatCollapse.addEventListener('click', handleAiChatCollapseClick)
     el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.addEventListener('keydown', handleAiChatInputKeydown)
@@ -1473,6 +1482,7 @@ import {
     el.artifactBrandProfileRow.classList.toggle('hidden', !show)
     el.artifactBrandProfileRow.setAttribute('aria-hidden', show ? 'false' : 'true')
     if (show) {
+      setEditorShellExpanded(true)
       void ensureArtifactBrandProfilesLoaded().finally(() => {
         const saved = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
         const hasOption = Array.from(el.artifactBrandProfileSelect.options).some((o) => o.value === saved)
@@ -1837,6 +1847,9 @@ import {
       text: normalizedText
     })
     renderArtifactConversation()
+    if (tone !== 'user') {
+      setEditorShellExpanded(true)
+    }
   }
 
   function handleArtifactComposerFabClick() {
@@ -1848,6 +1861,10 @@ import {
 
   function handleArtifactComposerCollapseClick() {
     if (!state.artifact.html || currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    if (state.editorShellExpanded) {
+      setEditorShellExpanded(false)
       return
     }
     setArtifactComposerFloatingOpen(false)
@@ -2190,6 +2207,7 @@ import {
       chip.textContent = `${item.label}: ${trimForQueueLabel(item.text)}`
       el.artifactPromptQueue.appendChild(chip)
     }
+    setEditorShellExpanded(true)
   }
 
   async function enqueueArtifactEditPrompt(raw) {
@@ -2693,7 +2711,42 @@ import {
     setAiChatOpen(true)
   }
 
+  function setEditorShellExpanded(expanded, options = {}) {
+    state.editorShellExpanded = Boolean(expanded)
+    syncEditorShellExpandedDom()
+    if (options.persist !== false) {
+      try {
+        localStorage.setItem(EDITOR_SHELL_EXPANDED_KEY, state.editorShellExpanded ? '1' : '0')
+      } catch {}
+    }
+  }
+
+  function syncEditorShellExpandedDom() {
+    const expanded = state.editorShellExpanded
+    el.aiChatShell.classList.toggle('editor-shell--expanded', expanded)
+    const label = expanded ? 'Show less' : 'Show history and activity'
+    const icon = expanded ? '▼' : '▲'
+    el.aiEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+    el.aiEditorShellToggle.setAttribute('aria-label', label)
+    el.aiEditorShellToggle.setAttribute('title', label)
+    el.aiEditorShellToggle.textContent = icon
+    el.artifactEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+    el.artifactEditorShellToggle.setAttribute('aria-label', label)
+    el.artifactEditorShellToggle.setAttribute('title', label)
+    el.artifactEditorShellToggle.textContent = icon
+    el.aiChatCollapse.textContent = expanded ? 'Show less' : 'Collapse'
+    el.artifactComposerCollapse.textContent = expanded ? 'Show less' : 'Collapse'
+  }
+
+  function handleEditorShellToggleClick() {
+    setEditorShellExpanded(!state.editorShellExpanded)
+  }
+
   function handleAiChatCollapseClick() {
+    if (state.editorShellExpanded) {
+      setEditorShellExpanded(false)
+      return
+    }
     setAiChatOpen(false)
   }
 
@@ -2829,6 +2882,7 @@ import {
     if (!state.ai.open) {
       setAiChatOpen(true)
     }
+    setEditorShellExpanded(true)
     void processAiPromptQueue()
   }
 
@@ -2892,6 +2946,7 @@ import {
       chip.textContent = `${item.label}: ${trimForQueueLabel(item.text)}`
       el.aiChatQueue.appendChild(chip)
     }
+    setEditorShellExpanded(true)
   }
 
   function syncAiChatMessagesScroll() {
@@ -2929,6 +2984,9 @@ import {
     el.aiChatMessagesInner.appendChild(node)
     while (el.aiChatMessagesInner.children.length > AI_CHAT_MAX_MESSAGES) {
       el.aiChatMessagesInner.removeChild(el.aiChatMessagesInner.firstElementChild)
+    }
+    if (normalizedRole === 'assistant' || normalizedRole === 'system') {
+      setEditorShellExpanded(true)
     }
     syncAiChatMessagesScroll()
     requestAnimationFrame(() => {

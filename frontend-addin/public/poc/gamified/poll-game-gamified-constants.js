@@ -9,6 +9,8 @@ export const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
 export const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
 export const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
 export const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
+/** When false, Poll AI / artifact dock shows only the prompt bar (input). */
+export const EDITOR_SHELL_EXPANDED_KEY = 'prezo.poll-game-poc.editor-shell-expanded.v1'
 export const AI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.ai-model.v1'
 export const AI_DEFAULT_MODEL = 'gemini-2.5-flash'
 export const AI_LEGACY_MODELS = new Set([

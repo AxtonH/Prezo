@@ -537,7 +537,17 @@
               <option value="">None</option>
             </select>
           </div>
-          <div class="artifact-prompt-bar">
+          <div class="artifact-prompt-bar artifact-prompt-bar--with-shell-toggle">
+            <button
+              id="artifact-editor-shell-toggle"
+              class="editor-shell-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="artifact-composer"
+              title="Show history and activity"
+            >
+              ▲
+            </button>
             <div class="composer-input-field artifact-prompt-bar-field">
               <textarea
                 id="artifact-prompt-input"
@@ -624,7 +634,17 @@
           <div id="ai-chat-messages-inner" class="ai-chat-messages-inner" aria-live="polite"></div>
         </div>
         <form id="ai-chat-form" class="ai-chat-form">
-          <div class="ai-prompt-bar">
+          <div class="ai-prompt-bar ai-prompt-bar--with-shell-toggle">
+            <button
+              id="ai-editor-shell-toggle"
+              class="editor-shell-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="ai-chat-panel"
+              title="Show history and activity"
+            >
+              ▲
+            </button>
             <div class="composer-input-field ai-prompt-bar-field">
               <textarea
                 id="ai-chat-input"
