@@ -14,6 +14,8 @@ export function buildEditingStationUrl(options: {
   code?: string | null
   apiBase?: string | null
   pollId?: string | null
+  /** Origin of the parent frame (e.g. host console) for safe postMessage targets in the embedded editor. */
+  parentOrigin?: string | null
 }): string {
   const base = HOST_BASE_URL.replace(/\/+$/, '')
   const params = new URLSearchParams()
@@ -31,6 +33,10 @@ export function buildEditingStationUrl(options: {
 
   if (options.pollId) {
     params.set('pollId', options.pollId)
+  }
+
+  if (options.parentOrigin) {
+    params.set('parentOrigin', options.parentOrigin)
   }
 
   return `${base}/poc/poll-game-poc?${params.toString()}`

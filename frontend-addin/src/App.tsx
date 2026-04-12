@@ -378,6 +378,21 @@ function HostConsole({
     }
   }, [workspaceNav])
 
+  /** Embedded Prezo editor (poll-game-poc) asks to return to the session dashboard. */
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) {
+        return
+      }
+      const data = event.data as { type?: string } | null
+      if (data?.type === 'prezo:editor-exit') {
+        setWorkspaceNav('dashboard')
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
   useEffect(() => {
     if (!session?.id) {
       setSessionSessionStats(null)
@@ -1154,7 +1169,11 @@ function HostConsole({
 
   const isAddinHost = isPowerPointAddinHost()
   const editorLink = session
-    ? buildEditingStationUrl({ sessionId: session.id, code: session.code })
+    ? buildEditingStationUrl({
+        sessionId: session.id,
+        code: session.code,
+        parentOrigin: typeof window !== 'undefined' ? window.location.origin : null
+      })
     : null
 
   const goToEmbeddedEditor = useCallback((pollId?: string | null) => {

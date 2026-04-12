@@ -95,6 +95,34 @@ import {
 
   const query = new URLSearchParams(window.location.search)
 
+  const resolveParentPostMessageOrigin = () => {
+    const rawParam = query.get('parentOrigin')
+    const raw = typeof rawParam === 'string' ? rawParam.trim() : ''
+    if (raw) {
+      try {
+        const u = new URL(raw)
+        if (u.protocol === 'http:' || u.protocol === 'https:') {
+          return u.origin
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      if (window.parent && window.parent !== window && window.parent.location?.href) {
+        return window.parent.location.origin
+      }
+    } catch {
+      /* Cross-origin parent: cannot read parent.location; child's origin is wrong as targetOrigin. */
+    }
+    /* Embedded but parent unreadable (cross-origin without valid parentOrigin): use * so delivery isn't dropped. */
+    if (window.parent && window.parent !== window) {
+      return '*'
+    }
+    return window.location.origin
+  }
+  const parentPostMessageOrigin = resolveParentPostMessageOrigin()
+
   const parsePollSelector = (raw) => {
     const value = asText(raw)
     if (!value) {
@@ -630,6 +658,16 @@ import {
     el.settingsClose.addEventListener('click', () => {
       setRibbonHidden(true)
     })
+    const editorNavBack = document.getElementById('editor-nav-back')
+    if (editorNavBack) {
+      editorNavBack.addEventListener('click', () => {
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'prezo:editor-exit' }, parentPostMessageOrigin)
+          }
+        } catch {}
+      })
+    }
     el.settingsMinimized.addEventListener('click', () => {
       setRibbonHidden(false)
       setRibbonCollapsed(false)
@@ -1102,7 +1140,10 @@ import {
     el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
     try {
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'prezo:present-mode', active: state.presentMode }, '*')
+        window.parent.postMessage(
+          { type: 'prezo:present-mode', active: state.presentMode },
+          parentPostMessageOrigin
+        )
       }
     } catch {}
   }

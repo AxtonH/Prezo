@@ -83,7 +83,8 @@ export function PollManager({
     return buildEditingStationUrl({
       sessionId,
       code: sessionCode,
-      pollId: pollId ?? null
+      pollId: pollId ?? null,
+      parentOrigin: typeof window !== 'undefined' ? window.location.origin : null
     })
   }
 

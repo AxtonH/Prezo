@@ -19,7 +19,8 @@ export function SessionEditorEmbed({ sessionId, code, focusPollId }: SessionEdit
       buildEditingStationUrl({
         sessionId,
         code,
-        pollId: focusPollId ?? undefined
+        pollId: focusPollId ?? undefined,
+        parentOrigin: typeof window !== 'undefined' ? window.location.origin : null
       }),
     [sessionId, code, focusPollId]
   )

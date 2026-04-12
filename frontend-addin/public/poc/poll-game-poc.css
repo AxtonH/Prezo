@@ -56,13 +56,17 @@
   --chrome-text-secondary: #64748b;
   --chrome-text-muted: #94a3b8;
   --chrome-hover: #f1f5f9;
-  --chrome-active-bg: rgba(37, 99, 235, 0.12);
-  --chrome-active-border: #2563eb;
+  --chrome-accent: #7c3aed;
+  --chrome-accent-soft: rgba(124, 58, 237, 0.14);
+  --chrome-active-bg: rgba(124, 58, 237, 0.12);
+  --chrome-active-border: #7c3aed;
+  /* User chat bubbles: tinted border aligned with --chrome-active-border */
+  --chrome-message-user-border: color-mix(in srgb, var(--chrome-active-border) 22%, transparent);
   --chrome-input-bg: #ffffff;
   --chrome-input-border: #e2e8f0;
-  --chrome-input-focus: #2563eb;
-  --chrome-btn-primary: #2563eb;
-  --chrome-btn-primary-hover: #1d4ed8;
+  --chrome-input-focus: #7c3aed;
+  --chrome-btn-primary: #7c3aed;
+  --chrome-btn-primary-hover: #6d28d9;
   --chrome-btn-danger: #ef4444;
   --chrome-surface: #f8fafc;
 }
@@ -79,7 +83,8 @@ body {
   font-family: var(--font-family);
   color: var(--text-main);
   overflow: hidden;
-  background: linear-gradient(140deg, var(--bg-a), var(--bg-b));
+  background: #fafafa;
+  background-image: linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
 }
 
 body.ribbon-hidden:not(.editor-docked) {
@@ -332,22 +337,24 @@ body.editor-docked.ribbon-collapsed:not(.ribbon-hidden) {
 }
 
 /* ----------------------------------------------------------------
-   Right sidebar (was settings-panel)
+   Left sidebar (settings-panel)
    ---------------------------------------------------------------- */
 
 .settings-panel {
   position: fixed;
   top: var(--header-height);
-  right: 0;
+  left: 0;
+  right: auto;
   bottom: 0;
   z-index: 27;
   width: var(--sidebar-width);
-  border-left: 1px solid var(--chrome-border);
+  border-right: 1px solid var(--chrome-border);
+  border-left: 0;
   background: var(--chrome-bg);
-  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.06);
+  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.06);
   overflow: hidden;
   display: none;
-  transition: right 190ms ease;
+  transition: left 190ms ease;
 }
 
 .settings-panel.open {
@@ -1339,7 +1346,8 @@ body.ribbon-advanced .advanced-control.note {
 .settings-minimized {
   position: fixed;
   top: 10px;
-  right: 10px;
+  left: 10px;
+  right: auto;
   z-index: 27;
   border: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
@@ -1351,7 +1359,7 @@ body.ribbon-advanced .advanced-control.note {
   font-weight: 500;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  transition: right 190ms ease;
+  transition: left 190ms ease;
 }
 
 .settings-minimized:hover {
@@ -1470,10 +1478,11 @@ body.ribbon-advanced .advanced-control.note {
   transition: transform 190ms ease, margin 190ms ease, width 190ms ease;
 }
 
-/* When sidebar is open, shift canvas left to account for sidebar */
+/* When sidebar is open, shift canvas right to account for left sidebar */
 body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
   width: min(var(--wrap-width-limit), calc(100vw - var(--sidebar-width) - 40px));
-  margin-right: calc(var(--sidebar-width) + 20px);
+  margin-left: calc(var(--sidebar-width) + 20px);
+  margin-right: auto;
 }
 
 /* Artifact mode uses the same inline layout as classic mode (no 75vw cap) */
@@ -2077,7 +2086,7 @@ h1 {
 
 .artifact-chat-message.user {
   justify-self: end;
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid var(--chrome-message-user-border);
   background: var(--chrome-active-bg);
   color: var(--chrome-text);
 }
@@ -2429,7 +2438,7 @@ h1 {
   height: 9px;
   border-radius: 999px;
   background: var(--chrome-btn-primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chrome-active-border) 15%, transparent);
 }
 
 .ai-chat-fab.hidden {
@@ -2616,7 +2625,7 @@ body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-pan
   margin-left: auto;
   background: var(--chrome-active-bg);
   color: var(--chrome-text);
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid var(--chrome-message-user-border);
 }
 
 .ai-chat-message.message-assistant {
@@ -2701,7 +2710,7 @@ body:not(.artifact-mode-active) .ribbon-pane[data-ribbon-pane="ai"] .ai-chat-pan
 .ai-chat-input:focus-visible {
   outline: none;
   border-color: var(--chrome-input-focus);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
 }
 
 /* ----------------------------------------------------------------
@@ -2878,7 +2887,7 @@ body.editor-docked .artifact-chat-message.assistant {
 body.editor-docked .ai-chat-message.message-user,
 body.editor-docked .artifact-chat-message.user {
   background: var(--chrome-active-bg);
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid var(--chrome-message-user-border);
   color: var(--chrome-text);
 }
 
@@ -2912,7 +2921,8 @@ body.editor-docked .wrap {
 
 /* When both editor sidebar and settings sidebar are open */
 body.editor-docked:not(.ribbon-hidden):not(.ribbon-collapsed):not(.present-mode) .wrap {
-  margin-right: calc(var(--sidebar-width) + 20px);
+  margin-left: calc(var(--sidebar-width) + 20px);
+  margin-right: auto;
   width: min(var(--wrap-width-limit), calc(100vw - var(--editor-dock-reserve) - var(--sidebar-width) - 60px));
 }
 
@@ -2941,7 +2951,8 @@ body.present-mode-artifact .ai-chat-shell {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
-  right: calc(-1 * var(--sidebar-width) - 10px) !important;
+  left: calc(-1 * var(--sidebar-width) - 10px) !important;
+  right: auto !important;
 }
 
 body.present-mode .panel-bg-drag,
@@ -3054,8 +3065,8 @@ body.present-mode .present-mode-toggle {
   }
 
   body.editor-docked .settings-minimized {
-    left: auto;
-    right: 6px;
+    left: 6px;
+    right: auto;
   }
 
   body.editor-docked .wrap {
@@ -3103,7 +3114,8 @@ body.present-mode .present-mode-toggle {
 
   .settings-minimized {
     top: 4px;
-    right: 6px;
+    left: 6px;
+    right: auto;
   }
 
   .wrap {
@@ -3115,7 +3127,8 @@ body.present-mode .present-mode-toggle {
 
   body:not(.ribbon-hidden):not(.ribbon-collapsed):not(.editor-docked):not(.present-mode) .wrap {
     width: min(1160px, calc(95vw - var(--sidebar-width)));
-    margin-right: calc(var(--sidebar-width) + 8px);
+    margin-left: calc(var(--sidebar-width) + 8px);
+    margin-right: auto;
   }
 
   body.present-mode .wrap {
@@ -3257,6 +3270,229 @@ body.present-mode .present-mode-toggle {
   .settings-panel.open {
     width: 100vw;
     border-left: 0;
+    border-right: 0;
+  }
+}
+
+/* ----------------------------------------------------------------
+   Prezo editor shell — reference layout (left rail, violet accents)
+   ---------------------------------------------------------------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ribbon-strip {
+  gap: 10px;
+}
+
+.ribbon-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--chrome-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.ribbon-back:hover {
+  background: var(--chrome-hover);
+  color: var(--chrome-text);
+}
+
+.ribbon-strip-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.ribbon-save-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--chrome-text-muted);
+  flex-shrink: 0;
+}
+
+.ribbon-btn--done {
+  border: 0 !important;
+  background: linear-gradient(180deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  padding: 8px 18px !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 2px rgba(124, 58, 237, 0.35);
+}
+
+.ribbon-btn--done:hover {
+  background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%) !important;
+  color: #fff !important;
+}
+
+.ribbon-tabs {
+  gap: 6px;
+  padding: 10px 12px 8px;
+  justify-content: stretch;
+}
+
+.ribbon-tab {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 40px;
+  padding: 6px 4px;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chrome-text-secondary);
+}
+
+.ribbon-tab-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.ribbon-tab .ribbon-tab-icon {
+  opacity: 0.85;
+}
+
+.ribbon-tab.active {
+  background: var(--chrome-accent-soft);
+  color: var(--chrome-accent);
+}
+
+.ribbon-tab.active .ribbon-tab-icon {
+  color: var(--chrome-accent);
+  opacity: 1;
+}
+
+.visual-mode-card {
+  border-radius: 12px;
+  padding: 14px;
+  border: 1px solid rgba(124, 58, 237, 0.28);
+  background: linear-gradient(145deg, rgba(245, 243, 255, 0.95), rgba(237, 233, 254, 0.85));
+}
+
+.visual-mode-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.visual-mode-card-icon {
+  font-size: 20px;
+  color: #7c3aed;
+}
+
+.visual-mode-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4c1d95;
+}
+
+.visual-mode-card .game-mode-visual {
+  margin-top: 0;
+}
+
+.visual-mode-card .game-mode-visual select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--chrome-text);
+}
+
+.visual-mode-card .game-mode-visual select:focus-visible {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+}
+
+.visual-mode-card-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6d28d9;
+  display: none;
+}
+
+body.artifact-mode-active .visual-mode-card-hint[data-visual-hint="artifact"] {
+  display: block;
+}
+
+body:not(.artifact-mode-active) .visual-mode-card-hint[data-visual-hint="classic"] {
+  display: block;
+}
+
+.editor-mode-strip {
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+}
+
+.editor-mode-strip-row {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+body:not(.artifact-mode-active) .editor-mode-strip-classic {
+  display: flex;
+}
+
+body.artifact-mode-active .editor-mode-strip-artifact {
+  display: flex;
+}
+
+.editor-mode-strip-icon {
+  font-size: 22px;
+  color: #7c3aed;
+}
+
+.editor-mode-strip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #18181b;
+}
+
+.editor-mode-strip-sub {
+  font-size: 12px;
+  color: #71717a;
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .ribbon-back span:last-child {
+    display: none;
+  }
+
+  .ribbon-tab-label {
+    font-size: 10px;
   }
 }
 
