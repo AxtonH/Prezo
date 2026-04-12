@@ -2122,13 +2122,62 @@ h1 {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
 }
 
+/* Rounded prompt bar (artifact + sidebar AI) — no send button; Enter submits via form handler */
+.artifact-prompt-bar,
+.ai-prompt-bar {
+  border: 1px solid var(--chrome-border);
+  border-radius: 14px;
+  background: var(--chrome-input-bg);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.artifact-prompt-bar:focus-within,
+.ai-prompt-bar:focus-within {
+  border-color: var(--chrome-input-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chrome-active-border) 18%, transparent);
+}
+
+.artifact-prompt-bar-field .artifact-prompt-input,
+.ai-prompt-bar-field .ai-chat-input {
+  min-height: 72px;
+  max-height: 220px;
+  margin: 0;
+  border: 0;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  padding: 10px 12px;
+  resize: vertical;
+  box-shadow: none;
+}
+
+.artifact-prompt-bar-field .artifact-prompt-input:focus-visible,
+.ai-prompt-bar-field .ai-chat-input:focus-visible {
+  box-shadow: none;
+}
+
+.artifact-prompt-bar-footer,
+.ai-prompt-bar-footer {
+  border-top: 1px solid var(--chrome-border);
+  padding: 6px 10px 8px;
+  background: color-mix(in srgb, var(--chrome-surface) 88%, transparent);
+  border-radius: 0 0 12px 12px;
+}
+
+.artifact-prompt-hint,
+.ai-prompt-hint {
+  justify-content: flex-start;
+  margin: 0;
+}
+
 /* ----------------------------------------------------------------
    Artifact composer floating state
    ---------------------------------------------------------------- */
 
 .artifact-composer.is-floating {
   margin-top: 0;
-  width: min(420px, calc(100vw - 24px));
+  width: 100%;
+  max-width: none;
   max-height: min(68vh, 620px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2211,6 +2260,22 @@ h1 {
 
 .artifact-composer.is-floating .artifact-prompt-form {
   margin-top: 0;
+}
+
+.artifact-composer.is-floating .artifact-kicker {
+  display: none;
+}
+
+.artifact-composer.is-floating .artifact-composer-header {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.artifact-composer.is-floating .artifact-composer-subtitle {
+  margin-top: 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* ----------------------------------------------------------------
@@ -2369,6 +2434,17 @@ h1 {
   gap: 10px;
   width: auto;
   max-width: min(420px, calc(100vw - 24px));
+}
+
+/* Floating artifact editor: wide bar aligned to bottom center */
+.ai-chat-shell.artifact-shell-active {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  bottom: 20px;
+  width: min(680px, calc(100vw - 32px));
+  max-width: min(680px, calc(100vw - 32px));
+  align-items: stretch;
 }
 
 .ai-chat-shell.hidden {
@@ -3142,9 +3218,17 @@ body.present-mode .present-mode-toggle {
   }
 
   .artifact-composer.is-floating {
-    width: auto;
+    width: 100%;
+    max-width: none;
     max-height: min(56vh, 520px);
     padding: 8px;
+  }
+
+  .ai-chat-shell.artifact-shell-active {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   .state.artifact-mode.artifact-layout-vertical {

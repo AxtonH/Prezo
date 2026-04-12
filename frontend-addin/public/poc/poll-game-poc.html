@@ -381,18 +381,22 @@
                 <div id="ai-chat-messages-inner" class="ai-chat-messages-inner" aria-live="polite"></div>
               </div>
               <form id="ai-chat-form" class="ai-chat-form">
-                <div class="composer-input-field">
-                  <textarea
-                    id="ai-chat-input"
-                    class="ai-chat-input artifact-prompt-input"
-                    rows="4"
-                    placeholder="Example: make the bars teal and increase label size. Keep the rest unchanged."
-                    aria-label="Prompt to edit poll game. Press Enter to send, Shift+Enter for a new line."
-                  ></textarea>
-                  <p class="composer-enter-hint" aria-hidden="true">
-                    <span class="composer-enter-kbd" title="Enter">↵</span>
-                    Enter to send · Shift+Enter newline
-                  </p>
+                <div class="ai-prompt-bar">
+                  <div class="composer-input-field ai-prompt-bar-field">
+                    <textarea
+                      id="ai-chat-input"
+                      class="ai-chat-input artifact-prompt-input"
+                      rows="3"
+                      placeholder="Describe how you'd like to change this activity… (e.g. colors, labels, layout)"
+                      aria-label="Prompt to edit poll game. Press Enter to send, Shift+Enter for a new line."
+                    ></textarea>
+                    <div class="ai-prompt-bar-footer">
+                      <p class="composer-enter-hint ai-prompt-hint">
+                        <span class="composer-enter-kbd" title="Enter">↵</span>
+                        Press Enter to send · Shift+Enter new line
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </form>
             </div>
@@ -591,19 +595,23 @@
               <option value="">None</option>
             </select>
           </div>
-          <div class="composer-input-field">
-            <textarea
-              id="artifact-prompt-input"
-              class="artifact-prompt-input"
-              placeholder="Type your answer here."
-              rows="4"
-              maxlength="2000"
-              aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
-            ></textarea>
-            <p class="composer-enter-hint" aria-hidden="true">
-              <span class="composer-enter-kbd" title="Enter">↵</span>
-              Enter to send · Shift+Enter newline
-            </p>
+          <div class="artifact-prompt-bar">
+            <div class="composer-input-field artifact-prompt-bar-field">
+              <textarea
+                id="artifact-prompt-input"
+                class="artifact-prompt-input"
+                placeholder="Describe how you'd like to change this visualization… (e.g. colors, layout, labels)"
+                rows="3"
+                maxlength="2000"
+                aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
+              ></textarea>
+              <div class="artifact-prompt-bar-footer">
+                <p class="composer-enter-hint artifact-prompt-hint">
+                  <span class="composer-enter-kbd" title="Enter">↵</span>
+                  Press Enter to send · Shift+Enter new line
+                </p>
+              </div>
+            </div>
           </div>
         </form>
       </section>
