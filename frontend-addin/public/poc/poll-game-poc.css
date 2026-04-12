@@ -589,12 +589,15 @@ body:not(.artifact-mode-active)
   padding: 10px 12px 12px;
 }
 
-/* Prompt field: fixed size in dock; only messages/queue/log grow when expanded. */
+/* Prompt field: full width of dock panel; fixed height; only messages/queue/log grow when expanded. */
 #ai-chat-shell .ai-prompt-bar-field .ai-chat-input,
 #ai-chat-shell .artifact-prompt-bar-field .artifact-prompt-input {
-  min-height: 108px;
-  max-height: 108px;
-  height: 108px;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  max-height: 132px;
+  height: 132px;
   resize: none;
   box-sizing: border-box;
   overflow-x: hidden;
@@ -606,20 +609,26 @@ body:not(.artifact-mode-active)
 #ai-chat-shell .artifact-prompt-form {
   flex: 0 0 auto;
   min-height: 0;
-  align-self: start;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
 }
 
 #ai-chat-shell .ai-prompt-bar--with-shell-toggle,
 #ai-chat-shell .artifact-prompt-bar--with-shell-toggle {
   flex: 0 0 auto;
-  align-self: start;
+  align-self: stretch;
   width: 100%;
+  max-width: 100%;
 }
 
-#ai-chat-shell .ai-prompt-bar--with-shell-toggle .composer-input-field {
-  flex: 0 1 auto;
-  align-self: flex-start;
-  max-height: 108px;
+#ai-chat-shell .ai-prompt-bar--with-shell-toggle .composer-input-field,
+#ai-chat-shell .artifact-prompt-bar--with-shell-toggle .composer-input-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
 }
 
 /* ----------------------------------------------------------------
