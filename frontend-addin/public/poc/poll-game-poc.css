@@ -1284,25 +1284,25 @@ body:not(.artifact-mode-active)
 }
 
 /* ----------------------------------------------------------------
-   Artifact library group tweaks
+   Presets (Themes + Artifacts) — same nested design-collapse pattern as Poll style
    ---------------------------------------------------------------- */
 
-.ribbon-group.themes-group .row,
-.ribbon-group.artifact-library-group .row {
+.presets-group .themes-group .row,
+.presets-group .artifact-library-group .row {
   gap: 6px;
 }
 
-.ribbon-group.themes-group .row + .row,
-.ribbon-group.artifact-library-group .row + .row {
+.presets-group .themes-group .row + .row,
+.presets-group .artifact-library-group .row + .row {
   margin-top: 8px;
 }
 
-.ribbon-group.themes-group .note,
-.ribbon-group.artifact-library-group .note {
+.presets-group .themes-group .note,
+.presets-group .artifact-library-group .note {
   margin-top: 6px;
 }
 
-.ribbon-group.artifact-library-group .row button {
+.presets-group .artifact-library-group .row button {
   min-width: 52px;
   text-align: center;
 }
@@ -1312,10 +1312,12 @@ body:not(.artifact-mode-active)
   min-width: 0;
 }
 
-/* Home tab: Themes & Artifacts use the same design-collapse pattern as Style */
-.ribbon-group.themes-group > .design-collapse,
-.ribbon-group.artifact-library-group > .design-collapse {
-  margin-top: 0;
+.presets-group .sidebar-section-body > .design-collapse:first-of-type {
+  margin-top: 4px;
+}
+
+.presets-group .sidebar-section-body > .design-collapse + .design-collapse {
+  margin-top: 8px;
 }
 
 .themes-artifacts-collapse-body.design-collapse-body {
