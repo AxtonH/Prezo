@@ -68,7 +68,7 @@ export interface HostDashboardStats {
 /** Per-session engagement from GET /sessions/{id}/session-stats */
 export interface SessionSessionStats {
   unique_participants: number
-  total_interactions: number
+  active_activities: number
 }
 
 export interface SessionActivity {

@@ -245,6 +245,12 @@ export const api = {
     request<HostDashboardStats>('/sessions/dashboard-stats', {}, true),
   getSessionSessionStats: (sessionId: string) =>
     request<SessionSessionStats>(`/sessions/${sessionId}/session-stats`, {}, true),
+  batchSessionStats: (sessionIds: string[]) =>
+    request<Record<string, SessionSessionStats>>('/sessions/batch-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_ids: sessionIds }),
+    }, true),
   deleteSession: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}`, { method: 'DELETE' }, true),
   getSessionByCode: (code: string) =>

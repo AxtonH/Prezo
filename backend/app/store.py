@@ -307,28 +307,50 @@ class InMemoryStore:
     ) -> SessionSessionStats:
         async with self._lock:
             self._ensure_host_access(session_id, user_id)
-            unique_clients: set[str] = set()
-            for qid in self._questions_by_session.get(session_id, []):
-                for cid in self._question_votes.get(qid, set()):
-                    if cid:
-                        unique_clients.add(cid)
-            for pid in self._polls_by_session.get(session_id, []):
-                for cid in self._poll_votes.get(pid, {}):
-                    if cid:
-                        unique_clients.add(cid)
+            return self._compute_session_stats(session_id)
 
-            total_interactions = 0
-            total_interactions += len(self._questions_by_session.get(session_id, []))
-            for qid in self._questions_by_session.get(session_id, []):
-                total_interactions += len(self._question_votes.get(qid, set()))
-            for pid in self._polls_by_session.get(session_id, []):
-                for hist in self._poll_votes.get(pid, {}).values():
-                    total_interactions += len(hist)
+    async def batch_session_stats(
+        self, session_ids: list[str], user_id: str
+    ) -> dict[str, SessionSessionStats]:
+        async with self._lock:
+            results: dict[str, SessionSessionStats] = {}
+            for sid in session_ids:
+                try:
+                    self._ensure_host_access(sid, user_id)
+                    results[sid] = self._compute_session_stats(sid)
+                except (NotFoundError, PermissionDeniedError):
+                    pass
+            return results
 
-            return SessionSessionStats(
-                unique_participants=len(unique_clients),
-                total_interactions=total_interactions,
-            )
+    def _compute_session_stats(self, session_id: str) -> SessionSessionStats:
+        unique_clients: set[str] = set()
+        for qid in self._questions_by_session.get(session_id, []):
+            for cid in self._question_votes.get(qid, set()):
+                if cid:
+                    unique_clients.add(cid)
+        for pid in self._polls_by_session.get(session_id, []):
+            for cid in self._poll_votes.get(pid, {}):
+                if cid:
+                    unique_clients.add(cid)
+
+        # Count active activities: open polls + open prompts + qna_open
+        active_activities = 0
+        for pid in self._polls_by_session.get(session_id, []):
+            poll = self._polls.get(pid)
+            if poll and poll.status == PollStatus.open:
+                active_activities += 1
+        for prid in self._prompts_by_session.get(session_id, []):
+            pr = self._prompts.get(prid)
+            if pr and pr.status == QnaPromptStatus.open:
+                active_activities += 1
+        session_data = self._sessions.get(session_id)
+        if session_data and session_data.qna_open:
+            active_activities += 1
+
+        return SessionSessionStats(
+            unique_participants=len(unique_clients),
+            active_activities=active_activities,
+        )
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         async with self._lock:

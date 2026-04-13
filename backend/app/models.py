@@ -283,12 +283,20 @@ class SessionSessionStats(BaseModel):
         ge=0,
         description="Distinct audience client_ids on poll and question upvotes.",
     )
-    total_interactions: int = Field(
+    active_activities: int = Field(
         ge=0,
         description=(
-            "Question submissions, question upvotes, and poll option selections "
-            "(same client may contribute multiple times)."
+            "Number of currently active activities: open polls, open Q&A prompts, "
+            "and open discussion (qna_open on the session)."
         ),
+    )
+
+
+class BatchSessionStatsRequest(BaseModel):
+    session_ids: list[str] = Field(
+        min_length=1,
+        max_length=50,
+        description="List of session IDs to fetch stats for.",
     )
 
 

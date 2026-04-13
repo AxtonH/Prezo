@@ -74,35 +74,22 @@ export function SessionSetup({
     }
     setStatsBySessionId({})
     let cancelled = false
-    const sessions = recentSessions
+    const sessionIds = recentSessions.map((s) => s.id)
 
     void (async () => {
-      const chunkSize = 8
-      for (let i = 0; i < sessions.length; i += chunkSize) {
-        if (cancelled) {
-          return
+      try {
+        const batchResult = await api.batchSessionStats(sessionIds)
+        if (cancelled) return
+        const mapped: Partial<Record<string, SessionSessionStats | null>> = {}
+        for (const id of sessionIds) {
+          mapped[id] = batchResult[id] ?? null
         }
-        const slice = sessions.slice(i, i + chunkSize)
-        const chunkStats = await Promise.all(
-          slice.map(async (s) => {
-            try {
-              const st = await api.getSessionSessionStats(s.id)
-              return [s.id, st] as const
-            } catch {
-              return [s.id, null] as const
-            }
-          })
+        setStatsBySessionId(mapped)
+      } catch {
+        if (cancelled) return
+        setStatsBySessionId(
+          Object.fromEntries(sessionIds.map((id) => [id, null]))
         )
-        if (cancelled) {
-          return
-        }
-        setStatsBySessionId((prev) => {
-          const next = { ...prev }
-          for (const [id, st] of chunkStats) {
-            next[id] = st
-          }
-          return next
-        })
       }
     })()
 
@@ -200,7 +187,7 @@ export function SessionSetup({
                 const isCoHost = entry.is_original_host === false
                 const stats = statsBySessionId[entry.id]
                 const interactions =
-                  stats === undefined ? undefined : stats === null ? null : stats.total_interactions
+                  stats === undefined ? undefined : stats === null ? null : stats.active_activities
                 const participants =
                   stats === undefined ? undefined : stats === null ? null : stats.unique_participants
                 const showOwnerActions = !isCoHost && onDelete
@@ -208,12 +195,8 @@ export function SessionSetup({
                 return (
                   <div
                     key={entry.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onResume?.(entry)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
+                    onClick={(e) => {
+                      if (!(e.target as HTMLElement).closest('button, a, [role="menu"]')) {
                         onResume?.(entry)
                       }
                     }}
@@ -223,7 +206,16 @@ export function SessionSetup({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <h3 className="font-semibold text-slate-900 truncate group-hover:text-primary transition-colors">
-                            {sessionTitle}
+                            <button
+                              type="button"
+                              className="all-unset cursor-pointer text-inherit font-inherit"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onResume?.(entry)
+                              }}
+                            >
+                              {sessionTitle}
+                            </button>
                           </h3>
                           {isCoHost ? (
                             <span className="shrink-0 bg-orange-50 text-orange-800 border border-orange-200/90 px-2 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest">
@@ -254,7 +246,6 @@ export function SessionSetup({
                                 : 'opacity-0 group-hover:opacity-100 hover:bg-slate-100'
                             }`}
                             title="Session actions"
-                            aria-expanded={menuSessionId === entry.id}
                             aria-haspopup="menu"
                           >
                             <span className="material-symbols-outlined text-lg text-slate-500">

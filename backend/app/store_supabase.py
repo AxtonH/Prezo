@@ -611,70 +611,108 @@ class SupabaseStore:
             unique_participants=len(unique_clients),
         )
 
+    async def _compute_session_stats(
+        self, session_id: str
+    ) -> SessionSessionStats:
+        """Compute stats for a single session (caller must verify access)."""
+        session_row = await self._select(
+            "sessions",
+            {"select": "qna_open", "id": f"eq.{session_id}"},
+        )
+        qna_open = bool(session_row[0].get("qna_open")) if session_row else False
+
+        open_polls, open_prompts, all_polls, all_questions = await asyncio.gather(
+            self._select(
+                "polls",
+                {"select": "id", "session_id": f"eq.{session_id}", "status": "eq.open"},
+            ),
+            self._select(
+                "qna_prompts",
+                {"select": "id", "session_id": f"eq.{session_id}", "status": "eq.open"},
+            ),
+            self._select(
+                "polls",
+                {"select": "id", "session_id": f"eq.{session_id}"},
+            ),
+            self._select(
+                "questions",
+                {"select": "id", "session_id": f"eq.{session_id}"},
+            ),
+        )
+
+        active_activities = len(open_polls) + len(open_prompts) + (1 if qna_open else 0)
+
+        qids = [str(q["id"]) for q in all_questions]
+        pids = [str(p["id"]) for p in all_polls]
+
+        unique_clients: set[str] = set()
+        if qids or pids:
+            vote_rows: list[dict[str, Any]] = []
+            pv_rows: list[dict[str, Any]] = []
+            if qids and pids:
+                qin = ",".join(f'"{q}"' for q in qids)
+                pin = ",".join(f'"{p}"' for p in pids)
+                vote_rows, pv_rows = await asyncio.gather(
+                    self._select(
+                        "question_votes",
+                        {"select": "client_id", "question_id": f"in.({qin})"},
+                    ),
+                    self._select(
+                        "poll_votes",
+                        {"select": "client_id", "poll_id": f"in.({pin})"},
+                    ),
+                )
+            elif qids:
+                qin = ",".join(f'"{q}"' for q in qids)
+                vote_rows = await self._select(
+                    "question_votes",
+                    {"select": "client_id", "question_id": f"in.({qin})"},
+                )
+            else:
+                pin = ",".join(f'"{p}"' for p in pids)
+                pv_rows = await self._select(
+                    "poll_votes",
+                    {"select": "client_id", "poll_id": f"in.({pin})"},
+                )
+            for row in vote_rows:
+                cid = row.get("client_id")
+                if cid:
+                    unique_clients.add(str(cid))
+            for row in pv_rows:
+                cid = row.get("client_id")
+                if cid:
+                    unique_clients.add(str(cid))
+
+        return SessionSessionStats(
+            unique_participants=len(unique_clients),
+            active_activities=active_activities,
+        )
+
     async def session_session_stats(
         self, session_id: str, user_id: str
     ) -> SessionSessionStats:
         await self._ensure_host_access(session_id, user_id)
-        questions = await self._select(
-            "questions",
-            {"select": "id", "session_id": f"eq.{session_id}"},
+        return await self._compute_session_stats(session_id)
+
+    async def batch_session_stats(
+        self, session_ids: list[str], user_id: str
+    ) -> dict[str, SessionSessionStats]:
+        results: dict[str, SessionSessionStats] = {}
+        valid_ids: list[str] = []
+        for sid in session_ids:
+            try:
+                await self._ensure_host_access(sid, user_id)
+                valid_ids.append(sid)
+            except Exception:
+                pass
+        if not valid_ids:
+            return results
+        stats_list = await asyncio.gather(
+            *(self._compute_session_stats(sid) for sid in valid_ids)
         )
-        polls = await self._select(
-            "polls",
-            {"select": "id", "session_id": f"eq.{session_id}"},
-        )
-        qids = [str(q["id"]) for q in questions]
-        pids = [str(p["id"]) for p in polls]
-
-        if not qids and not pids:
-            return SessionSessionStats(unique_participants=0, total_interactions=0)
-
-        vote_rows: list[dict[str, Any]] = []
-        pv_rows: list[dict[str, Any]] = []
-        if qids and pids:
-            qin = ",".join(f'"{q}"' for q in qids)
-            pin = ",".join(f'"{p}"' for p in pids)
-            vote_rows, pv_rows = await asyncio.gather(
-                self._select(
-                    "question_votes",
-                    {"select": "client_id", "question_id": f"in.({qin})"},
-                ),
-                self._select(
-                    "poll_votes",
-                    {"select": "client_id", "poll_id": f"in.({pin})"},
-                ),
-            )
-        elif qids:
-            qin = ",".join(f'"{q}"' for q in qids)
-            vote_rows = await self._select(
-                "question_votes",
-                {"select": "client_id", "question_id": f"in.({qin})"},
-            )
-        else:
-            pin = ",".join(f'"{p}"' for p in pids)
-            pv_rows = await self._select(
-                "poll_votes",
-                {"select": "client_id", "poll_id": f"in.({pin})"},
-            )
-
-        unique_clients: set[str] = set()
-        for row in vote_rows:
-            cid = row.get("client_id")
-            if cid:
-                unique_clients.add(str(cid))
-        for row in pv_rows:
-            cid = row.get("client_id")
-            if cid:
-                unique_clients.add(str(cid))
-
-        total_interactions = len(questions)
-        total_interactions += len(vote_rows)
-        total_interactions += len(pv_rows)
-
-        return SessionSessionStats(
-            unique_participants=len(unique_clients),
-            total_interactions=total_interactions,
-        )
+        for sid, stats in zip(valid_ids, stats_list):
+            results[sid] = stats
+        return results
 
     async def delete_session(self, session_id: str, user_id: str) -> Session:
         await self._ensure_owner_access(session_id, user_id)

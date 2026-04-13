@@ -9,6 +9,7 @@ from ..auth import AuthUser, get_current_user, get_optional_user
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
+    BatchSessionStatsRequest,
     SessionActivity,
     HostAccessUpdate,
     HostDashboardStats,
@@ -130,6 +131,15 @@ async def get_session_session_stats(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionDeniedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/batch-stats", response_model=dict[str, SessionSessionStats])
+async def batch_session_stats(
+    body: BatchSessionStatsRequest,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, SessionSessionStats]:
+    return await store.batch_session_stats(body.session_ids, user.id)
 
 
 @router.get("/{session_id}", response_model=Session)
