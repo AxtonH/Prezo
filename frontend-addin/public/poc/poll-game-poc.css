@@ -2148,6 +2148,44 @@ h1 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
+/* Wrapper keeps layout children participating in parent grid/flex (see .is-floating). */
+.artifact-composer-main {
+  display: contents;
+}
+
+.artifact-composer.artifact-composer--panel-hidden .artifact-composer-main {
+  display: none !important;
+}
+
+.artifact-composer-visibility-toggle {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 10%;
+  min-width: 24px;
+  height: 10px;
+  padding: 0;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 5px;
+  background: #c5c9d1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.artifact-composer-visibility-toggle:hover {
+  background: #aeb4bf;
+}
+
+.artifact-composer-visibility-toggle:focus-visible {
+  outline: 2px solid var(--chrome-input-focus);
+  outline-offset: 2px;
+}
+
+.artifact-composer.artifact-composer--panel-hidden .artifact-composer-visibility-toggle {
+  margin-top: 0;
+}
+
 .artifact-composer-header {
   display: flex;
   align-items: center;
@@ -2413,13 +2451,14 @@ h1 {
 }
 
 /* Match Poll AI prompt queue layout: explicit areas so the 1fr row maps to #artifact-chat-log. */
-.artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
-  grid-template-rows: auto auto minmax(65px, 1fr) auto;
+.artifact-composer.is-floating:not(.artifact-composer--queue-hidden):not(.artifact-composer--panel-hidden) {
+  grid-template-rows: auto auto minmax(65px, 1fr) auto auto;
   grid-template-areas:
     "ahead"
     "aqueue"
     "amsgs"
-    "aform";
+    "aform"
+    "atoggle";
 }
 
 .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) .artifact-composer-header {
@@ -2435,16 +2474,39 @@ h1 {
   grid-area: amsgs;
 }
 
-.artifact-composer.is-floating:not(.artifact-composer--queue-hidden) .artifact-prompt-form {
+.artifact-composer.is-floating:not(.artifact-composer--queue-hidden):not(.artifact-composer--panel-hidden)
+  .artifact-prompt-form {
   grid-area: aform;
 }
 
-.artifact-composer.is-floating.artifact-composer--queue-hidden {
-  grid-template-rows: auto minmax(65px, 1fr) auto;
+.artifact-composer.is-floating:not(.artifact-composer--queue-hidden):not(.artifact-composer--panel-hidden)
+  .artifact-composer-visibility-toggle {
+  grid-area: atoggle;
+}
+
+.artifact-composer.is-floating.artifact-composer--queue-hidden:not(.artifact-composer--panel-hidden) {
+  grid-template-rows: auto minmax(65px, 1fr) auto auto;
   grid-template-areas:
     "ahead"
     "amsgs"
-    "aform";
+    "aform"
+    "atoggle";
+}
+
+.artifact-composer.is-floating.artifact-composer--queue-hidden:not(.artifact-composer--panel-hidden)
+  .artifact-composer-visibility-toggle {
+  grid-area: atoggle;
+}
+
+.artifact-composer.is-floating.artifact-composer--panel-hidden {
+  grid-template-rows: auto;
+  grid-template-areas: "atoggle";
+  max-height: none;
+  min-height: 0;
+}
+
+.artifact-composer.is-floating.artifact-composer--panel-hidden .artifact-composer-visibility-toggle {
+  grid-area: atoggle;
 }
 
 .artifact-composer.is-floating.artifact-composer--queue-hidden .artifact-composer-header {
@@ -3040,16 +3102,22 @@ body.editor-docked #ai-chat-shell.ai-chat-shell--viewport-fixed > .ai-chat-panel
   width: 100%;
 }
 
-body.editor-docked .artifact-composer.is-floating:not(.artifact-composer--queue-hidden) {
+body.editor-docked .artifact-composer.is-floating:not(.artifact-composer--queue-hidden):not(.artifact-composer--panel-hidden) {
   display: grid !important;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   gap: 10px;
 }
 
-body.editor-docked .artifact-composer.is-floating.artifact-composer--queue-hidden {
+body.editor-docked .artifact-composer.is-floating.artifact-composer--queue-hidden:not(.artifact-composer--panel-hidden) {
   display: grid !important;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 10px;
+}
+
+body.editor-docked .artifact-composer.is-floating.artifact-composer--panel-hidden {
+  display: grid !important;
+  grid-template-rows: auto !important;
+  gap: 8px;
 }
 
 body.editor-docked .artifact-composer.is-floating .artifact-chat-log {

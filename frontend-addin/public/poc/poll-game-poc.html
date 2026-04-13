@@ -500,59 +500,69 @@
         </div>
       </section>
       <section id="artifact-composer" class="artifact-composer hidden" aria-label="Artifact editor">
-        <div class="artifact-composer-header">
-          <div>
-            <p class="artifact-kicker">Artifact Editor</p>
-          </div>
-        </div>
-        <div id="artifact-prompt-queue" class="ai-chat-queue hidden" aria-live="polite"></div>
-        <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
-        <form id="artifact-prompt-form" class="artifact-prompt-form">
-          <div
-            id="artifact-brand-profile-row"
-            class="artifact-brand-profile-row hidden"
-            aria-hidden="true"
-          >
-            <label class="artifact-brand-profile-label" for="artifact-brand-profile-select"
-              >Saved brand (optional)</label
-            >
-            <select
-              id="artifact-brand-profile-select"
-              class="artifact-brand-profile-select"
-              aria-label="Saved brand profile for design guidelines"
-            >
-              <option value="">None</option>
-            </select>
-          </div>
-          <div class="artifact-prompt-bar artifact-prompt-bar--with-shell-toggle">
-            <button
-              id="artifact-editor-shell-toggle"
-              class="editor-shell-toggle"
-              type="button"
-              aria-expanded="false"
-              aria-controls="artifact-composer"
-              title="Show history and activity"
-            >
-              ▲
-            </button>
-            <div class="composer-input-field artifact-prompt-bar-field">
-              <textarea
-                id="artifact-prompt-input"
-                class="artifact-prompt-input"
-                placeholder="Describe how you'd like to change this visualization… (e.g. colors, layout, labels)"
-                rows="3"
-                maxlength="2000"
-                aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
-              ></textarea>
-              <div class="artifact-prompt-bar-footer">
-                <p class="composer-enter-hint artifact-prompt-hint">
-                  <span class="composer-enter-kbd" title="Enter">↵</span>
-                  Press Enter to send · Shift+Enter new line
-                </p>
-              </div>
+        <div id="artifact-composer-main" class="artifact-composer-main">
+          <div class="artifact-composer-header">
+            <div>
+              <p class="artifact-kicker">Artifact Editor</p>
             </div>
           </div>
-        </form>
+          <div id="artifact-prompt-queue" class="ai-chat-queue hidden" aria-live="polite"></div>
+          <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
+          <form id="artifact-prompt-form" class="artifact-prompt-form">
+            <div
+              id="artifact-brand-profile-row"
+              class="artifact-brand-profile-row hidden"
+              aria-hidden="true"
+            >
+              <label class="artifact-brand-profile-label" for="artifact-brand-profile-select"
+                >Saved brand (optional)</label
+              >
+              <select
+                id="artifact-brand-profile-select"
+                class="artifact-brand-profile-select"
+                aria-label="Saved brand profile for design guidelines"
+              >
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="artifact-prompt-bar artifact-prompt-bar--with-shell-toggle">
+              <button
+                id="artifact-editor-shell-toggle"
+                class="editor-shell-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="artifact-composer"
+                title="Show history and activity"
+              >
+                ▲
+              </button>
+              <div class="composer-input-field artifact-prompt-bar-field">
+                <textarea
+                  id="artifact-prompt-input"
+                  class="artifact-prompt-input"
+                  placeholder="Describe how you'd like to change this visualization… (e.g. colors, layout, labels)"
+                  rows="3"
+                  maxlength="2000"
+                  aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
+                ></textarea>
+                <div class="artifact-prompt-bar-footer">
+                  <p class="composer-enter-hint artifact-prompt-hint">
+                    <span class="composer-enter-kbd" title="Enter">↵</span>
+                    Press Enter to send · Shift+Enter new line
+                  </p>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <button
+          id="artifact-composer-visibility-toggle"
+          class="artifact-composer-visibility-toggle"
+          type="button"
+          aria-expanded="true"
+          aria-controls="artifact-composer-main"
+          title="Hide artifact editor panel"
+        ></button>
       </section>
       <div id="artifact-composer-anchor" class="hidden" aria-hidden="true"></div>
       <section id="artifact-stage" class="artifact-stage hidden" aria-label="Artifact preview">

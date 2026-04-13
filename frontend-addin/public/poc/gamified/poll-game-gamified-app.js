@@ -296,6 +296,7 @@ import {
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactEditorShellToggle: must('artifact-editor-shell-toggle'),
+    artifactComposerVisibilityToggle: must('artifact-composer-visibility-toggle'),
     artifactStage: must('artifact-stage'),
     artifactStageLoader: must('artifact-stage-loader'),
     artifactLoaderCanvas: must('artifact-loader-canvas'),
@@ -1268,6 +1269,7 @@ import {
     window.addEventListener('resize', artifactBridge.handleViewportResize)
     window.addEventListener('message', handleArtifactFrameMessage)
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
+    el.artifactComposerVisibilityToggle.addEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
@@ -2721,6 +2723,22 @@ import {
 
   function handleEditorShellToggleClick() {
     setEditorShellExpanded(!state.editorShellExpanded)
+  }
+
+  function syncArtifactComposerPanelVisibilityToggleUi() {
+    const hidden = el.artifactComposer.classList.contains('artifact-composer--panel-hidden')
+    const label = hidden ? 'Show artifact editor panel' : 'Hide artifact editor panel'
+    el.artifactComposerVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
+    el.artifactComposerVisibilityToggle.setAttribute('aria-label', label)
+    el.artifactComposerVisibilityToggle.setAttribute('title', label)
+  }
+
+  function handleArtifactComposerVisibilityToggleClick(event) {
+    event.preventDefault()
+    el.artifactComposer.classList.toggle('artifact-composer--panel-hidden')
+    syncArtifactComposerPanelVisibilityToggleUi()
+    scheduleArtifactLayoutRefit({ includeSettledPass: false })
+    scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
   /* ------------------------------------------------------------------
@@ -10264,6 +10282,7 @@ import {
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
+    el.artifactComposerVisibilityToggle.removeEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
