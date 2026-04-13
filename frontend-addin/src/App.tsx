@@ -54,6 +54,45 @@ const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
 const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
 
+/**
+ * Module-level prefetch: starts the network request the instant this JS module
+ * is parsed — well before React mounts any component. The component awaits this
+ * promise on first render so data is already available.
+ */
+const sessionsPrefetchPromise: Promise<{
+  sessions: Session[]
+  statsMap: Partial<Record<string, SessionSessionStats | null>>
+} | null> = (async () => {
+  try {
+    const sessions = await api.listSessions('active', 100)
+    let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
+    if (sessions.length > 0) {
+      const ids = sessions.map((s) => s.id)
+      try {
+        const batchResult = await api.batchSessionStats(ids)
+        for (const id of ids) {
+          statsMap[id] = batchResult[id] ?? null
+        }
+      } catch {
+        const results = await Promise.all(
+          ids.map(async (id) => {
+            try {
+              const st = await api.getSessionSessionStats(id)
+              return [id, st] as const
+            } catch {
+              return [id, null] as const
+            }
+          })
+        )
+        statsMap = Object.fromEntries(results)
+      }
+    }
+    return { sessions, statsMap }
+  } catch {
+    return null
+  }
+})()
+
 function readStoredHostSideNavCollapsed(): boolean {
   try {
     if (typeof window === 'undefined') {
@@ -489,42 +528,14 @@ function HostConsole({
       }
     }
 
-    // Prefetch sessions list in parallel with restore — apply as soon as ready
-    void (async () => {
-      try {
-        const sessions = await api.listSessions('active', 100)
-        if (cancelled) return
-        let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
-        if (sessions.length > 0) {
-          const ids = sessions.map((s) => s.id)
-          try {
-            const batchResult = await api.batchSessionStats(ids)
-            for (const id of ids) {
-              statsMap[id] = batchResult[id] ?? null
-            }
-          } catch {
-            const results = await Promise.all(
-              ids.map(async (id) => {
-                try {
-                  const st = await api.getSessionSessionStats(id)
-                  return [id, st] as const
-                } catch {
-                  return [id, null] as const
-                }
-              })
-            )
-            statsMap = Object.fromEntries(results)
-          }
-        }
-        if (!cancelled) {
-          setRecentSessions(sessions)
-          setSessionStatsBySessionId(statsMap)
-          sessionsPrefetchedRef.current = true
-        }
-      } catch {
-        // sessions prefetch failed — loadSessions will retry after restore
+    // Consume module-level prefetch — data is already in-flight (or resolved)
+    void sessionsPrefetchPromise.then((prefetched) => {
+      if (!cancelled && prefetched) {
+        setRecentSessions(prefetched.sessions)
+        setSessionStatsBySessionId(prefetched.statsMap)
+        sessionsPrefetchedRef.current = true
       }
-    })()
+    })
 
     void tryRestore().finally(finish)
 
