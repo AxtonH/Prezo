@@ -280,6 +280,7 @@ import {
     aiChatShell: must('ai-chat-shell'),
     aiChatFab: must('ai-chat-fab'),
     aiChatPanel: must('ai-chat-panel'),
+    aiChatPanelVisibilityToggle: must('ai-chat-panel-visibility-toggle'),
     aiChatQueue: must('ai-chat-queue'),
     aiChatMessages: must('ai-chat-messages'),
     aiChatMessagesInner: must('ai-chat-messages-inner'),
@@ -1091,6 +1092,7 @@ import {
     setEditorShellExpanded(storedShellExpanded === '1', { persist: false })
 
     el.aiChatFab.addEventListener('click', handleAiChatFabClick)
+    el.aiChatPanelVisibilityToggle.addEventListener('click', handleAiChatPanelVisibilityToggleClick)
     el.aiEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
     el.artifactEditorShellToggle.addEventListener('click', handleEditorShellToggleClick)
     el.aiChatForm.addEventListener('submit', handleAiChatFormSubmit)
@@ -1296,6 +1298,21 @@ import {
     }
     el.artifactComposer.classList.toggle('is-floating', shouldFloatComposer)
     el.artifactComposer.classList.toggle('hidden', !shouldShowComposer)
+    if (!shouldFloatComposer) {
+      el.artifactComposer.classList.remove('artifact-composer--panel-hidden')
+    }
+    const artifactComposerKicker = document.getElementById('artifact-composer-kicker')
+    if (artifactComposerKicker) {
+      artifactComposerKicker.textContent = shouldFloatComposer ? 'Artifact / AI editor' : 'Artifact composer'
+    }
+    el.artifactComposer.setAttribute(
+      'aria-label',
+      shouldFloatComposer ? 'Artifact / AI editor' : 'Artifact composer'
+    )
+    if (shouldFloatComposer) {
+      syncArtifactComposerPanelVisibilityToggleUi()
+      syncEditorShellExpandedDom()
+    }
     el.artifactComposerFab.classList.toggle(
       'hidden',
       !(shouldFloatComposer && !state.artifact.floatingOpen)
@@ -2715,10 +2732,12 @@ import {
     el.aiEditorShellToggle.setAttribute('aria-label', label)
     el.aiEditorShellToggle.setAttribute('title', label)
     el.aiEditorShellToggle.textContent = icon
-    el.artifactEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
-    el.artifactEditorShellToggle.setAttribute('aria-label', label)
-    el.artifactEditorShellToggle.setAttribute('title', label)
-    el.artifactEditorShellToggle.textContent = icon
+    if (el.artifactComposer.classList.contains('is-floating')) {
+      el.artifactEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+      el.artifactEditorShellToggle.setAttribute('aria-label', label)
+      el.artifactEditorShellToggle.setAttribute('title', label)
+      el.artifactEditorShellToggle.textContent = icon
+    }
   }
 
   function handleEditorShellToggleClick() {
@@ -2727,10 +2746,26 @@ import {
 
   function syncArtifactComposerPanelVisibilityToggleUi() {
     const hidden = el.artifactComposer.classList.contains('artifact-composer--panel-hidden')
-    const label = hidden ? 'Show artifact editor panel' : 'Hide artifact editor panel'
+    const label = hidden ? 'Show Artifact / AI editor panel' : 'Hide Artifact / AI editor panel'
     el.artifactComposerVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
     el.artifactComposerVisibilityToggle.setAttribute('aria-label', label)
     el.artifactComposerVisibilityToggle.setAttribute('title', label)
+  }
+
+  function syncAiChatPanelVisibilityToggleUi() {
+    const hidden = el.aiChatPanel.classList.contains('ai-chat-panel--panel-hidden')
+    const label = hidden ? 'Show Poll design panel' : 'Hide Poll design panel'
+    el.aiChatPanelVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
+    el.aiChatPanelVisibilityToggle.setAttribute('aria-label', label)
+    el.aiChatPanelVisibilityToggle.setAttribute('title', label)
+  }
+
+  function handleAiChatPanelVisibilityToggleClick(event) {
+    event.preventDefault()
+    el.aiChatPanel.classList.toggle('ai-chat-panel--panel-hidden')
+    syncAiChatPanelVisibilityToggleUi()
+    scheduleArtifactLayoutRefit({ includeSettledPass: false })
+    scheduleEditorDockLayoutRefresh({ includeSettledPass: false })
   }
 
   function handleArtifactComposerVisibilityToggleClick(event) {
@@ -10272,6 +10307,7 @@ import {
     el.wrap.removeEventListener('paste', handleRichTextPaste)
     el.wrap.removeEventListener('keydown', handleRichTextKeydown)
     el.aiChatFab.removeEventListener('click', handleAiChatFabClick)
+    el.aiChatPanelVisibilityToggle.removeEventListener('click', handleAiChatPanelVisibilityToggleClick)
     el.aiEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
     el.artifactEditorShellToggle.removeEventListener('click', handleEditorShellToggleClick)
     el.presentModeToggle.removeEventListener('pointerdown', handlePresentModeTogglePointerDown)

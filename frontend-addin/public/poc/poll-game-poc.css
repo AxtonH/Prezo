@@ -2157,7 +2157,8 @@ h1 {
   display: none !important;
 }
 
-.artifact-composer-visibility-toggle {
+/* Poll design + Artifact / AI editor (floating) bottom visibility pill */
+.editor-panel-visibility-toggle {
   flex: 0 0 auto;
   align-self: center;
   width: 10%;
@@ -2173,17 +2174,35 @@ h1 {
   transition: background 120ms ease, transform 120ms ease;
 }
 
-.artifact-composer-visibility-toggle:hover {
+.editor-panel-visibility-toggle:hover {
   background: #aeb4bf;
 }
 
-.artifact-composer-visibility-toggle:focus-visible {
+.editor-panel-visibility-toggle:focus-visible {
   outline: 2px solid var(--chrome-input-focus);
   outline-offset: 2px;
 }
 
-.artifact-composer.artifact-composer--panel-hidden .artifact-composer-visibility-toggle {
+.artifact-composer.artifact-composer--panel-hidden .editor-panel-visibility-toggle {
   margin-top: 0;
+}
+
+.ai-chat-panel-main {
+  display: contents;
+}
+
+.ai-chat-panel.ai-chat-panel--panel-hidden .ai-chat-panel-main {
+  display: none !important;
+}
+
+.ai-chat-panel.ai-chat-panel--panel-hidden .editor-panel-visibility-toggle {
+  margin-top: 0;
+}
+
+/* Inline artifact builder (2-question flow): editor chrome lives only on floating dock */
+.artifact-composer:not(.is-floating) #artifact-editor-shell-toggle,
+.artifact-composer:not(.is-floating) #artifact-composer-visibility-toggle {
+  display: none !important;
 }
 
 .artifact-composer-header {
@@ -2199,6 +2218,11 @@ h1 {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--chrome-text-muted);
+}
+
+#artifact-composer .artifact-kicker {
+  text-transform: none;
+  letter-spacing: 0.04em;
 }
 
 .artifact-composer-subtitle {
@@ -2480,7 +2504,7 @@ h1 {
 }
 
 .artifact-composer.is-floating:not(.artifact-composer--queue-hidden):not(.artifact-composer--panel-hidden)
-  .artifact-composer-visibility-toggle {
+  .editor-panel-visibility-toggle {
   grid-area: atoggle;
 }
 
@@ -2494,7 +2518,7 @@ h1 {
 }
 
 .artifact-composer.is-floating.artifact-composer--queue-hidden:not(.artifact-composer--panel-hidden)
-  .artifact-composer-visibility-toggle {
+  .editor-panel-visibility-toggle {
   grid-area: atoggle;
 }
 
@@ -2505,7 +2529,7 @@ h1 {
   min-height: 0;
 }
 
-.artifact-composer.is-floating.artifact-composer--panel-hidden .artifact-composer-visibility-toggle {
+.artifact-composer.is-floating.artifact-composer--panel-hidden .editor-panel-visibility-toggle {
   grid-area: atoggle;
 }
 
@@ -2545,10 +2569,6 @@ h1 {
 
 .artifact-composer.is-floating .artifact-prompt-form {
   margin-top: 0;
-}
-
-.artifact-composer.is-floating .artifact-kicker {
-  display: none;
 }
 
 .artifact-composer.is-floating .artifact-composer-header {
@@ -2779,13 +2799,14 @@ h1 {
 }
 
 /* Explicit areas so the 1fr row always maps to #ai-chat-messages (queue hidden skips the queue row). */
-.ai-chat-panel:not(.ai-chat-panel--queue-hidden) {
-  grid-template-rows: auto auto minmax(65px, 1fr) auto;
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden):not(.ai-chat-panel--panel-hidden) {
+  grid-template-rows: auto auto minmax(65px, 1fr) auto auto;
   grid-template-areas:
     "head"
     "queue"
     "msgs"
-    "form";
+    "form"
+    "ptoggle";
 }
 
 .ai-chat-panel:not(.ai-chat-panel--queue-hidden) .ai-chat-header {
@@ -2801,16 +2822,37 @@ h1 {
   min-height: 0;
 }
 
-.ai-chat-panel:not(.ai-chat-panel--queue-hidden) #ai-chat-form {
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden):not(.ai-chat-panel--panel-hidden) #ai-chat-form {
   grid-area: form;
 }
 
-.ai-chat-panel.ai-chat-panel--queue-hidden {
-  grid-template-rows: auto minmax(65px, 1fr) auto;
+.ai-chat-panel:not(.ai-chat-panel--queue-hidden):not(.ai-chat-panel--panel-hidden)
+  .editor-panel-visibility-toggle {
+  grid-area: ptoggle;
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden:not(.ai-chat-panel--panel-hidden) {
+  grid-template-rows: auto minmax(65px, 1fr) auto auto;
   grid-template-areas:
     "head"
     "msgs"
-    "form";
+    "form"
+    "ptoggle";
+}
+
+.ai-chat-panel.ai-chat-panel--queue-hidden:not(.ai-chat-panel--panel-hidden) .editor-panel-visibility-toggle {
+  grid-area: ptoggle;
+}
+
+.ai-chat-panel.ai-chat-panel--panel-hidden {
+  grid-template-rows: auto;
+  grid-template-areas: "ptoggle";
+  max-height: none;
+  min-height: 0;
+}
+
+.ai-chat-panel.ai-chat-panel--panel-hidden .editor-panel-visibility-toggle {
+  grid-area: ptoggle;
 }
 
 .ai-chat-panel.ai-chat-panel--queue-hidden .ai-chat-header {
@@ -2822,7 +2864,7 @@ h1 {
   min-height: 0;
 }
 
-.ai-chat-panel.ai-chat-panel--queue-hidden #ai-chat-form {
+.ai-chat-panel.ai-chat-panel--queue-hidden:not(.ai-chat-panel--panel-hidden) #ai-chat-form {
   grid-area: form;
 }
 
@@ -2832,14 +2874,14 @@ h1 {
 
 body:not(.artifact-mode-active)
   #ai-chat-shell.ai-chat-shell--viewport-fixed
-  .ai-chat-panel:not(.ai-chat-panel--queue-hidden):not(.hidden) {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  .ai-chat-panel:not(.ai-chat-panel--queue-hidden):not(.hidden):not(.ai-chat-panel--panel-hidden) {
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
 
 body:not(.artifact-mode-active)
   #ai-chat-shell.ai-chat-shell--viewport-fixed
-  .ai-chat-panel.ai-chat-panel--queue-hidden:not(.hidden) {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  .ai-chat-panel.ai-chat-panel--queue-hidden:not(.hidden):not(.ai-chat-panel--panel-hidden) {
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .ai-chat-header {
@@ -3124,14 +3166,20 @@ body.editor-docked .artifact-composer.is-floating .artifact-chat-log {
   max-height: none;
 }
 
-body.editor-docked .ai-chat-panel {
+body.editor-docked .ai-chat-panel:not(.ai-chat-panel--panel-hidden) {
   display: grid !important;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
 
-body.editor-docked .ai-chat-panel.ai-chat-panel--queue-hidden {
+body.editor-docked .ai-chat-panel.ai-chat-panel--queue-hidden:not(.ai-chat-panel--panel-hidden) {
   display: grid !important;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+body.editor-docked .ai-chat-panel.ai-chat-panel--panel-hidden {
+  display: grid !important;
+  grid-template-rows: auto !important;
+  gap: 8px;
 }
 
 body.editor-docked .ai-chat-messages {
