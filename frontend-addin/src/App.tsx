@@ -335,6 +335,7 @@ function HostConsole({
   const [sessionStatsBySessionId, setSessionStatsBySessionId] = useState<
     Partial<Record<string, SessionSessionStats | null>>
   >({})
+  const sessionsPrefetchedRef = useRef(false)
   const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
@@ -518,6 +519,7 @@ function HostConsole({
         if (!cancelled) {
           setRecentSessions(sessions)
           setSessionStatsBySessionId(statsMap)
+          sessionsPrefetchedRef.current = true
         }
       } catch {
         // sessions prefetch failed — loadSessions will retry after restore
@@ -939,6 +941,11 @@ function HostConsole({
       return
     }
     if (!hostRestoreComplete) {
+      return
+    }
+    // Skip if prefetch already loaded the sessions list
+    if (sessionsPrefetchedRef.current) {
+      sessionsPrefetchedRef.current = false // allow future manual refreshes
       return
     }
     void loadSessions(maxSessionsLimit)
