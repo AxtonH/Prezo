@@ -862,20 +862,17 @@ function HostConsole({
     setSessionsLoading(true)
     try {
       const sessions = await api.listSessions('active', limit)
-      setRecentSessions(sessions)
 
-      // Fetch stats for all sessions in one batch call
+      // Fetch stats before rendering cards so data arrives together
+      let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
       if (sessions.length > 0) {
         const ids = sessions.map((s) => s.id)
         try {
           const batchResult = await api.batchSessionStats(ids)
-          const mapped: Partial<Record<string, SessionSessionStats | null>> = {}
           for (const id of ids) {
-            mapped[id] = batchResult[id] ?? null
+            statsMap[id] = batchResult[id] ?? null
           }
-          setSessionStatsBySessionId(mapped)
         } catch {
-          // Batch not available — fall back to individual requests
           const results = await Promise.all(
             ids.map(async (id) => {
               try {
@@ -886,11 +883,13 @@ function HostConsole({
               }
             })
           )
-          setSessionStatsBySessionId(Object.fromEntries(results))
+          statsMap = Object.fromEntries(results)
         }
-      } else {
-        setSessionStatsBySessionId({})
       }
+
+      // Set both at the same time so cards render with their data
+      setRecentSessions(sessions)
+      setSessionStatsBySessionId(statsMap)
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
     } finally {
