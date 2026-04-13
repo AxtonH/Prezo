@@ -338,12 +338,7 @@ body.ribbon-hidden .settings-panel {
   flex-direction: column;
 }
 
-/* Non-AI panes scroll normally; AI tab is hint-only (Poll AI is under the canvas) */
-.panel-body > .ribbon-pane.active:not([data-ribbon-pane="ai"]) {
-  flex: 0 0 auto;
-}
-
-.panel-body > .ribbon-pane.active[data-ribbon-pane="ai"] {
+.panel-body > .ribbon-pane.active {
   flex: 0 0 auto;
 }
 
@@ -374,29 +369,6 @@ body.ribbon-hidden .settings-panel {
 
 .ribbon-pane.active {
   display: block;
-}
-
-/* AI sidebar tab: hint only (Poll AI lives under the canvas) */
-.ribbon-pane.ribbon-pane--ai-hint[data-ribbon-pane="ai"] {
-  height: auto;
-}
-
-.ribbon-pane.active.ribbon-pane--ai-hint[data-ribbon-pane="ai"] {
-  display: block;
-  height: auto;
-}
-
-.ribbon-ai-pane-hint {
-  margin: 0;
-  padding: 12px 14px 16px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--chrome-text-secondary);
-}
-
-.ribbon-ai-pane-hint strong {
-  color: var(--chrome-text);
-  font-weight: 600;
 }
 
 /* Poll AI + artifact dock: fixed; horizontal center follows --ai-shell-anchor-center-x (iframe / canvas). */
