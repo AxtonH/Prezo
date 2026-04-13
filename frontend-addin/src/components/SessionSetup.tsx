@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
-import { api } from '../api/client'
 import type { Session, SessionSessionStats } from '../api/types'
 import { resolveJoinUrl } from '../utils/joinUrl'
 
@@ -11,6 +10,8 @@ interface SessionSetupProps {
   onJoinByCode?: (code: string) => Promise<void>
   onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
   recentSessions?: Session[]
+  /** Pre-fetched stats keyed by session ID (loaded alongside sessions in the parent). */
+  statsBySessionId?: Partial<Record<string, SessionSessionStats | null>>
   isLoading?: boolean
   loadError?: string | null
   onResume?: (session: Session) => void
@@ -41,6 +42,7 @@ export function SessionSetup({
   onJoinByCode: _onJoinByCode,
   onSetHostJoinAccess,
   recentSessions,
+  statsBySessionId = {},
   isLoading = false,
   loadError,
   onResume,
@@ -60,55 +62,7 @@ export function SessionSetup({
   void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [statsBySessionId, setStatsBySessionId] = useState<
-    Partial<Record<string, SessionSessionStats | null>>
-  >({})
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
-
-  const sessionIdsKey = recentSessions?.map((s) => s.id).join('|') ?? ''
-
-  useEffect(() => {
-    if (!recentSessions?.length) {
-      setStatsBySessionId({})
-      return
-    }
-    setStatsBySessionId({})
-    let cancelled = false
-    const sessionIds = recentSessions.map((s) => s.id)
-
-    void (async () => {
-      // Try batch endpoint first; fall back to individual calls if unavailable
-      try {
-        const batchResult = await api.batchSessionStats(sessionIds)
-        if (cancelled) return
-        const mapped: Partial<Record<string, SessionSessionStats | null>> = {}
-        for (const id of sessionIds) {
-          mapped[id] = batchResult[id] ?? null
-        }
-        setStatsBySessionId(mapped)
-        return
-      } catch {
-        // batch endpoint not available — fall back to individual requests
-      }
-      if (cancelled) return
-      const results = await Promise.all(
-        sessionIds.map(async (id) => {
-          try {
-            const st = await api.getSessionSessionStats(id)
-            return [id, st] as const
-          } catch {
-            return [id, null] as const
-          }
-        })
-      )
-      if (cancelled) return
-      setStatsBySessionId(Object.fromEntries(results))
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [sessionIdsKey])
 
   useEffect(() => {
     if (!menuSessionId) {

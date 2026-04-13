@@ -332,6 +332,9 @@ function HostConsole({
   const [recentSessions, setRecentSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [sessionStatsBySessionId, setSessionStatsBySessionId] = useState<
+    Partial<Record<string, SessionSessionStats | null>>
+  >({})
   const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
@@ -860,6 +863,34 @@ function HostConsole({
     try {
       const sessions = await api.listSessions('active', limit)
       setRecentSessions(sessions)
+
+      // Fetch stats for all sessions in one batch call
+      if (sessions.length > 0) {
+        const ids = sessions.map((s) => s.id)
+        try {
+          const batchResult = await api.batchSessionStats(ids)
+          const mapped: Partial<Record<string, SessionSessionStats | null>> = {}
+          for (const id of ids) {
+            mapped[id] = batchResult[id] ?? null
+          }
+          setSessionStatsBySessionId(mapped)
+        } catch {
+          // Batch not available — fall back to individual requests
+          const results = await Promise.all(
+            ids.map(async (id) => {
+              try {
+                const st = await api.getSessionSessionStats(id)
+                return [id, st] as const
+              } catch {
+                return [id, null] as const
+              }
+            })
+          )
+          setSessionStatsBySessionId(Object.fromEntries(results))
+        }
+      } else {
+        setSessionStatsBySessionId({})
+      }
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
     } finally {
@@ -1526,6 +1557,7 @@ function HostConsole({
                           ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
                           : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
                   }
+                  statsBySessionId={sessionStatsBySessionId}
                   isLoading={sessionsLoading}
                   loadError={sessionsError}
                   onResume={resumeSession}
