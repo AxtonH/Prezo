@@ -110,62 +110,66 @@
           </article>
 
           <article class="ribbon-group themes-group">
-            <h3 class="sidebar-section-title">Themes</h3>
-            <div class="sidebar-section-body">
-              <div class="row">
-                <input id="theme-name" type="text" placeholder="Theme name" />
-                <button id="save-theme" type="button">Save</button>
+            <details class="design-collapse" open>
+              <summary>Themes</summary>
+              <div class="design-collapse-body themes-artifacts-collapse-body">
+                <div class="row">
+                  <input id="theme-name" type="text" placeholder="Theme name" />
+                  <button id="save-theme" type="button">Save</button>
+                </div>
+                <div class="row">
+                  <select id="theme-select" aria-label="Saved themes"></select>
+                  <button id="load-theme" type="button">Load</button>
+                  <button id="delete-theme" type="button" class="danger">Delete</button>
+                </div>
+                <div class="row advanced-control">
+                  <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
+                  <button id="import-theme-button" type="button" class="ghost theme-transfer-btn">Import</button>
+                  <button id="reset-theme" type="button" class="ghost theme-transfer-btn">Reset</button>
+                </div>
+                <input
+                  id="import-theme"
+                  class="hidden"
+                  type="file"
+                  accept=".json,application/json"
+                  tabindex="-1"
+                  aria-label="Import theme file"
+                />
+                <p id="theme-feedback" class="note"></p>
               </div>
-              <div class="row">
-                <select id="theme-select" aria-label="Saved themes"></select>
-                <button id="load-theme" type="button">Load</button>
-                <button id="delete-theme" type="button" class="danger">Delete</button>
-              </div>
-              <div class="row advanced-control">
-                <button id="export-theme" type="button" class="ghost theme-transfer-btn">Export</button>
-                <button id="import-theme-button" type="button" class="ghost theme-transfer-btn">Import</button>
-                <button id="reset-theme" type="button" class="ghost theme-transfer-btn">Reset</button>
-              </div>
-              <input
-                id="import-theme"
-                class="hidden"
-                type="file"
-                accept=".json,application/json"
-                tabindex="-1"
-                aria-label="Import theme file"
-              />
-              <p id="theme-feedback" class="note"></p>
-            </div>
+            </details>
           </article>
 
           <article class="ribbon-group artifact-library-group">
-            <h3 class="sidebar-section-title">Artifacts</h3>
-            <div class="sidebar-section-body">
-              <button
-                id="library-sync-status"
-                class="library-sync-status status-pending"
-                type="button"
-                title="Checking whether saved themes and artifacts are synced with your account."
-              >
-                <span class="library-sync-dot" aria-hidden="true"></span>
-                <span id="library-sync-status-text" aria-live="polite">Checking library sync…</span>
-              </button>
-              <div class="row">
-                <input id="artifact-name" type="text" placeholder="Artifact name" />
-                <button id="save-artifact" type="button">Save</button>
-                <button id="new-artifact" type="button">New</button>
+            <details class="design-collapse" open>
+              <summary>Artifacts</summary>
+              <div class="design-collapse-body themes-artifacts-collapse-body">
+                <button
+                  id="library-sync-status"
+                  class="library-sync-status status-pending"
+                  type="button"
+                  title="Checking whether saved themes and artifacts are synced with your account."
+                >
+                  <span class="library-sync-dot" aria-hidden="true"></span>
+                  <span id="library-sync-status-text" aria-live="polite">Checking library sync…</span>
+                </button>
+                <div class="row">
+                  <input id="artifact-name" type="text" placeholder="Artifact name" />
+                  <button id="save-artifact" type="button">Save</button>
+                  <button id="new-artifact" type="button">New</button>
+                </div>
+                <div class="row">
+                  <select id="artifact-select" aria-label="Saved artifacts"></select>
+                  <button id="load-artifact" type="button">Load</button>
+                  <button id="delete-artifact" type="button" class="danger">Delete</button>
+                </div>
+                <div class="row artifact-version-row">
+                  <select id="artifact-version-select" aria-label="Artifact version history"></select>
+                  <button id="restore-artifact-version" type="button" class="ghost">Restore</button>
+                </div>
+                <p id="artifact-feedback" class="note"></p>
               </div>
-              <div class="row">
-                <select id="artifact-select" aria-label="Saved artifacts"></select>
-                <button id="load-artifact" type="button">Load</button>
-                <button id="delete-artifact" type="button" class="danger">Delete</button>
-              </div>
-              <div class="row artifact-version-row">
-                <select id="artifact-version-select" aria-label="Artifact version history"></select>
-                <button id="restore-artifact-version" type="button" class="ghost">Restore</button>
-              </div>
-              <p id="artifact-feedback" class="note"></p>
-            </div>
+            </details>
           </article>
 
           <article class="ribbon-group home-text-tools-group">

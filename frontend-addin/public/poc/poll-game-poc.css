@@ -1312,6 +1312,16 @@ body:not(.artifact-mode-active)
   min-width: 0;
 }
 
+/* Home tab: Themes & Artifacts use the same design-collapse pattern as Style */
+.ribbon-group.themes-group > .design-collapse,
+.ribbon-group.artifact-library-group > .design-collapse {
+  margin-top: 0;
+}
+
+.themes-artifacts-collapse-body.design-collapse-body {
+  padding: 0 16px 14px;
+}
+
 /* ----------------------------------------------------------------
    Advanced controls visibility
    ---------------------------------------------------------------- */
