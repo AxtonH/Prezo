@@ -488,7 +488,49 @@ function HostConsole({
       }
     }
 
-    void tryRestore().finally(finish)
+    // Prefetch sessions list in parallel with restore so cards are ready instantly
+    const sessionsPrefetch = (async () => {
+      try {
+        const sessions = await api.listSessions('active', 100)
+        let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
+        if (sessions.length > 0) {
+          const ids = sessions.map((s) => s.id)
+          try {
+            const batchResult = await api.batchSessionStats(ids)
+            for (const id of ids) {
+              statsMap[id] = batchResult[id] ?? null
+            }
+          } catch {
+            const results = await Promise.all(
+              ids.map(async (id) => {
+                try {
+                  const st = await api.getSessionSessionStats(id)
+                  return [id, st] as const
+                } catch {
+                  return [id, null] as const
+                }
+              })
+            )
+            statsMap = Object.fromEntries(results)
+          }
+        }
+        return { sessions, statsMap }
+      } catch {
+        return null
+      }
+    })()
+
+    void tryRestore().finally(async () => {
+      // Apply prefetched sessions before marking restore complete
+      if (!cancelled) {
+        const prefetched = await sessionsPrefetch
+        if (!cancelled && prefetched) {
+          setRecentSessions(prefetched.sessions)
+          setSessionStatsBySessionId(prefetched.statsMap)
+        }
+      }
+      finish()
+    })
 
     return () => {
       cancelled = true
