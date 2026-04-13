@@ -509,15 +509,36 @@
               aria-hidden="true"
             >
               <label class="artifact-brand-profile-label" for="artifact-brand-profile-select"
-                >Saved brand (optional)</label
+                >Brand library or reference (optional)</label
               >
               <select
                 id="artifact-brand-profile-select"
                 class="artifact-brand-profile-select"
-                aria-label="Saved brand profile for design guidelines"
+                aria-label="Saved brand profile or reference image for design guidelines"
               >
                 <option value="">None</option>
+                <option value="__reference__">Upload a reference image…</option>
               </select>
+              <div
+                id="artifact-brand-reference-panel"
+                class="artifact-brand-reference-panel hidden"
+                aria-hidden="true"
+              >
+                <label class="artifact-brand-reference-label" for="artifact-brand-reference-input"
+                  >Reference image</label
+                >
+                <input
+                  id="artifact-brand-reference-input"
+                  class="artifact-brand-reference-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                />
+                <p
+                  id="artifact-brand-reference-status"
+                  class="artifact-brand-reference-status"
+                  aria-live="polite"
+                ></p>
+              </div>
             </div>
             <div class="artifact-prompt-bar artifact-prompt-bar--with-shell-toggle">
               <button

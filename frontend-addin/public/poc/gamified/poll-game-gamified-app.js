@@ -11,6 +11,7 @@ import {
   AI_THEME_COLOR_KEYS,
   AI_THEME_NUMBER_RANGES,
   ARTIFACT_LIBRARY_KEY,
+  ARTIFACT_BRAND_REFERENCE_VALUE,
   DEFAULT_API_BASE,
   DEFAULT_POLL_SELECTOR,
   DRAG_START_THRESHOLD_PX,
@@ -40,6 +41,7 @@ import {
   buildArtifactRepairPrompt,
   buildArtifactAiPrompt,
   createEmptyArtifactAnswers,
+  mergeArtifactDesignGuidelines,
   sanitizeArtifactLayout
 } from './poll-game-gamified-artifact-mode.js'
 import {
@@ -124,6 +126,9 @@ import {
     return window.location.origin
   }
   const parentPostMessageOrigin = resolveParentPostMessageOrigin()
+
+  /** True while POST /brand-profiles/extract runs for the artifact reference image control. */
+  let artifactBrandReferenceBusy = false
 
   const parsePollSelector = (raw) => {
     const value = asText(raw)
@@ -295,6 +300,9 @@ import {
     artifactPromptForm: must('artifact-prompt-form'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
+    artifactBrandReferencePanel: must('artifact-brand-reference-panel'),
+    artifactBrandReferenceInput: must('artifact-brand-reference-input'),
+    artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactEditorShellToggle: must('artifact-editor-shell-toggle'),
     artifactComposerVisibilityToggle: must('artifact-composer-visibility-toggle'),
@@ -1269,6 +1277,7 @@ import {
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
+    el.artifactBrandReferenceInput.addEventListener('change', handleArtifactBrandReferenceInputChange)
   }
 
   function syncArtifactComposerVisibility() {
@@ -1398,7 +1407,10 @@ import {
     const conversationBlocked = !canEditArtifact && state.artifact.busy
 
     el.artifactPromptInput.disabled = Boolean(queueFull || conversationBlocked)
-    el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy)
+    el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy || artifactBrandReferenceBusy)
+    el.artifactBrandReferenceInput.disabled = Boolean(
+      state.artifact.busy || artifactBrandReferenceBusy || queueFull || conversationBlocked
+    )
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -1422,14 +1434,98 @@ import {
       el.artifactPromptInput.value = ''
     }
     el.artifactBrandProfileSelect.value = ''
+    clearArtifactReferenceFileUi()
+    artifactBrandReferenceBusy = false
+    syncArtifactReferencePanelVisibility()
     syncArtifactConversationUi()
   }
 
+  function guidelinesTextFromExtractPayload(payload) {
+    const raw = asText(payload?.raw_summary).trim()
+    if (raw) {
+      return raw
+    }
+    const g = payload?.guidelines
+    if (g && typeof g === 'object' && Object.keys(g).length > 0) {
+      return `Reference image — visual guidelines (extracted):\n${JSON.stringify(g, null, 2)}`
+    }
+    return ''
+  }
+
+  function clearArtifactReferenceFileUi() {
+    el.artifactBrandReferenceInput.value = ''
+    el.artifactBrandReferenceStatus.textContent = ''
+  }
+
+  function syncArtifactReferencePanelVisibility() {
+    const isRef =
+      asText(el.artifactBrandProfileSelect.value).trim() === ARTIFACT_BRAND_REFERENCE_VALUE
+    el.artifactBrandReferencePanel.classList.toggle('hidden', !isRef)
+    el.artifactBrandReferencePanel.setAttribute('aria-hidden', isRef ? 'false' : 'true')
+  }
+
   function handleArtifactBrandProfileSelectChange() {
-    state.artifact.conversationAnswers.brandProfileName = asText(el.artifactBrandProfileSelect.value).trim()
+    const raw = asText(el.artifactBrandProfileSelect.value).trim()
+    if (raw === ARTIFACT_BRAND_REFERENCE_VALUE) {
+      state.artifact.conversationAnswers.brandProfileName = ''
+      syncArtifactReferencePanelVisibility()
+      return
+    }
+    state.artifact.conversationAnswers.referenceImageGuidelines = ''
+    clearArtifactReferenceFileUi()
+    state.artifact.conversationAnswers.brandProfileName = raw
+    syncArtifactReferencePanelVisibility()
   }
 
   let artifactBrandProfilesFetchPromise = null
+
+  async function handleArtifactBrandReferenceInputChange(event) {
+    const file = event?.target?.files?.[0]
+    if (!file) {
+      return
+    }
+    const base = asText(state.apiBase)
+    const token = getLibraryAccessToken()
+    if (!base || !token) {
+      el.artifactBrandReferenceStatus.textContent =
+        'Sign in to the library to extract guidelines from an image.'
+      clearArtifactReferenceFileUi()
+      return
+    }
+    artifactBrandReferenceBusy = true
+    el.artifactBrandReferenceStatus.textContent = 'Analyzing image…'
+    syncArtifactComposerBusyState()
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('purpose', 'artifact')
+      const response = await fetch(`${base}/library/poll-game/brand-profiles/extract`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) {
+        const message =
+          asText(payload?.detail) || `Request failed (${response.status})`
+        throw new Error(message)
+      }
+      const text = guidelinesTextFromExtractPayload(payload)
+      if (!text) {
+        throw new Error('Could not read visual guidelines from that image.')
+      }
+      state.artifact.conversationAnswers.referenceImageGuidelines = text
+      el.artifactBrandReferenceStatus.textContent =
+        'Reference guidelines loaded. Add notes below if you like, then press Enter.'
+    } catch (error) {
+      state.artifact.conversationAnswers.referenceImageGuidelines = ''
+      el.artifactBrandReferenceStatus.textContent = errorToMessage(error)
+      el.artifactBrandReferenceInput.value = ''
+    } finally {
+      artifactBrandReferenceBusy = false
+      syncArtifactComposerBusyState()
+    }
+  }
 
   async function ensureArtifactBrandProfilesLoaded() {
     const token = getLibraryAccessToken()
@@ -1453,18 +1549,17 @@ import {
           return
         }
         const select = el.artifactBrandProfileSelect
-        const keep = select.querySelector('option[value=""]')
         while (select.lastChild) {
           select.removeChild(select.lastChild)
         }
-        if (keep) {
-          select.appendChild(keep)
-        } else {
-          const none = document.createElement('option')
-          none.value = ''
-          none.textContent = 'None'
-          select.appendChild(none)
-        }
+        const none = document.createElement('option')
+        none.value = ''
+        none.textContent = 'None'
+        select.appendChild(none)
+        const referenceOption = document.createElement('option')
+        referenceOption.value = ARTIFACT_BRAND_REFERENCE_VALUE
+        referenceOption.textContent = 'Upload a reference image…'
+        select.appendChild(referenceOption)
         for (const row of payload) {
           const name = asText(row?.name).trim()
           if (!name) {
@@ -1496,16 +1591,27 @@ import {
       setEditorShellExpanded(true)
       void ensureArtifactBrandProfilesLoaded().finally(() => {
         const saved = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
-        const hasOption = Array.from(el.artifactBrandProfileSelect.options).some((o) => o.value === saved)
-        if (saved && hasOption) {
-          el.artifactBrandProfileSelect.value = saved
-        } else if (saved) {
-          const option = document.createElement('option')
-          option.value = saved
-          option.textContent = saved
-          el.artifactBrandProfileSelect.appendChild(option)
-          el.artifactBrandProfileSelect.value = saved
+        const refText = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
+        const hasRefOption = Array.from(el.artifactBrandProfileSelect.options).some(
+          (o) => o.value === ARTIFACT_BRAND_REFERENCE_VALUE
+        )
+        if (saved && saved !== ARTIFACT_BRAND_REFERENCE_VALUE) {
+          const hasOption = Array.from(el.artifactBrandProfileSelect.options).some((o) => o.value === saved)
+          if (hasOption) {
+            el.artifactBrandProfileSelect.value = saved
+          } else {
+            const option = document.createElement('option')
+            option.value = saved
+            option.textContent = saved
+            el.artifactBrandProfileSelect.appendChild(option)
+            el.artifactBrandProfileSelect.value = saved
+          }
+        } else if (refText && hasRefOption) {
+          el.artifactBrandProfileSelect.value = ARTIFACT_BRAND_REFERENCE_VALUE
+        } else {
+          el.artifactBrandProfileSelect.value = ''
         }
+        syncArtifactReferencePanelVisibility()
       })
     }
   }
@@ -1532,9 +1638,13 @@ import {
   function formatDesignGuidelinesConversationDisplay(answers) {
     const text = asText(answers?.designGuidelines).trim()
     const brand = asText(answers?.brandProfileName).trim()
+    const ref = asText(answers?.referenceImageGuidelines).trim()
     const parts = []
     if (brand) {
       parts.push(`Saved brand: ${brand}`)
+    }
+    if (ref) {
+      parts.push(`Reference image guidelines:\n${ref}`)
     }
     if (text) {
       parts.push(text)
@@ -1614,6 +1724,7 @@ import {
       artifactType: asText(answers?.artifactType),
       designGuidelines: asText(answers?.designGuidelines),
       brandProfileName: asText(answers?.brandProfileName),
+      referenceImageGuidelines: asText(answers?.referenceImageGuidelines),
       /** Legacy: older saved artifacts may still include this; no longer collected in the wizard. */
       audienceSize: asText(answers?.audienceSize)
     }
@@ -1621,7 +1732,7 @@ import {
 
   function buildArtifactConversationSummary(answers) {
     const artifactType = asText(answers?.artifactType).trim()
-    const designGuidelines = asText(answers?.designGuidelines).trim()
+    const mergedGuidelines = mergeArtifactDesignGuidelines(answers || {})
     const brandProfileName = asText(answers?.brandProfileName).trim()
     const parts = []
     if (artifactType) {
@@ -1630,8 +1741,8 @@ import {
     if (brandProfileName) {
       parts.push(`Brand: ${brandProfileName}`)
     }
-    if (designGuidelines) {
-      parts.push(`Guidelines: ${designGuidelines}`)
+    if (mergedGuidelines) {
+      parts.push(`Guidelines: ${mergedGuidelines}`)
     }
     if (parts.length === 0) {
       return ''
@@ -1817,15 +1928,21 @@ import {
     event.preventDefault()
     const currentStep = getArtifactConversationStep()
     if (currentStep?.key === 'designGuidelines') {
-      state.artifact.conversationAnswers.brandProfileName = asText(el.artifactBrandProfileSelect.value).trim()
+      const sel = asText(el.artifactBrandProfileSelect.value).trim()
+      if (sel === ARTIFACT_BRAND_REFERENCE_VALUE) {
+        state.artifact.conversationAnswers.brandProfileName = ''
+      } else {
+        state.artifact.conversationAnswers.brandProfileName = sel
+      }
     }
     const answer = asText(el.artifactPromptInput.value).trim()
     const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+    const refGuidelines = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
     if (currentStep?.key === 'designGuidelines') {
-      if (!answer && !brandName) {
+      if (!answer && !brandName && !refGuidelines) {
         appendArtifactEditMessage(
           'assistant',
-          'Add design notes and/or choose a saved brand profile.'
+          'Add design notes, choose a saved brand profile, and/or upload a reference image for guidelines.'
         )
         return
       }
@@ -2464,7 +2581,7 @@ import {
       pollSelector: asText(state.pollSelector?.descriptor),
       artifactType: answers.artifactType,
       brandProfileName: asText(answers?.brandProfileName).trim() || undefined,
-      designGuidelines: answers.designGuidelines,
+      designGuidelines: mergeArtifactDesignGuidelines(answers),
       expectedMaxVotes: voteCapacity.expectedMaxVotes,
       recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
       recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
@@ -10314,6 +10431,7 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerVisibilityToggle.removeEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactBrandReferenceInput.removeEventListener('change', handleArtifactBrandReferenceInputChange)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)

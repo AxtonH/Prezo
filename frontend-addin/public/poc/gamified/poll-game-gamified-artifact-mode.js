@@ -29,15 +29,33 @@ export function createEmptyArtifactAnswers() {
     artifactType: '',
     designGuidelines: '',
     /** Saved brand profile name when library auth is available; sent as brand_profile_name on artifact build. */
-    brandProfileName: ''
+    brandProfileName: '',
+    /**
+     * Plain-text visual guidelines extracted from a user-uploaded reference image
+     * (POST /brand-profiles/extract with purpose=artifact). Merged with designGuidelines for prompts.
+     */
+    referenceImageGuidelines: ''
   }
+}
+
+/** Merge user textarea + reference-image extraction for prompts and API context. */
+export function mergeArtifactDesignGuidelines(answers = {}) {
+  const ref =
+    typeof answers.referenceImageGuidelines === 'string' ? answers.referenceImageGuidelines.trim() : ''
+  const user = typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  if (ref && user) {
+    return `${ref}\n\n--- Additional design notes ---\n${user}`
+  }
+  if (ref) {
+    return ref
+  }
+  return user
 }
 
 export function buildArtifactConversationPrompt(answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const designGuidelines =
-    typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  const mergedGuidelines = mergeArtifactDesignGuidelines(answers)
   const brandProfileName =
     typeof answers.brandProfileName === 'string' ? answers.brandProfileName.trim() : ''
 
@@ -46,7 +64,7 @@ export function buildArtifactConversationPrompt(answers = {}) {
     brandProfileName
       ? `Saved brand profile (mandatory — follow palette, type, logo, and voice from context): ${brandProfileName}`
       : '',
-    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
+    mergedGuidelines ? formatDesignGuidelinesBlock(mergedGuidelines) : '',
     'Build a complete artifact experience that satisfies all of these requirements.'
   ]
     .filter(Boolean)
@@ -81,8 +99,7 @@ function isBackgroundAtmosphereEditRequest(value) {
 export function buildArtifactEditPrompt(editRequest, answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const designGuidelines =
-    typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  const mergedGuidelines = mergeArtifactDesignGuidelines(answers)
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
   const backgroundEdit = isBackgroundAtmosphereEditRequest(request)
 
@@ -91,7 +108,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     typeof answers.brandProfileName === 'string' && answers.brandProfileName.trim()
       ? `Saved brand profile (mandatory): ${answers.brandProfileName.trim()}`
       : '',
-    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
+    mergedGuidelines ? formatDesignGuidelinesBlock(mergedGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     'Revise the current artifact instead of starting from scratch.',
     'This is edit mode, not rebuild mode.',
@@ -126,8 +143,7 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
 export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {}) {
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
-  const designGuidelines =
-    typeof answers.designGuidelines === 'string' ? answers.designGuidelines.trim() : ''
+  const mergedGuidelines = mergeArtifactDesignGuidelines(answers)
   const request = typeof editRequest === 'string' ? editRequest.trim() : ''
   const errorText = typeof runtimeError === 'string' ? runtimeError.trim() : ''
   const backgroundEdit = isBackgroundAtmosphereEditRequest(request)
@@ -137,7 +153,7 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     typeof answers.brandProfileName === 'string' && answers.brandProfileName.trim()
       ? `Saved brand profile (mandatory): ${answers.brandProfileName.trim()}`
       : '',
-    designGuidelines ? formatDesignGuidelinesBlock(designGuidelines) : '',
+    mergedGuidelines ? formatDesignGuidelinesBlock(mergedGuidelines) : '',
     request ? `Edit request: ${request}` : '',
     errorText ? `Runtime failure to fix: ${errorText}` : '',
     'Repair the failed edit against the last stable working artifact.',

@@ -3,6 +3,8 @@ export const DEFAULT_POLL_SELECTOR = 'latest/open'
 export const THEME_LIBRARY_KEY = 'prezo.poll-game-poc.themes.v1'
 export const THEME_DRAFT_KEY = 'prezo.poll-game-poc.theme-draft.v1'
 export const ARTIFACT_LIBRARY_KEY = 'prezo.poll-game-poc.artifacts.v1'
+/** Select value for “upload reference image” in the artifact composer brand dropdown (not a saved profile name). */
+export const ARTIFACT_BRAND_REFERENCE_VALUE = '__reference__'
 export const LIBRARY_SYNC_TOKEN_KEY = 'prezo.poll-game-poc.library-sync-token.v1'
 export const RIBBON_TAB_KEY = 'prezo.poll-game-poc.ribbon-tab.v1'
 export const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
