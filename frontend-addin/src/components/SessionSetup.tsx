@@ -77,6 +77,7 @@ export function SessionSetup({
     const sessionIds = recentSessions.map((s) => s.id)
 
     void (async () => {
+      // Try batch endpoint first; fall back to individual calls if unavailable
       try {
         const batchResult = await api.batchSessionStats(sessionIds)
         if (cancelled) return
@@ -85,12 +86,23 @@ export function SessionSetup({
           mapped[id] = batchResult[id] ?? null
         }
         setStatsBySessionId(mapped)
+        return
       } catch {
-        if (cancelled) return
-        setStatsBySessionId(
-          Object.fromEntries(sessionIds.map((id) => [id, null]))
-        )
+        // batch endpoint not available — fall back to individual requests
       }
+      if (cancelled) return
+      const results = await Promise.all(
+        sessionIds.map(async (id) => {
+          try {
+            const st = await api.getSessionSessionStats(id)
+            return [id, st] as const
+          } catch {
+            return [id, null] as const
+          }
+        })
+      )
+      if (cancelled) return
+      setStatsBySessionId(Object.fromEntries(results))
     })()
 
     return () => {
@@ -187,7 +199,7 @@ export function SessionSetup({
                 const isCoHost = entry.is_original_host === false
                 const stats = statsBySessionId[entry.id]
                 const interactions =
-                  stats === undefined ? undefined : stats === null ? null : stats.active_activities
+                  stats === undefined ? undefined : stats === null ? null : (stats.active_activities ?? (stats as unknown as Record<string, number>).total_interactions ?? 0)
                 const participants =
                   stats === undefined ? undefined : stats === null ? null : stats.unique_participants
                 const showOwnerActions = !isCoHost && onDelete
