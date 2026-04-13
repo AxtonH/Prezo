@@ -313,8 +313,26 @@ export function SessionSetup({
           </div>
         ) : null}
 
-        {isLoading ? (
-          <p className="text-muted text-sm py-4">Loading your recent sessions...</p>
+        {isLoading && !hasRecentSessions ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 pb-1">
+            {Array.from({ length: 6 }, (_, i) => (
+              <div
+                key={i}
+                className="bg-white rounded-xl border border-slate-200 p-6 animate-pulse"
+              >
+                <div className="h-5 bg-slate-200 rounded w-2/3 mb-3" />
+                <div className="h-3 bg-slate-100 rounded w-1/3 mb-4" />
+                <div className="flex gap-4 mb-4">
+                  <div className="h-3 bg-slate-100 rounded w-20" />
+                  <div className="h-3 bg-slate-100 rounded w-12" />
+                </div>
+                <div className="border-t border-slate-100 pt-4 flex justify-between">
+                  <div className="h-5 bg-slate-100 rounded w-10" />
+                  <div className="h-4 bg-slate-100 rounded w-16" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : null}
         {loadError ? <p className="text-danger text-sm py-2">{loadError}</p> : null}
         {!isLoading && !loadError && !hasRecentSessions ? (

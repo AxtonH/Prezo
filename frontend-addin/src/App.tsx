@@ -376,6 +376,8 @@ function HostConsole({
   const [recentSessions, setRecentSessions] = useState<Session[]>(
     () => _prefetchCache?.sessions ?? []
   )
+  // true once the first fetch (prefetch or loadSessions) has completed
+  const [sessionsReady, setSessionsReady] = useState(() => _prefetchCache !== null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionStatsBySessionId, setSessionStatsBySessionId] = useState<
@@ -543,6 +545,7 @@ function HostConsole({
         if (!cancelled && prefetched) {
           setRecentSessions(prefetched.sessions)
           setSessionStatsBySessionId(prefetched.statsMap)
+          setSessionsReady(true)
           sessionsPrefetchedRef.current = true
         }
       })
@@ -948,8 +951,10 @@ function HostConsole({
       // Set both at the same time so cards render with their data
       setRecentSessions(sessions)
       setSessionStatsBySessionId(statsMap)
+      setSessionsReady(true)
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
+      setSessionsReady(true)
     } finally {
       setSessionsLoading(false)
     }
@@ -1620,7 +1625,7 @@ function HostConsole({
                           : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
                   }
                   statsBySessionId={sessionStatsBySessionId}
-                  isLoading={sessionsLoading}
+                  isLoading={sessionsLoading || !sessionsReady}
                   loadError={sessionsError}
                   onResume={resumeSession}
                   onDelete={deleteSession}
