@@ -1312,8 +1312,12 @@ body:not(.artifact-mode-active)
   min-width: 0;
 }
 
+.presets-group .sidebar-section-body {
+  padding-top: 12px;
+}
+
 .presets-group .sidebar-section-body > .design-collapse:first-of-type {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .presets-group .sidebar-section-body > .design-collapse + .design-collapse {
