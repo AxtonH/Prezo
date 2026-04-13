@@ -56,13 +56,17 @@ const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
 
 /**
  * Module-level prefetch: starts the network request the instant this JS module
- * is parsed — well before React mounts any component. The component awaits this
- * promise on first render so data is already available.
+ * is parsed — well before React mounts any component.
+ * The resolved result is cached so the component can read it synchronously.
  */
-const sessionsPrefetchPromise: Promise<{
+interface PrefetchResult {
   sessions: Session[]
   statsMap: Partial<Record<string, SessionSessionStats | null>>
-} | null> = (async () => {
+}
+
+let _prefetchCache: PrefetchResult | null = null
+
+const sessionsPrefetchPromise: Promise<PrefetchResult | null> = (async () => {
   try {
     const sessions = await api.listSessions('active', 100)
     let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
@@ -87,7 +91,8 @@ const sessionsPrefetchPromise: Promise<{
         statsMap = Object.fromEntries(results)
       }
     }
-    return { sessions, statsMap }
+    _prefetchCache = { sessions, statsMap }
+    return _prefetchCache
   } catch {
     return null
   }
@@ -368,13 +373,15 @@ function HostConsole({
   const [polls, setPolls] = useState<Poll[]>([])
   const [prompts, setPrompts] = useState<QnaPrompt[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [recentSessions, setRecentSessions] = useState<Session[]>([])
+  const [recentSessions, setRecentSessions] = useState<Session[]>(
+    () => _prefetchCache?.sessions ?? []
+  )
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionStatsBySessionId, setSessionStatsBySessionId] = useState<
     Partial<Record<string, SessionSessionStats | null>>
-  >({})
-  const sessionsPrefetchedRef = useRef(false)
+  >(() => _prefetchCache?.statsMap ?? {})
+  const sessionsPrefetchedRef = useRef(_prefetchCache !== null)
   const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
@@ -528,16 +535,18 @@ function HostConsole({
       }
     }
 
-    // Consume module-level prefetch — data is already in-flight (or resolved)
-    void sessionsPrefetchPromise.then((prefetched) => {
-      if (!cancelled && prefetched) {
-        setRecentSessions(prefetched.sessions)
-        setSessionStatsBySessionId(prefetched.statsMap)
-        sessionsPrefetchedRef.current = true
-      }
-    })
-
-    void tryRestore().finally(finish)
+    // Wait for both restore AND prefetch before marking complete,
+    // so we never flash "Loading..." when data is almost ready
+    void Promise.all([
+      tryRestore(),
+      sessionsPrefetchPromise.then((prefetched) => {
+        if (!cancelled && prefetched) {
+          setRecentSessions(prefetched.sessions)
+          setSessionStatsBySessionId(prefetched.statsMap)
+          sessionsPrefetchedRef.current = true
+        }
+      })
+    ]).finally(finish)
 
     return () => {
       cancelled = true
