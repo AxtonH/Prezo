@@ -1,3 +1,4 @@
+import { resolveBrandAssetUrl } from '../../api/client'
 import type { BrandProfile } from '../../api/types'
 import {
   extractAudienceLine,
@@ -21,7 +22,12 @@ const CARD_KEYWORD_CAP = 5
 
 export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
   const g = (profile.guidelines ?? {}) as Record<string, unknown>
-  const displayName = parseBrandUiIdentity(g, profile.name).brand_name
+  const ui = parseBrandUiIdentity(g, profile.name)
+  const displayName = ui.brand_name
+  const logoPath =
+    (ui.logo?.url && ui.logo.url.trim()) ||
+    (typeof profile.brand_facts?.logo?.url === 'string' ? profile.brand_facts.logo.url.trim() : '')
+  const logoSrc = logoPath ? resolveBrandAssetUrl(logoPath) : ''
   const palette = extractPaletteHexFromProfile(profile)
   const fonts = extractFontsLine(g)
   const tagline = extractTagline(g)
@@ -50,12 +56,25 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
         <div className="flex items-start gap-3">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner"
-            style={{ backgroundColor: palette[0] ?? '#6366f1' }}
-          >
-            {initial}
-          </div>
+          {logoSrc ? (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-inner">
+              <img
+                src={logoSrc}
+                alt={`${displayName} logo`}
+                className="max-h-full max-w-full object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          ) : (
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner"
+              style={{ backgroundColor: palette[0] ?? '#6366f1' }}
+              aria-hidden
+            >
+              {initial}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-lg font-semibold text-slate-900">{displayName}</h3>
             {fonts ? (
