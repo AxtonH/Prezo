@@ -34,6 +34,7 @@ import { useDebouncedValue } from './hooks/useDebouncedValue'
 import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
+import { bindPollWidgetToSelectedSlide } from './office/bindPollWidget'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
 import { updateDiscussionWidget, updatePollWidget, updateQnaWidget } from './office/widgetShapes'
 import {
@@ -1263,6 +1264,16 @@ function HostConsole({
     }
     setWorkspaceNav('editor')
   }, [])
+
+  const handleBindPollWidget = useCallback(
+    async (pollId: string) => {
+      if (!session) {
+        return
+      }
+      await bindPollWidgetToSelectedSlide(session.id, session.code, pollId, polls)
+    },
+    [session, polls]
+  )
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<
     'active' | 'host' | 'cohost'
@@ -1644,6 +1655,7 @@ function HostConsole({
                   onResumePoll={(pollId) => void openPoll(pollId)}
                   onDeletePoll={deletePoll}
                   onCreatePoll={createPoll}
+                  onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
                 />
               ) : workspaceNav === 'discussion' ? (
                 <SessionDiscussionDashboardPage
@@ -1710,6 +1722,7 @@ function HostConsole({
                   onCreateDiscussionPrompt={async (prompt) => {
                     await createDiscussionPrompt(prompt)
                   }}
+                  onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
                 />
               )}
             </>

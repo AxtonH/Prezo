@@ -23,6 +23,8 @@ export interface SessionPollsDashboardPageProps {
   onResumePoll?: (pollId: string) => void | Promise<void>
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onCreatePoll: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
+  /** PowerPoint add-in: bind slide widget to a poll. */
+  onBindPollWidget?: (pollId: string) => Promise<void>
 }
 
 export function SessionPollsDashboardPage({
@@ -33,7 +35,8 @@ export function SessionPollsDashboardPage({
   onStopPoll,
   onResumePoll,
   onDeletePoll,
-  onCreatePoll
+  onCreatePoll,
+  onBindPollWidget
 }: SessionPollsDashboardPageProps) {
   const pollBuilderStackRef = useRef<HTMLDivElement>(null)
   const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
@@ -148,6 +151,7 @@ export function SessionPollsDashboardPage({
                     onHideDiscussionQuestion={undefined}
                     onApproveAudienceQuestion={undefined}
                     onHideAudienceQuestion={undefined}
+                    onBindPollWidget={onBindPollWidget}
                   />
                 </div>
               </div>

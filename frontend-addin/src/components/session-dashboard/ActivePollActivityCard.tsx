@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type { Poll } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 
@@ -11,6 +13,10 @@ export interface ActivePollActivityCardProps {
   onResume?: (pollId: string) => void
   /** Permanently remove this poll from the session. */
   onDelete?: () => void
+  /**
+   * PowerPoint only: link the poll widget on the selected slide to this poll (updates tags + text only).
+   */
+  onBindWidget?: (pollId: string) => Promise<void>
 }
 
 export function ActivePollActivityCard({
@@ -19,10 +25,32 @@ export function ActivePollActivityCard({
   onConfigure,
   onStop,
   onResume,
-  onDelete
+  onDelete,
+  onBindWidget
 }: ActivePollActivityCardProps) {
+  const [bindBusy, setBindBusy] = useState(false)
+  const [bindMessage, setBindMessage] = useState<string | null>(null)
+  const [bindError, setBindError] = useState<string | null>(null)
+
   const totalVotes = poll.options.reduce((sum, o) => sum + (o.votes ?? 0), 0)
   const inactive = variant === 'inactive'
+
+  const handleBindWidget = async () => {
+    if (!onBindWidget) {
+      return
+    }
+    setBindBusy(true)
+    setBindMessage(null)
+    setBindError(null)
+    try {
+      await onBindWidget(poll.id)
+      setBindMessage('Slide widget linked to this poll.')
+    } catch (err) {
+      setBindError(err instanceof Error ? err.message : 'Could not bind widget.')
+    } finally {
+      setBindBusy(false)
+    }
+  }
 
   return (
     <CollapsibleActivityPanelShell
@@ -144,6 +172,20 @@ export function ActivePollActivityCard({
                   Delete
                 </button>
               ) : null}
+              {onBindWidget ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleBindWidget()
+                  }}
+                  disabled={bindBusy}
+                  title="Link the poll widget on the selected PowerPoint slide to this poll"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+                >
+                  {bindBusy ? 'Binding…' : 'Bind widget'}
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 pt-2">
@@ -169,8 +211,28 @@ export function ActivePollActivityCard({
                   Delete
                 </button>
               ) : null}
+              {onBindWidget ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleBindWidget()
+                  }}
+                  disabled={bindBusy}
+                  title="Link the poll widget on the selected PowerPoint slide to this poll"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+                >
+                  {bindBusy ? 'Binding…' : 'Bind widget'}
+                </button>
+              ) : null}
             </div>
           )}
+          {onBindWidget && (bindMessage || bindError) ? (
+            <div className="space-y-1 pt-1">
+              {bindError ? <p className="text-xs text-red-600">{bindError}</p> : null}
+              {bindMessage ? <p className="text-xs text-emerald-800">{bindMessage}</p> : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="p-5 pt-0">
@@ -201,6 +263,20 @@ export function ActivePollActivityCard({
                   Delete
                 </button>
               ) : null}
+              {onBindWidget ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleBindWidget()
+                  }}
+                  disabled={bindBusy}
+                  title="Link the poll widget on the selected PowerPoint slide to this poll"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+                >
+                  {bindBusy ? 'Binding…' : 'Bind widget'}
+                </button>
+              ) : null}
             </div>
           ) : onDelete ? (
             <div className="flex flex-wrap gap-2 pt-4">
@@ -214,6 +290,41 @@ export function ActivePollActivityCard({
               >
                 Delete
               </button>
+              {onBindWidget ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleBindWidget()
+                  }}
+                  disabled={bindBusy}
+                  title="Link the poll widget on the selected PowerPoint slide to this poll"
+                  className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+                >
+                  {bindBusy ? 'Binding…' : 'Bind widget'}
+                </button>
+              ) : null}
+            </div>
+          ) : onBindWidget ? (
+            <div className="flex flex-wrap gap-2 pt-4">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void handleBindWidget()
+                }}
+                disabled={bindBusy}
+                title="Link the poll widget on the selected PowerPoint slide to this poll"
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+              >
+                {bindBusy ? 'Binding…' : 'Bind widget'}
+              </button>
+            </div>
+          ) : null}
+          {onBindWidget && (bindMessage || bindError) ? (
+            <div className="space-y-1 pt-2">
+              {bindError ? <p className="text-xs text-red-600">{bindError}</p> : null}
+              {bindMessage ? <p className="text-xs text-emerald-800">{bindMessage}</p> : null}
             </div>
           ) : null}
         </div>
