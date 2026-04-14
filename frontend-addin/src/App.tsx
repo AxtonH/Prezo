@@ -181,17 +181,6 @@ function safeReplaceState(data: unknown): void {
   }
 }
 
-function safeHistoryBack(): void {
-  if (typeof window === 'undefined' || typeof window.history?.back !== 'function') {
-    return
-  }
-  try {
-    window.history.back()
-  } catch {
-    /* ignore */
-  }
-}
-
 const upsertById = <T extends { id: string }>(items: T[], item: T) => {
   const index = items.findIndex((entry) => entry.id === item.id)
   if (index === -1) {
@@ -643,16 +632,9 @@ function HostConsole({
     return () => window.removeEventListener('popstate', onPop)
   }, [clearLiveSessionState])
 
+  /** Explicit “all sessions” — do not use history.back(): the stack may contain another session entry, and popstate would re-hydrate it (user stuck on session dashboard). */
   const goToAllSessions = useCallback(() => {
     if (!session) {
-      return
-    }
-    const st = safeHistoryState() as HostHistoryState | null
-    if (
-      st?.prezoHost === 'session' &&
-      typeof window.history?.back === 'function'
-    ) {
-      safeHistoryBack()
       return
     }
     clearLiveSessionState()
@@ -661,9 +643,10 @@ function HostConsole({
 
   const navigateToSessionsHome = useCallback(() => {
     setHostConsoleView('host')
-    setWorkspaceNav('dashboard')
     if (session) {
       goToAllSessions()
+    } else {
+      setWorkspaceNav('dashboard')
     }
   }, [session, goToAllSessions])
 
