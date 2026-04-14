@@ -129,6 +129,15 @@ export function isPowerPointShapeApiAvailable(): boolean {
   return typeof PowerPoint !== 'undefined' && typeof PowerPoint.run === 'function'
 }
 
+/**
+ * PowerPoint slide tags: `tags.add(key, value)` throws RichApi GeneralException if `key` already exists.
+ * Always remove first, then add (delete is a no-op when missing in practice for this API).
+ */
+function setSlideTag(slide: PowerPoint.Slide, key: string, value: string) {
+  slide.tags.delete(key)
+  slide.tags.add(key, value)
+}
+
 const buildTitle = (code?: string | null, mode: QnaMode = 'audience', prompt?: string | null) => {
   if (mode === 'prompt') {
     return prompt?.trim() ? prompt.trim() : PROMPT_PANEL_TITLE
@@ -1329,7 +1338,7 @@ export async function updateQnaWidget(
       }
 
       if (isPending) {
-        info.slide.tags.add(tags.sessionTag, sessionId)
+        setSlideTag(info.slide, tags.sessionTag, sessionId)
         info.slide.tags.delete(tags.pendingTag)
       }
     }
@@ -1823,7 +1832,7 @@ export async function updatePollWidget(
         shapeIds = await recoverPollShapeIds(info.slide, isVertical)
         recovered = Boolean(shapeIds)
         if (shapeIds) {
-          info.slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(shapeIds))
+          setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(shapeIds))
         }
       }
 
@@ -2114,7 +2123,7 @@ export async function updatePollWidget(
                   }))
                 : shapeIds.items
           }
-          info.slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(resolvedShapeIds))
+          setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(resolvedShapeIds))
         }
       }
 
@@ -2232,7 +2241,7 @@ export async function updatePollWidget(
                 items: migratedItems
               }
               shapeIds = migratedShapeIds
-              info.slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(migratedShapeIds))
+              setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(migratedShapeIds))
             }
           }
         }
@@ -2349,7 +2358,7 @@ export async function updatePollWidget(
       })
 
       if (isPending || recovered) {
-        info.slide.tags.add(POLL_SESSION_TAG, sessionId)
+        setSlideTag(info.slide, POLL_SESSION_TAG, sessionId)
         info.slide.tags.delete(POLL_PENDING_TAG)
       }
     }
