@@ -64,6 +64,117 @@ function takeFirstWords(text: string, wordCount: number): string {
   return words.slice(0, wordCount).join(' ')
 }
 
+/** Single-word chips that only make sense after "for …", "including …", etc. */
+const TYPO_LAYOUT_TAIL_WORDS = new Set([
+  'subtitles',
+  'subtitle',
+  'titles',
+  'title',
+  'headers',
+  'header',
+  'headings',
+  'heading',
+  'body',
+  'copy',
+  'text',
+  'captions',
+  'caption',
+  'labels',
+  'label',
+  'slides',
+  'slide',
+  'callouts',
+  'callout',
+  'footnotes',
+  'footnote',
+  'margins',
+  'padding',
+  'spacing'
+])
+
+/** Trailing words that leave a chip grammatically incomplete. */
+function trimTrailingDanglingWords(s: string): string {
+  let t = s.trim()
+  let guard = 0
+  while (guard < 8 && t.length >= 12) {
+    guard += 1
+    const m =
+      /\s+(for|and|or|with|including|like|from|between|among|to|of|in|on|at|by|as|vs|via|per|the|a|an)$/i.exec(
+        t
+      )
+    if (!m || m.index <= 0) {
+      break
+    }
+    const next = t.slice(0, m.index).trim()
+    if (next.length < 12) {
+      break
+    }
+    t = next
+  }
+  return t
+}
+
+function clipChipPhrase(p: string, maxWords = 12): string {
+  const trimmed = p.trim()
+  if (!trimmed) {
+    return ''
+  }
+  const clipped = trimmed.length > 56 ? takeFirstWords(trimmed, maxWords) : trimmed
+  return trimTrailingDanglingWords(clipped)
+}
+
+/** Principle ends with a phrase that expects more words after it (comma list or next clause). */
+function endsWithIncompletePhrase(s: string): boolean {
+  return /\b(for|such as|including|like|e\.g\.?|i\.e\.?)\s*,?\s*$/i.test(s.trim())
+}
+
+/** Stitch "… for" + "subtitles" style comma splits into one chip. */
+function stitchCommaFragments(parts: string[]): string[] {
+  const out: string[] = []
+  for (const raw of parts) {
+    const p = raw.trim().replace(/\.$/, '')
+    if (!p) {
+      continue
+    }
+    if (out.length === 0) {
+      out.push(p)
+      continue
+    }
+    const prev = out[out.length - 1]
+    const pw = p.split(/\s+/).filter(Boolean)
+    const orphanTail =
+      pw.length === 1 &&
+      TYPO_LAYOUT_TAIL_WORDS.has(pw[0].toLowerCase().replace(/[^a-z]/gi, ''))
+    const mergeForIncomplete =
+      endsWithIncompletePhrase(prev) ||
+      /\b(for|such as|including)\s+$/i.test(prev) ||
+      orphanTail
+    if (mergeForIncomplete) {
+      if (orphanTail) {
+        out[out.length - 1] = /\bfor\s*$/i.test(prev.trim())
+          ? `${prev.trimEnd()} ${p}`
+          : `${prev} for ${p}`
+      } else if (endsWithIncompletePhrase(prev)) {
+        out[out.length - 1] = `${prev} ${p}`
+      } else {
+        out[out.length - 1] = `${prev}, ${p}`
+      }
+    } else {
+      out.push(p)
+    }
+  }
+  return out
+}
+
+function isUnhelpfulStandaloneChip(s: string): boolean {
+  const w = s.trim().split(/\s+/).filter(Boolean)
+  if (w.length !== 1) {
+    return false
+  }
+  const key = w[0].toLowerCase().replace(/[^a-z]/gi, '')
+  return TYPO_LAYOUT_TAIL_WORDS.has(key)
+}
+
 /**
  * Turn one key_principles line into short keyword(s) for card chips (not full manifestos).
  */
@@ -84,13 +195,20 @@ function splitPrincipleToKeywords(raw: string): string[] {
         .map((x) => x.replace(/\.$/, ''))
         .filter(Boolean)
       if (parts.length > 1) {
-        return parts.map((p) => (p.length > 44 ? takeFirstWords(p, 6) : p))
+        const stitched = stitchCommaFragments(parts)
+        return stitched
+          .map((p) => clipChipPhrase(p))
+          .filter((p) => p.length >= 8 && !isUnhelpfulStandaloneChip(p))
       }
     }
     const parenIdx = after.indexOf('(')
     const head = (parenIdx === -1 ? after : after.slice(0, parenIdx)).trim()
-    const one = head.length > 48 ? takeFirstWords(head, 7) : head
-    return one ? [one] : label ? [label] : []
+    const oneRaw = head.length > 52 ? takeFirstWords(head, 10) : head
+    const one = clipChipPhrase(oneRaw)
+    if (one && !isUnhelpfulStandaloneChip(one)) {
+      return [one]
+    }
+    return label && !isUnhelpfulStandaloneChip(label) ? [label] : []
   }
 
   if (s.includes('—') || s.includes('–')) {
@@ -101,14 +219,15 @@ function splitPrincipleToKeywords(raw: string): string[] {
     const candidates = [right, left].filter(Boolean)
     const short = candidates.find((c) => c.length >= 8 && c.length <= 52)
     if (short) {
-      return [short]
+      return [clipChipPhrase(short)]
     }
     const pick = left.length <= right.length ? left : right
-    return [pick.length > 48 ? takeFirstWords(pick, 6) : pick]
+    const clipped = clipChipPhrase(pick.length > 52 ? takeFirstWords(pick, 10) : pick)
+    return clipped && !isUnhelpfulStandaloneChip(clipped) ? [clipped] : []
   }
 
   if (s.length <= 44) {
-    return [s]
+    return isUnhelpfulStandaloneChip(s) ? [] : [s]
   }
   const dot = s.indexOf('.')
   if (dot > 12 && dot < 90) {
@@ -117,7 +236,45 @@ function splitPrincipleToKeywords(raw: string): string[] {
       return [first]
     }
   }
-  return [takeFirstWords(s, 6)]
+  const clipped = clipChipPhrase(takeFirstWords(s, 10))
+  return clipped && !isUnhelpfulStandaloneChip(clipped) ? [clipped] : []
+}
+
+function appendKeywordChip(out: string[], candidate: string, max: number): void {
+  const t = clipChipPhrase(candidate)
+  if (!t || t.length < 8 || out.length >= max) {
+    return
+  }
+  if (out.some((x) => x.toLowerCase() === t.toLowerCase())) {
+    return
+  }
+
+  if (out.length > 0) {
+    const last = out[out.length - 1]
+    if (endsWithIncompletePhrase(last) || /\bfor\s+$/i.test(last)) {
+      const merged = clipChipPhrase(`${last} ${t}`)
+      if (merged.length >= 8) {
+        out[out.length - 1] = merged
+        return
+      }
+    }
+    if (isUnhelpfulStandaloneChip(t) && last.length > 16) {
+      const tailKey = t
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z]/gi, '')
+      const glue =
+        TYPO_LAYOUT_TAIL_WORDS.has(tailKey) && !/\b(for|on|with)\s+$/i.test(last) ? ' for ' : ' '
+      out[out.length - 1] = clipChipPhrase(`${last}${glue}${t}`)
+      return
+    }
+  }
+
+  if (isUnhelpfulStandaloneChip(t)) {
+    return
+  }
+
+  out.push(t)
 }
 
 export function extractKeywordsForCard(guidelines: Record<string, unknown>, max = 8): string[] {
@@ -134,10 +291,7 @@ export function extractKeywordsForCard(guidelines: Record<string, unknown>, max 
       if (out.length >= max) {
         break
       }
-      const t = kw.trim()
-      if (t && !out.some((x) => x.toLowerCase() === t.toLowerCase())) {
-        out.push(t)
-      }
+      appendKeywordChip(out, kw, max)
     }
   }
   return out
