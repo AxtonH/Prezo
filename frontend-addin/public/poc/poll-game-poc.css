@@ -1325,7 +1325,7 @@ body:not(.artifact-mode-active)
 }
 
 .themes-artifacts-collapse-body.design-collapse-body {
-  padding: 0 16px 14px;
+  padding: 12px 16px 14px;
 }
 
 /* ----------------------------------------------------------------
