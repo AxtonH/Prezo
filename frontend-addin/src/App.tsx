@@ -34,9 +34,13 @@ import { useDebouncedValue } from './hooks/useDebouncedValue'
 import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
-import { bindPollWidgetToSelectedSlide } from './office/bindPollWidget'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
-import { updateDiscussionWidget, updatePollWidget, updateQnaWidget } from './office/widgetShapes'
+import {
+  setPollWidgetBinding,
+  updateDiscussionWidget,
+  updatePollWidget,
+  updateQnaWidget
+} from './office/widgetShapes'
 import {
   clearAllAudienceQnaOpenedAt,
   clearAudienceQnaOpenedAt,
@@ -1270,9 +1274,11 @@ function HostConsole({
       if (!session) {
         return
       }
-      await bindPollWidgetToSelectedSlide(session.id, session.code, pollId, polls)
+      await setPollWidgetBinding(session.id, pollId)
+      /** Queue refresh through the same serialized path as live updates — avoids overlapping `PowerPoint.run` with `updatePollWidget` (RichApi GeneralException). */
+      schedulePollWidgetUpdate(session.id, session.code, polls)
     },
-    [session, polls]
+    [session, polls, schedulePollWidgetUpdate]
   )
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<

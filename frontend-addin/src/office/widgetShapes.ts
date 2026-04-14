@@ -2409,12 +2409,12 @@ export async function setQnaWidgetBinding(
 
     slide.tags.delete(LEGACY_QNA_MODE_TAG)
     slide.tags.delete(LEGACY_QNA_PROMPT_TAG)
+    slide.tags.delete(QNA_PROMPT_BINDING_TAG)
     if (promptId) {
       slide.tags.add(QNA_PROMPT_BINDING_TAG, promptId)
-    } else {
-      slide.tags.delete(QNA_PROMPT_BINDING_TAG)
     }
 
+    slide.tags.delete(SESSION_TAG)
     slide.tags.add(SESSION_TAG, sessionId)
     slide.tags.delete(WIDGET_PENDING_TAG)
     await context.sync()
@@ -2461,12 +2461,12 @@ export async function setDiscussionWidgetBinding(
       throw new Error('No open discussion widget found on the selected slide.')
     }
 
+    slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
     if (promptId) {
       slide.tags.add(DISCUSSION_PROMPT_BINDING_TAG, promptId)
-    } else {
-      slide.tags.delete(DISCUSSION_PROMPT_BINDING_TAG)
     }
 
+    slide.tags.delete(DISCUSSION_SESSION_TAG)
     slide.tags.add(DISCUSSION_SESSION_TAG, sessionId)
     slide.tags.delete(DISCUSSION_PENDING_TAG)
     await context.sync()
@@ -2510,12 +2510,12 @@ export async function setPollWidgetBinding(sessionId: string, pollId?: string | 
       throw new Error('No poll widget found on the selected slide.')
     }
 
+    /** PowerPoint throws RichApi GeneralException if `tags.add` is used when the key already exists. */
+    slide.tags.delete(POLL_BINDING_TAG)
     if (pollId) {
       slide.tags.add(POLL_BINDING_TAG, pollId)
-    } else {
-      slide.tags.delete(POLL_BINDING_TAG)
     }
-
+    slide.tags.delete(POLL_SESSION_TAG)
     slide.tags.add(POLL_SESSION_TAG, sessionId)
     slide.tags.delete(POLL_PENDING_TAG)
     await context.sync()
