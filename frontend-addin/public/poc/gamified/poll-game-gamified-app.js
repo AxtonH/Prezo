@@ -1306,12 +1306,9 @@ import {
     }
     const artifactComposerKicker = document.getElementById('artifact-composer-kicker')
     if (artifactComposerKicker) {
-      artifactComposerKicker.textContent = shouldFloatComposer ? 'Artifact / AI editor' : 'Artifact composer'
+      artifactComposerKicker.textContent = 'Artifact editor'
     }
-    el.artifactComposer.setAttribute(
-      'aria-label',
-      shouldFloatComposer ? 'Artifact / AI editor' : 'Artifact composer'
-    )
+    el.artifactComposer.setAttribute('aria-label', 'Artifact editor')
     if (shouldFloatComposer) {
       syncArtifactComposerPanelVisibilityToggleUi()
       syncEditorShellExpandedDom()
@@ -2857,7 +2854,7 @@ import {
 
   function syncArtifactComposerPanelVisibilityToggleUi() {
     const hidden = el.artifactComposer.classList.contains('artifact-composer--panel-hidden')
-    const label = hidden ? 'Show Artifact / AI editor panel' : 'Hide Artifact / AI editor panel'
+    const label = hidden ? 'Show Artifact editor panel' : 'Hide Artifact editor panel'
     el.artifactComposerVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
     el.artifactComposerVisibilityToggle.setAttribute('aria-label', label)
     el.artifactComposerVisibilityToggle.setAttribute('title', label)
@@ -2865,7 +2862,7 @@ import {
 
   function syncAiChatPanelVisibilityToggleUi() {
     const hidden = el.aiChatPanel.classList.contains('ai-chat-panel--panel-hidden')
-    const label = hidden ? 'Show Poll design panel' : 'Hide Poll design panel'
+    const label = hidden ? 'Show AI editor panel' : 'Hide AI editor panel'
     el.aiChatPanelVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
     el.aiChatPanelVisibilityToggle.setAttribute('aria-label', label)
     el.aiChatPanelVisibilityToggle.setAttribute('title', label)

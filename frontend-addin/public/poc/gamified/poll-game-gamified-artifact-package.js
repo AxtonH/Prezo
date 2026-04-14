@@ -161,6 +161,10 @@ function materializePackageIntoHtml(entryHtml, stylesContent, rendererContent) {
     } else {
       ensureHeadNode(doc).appendChild(styleTag)
     }
+  } else {
+    for (const node of findStylesLinkNodes(doc)) {
+      node.remove()
+    }
   }
   if (rendererContent) {
     const scriptNodes = findRendererScriptNodes(doc)
@@ -173,6 +177,10 @@ function materializePackageIntoHtml(entryHtml, stylesContent, rendererContent) {
       }
     } else {
       ensureBodyNode(doc).appendChild(scriptTag)
+    }
+  } else {
+    for (const node of findRendererScriptNodes(doc)) {
+      node.remove()
     }
   }
   return normalizeArtifactMarkup(serializeHtmlDocument(doc))

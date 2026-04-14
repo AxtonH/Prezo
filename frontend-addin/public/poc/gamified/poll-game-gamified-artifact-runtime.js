@@ -121,11 +121,14 @@ function injectBridgeScript(htmlDocument, options = {}) {
   }
 
   const bridgeTag = `<script>${buildBridgeScript(options.instanceId)}<\/script>`
-  if (/<head\b[^>]*>/i.test(source)) {
-    return source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${bridgeTag}`)
-  }
+  // Inject at end of <body> when possible so artifact inline scripts (e.g. prezoSetPollRenderer)
+  // run before the bridge posts READY and the host pushes poll state. Head-first injection
+  // caused a race: poll-state messages could be handled before the renderer existed.
   if (/<\/body>/i.test(source)) {
     return source.replace(/<\/body>/i, `${bridgeTag}\n</body>`)
+  }
+  if (/<head\b[^>]*>/i.test(source)) {
+    return source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${bridgeTag}`)
   }
   return `${source}\n${bridgeTag}`
 }
