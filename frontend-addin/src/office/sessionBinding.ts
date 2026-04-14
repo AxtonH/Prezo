@@ -1,5 +1,7 @@
 import { API_BASE_URL } from '../api/client'
 
+import { runPowerPoint } from './powerpointRun'
+
 const PREZO_NAMESPACE = 'https://prezo.app/session-binding'
 
 export type SessionBinding = {
@@ -128,7 +130,7 @@ export async function writeSessionBinding(binding: SessionBinding): Promise<void
 
   if (hasPowerPointCustomXmlParts()) {
     try {
-      await PowerPoint.run(async (context) => {
+      await runPowerPoint(async (context) => {
         const parts = context.presentation.customXmlParts.getByNamespace(PREZO_NAMESPACE)
         parts.load('items')
         await context.sync()
@@ -163,7 +165,7 @@ export async function writeSessionBinding(binding: SessionBinding): Promise<void
 export async function readSessionBinding(): Promise<SessionBinding | null> {
   if (hasPowerPointCustomXmlParts()) {
     try {
-      const xml = await PowerPoint.run(async (context) => {
+      const xml = await runPowerPoint(async (context) => {
         const parts = context.presentation.customXmlParts.getByNamespace(PREZO_NAMESPACE)
         parts.load('items')
         await context.sync()

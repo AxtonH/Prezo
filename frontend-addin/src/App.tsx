@@ -1275,10 +1275,17 @@ function HostConsole({
         return
       }
       await setPollWidgetBinding(session.id, pollId)
-      /** Queue refresh through the same serialized path as live updates — avoids overlapping `PowerPoint.run` with `updatePollWidget` (RichApi GeneralException). */
-      schedulePollWidgetUpdate(session.id, session.code, polls)
+      try {
+        await updatePollWidget(session.id, session.code, polls)
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'PowerPoint could not refresh the poll widget. Select the slide with the widget and try again.'
+        throw new Error(message)
+      }
     },
-    [session, polls, schedulePollWidgetUpdate]
+    [session, polls]
   )
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<

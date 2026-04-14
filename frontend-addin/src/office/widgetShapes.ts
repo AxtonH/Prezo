@@ -1,5 +1,7 @@
 import type { Poll, QnaMode, QnaPrompt, Question } from '../api/types'
 
+import { runPowerPoint } from './powerpointRun'
+
 const WIDGET_TAG = 'PrezoWidget'
 const SESSION_TAG = 'PrezoWidgetSessionId'
 const SHAPES_TAG = 'PrezoWidgetShapeIds'
@@ -506,7 +508,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     const pageSetup = context.presentation.pageSetup
@@ -804,7 +806,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     const pageSetup = context.presentation.pageSetup
@@ -1100,7 +1102,7 @@ export async function updateQnaWidget(
 
   const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt]))
   const tags = config.tags
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
     await context.sync()
@@ -1360,7 +1362,7 @@ export async function insertPollWidget(
   const scale = style.spacingScale
   const maxOptions = style.maxOptions
   const hasSession = Boolean(sessionId)
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     const pageSetup = context.presentation.pageSetup
@@ -1605,7 +1607,7 @@ export async function updatePollWidget(
   const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
 
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
     await context.sync()
@@ -2384,7 +2386,7 @@ export async function setQnaWidgetBinding(
     return
   }
 
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     await context.sync()
@@ -2438,7 +2440,7 @@ export async function setDiscussionWidgetBinding(
     return
   }
 
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     await context.sync()
@@ -2487,7 +2489,7 @@ export async function setPollWidgetBinding(sessionId: string, pollId?: string | 
     return
   }
 
-  await PowerPoint.run(async (context) => {
+  await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
     await context.sync()

@@ -35,6 +35,17 @@
   const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
   const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 
+  /** Serialize PowerPoint batches — overlapping runs often throw RichApi GeneralException on Win32. */
+  let pptRunTail = Promise.resolve()
+  const runPowerPoint = (batch) => {
+    const job = pptRunTail.then(() => PowerPoint.run(batch))
+    pptRunTail = job.then(
+      () => undefined,
+      () => undefined
+    )
+    return job
+  }
+
   let activeDialog = null
   const addinDebug = {
     insertMessage: '',
@@ -74,7 +85,7 @@
   }
 
   const getBinding = () =>
-    PowerPoint.run(async (context) => {
+    runPowerPoint(async (context) => {
       const parts = context.presentation.customXmlParts.getByNamespace(PREZO_NAMESPACE)
       parts.load('items')
       await context.sync()
@@ -378,7 +389,7 @@
 
   const updateQnaWidget = async (sessionId, code, questions, prompts) => {
     const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
       slides.load('items')
       await context.sync()
@@ -613,7 +624,7 @@
     const pollMap = new Map((polls || []).map((poll) => [poll.id, poll]))
     const titleText = buildPollTitle(code)
 
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
       slides.load('items')
       await context.sync()
@@ -1124,7 +1135,7 @@
   }
   const updateDiscussionWidget = async (sessionId, code, questions, prompts) => {
     const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
       slides.load('items')
       await context.sync()
@@ -1355,7 +1366,7 @@
     const eyebrowText = mode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
     const emptyBody = mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
 
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
       slides.load('items')
       const pageSetup = context.presentation.pageSetup
@@ -1669,7 +1680,7 @@
     const eyebrowText = DISCUSSION_EYEBROW_TEXT
     const emptyBody = DISCUSSION_EMPTY_BODY
 
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
       slides.load('items')
       const pageSetup = context.presentation.pageSetup
@@ -1975,7 +1986,7 @@
     const code = binding ? binding.code : null
     const hasSession = Boolean(sessionId)
 
-    await PowerPoint.run(async (context) => {
+    await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
       slides.load('items')
       const pageSetup = context.presentation.pageSetup

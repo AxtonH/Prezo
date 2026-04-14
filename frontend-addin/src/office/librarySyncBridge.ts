@@ -1,5 +1,7 @@
 import { API_BASE_URL } from '../api/client'
 
+import { runPowerPoint } from './powerpointRun'
+
 const PREZO_LIBRARY_SYNC_NAMESPACE = 'https://prezo.app/library-sync'
 
 export type LibrarySyncBridge = {
@@ -91,7 +93,7 @@ const addCommonXml = (xml: string) =>
 async function writeXml(xml: string): Promise<void> {
   if (hasPowerPointCustomXmlParts()) {
     try {
-      await PowerPoint.run(async (context) => {
+      await runPowerPoint(async (context) => {
         const parts = context.presentation.customXmlParts.getByNamespace(
           PREZO_LIBRARY_SYNC_NAMESPACE
         )
