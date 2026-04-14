@@ -2,6 +2,8 @@
  * Derive human-readable snippets from stored `BrandProfile.guidelines` (legacy + semantic shapes).
  */
 
+import type { BrandProfile } from '../api/types'
+
 const HEX_IN_STRING = /#[0-9a-fA-F]{3,8}\b/g
 
 function safeStr(v: unknown): string {
@@ -22,7 +24,37 @@ function truncateAtWord(text: string, maxLen: number): string {
   return `${slice.trimEnd()}…`
 }
 
-const MAX_TONE_CHARS = 320
+/**
+ * Prefer ending at a full sentence (. ! ?) before maxLen; then paragraph break; then word boundary.
+ * Avoids mid-sentence ellipsis on brand cards.
+ */
+export function truncateAtSentences(text: string, maxLen: number): string {
+  const t = text.trim()
+  if (t.length <= maxLen) {
+    return t
+  }
+  const slice = t.slice(0, maxLen + 1)
+  let best = -1
+  const re = /[.!?][\s\u00a0\n]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(slice)) !== null) {
+    const end = m.index + 1
+    if (end <= maxLen && end >= 24) {
+      best = end
+    }
+  }
+  if (best >= 0) {
+    return t.slice(0, best).trim()
+  }
+  const para = slice.lastIndexOf('\n\n')
+  if (para >= 40 && para <= maxLen) {
+    return t.slice(0, para).trim()
+  }
+  return truncateAtWord(t, maxLen)
+}
+
+const MAX_TONE_CHARS = 280
+const MAX_AUDIENCE_CHARS = 120
 
 function takeFirstWords(text: string, wordCount: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean)
@@ -111,6 +143,28 @@ export function extractKeywordsForCard(guidelines: Record<string, unknown>, max 
   return out
 }
 
+function normalizeHexToken(raw: string): string | null {
+  const s = raw.trim()
+  if (!s) {
+    return null
+  }
+  const withHash = s.startsWith('#') ? s : `#${s}`
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i.test(withHash)) {
+    return withHash
+  }
+  return null
+}
+
+function pushHexUnique(out: string[], hex: string): void {
+  const n = normalizeHexToken(hex)
+  if (!n) {
+    return
+  }
+  if (!out.some((x) => x.toLowerCase() === n.toLowerCase())) {
+    out.push(n)
+  }
+}
+
 export function extractPaletteHex(guidelines: Record<string, unknown>): string[] {
   const semantic = guidelines.semantic
   if (semantic && typeof semantic === 'object') {
@@ -122,13 +176,26 @@ export function extractPaletteHex(guidelines: Record<string, unknown>): string[]
         'accent',
         'text_primary',
         'text_body',
-        'border'
+        'border',
+        'primary',
+        'secondary'
       ]
       const out: string[] = []
       for (const k of keys) {
         const hex = safeStr(colors[k])
-        if (hex && /^#/.test(hex)) {
-          out.push(hex.startsWith('#') ? hex : `#${hex}`)
+        if (hex) {
+          pushHexUnique(out, hex)
+        }
+      }
+      if (!out.length) {
+        for (const v of Object.values(colors)) {
+          const hex = safeStr(v as string)
+          if (hex) {
+            pushHexUnique(out, hex)
+          }
+          if (out.length >= 8) {
+            break
+          }
         }
       }
       if (out.length) {
@@ -141,17 +208,55 @@ export function extractPaletteHex(guidelines: Record<string, unknown>): string[]
     const out: string[] = []
     for (const line of primary) {
       const s = String(line)
-      const m = s.match(HEX_IN_STRING)
-      if (m?.[0]) {
-        out.push(m[0])
-      }
-      if (out.length >= 8) {
-        break
+      const matches = s.match(HEX_IN_STRING)
+      if (matches) {
+        for (const h of matches) {
+          pushHexUnique(out, h)
+          if (out.length >= 8) {
+            return out
+          }
+        }
       }
     }
     return out
   }
   return []
+}
+
+/** Merges guidelines-based extraction with `brand_facts` and LLM briefs so cards always get real colors when stored anywhere. */
+export function extractPaletteHexFromProfile(profile: BrandProfile): string[] {
+  const g = profile.guidelines as Record<string, unknown>
+  const out: string[] = [...extractPaletteHex(g)]
+
+  const factsColors = profile.brand_facts?.colors
+  if (Array.isArray(factsColors) && factsColors.length) {
+    const sorted = [...factsColors].sort(
+      (a, b) => (a.hierarchy_rank ?? 999) - (b.hierarchy_rank ?? 999)
+    )
+    for (const c of sorted) {
+      if (c?.hex) {
+        pushHexUnique(out, c.hex)
+      }
+      if (out.length >= 12) {
+        break
+      }
+    }
+  }
+
+  if (out.length < 3) {
+    const blob = [profile.prompt_brand_guidelines, profile.raw_summary].filter(Boolean).join('\n')
+    const found = blob.match(HEX_IN_STRING)
+    if (found) {
+      for (const h of found) {
+        pushHexUnique(out, h)
+        if (out.length >= 8) {
+          break
+        }
+      }
+    }
+  }
+
+  return out.slice(0, 8)
 }
 
 export function extractFontsLine(guidelines: Record<string, unknown>): string {
@@ -207,7 +312,7 @@ export function extractTagline(guidelines: Record<string, unknown>): string {
 export function extractToneLine(guidelines: Record<string, unknown>): string {
   const t = safeStr(guidelines.tone_of_voice)
   if (t) {
-    return t.length > MAX_TONE_CHARS ? truncateAtWord(t, MAX_TONE_CHARS) : t
+    return t.length > MAX_TONE_CHARS ? truncateAtSentences(t, MAX_TONE_CHARS) : t
   }
   const sem = guidelines.semantic
   if (sem && typeof sem === 'object') {
@@ -215,7 +320,10 @@ export function extractToneLine(guidelines: Record<string, unknown>): string {
     if (voice && typeof voice === 'object') {
       const parts = [safeStr(voice.tone_summary), safeStr(voice.formality)].filter(Boolean)
       if (parts.length) {
-        return parts.join(' · ')
+        const joined = parts.join(' · ')
+        return joined.length > MAX_TONE_CHARS
+          ? truncateAtSentences(joined, MAX_TONE_CHARS)
+          : joined
       }
     }
   }
@@ -230,7 +338,9 @@ export function extractAudienceLine(guidelines: Record<string, unknown>): string
   const v = guidelines.target_audience ?? guidelines.audience
   if (typeof v === 'string' && v.trim()) {
     const trimmed = v.trim()
-    return trimmed.length > 120 ? truncateAtWord(trimmed, 120) : trimmed
+    return trimmed.length > MAX_AUDIENCE_CHARS
+      ? truncateAtSentences(trimmed, MAX_AUDIENCE_CHARS)
+      : trimmed
   }
   return ''
 }

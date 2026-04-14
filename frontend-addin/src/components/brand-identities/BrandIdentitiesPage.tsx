@@ -117,9 +117,9 @@ export function BrandIdentitiesPage() {
             </button>
           </div>
         ) : (
-          <ul className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid auto-rows-fr gap-6 sm:grid-cols-2 xl:grid-cols-3">
             {profiles.map((p) => (
-              <li key={p.name}>
+              <li key={p.name} className="flex min-h-0">
                 <BrandIdentityCard profile={p} onOpen={setDetailName} onDelete={handleDelete} />
               </li>
             ))}

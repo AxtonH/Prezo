@@ -2,7 +2,7 @@ import type { BrandProfile } from '../../api/types'
 import {
   extractAudienceLine,
   extractFontsLine,
-  extractPaletteHex,
+  extractPaletteHexFromProfile,
   extractKeywordsForCard,
   extractTagline,
   extractToneLine,
@@ -16,14 +16,17 @@ type Props = {
   onDelete: (name: string) => void
 }
 
+/** Max keyword chips on list cards — keeps row height aligned across brands. */
+const CARD_KEYWORD_CAP = 5
+
 export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
   const g = (profile.guidelines ?? {}) as Record<string, unknown>
   const displayName = parseBrandUiIdentity(g, profile.name).brand_name
-  const palette = extractPaletteHex(g)
+  const palette = extractPaletteHexFromProfile(profile)
   const fonts = extractFontsLine(g)
   const tagline = extractTagline(g)
   const tone = extractToneLine(g)
-  const tags = extractKeywordsForCard(g)
+  const tags = extractKeywordsForCard(g, CARD_KEYWORD_CAP)
   const audience = extractAudienceLine(g)
   const initial = profile.name.trim().charAt(0).toUpperCase() || '?'
   const updated = formatBrandDate(profile.updated_at)
@@ -38,14 +41,14 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
           : ['#6366f1', '#94a3b8', '#e2e8f0']
 
   return (
-    <article className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex h-1.5 w-full">
+    <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex h-1.5 w-full shrink-0">
         {accentColors.map((c, i) => (
           <div key={i} className="min-w-0 flex-1" style={{ backgroundColor: c }} />
         ))}
       </div>
 
-      <div className="flex flex-1 flex-col gap-4 p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
         <div className="flex items-start gap-3">
           <div
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white shadow-inner"
@@ -94,20 +97,18 @@ export function BrandIdentityCard({ profile, onOpen, onDelete }: Props) {
           </p>
         ) : null}
 
-        {palette.length > 0 ? (
-          <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-3">
-            {accentColors.map((hex, i) => (
-              <div key={`${hex}-${i}`} className="flex items-center gap-1.5">
-                <span
-                  className="h-7 w-7 shrink-0 rounded-full border border-slate-200 shadow-inner"
-                  style={{ backgroundColor: hex }}
-                  title={hex}
-                />
-                <span className="font-mono text-[11px] text-slate-500">{hex}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <div className="flex w-full flex-wrap items-center justify-center gap-x-6 gap-y-3">
+          {accentColors.map((hex, i) => (
+            <div key={`${hex}-${i}`} className="flex items-center gap-1.5">
+              <span
+                className="h-7 w-7 shrink-0 rounded-full border border-slate-200 shadow-inner"
+                style={{ backgroundColor: hex }}
+                title={hex}
+              />
+              <span className="max-w-[5.5rem] truncate font-mono text-[11px] text-slate-500">{hex}</span>
+            </div>
+          ))}
+        </div>
 
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
           <button
