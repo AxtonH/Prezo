@@ -432,6 +432,8 @@ const syncPollText = (
   }
 
   state.shape.textFrame.textRange.text = nextText
+  /** Tag already exists on this shape; `tags.add` on an existing key throws RichApi GeneralException, so delete first. */
+  state.shape.tags.delete(POLL_TEXT_SYNC_TAG)
   state.shape.tags.add(POLL_TEXT_SYNC_TAG, nextText)
 }
 
