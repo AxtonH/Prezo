@@ -140,6 +140,12 @@ function setSlideTag(slide: PowerPoint.Slide, key: string, value: string) {
   slide.tags.add(key, value)
 }
 
+/** Same contract as `setSlideTag` but for shape tags — `tags.add` on an existing key throws RichApi GeneralException. */
+function setShapeTag(shape: PowerPoint.Shape, key: string, value: string) {
+  shape.tags.delete(key)
+  shape.tags.add(key, value)
+}
+
 const buildTitle = (code?: string | null, mode: QnaMode = 'audience', prompt?: string | null) => {
   if (mode === 'prompt') {
     return prompt?.trim() ? prompt.trim() : PROMPT_PANEL_TITLE
@@ -419,10 +425,10 @@ const syncPollText = (
   if (state.autoTag.isNullObject) {
     if (force || currentText === nextText || looksLikeAutoPollText(currentText)) {
       state.shape.textFrame.textRange.text = nextText
-      state.shape.tags.add(POLL_TEXT_SYNC_TAG, nextText)
+      setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
       return
     }
-    state.shape.tags.add(POLL_TEXT_SYNC_TAG, currentText)
+    setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, currentText)
     return
   }
 
@@ -432,9 +438,7 @@ const syncPollText = (
   }
 
   state.shape.textFrame.textRange.text = nextText
-  /** Tag already exists on this shape; `tags.add` on an existing key throws RichApi GeneralException, so delete first. */
-  state.shape.tags.delete(POLL_TEXT_SYNC_TAG)
-  state.shape.tags.add(POLL_TEXT_SYNC_TAG, nextText)
+  setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
 }
 
 
