@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -602,11 +603,29 @@ class PollGameEditPlanResponse(BaseModel):
     model: str
 
 
+ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 4 * 1024 * 1024
+ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS = 2
+ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
+    {"image/png", "image/jpeg", "image/gif", "image/webp"}
+)
+
+
+class ArtifactReferenceImagePayload(BaseModel):
+    """Base64 image data for initial artifact build (Anthropic vision)."""
+
+    media_type: str = Field(default="image/png", max_length=48)
+    data: str = Field(..., min_length=20, max_length=8_000_000)
+
+
 class PollGameArtifactBuildRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=16000)
     context: dict[str, Any] = Field(default_factory=dict)
     model: str | None = Field(default=None, max_length=120)
     brand_profile_name: str | None = Field(default=None, max_length=64)
+    reference_images: list[ArtifactReferenceImagePayload] | None = Field(
+        default=None,
+        max_length=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
+    )
 
 
 class PollGameArtifactBuildResponse(BaseModel):
@@ -715,6 +734,43 @@ def build_provider_request_error_detail(
     return f"Unable to reach {provider_name} API at {base_url}{stage_text}: {detail}"
 
 
+def normalize_anthropic_reference_images(
+    items: list[ArtifactReferenceImagePayload] | None,
+) -> list[tuple[str, str]]:
+    """Return (media_type, base64_data) tuples validated for size and decode."""
+    if not items:
+        return []
+    out: list[tuple[str, str]] = []
+    for it in items[:ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS]:
+        raw_b64 = str(it.data).strip()
+        try:
+            raw = base64.b64decode(raw_b64, validate=True)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="reference_images contains invalid base64 data.",
+            ) from exc
+        if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Each reference image must be at most 4MB after decoding.",
+            )
+        mt = str(it.media_type).strip().lower()
+        if mt in {"image/jpg"}:
+            mt = "image/jpeg"
+        if mt not in ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES:
+            allowed = ", ".join(sorted(ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Unsupported reference_images media_type {it.media_type!r}. "
+                    f"Allowed values: {allowed} (image/jpg is accepted as an alias for image/jpeg)."
+                ),
+            )
+        out.append((mt, raw_b64))
+    return out
+
+
 async def request_anthropic_text(
     *,
     api_key: str,
@@ -726,9 +782,24 @@ async def request_anthropic_text(
     timeout_seconds: float,
     request_stage: str = "",
     remaining_budget_seconds: float | None = None,
+    reference_images: list[tuple[str, str]] | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_anthropic_base_url()
     endpoint = f"{base_url}/messages"
+    content: list[dict[str, Any]] = []
+    if reference_images:
+        for media_type, b64_data in reference_images:
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": b64_data,
+                    },
+                }
+            )
+    content.append({"type": "text", "text": prompt_text})
     body = {
         "model": normalize_anthropic_model_name(model)
         or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL,
@@ -736,7 +807,7 @@ async def request_anthropic_text(
         "messages": [
             {
                 "role": "user",
-                "content": [{"type": "text", "text": prompt_text}],
+                "content": content,
             }
         ],
         "temperature": temperature,
@@ -1195,19 +1266,31 @@ async def create_poll_game_artifact_build(
                 reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
             ),
         )
+        ref_parts: list[tuple[str, str]] = []
+        if payload.reference_images:
+            ref_parts = normalize_anthropic_reference_images(list(payload.reference_images))
+        prompt_text = json.dumps(
+            {"prompt": payload.prompt, "context": model_context},
+            indent=2,
+        )
+        if ref_parts:
+            prompt_text = (
+                "The user attached one or more reference image(s). Prioritize the visual style, layout density, "
+                "color mood, typography weight, and overall composition of these images when generating the artifact. "
+                "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image.\n\n"
+                + prompt_text
+            )
         request_text, stop_reason = await request_anthropic_text(
             api_key=build_api_key,
             model=model,
             system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-            prompt_text=json.dumps(
-                {"prompt": payload.prompt, "context": model_context},
-                indent=2,
-            ),
+            prompt_text=prompt_text,
             temperature=temperature,
             max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
             timeout_seconds=timeout_seconds,
             request_stage="artifact initial build",
             remaining_budget_seconds=remaining_budget_seconds,
+            reference_images=ref_parts or None,
         )
         generation_provider_name = "Anthropic"
     else:

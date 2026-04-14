@@ -504,6 +504,48 @@
           <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
           <form id="artifact-prompt-form" class="artifact-prompt-form">
             <div
+              id="artifact-type-reference-row"
+              class="artifact-type-reference-row hidden"
+              aria-hidden="true"
+              tabindex="-1"
+            >
+              <p class="artifact-type-reference-heading">Reference look (optional)</p>
+              <p class="artifact-type-reference-hint">
+                Add a screenshot or mood image for the first artifact build — click, drag &amp; drop, or paste
+                (Ctrl+V) while this panel is focused.
+              </p>
+              <div
+                id="artifact-type-reference-dropzone"
+                class="artifact-type-reference-dropzone"
+                role="button"
+                tabindex="0"
+                aria-label="Upload reference image for artifact look"
+              >
+                <input
+                  id="artifact-type-reference-input"
+                  class="hidden"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+                  tabindex="-1"
+                />
+                <span class="material-symbols-outlined artifact-type-reference-dropzone-icon" aria-hidden="true"
+                  >add_photo_alternate</span
+                >
+                <span class="artifact-type-reference-dropzone-text">Drop image here or click to browse</span>
+              </div>
+              <div id="artifact-type-reference-preview" class="artifact-type-reference-preview hidden">
+                <img id="artifact-type-reference-preview-img" alt="Reference preview" />
+                <button
+                  id="artifact-type-reference-clear"
+                  type="button"
+                  class="artifact-type-reference-clear"
+                >
+                  Remove
+                </button>
+              </div>
+              <p id="artifact-type-reference-status" class="artifact-type-reference-status" aria-live="polite"></p>
+            </div>
+            <div
               id="artifact-brand-profile-row"
               class="artifact-brand-profile-row hidden"
               aria-hidden="true"

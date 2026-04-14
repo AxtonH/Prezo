@@ -2350,6 +2350,121 @@ h1 {
   color: var(--chrome-text-secondary);
 }
 
+.artifact-type-reference-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.artifact-type-reference-row.hidden {
+  display: none;
+}
+
+.artifact-type-reference-heading {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chrome-text-secondary);
+}
+
+.artifact-type-reference-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--chrome-text-secondary);
+}
+
+.artifact-type-reference-dropzone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px dashed var(--chrome-input-border);
+  border-radius: 8px;
+  background: var(--chrome-input-bg);
+  color: var(--chrome-text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.artifact-type-reference-dropzone:hover:not(.artifact-type-reference-dropzone--disabled) {
+  border-color: var(--chrome-input-focus);
+  color: var(--chrome-text);
+}
+
+.artifact-type-reference-dropzone:focus-visible {
+  outline: none;
+  border-color: var(--chrome-input-focus);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.artifact-type-reference-dropzone--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.artifact-type-reference-dropzone-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.artifact-type-reference-dropzone-text {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.artifact-type-reference-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.artifact-type-reference-preview.hidden {
+  display: none;
+}
+
+.artifact-type-reference-preview img {
+  max-width: 100%;
+  max-height: 120px;
+  border-radius: 6px;
+  border: 1px solid var(--chrome-input-border);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.artifact-type-reference-clear {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--chrome-input-border);
+  background: transparent;
+  color: var(--chrome-text);
+  cursor: pointer;
+}
+
+.artifact-type-reference-clear:hover:not(:disabled) {
+  border-color: var(--chrome-input-focus);
+}
+
+.artifact-type-reference-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.artifact-type-reference-status {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--chrome-text-secondary);
+}
+
 .artifact-prompt-input {
   width: 100%;
   min-height: 92px;

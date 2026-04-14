@@ -83,6 +83,7 @@ import {
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
+  const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 4 * 1024 * 1024
   const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
@@ -129,6 +130,7 @@ import {
 
   /** True while POST /brand-profiles/extract runs for the artifact reference image control. */
   let artifactBrandReferenceBusy = false
+  let buildReferencePreviewObjectUrl = null
 
   const parsePollSelector = (raw) => {
     const value = asText(raw)
@@ -213,7 +215,9 @@ import {
       loaderFrameId: 0,
       loaderTime: 0,
       conversationStepIndex: 0,
-      conversationAnswers: createEmptyArtifactAnswers()
+      conversationAnswers: createEmptyArtifactAnswers(),
+      /** Optional { media_type, data } for initial Anthropic build (first wizard step). */
+      buildReferenceImage: null
     },
     ai: {
       open: false,
@@ -298,6 +302,13 @@ import {
     artifactPromptQueue: must('artifact-prompt-queue'),
     artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
+    artifactTypeReferenceRow: must('artifact-type-reference-row'),
+    artifactTypeReferenceDropzone: must('artifact-type-reference-dropzone'),
+    artifactTypeReferenceInput: must('artifact-type-reference-input'),
+    artifactTypeReferencePreview: must('artifact-type-reference-preview'),
+    artifactTypeReferencePreviewImg: must('artifact-type-reference-preview-img'),
+    artifactTypeReferenceClear: must('artifact-type-reference-clear'),
+    artifactTypeReferenceStatus: must('artifact-type-reference-status'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactBrandReferencePanel: must('artifact-brand-reference-panel'),
@@ -1278,6 +1289,13 @@ import {
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
     el.artifactBrandReferenceInput.addEventListener('change', handleArtifactBrandReferenceInputChange)
+    el.artifactTypeReferenceDropzone.addEventListener('click', handleArtifactTypeReferenceDropzoneClick)
+    el.artifactTypeReferenceDropzone.addEventListener('keydown', handleArtifactTypeReferenceDropzoneKeydown)
+    el.artifactTypeReferenceDropzone.addEventListener('dragover', handleArtifactTypeReferenceDragOver)
+    el.artifactTypeReferenceDropzone.addEventListener('drop', handleArtifactTypeReferenceDrop)
+    el.artifactTypeReferenceInput.addEventListener('change', handleArtifactTypeReferenceInputChange)
+    el.artifactTypeReferenceClear.addEventListener('click', handleArtifactTypeReferenceClearClick)
+    document.addEventListener('paste', handleArtifactBuildReferencePaste, true)
   }
 
   function syncArtifactComposerVisibility() {
@@ -1408,6 +1426,7 @@ import {
     el.artifactBrandReferenceInput.disabled = Boolean(
       state.artifact.busy || artifactBrandReferenceBusy || queueFull || conversationBlocked
     )
+    syncArtifactTypeReferenceRow()
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -1432,6 +1451,7 @@ import {
     }
     el.artifactBrandProfileSelect.value = ''
     clearArtifactReferenceFileUi()
+    clearArtifactBuildReferenceUi()
     artifactBrandReferenceBusy = false
     syncArtifactReferencePanelVisibility()
     syncArtifactConversationUi()
@@ -1452,6 +1472,199 @@ import {
   function clearArtifactReferenceFileUi() {
     el.artifactBrandReferenceInput.value = ''
     el.artifactBrandReferenceStatus.textContent = ''
+  }
+
+  function clearArtifactBuildReferenceUi() {
+    state.artifact.buildReferenceImage = null
+    if (buildReferencePreviewObjectUrl) {
+      URL.revokeObjectURL(buildReferencePreviewObjectUrl)
+      buildReferencePreviewObjectUrl = null
+    }
+    el.artifactTypeReferenceInput.value = ''
+    el.artifactTypeReferencePreview.classList.add('hidden')
+    el.artifactTypeReferencePreviewImg.removeAttribute('src')
+    el.artifactTypeReferenceStatus.textContent = ''
+  }
+
+  function normalizeArtifactReferenceMediaType(mt) {
+    const t = asText(mt).trim().toLowerCase().split(';')[0]
+    if (t === 'image/jpg') {
+      return 'image/jpeg'
+    }
+    if (t === 'image/png' || t === 'image/jpeg' || t === 'image/gif' || t === 'image/webp') {
+      return t
+    }
+    return 'image/png'
+  }
+
+  function validateReferenceImagePayload(mediaType, b64) {
+    const data = asText(b64).replace(/\s/g, '')
+    if (data.length < 20) {
+      return null
+    }
+    let binary
+    try {
+      binary = atob(data)
+    } catch {
+      return null
+    }
+    if (binary.length > ARTIFACT_BUILD_REFERENCE_MAX_BYTES) {
+      return null
+    }
+    return { media_type: mediaType, data }
+  }
+
+  function dataUrlToReferencePayload(dataUrl) {
+    const raw = asText(dataUrl)
+    const comma = raw.indexOf(',')
+    if (comma === -1) {
+      return null
+    }
+    const header = raw.slice(0, comma)
+    const b64 = raw.slice(comma + 1)
+    if (!/;base64/i.test(header)) {
+      return null
+    }
+    const mediaMatch = /^data:([^;,]+)/i.exec(header)
+    const mediaType = normalizeArtifactReferenceMediaType(mediaMatch ? mediaMatch[1] : 'image/png')
+    return validateReferenceImagePayload(mediaType, b64)
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  function syncArtifactTypeReferenceRow() {
+    const currentStep = getArtifactConversationStep()
+    const show = Boolean(currentStep?.key === 'artifactType')
+    el.artifactTypeReferenceRow.classList.toggle('hidden', !show)
+    el.artifactTypeReferenceRow.setAttribute('aria-hidden', show ? 'false' : 'true')
+    if (show) {
+      setEditorShellExpanded(true)
+    }
+    const refInteractDisabled = !show || state.artifact.busy
+    el.artifactTypeReferenceInput.disabled = refInteractDisabled
+    el.artifactTypeReferenceClear.disabled = refInteractDisabled
+    el.artifactTypeReferenceDropzone.classList.toggle(
+      'artifact-type-reference-dropzone--disabled',
+      refInteractDisabled
+    )
+    el.artifactTypeReferenceDropzone.setAttribute('aria-disabled', refInteractDisabled ? 'true' : 'false')
+  }
+
+  function setArtifactBuildReferenceFromFile(file) {
+    if (!file || !/^image\//i.test(file.type)) {
+      el.artifactTypeReferenceStatus.textContent = 'Choose a PNG, JPEG, GIF, or WebP image.'
+      return
+    }
+    if (file.size > ARTIFACT_BUILD_REFERENCE_MAX_BYTES) {
+      el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 4MB).'
+      return
+    }
+    void (async () => {
+      try {
+        const dataUrl = await readFileAsDataUrl(file)
+        const payload = dataUrlToReferencePayload(dataUrl)
+        if (!payload) {
+          el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
+          return
+        }
+        state.artifact.buildReferenceImage = payload
+        if (buildReferencePreviewObjectUrl) {
+          URL.revokeObjectURL(buildReferencePreviewObjectUrl)
+        }
+        buildReferencePreviewObjectUrl = URL.createObjectURL(file)
+        el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
+        el.artifactTypeReferencePreview.classList.remove('hidden')
+        el.artifactTypeReferenceStatus.textContent = 'Reference image will be used when the artifact is generated.'
+      } catch {
+        el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
+      }
+    })()
+  }
+
+  function handleArtifactTypeReferenceInputChange(event) {
+    const file = event?.target?.files?.[0]
+    if (!file) {
+      return
+    }
+    setArtifactBuildReferenceFromFile(file)
+  }
+
+  function handleArtifactTypeReferenceDropzoneClick() {
+    if (el.artifactTypeReferenceInput.disabled) {
+      return
+    }
+    el.artifactTypeReferenceInput.click()
+  }
+
+  function handleArtifactTypeReferenceDropzoneKeydown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleArtifactTypeReferenceDropzoneClick()
+    }
+  }
+
+  function handleArtifactTypeReferenceDragOver(event) {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+
+  function handleArtifactTypeReferenceDrop(event) {
+    event.preventDefault()
+    if (el.artifactTypeReferenceDropzone.classList.contains('artifact-type-reference-dropzone--disabled')) {
+      return
+    }
+    const file = event.dataTransfer?.files?.[0]
+    if (file) {
+      setArtifactBuildReferenceFromFile(file)
+    }
+  }
+
+  function handleArtifactTypeReferenceClearClick() {
+    if (el.artifactTypeReferenceClear.disabled) {
+      return
+    }
+    clearArtifactBuildReferenceUi()
+  }
+
+  function handleArtifactBuildReferencePaste(event) {
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+      return
+    }
+    if (el.artifactComposer.classList.contains('hidden')) {
+      return
+    }
+    const active = document.activeElement
+    if (!active || !el.artifactComposer.contains(active)) {
+      return
+    }
+    if (getArtifactConversationStep()?.key !== 'artifactType') {
+      return
+    }
+    if (state.artifact.busy) {
+      return
+    }
+    const items = event.clipboardData?.items
+    if (!items) {
+      return
+    }
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i]
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          event.preventDefault()
+          setArtifactBuildReferenceFromFile(file)
+        }
+        return
+      }
+    }
   }
 
   function syncArtifactReferencePanelVisibility() {
@@ -2279,7 +2492,16 @@ import {
 
     const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
     const prompt = buildArtifactConversationPrompt(conversationAnswers)
-    await submitArtifactPrompt(prompt, { conversationAnswers })
+    const buildRef =
+      state.artifact.buildReferenceImage &&
+      state.artifact.buildReferenceImage.data &&
+      state.artifact.buildReferenceImage.media_type
+        ? {
+            media_type: state.artifact.buildReferenceImage.media_type,
+            data: state.artifact.buildReferenceImage.data
+          }
+        : null
+    await submitArtifactPrompt(prompt, { conversationAnswers, buildReferenceImage: buildRef })
   }
 
   function clearArtifactEditPromptQueue() {
@@ -2442,6 +2664,17 @@ import {
     }
 
     const requestKind = options.requestKind === 'edit' ? 'edit' : 'build'
+    const buildReferenceSnapshot =
+      requestKind === 'build' &&
+      options.buildReferenceImage &&
+      typeof options.buildReferenceImage === 'object' &&
+      asText(options.buildReferenceImage.data) &&
+      asText(options.buildReferenceImage.media_type)
+        ? {
+            media_type: asText(options.buildReferenceImage.media_type),
+            data: asText(options.buildReferenceImage.data)
+          }
+        : null
     const conversationAnswers =
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
@@ -2470,7 +2703,9 @@ import {
         context.poll
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
-      const buildResult = await requestAiArtifactBuild(aiPrompt, context)
+      const buildResult = await requestAiArtifactBuild(aiPrompt, context, {
+        referenceImages: buildReferenceSnapshot ? [buildReferenceSnapshot] : null
+      })
       const applied = applyArtifactMarkup(buildResult.html, {
         requestKind,
         artifactPackage: buildResult.package || null
@@ -2491,6 +2726,9 @@ import {
           requestKind === 'edit' ? 'Artifact updated.' : 'Artifact generated.'
         if (requestKind === 'edit') {
           state.artifact.pendingSuccessMessage = statusMessage
+        }
+        if (requestKind === 'build') {
+          clearArtifactBuildReferenceUi()
         }
       }
     } catch (error) {
@@ -3227,7 +3465,7 @@ import {
     return { Authorization: `Bearer ${token}` }
   }
 
-  async function requestAiArtifactBuild(prompt, context) {
+  async function requestAiArtifactBuild(prompt, context, options = {}) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
     const brandProfileName = asText(state.artifact.lastAnswers?.brandProfileName).trim()
@@ -3238,6 +3476,13 @@ import {
     }
     if (brandProfileName) {
       body.brand_profile_name = brandProfileName
+    }
+    const refImages = options.referenceImages
+    if (Array.isArray(refImages) && refImages.length > 0) {
+      body.reference_images = refImages.slice(0, 2).map((item) => ({
+        media_type: asText(item?.media_type) || 'image/png',
+        data: asText(item?.data)
+      }))
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -10428,6 +10673,13 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerVisibilityToggle.removeEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactTypeReferenceDropzone.removeEventListener('click', handleArtifactTypeReferenceDropzoneClick)
+    el.artifactTypeReferenceDropzone.removeEventListener('keydown', handleArtifactTypeReferenceDropzoneKeydown)
+    el.artifactTypeReferenceDropzone.removeEventListener('dragover', handleArtifactTypeReferenceDragOver)
+    el.artifactTypeReferenceDropzone.removeEventListener('drop', handleArtifactTypeReferenceDrop)
+    el.artifactTypeReferenceInput.removeEventListener('change', handleArtifactTypeReferenceInputChange)
+    el.artifactTypeReferenceClear.removeEventListener('click', handleArtifactTypeReferenceClearClick)
+    document.removeEventListener('paste', handleArtifactBuildReferencePaste, true)
     el.artifactBrandReferenceInput.removeEventListener('change', handleArtifactBrandReferenceInputChange)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
