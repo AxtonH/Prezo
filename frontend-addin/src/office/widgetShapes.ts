@@ -455,20 +455,26 @@ type PollTextSyncState = {
   autoTag: PowerPoint.Tag
 }
 
-const loadPollTextSyncState = (
-  shape: PowerPoint.Shape | null | undefined
-): PollTextSyncState | null => {
+/** Per-shape text-state load that tolerates InvalidArgument on Shape.textFrame (e.g. when a shape type's textFrame isn't supported despite matching our heuristic). */
+const safeLoadPollTextSyncState = async (
+  shape: PowerPoint.Shape | null | undefined,
+  context: PowerPoint.RequestContext
+): Promise<PollTextSyncState | null> => {
   if (!shape || isShapeNullObject(shape)) {
     return null
   }
-  /** A shape replaced with an image/line on another device throws InvalidArgument when textFrame is accessed. */
   if (!shapeSupportsText(shape)) {
     return null
   }
   const autoTag = shape.tags.getItemOrNullObject(POLL_TEXT_SYNC_TAG)
   autoTag.load('value')
-  shape.textFrame.textRange.load('text')
-  return { shape, autoTag }
+  try {
+    shape.textFrame.textRange.load('text')
+    await context.sync()
+    return { shape, autoTag }
+  } catch {
+    return null
+  }
 }
 
 const syncPollText = (
@@ -2380,12 +2386,14 @@ export async function updatePollWidget(
         }
       })
 
-      const titleTextState = loadPollTextSyncState(title)
-      const questionTextState = loadPollTextSyncState(questionShape)
-      const bodyTextState = loadPollTextSyncState(bodyShape)
-      const labelTextStates = itemShapes.map((item) => loadPollTextSyncState(item.label))
       syncPhase = 'load-text-states'
-      await context.sync()
+      const titleTextState = await safeLoadPollTextSyncState(title, context)
+      const questionTextState = await safeLoadPollTextSyncState(questionShape, context)
+      const bodyTextState = await safeLoadPollTextSyncState(bodyShape, context)
+      const labelTextStates: (PollTextSyncState | null)[] = []
+      for (const item of itemShapes) {
+        labelTextStates.push(await safeLoadPollTextSyncState(item.label, context))
+      }
 
       if (groupShape && !groupShape.isNullObject) {
         groupShape.rotation = 0
