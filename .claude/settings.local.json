@@ -27,7 +27,8 @@
       "Bash(xargs cat:*)",
       "Bash(grep -r \"poll-game-poc\\\\|Editing Station\" /c/Users/Geeks/Desktop/SlidoTest/repo/frontend-audience --include=*.ts --include=*.tsx --include=*.html)",
       "Bash(python -c \"from app.api.sessions import router; print\\('router OK'\\)\")",
-      "Read(//c/Users/Geeks/.claude/projects/c--Users-Geeks-Desktop-SlidoTest-repo/memory/**)"
+      "Read(//c/Users/Geeks/.claude/projects/c--Users-Geeks-Desktop-SlidoTest-repo/memory/**)",
+      "Bash(npm run:*)"
     ]
   }
 }

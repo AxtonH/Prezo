@@ -1861,6 +1861,7 @@ export async function updatePollWidget(
     let slideIndex = -1
     for (const info of slideInfos) {
       slideIndex += 1
+      let syncPhase = 'init'
       try {
       const isPending =
         !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
@@ -1925,6 +1926,7 @@ export async function updatePollWidget(
         groupShape.load(['id', 'type'])
       }
 
+      syncPhase = 'load-group-type'
       await context.sync()
 
       /** A widget edited on another device may have had its group ungrouped — accessing `.group.shapes` on a non-group throws RichApi GeneralException. */
@@ -1976,6 +1978,7 @@ export async function updatePollWidget(
         }
       })
 
+      syncPhase = 'load-shape-entries'
       await context.sync()
 
       let itemShapes = itemEntries.map((entry) => {
@@ -1993,6 +1996,7 @@ export async function updatePollWidget(
         return { label: entry.label, group: entry.group, bg, fill }
       })
 
+      syncPhase = 'load-bar-shapes'
       await context.sync()
 
       const needsFallback =
@@ -2380,6 +2384,7 @@ export async function updatePollWidget(
       const questionTextState = loadPollTextSyncState(questionShape)
       const bodyTextState = loadPollTextSyncState(bodyShape)
       const labelTextStates = itemShapes.map((item) => loadPollTextSyncState(item.label))
+      syncPhase = 'load-text-states'
       await context.sync()
 
       if (groupShape && !groupShape.isNullObject) {
@@ -2459,9 +2464,18 @@ export async function updatePollWidget(
       }
 
       /** Flush this slide's queued mutations so one bad slide doesn't poison the next iteration's context state. */
+      syncPhase = 'flush-slide-mutations'
       await context.sync()
       } catch (err) {
-        console.warn(`Poll widget update failed on slide index ${slideIndex}`, err)
+        const debugInfo =
+          err && typeof err === 'object' && 'debugInfo' in err
+            ? (err as { debugInfo?: unknown }).debugInfo
+            : undefined
+        console.warn(
+          `Poll widget update failed on slide index ${slideIndex} at phase "${syncPhase}"`,
+          err,
+          debugInfo ? { debugInfo } : ''
+        )
       }
     }
 
