@@ -2415,10 +2415,24 @@ export async function updatePollWidget(
       const isFiniteNum = (n: unknown): n is number =>
         typeof n === 'number' && Number.isFinite(n)
 
-      itemShapes.forEach((item, index) => {
+      /** Per-item isolation: a single shape with an incompatible fill (e.g. picture fill on bg) would otherwise fail the whole slide's flush transactionally. */
+      const tryItemWrite = async (fn: () => void, label: string) => {
+        try {
+          fn()
+          await context.sync()
+        } catch (itemErr) {
+          console.warn(
+            `Poll widget: skipped ${label} on slide index ${slideIndex}`,
+            itemErr
+          )
+        }
+      }
+
+      for (let index = 0; index < itemShapes.length; index += 1) {
+        const item = itemShapes[index]
         const data = optionData[index]
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
-          return
+          continue
         }
         /** Skip bar geometry/color writes entirely if bg or fill was swapped for a non-fillable shape on another device. */
         const canStyleBars = shapeSupportsFill(item.bg) && shapeSupportsFill(item.fill)
@@ -2428,43 +2442,63 @@ export async function updatePollWidget(
         const bgHeight = item.bg.height
         const bgGeometryValid =
           isFiniteNum(bgTop) && isFiniteNum(bgLeft) && isFiniteNum(bgWidth) && isFiniteNum(bgHeight)
+
         if (!data || index >= visibleOptions) {
-          syncPollText(labelTextStates[index] ?? null, '', { force: true })
+          await tryItemWrite(
+            () => syncPollText(labelTextStates[index] ?? null, '', { force: true }),
+            `label clear ${index}`
+          )
           if (canStyleBars && bgGeometryValid) {
+            await tryItemWrite(() => {
+              if (isVertical) {
+                item.fill.height = 2
+                item.fill.top = bgTop + Math.max(0, bgHeight - 2)
+                item.fill.width = bgWidth
+                item.fill.left = bgLeft
+              } else {
+                item.fill.width = 2
+                item.fill.height = bgHeight
+                item.fill.left = bgLeft
+                item.fill.top = bgTop
+              }
+            }, `bar dims ${index}`)
+            await tryItemWrite(() => {
+              item.fill.fill.transparency = 1
+            }, `fill transparency ${index}`)
+            await tryItemWrite(() => {
+              item.bg.fill.transparency = hasPollData ? 1 : 0.35
+            }, `bg transparency ${index}`)
+          }
+          continue
+        }
+
+        await tryItemWrite(
+          () => syncPollText(labelTextStates[index] ?? null, data.label),
+          `label ${index}`
+        )
+        if (canStyleBars && bgGeometryValid) {
+          await tryItemWrite(() => {
             if (isVertical) {
-              item.fill.height = 2
-              item.fill.top = bgTop + Math.max(0, bgHeight - 2)
+              const fillHeight = Math.max(2, bgHeight * data.ratio)
+              item.fill.height = fillHeight
+              item.fill.top = bgTop + (bgHeight - fillHeight)
               item.fill.width = bgWidth
               item.fill.left = bgLeft
             } else {
-              item.fill.width = 2
-              item.fill.height = bgHeight
               item.fill.left = bgLeft
+              item.fill.width = Math.max(2, bgWidth * data.ratio)
               item.fill.top = bgTop
+              item.fill.height = bgHeight
             }
-            item.fill.fill.transparency = 1
-            item.bg.fill.transparency = hasPollData ? 1 : 0.35
-          }
-          return
+          }, `bar dims ${index}`)
+          await tryItemWrite(() => {
+            item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
+          }, `fill transparency ${index}`)
+          await tryItemWrite(() => {
+            item.bg.fill.transparency = 0
+          }, `bg transparency ${index}`)
         }
-        syncPollText(labelTextStates[index] ?? null, data.label)
-        if (canStyleBars && bgGeometryValid) {
-          if (isVertical) {
-            const fillHeight = Math.max(2, bgHeight * data.ratio)
-            item.fill.height = fillHeight
-            item.fill.top = bgTop + (bgHeight - fillHeight)
-            item.fill.width = bgWidth
-            item.fill.left = bgLeft
-          } else {
-            item.fill.left = bgLeft
-            item.fill.width = Math.max(2, bgWidth * data.ratio)
-            item.fill.top = bgTop
-            item.fill.height = bgHeight
-          }
-          item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
-          item.bg.fill.transparency = 0
-        }
-      })
+      }
 
       if (isPending || recovered) {
         setSlideTag(info.slide, POLL_SESSION_TAG, sessionId)
