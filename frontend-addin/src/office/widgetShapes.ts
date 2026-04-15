@@ -537,7 +537,8 @@ const syncPollText = (
   }
 
   const lastAutoText = state.autoTag.value ?? ''
-  if (!force && currentText !== lastAutoText) {
+  /** Allow updates when the current text still looks auto-generated — covers tag drift (stale values from prior devices, tag cleared on save). */
+  if (!force && currentText !== lastAutoText && !looksLikeAutoPollText(currentText)) {
     return
   }
 
