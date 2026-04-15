@@ -1795,7 +1795,10 @@ export async function updatePollWidget(
 
     await context.sync()
 
+    let slideIndex = -1
     for (const info of slideInfos) {
+      slideIndex += 1
+      try {
       const isPending =
         !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
       const hasSessionMatch =
@@ -2369,9 +2372,17 @@ export async function updatePollWidget(
         setSlideTag(info.slide, POLL_SESSION_TAG, sessionId)
         info.slide.tags.delete(POLL_PENDING_TAG)
       }
+
+      /** Flush this slide's queued mutations so one bad slide doesn't poison the next iteration's context state. */
+      await context.sync()
+      } catch (err) {
+        console.warn(`Poll widget update failed on slide index ${slideIndex}`, err)
+      }
     }
 
-    await context.sync()
+    await context.sync().catch((err) => {
+      console.warn('Poll widget final sync failed', err)
+    })
   })
 }
 
