@@ -450,9 +450,18 @@ const looksLikeAutoPollText = (value: string) => {
   return /\(\d+\)\s*(?:•|â€¢)\s*\d+%$/.test(text)
 }
 
+type PollTextFontSnapshot = {
+  name?: string
+  size?: number
+  bold?: boolean
+  italic?: boolean
+  color?: string
+}
+
 type PollTextSyncState = {
   shape: PowerPoint.Shape
   autoTag: PowerPoint.Tag
+  font: PollTextFontSnapshot
 }
 
 /** Per-shape text-state load that tolerates InvalidArgument on Shape.textFrame (e.g. when a shape type's textFrame isn't supported despite matching our heuristic). */
@@ -470,11 +479,36 @@ const safeLoadPollTextSyncState = async (
   autoTag.load('value')
   try {
     shape.textFrame.textRange.load('text')
+    const font = shape.textFrame.textRange.font
+    font.load(['name', 'size', 'bold', 'italic', 'color'])
     await context.sync()
-    return { shape, autoTag }
+    const snapshot: PollTextFontSnapshot = {
+      name: typeof font.name === 'string' && font.name ? font.name : undefined,
+      size:
+        typeof font.size === 'number' && Number.isFinite(font.size) && font.size > 0
+          ? font.size
+          : undefined,
+      bold: typeof font.bold === 'boolean' ? font.bold : undefined,
+      italic: typeof font.italic === 'boolean' ? font.italic : undefined,
+      color: typeof font.color === 'string' && font.color ? font.color : undefined
+    }
+    return { shape, autoTag, font: snapshot }
   } catch {
     return null
   }
+}
+
+/** Reapply saved font properties to a text range — setting textRange.text resets all inline formatting. */
+const reapplyPollTextFont = (
+  shape: PowerPoint.Shape,
+  snapshot: PollTextFontSnapshot
+) => {
+  const font = shape.textFrame.textRange.font
+  if (snapshot.name) font.name = snapshot.name
+  if (snapshot.size !== undefined) font.size = snapshot.size
+  if (snapshot.bold !== undefined) font.bold = snapshot.bold
+  if (snapshot.italic !== undefined) font.italic = snapshot.italic
+  if (snapshot.color) font.color = snapshot.color
 }
 
 const syncPollText = (
@@ -490,7 +524,11 @@ const syncPollText = (
 
   if (state.autoTag.isNullObject) {
     if (force || currentText === nextText || looksLikeAutoPollText(currentText)) {
-      state.shape.textFrame.textRange.text = nextText
+      /** Only rewrite text when it actually differs — textRange.text = ... wipes inline font formatting. */
+      if (currentText !== nextText) {
+        state.shape.textFrame.textRange.text = nextText
+        reapplyPollTextFont(state.shape, state.font)
+      }
       setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
       return
     }
@@ -503,7 +541,10 @@ const syncPollText = (
     return
   }
 
-  state.shape.textFrame.textRange.text = nextText
+  if (currentText !== nextText) {
+    state.shape.textFrame.textRange.text = nextText
+    reapplyPollTextFont(state.shape, state.font)
+  }
   setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
 }
 
@@ -2371,10 +2412,10 @@ export async function updatePollWidget(
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
           return
         }
-        if (shapeSupportsText(item.label)) {
-          applyFont(item.label.textFrame.textRange, style, { size: 13, color: style.textColor })
-        }
         if (applyStyle) {
+          if (shapeSupportsText(item.label)) {
+            applyFont(item.label.textFrame.textRange, style, { size: 13, color: style.textColor })
+          }
           if (shapeSupportsFill(item.bg)) {
             item.bg.fill.setSolidColor(style.barColor)
             item.bg.lineFormat.visible = false
