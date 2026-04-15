@@ -377,6 +377,62 @@ const getShapeId = (shape: { id: string } | null | undefined) =>
 const isShapeNullObject = (shape: { isNullObject?: boolean } | null | undefined) =>
   Boolean(shape?.isNullObject)
 
+/** Shape types whose textFrame cannot be accessed — doing so throws RichApi InvalidArgument. */
+const TEXT_INCAPABLE_SHAPE_TYPES = new Set<string>([
+  'Image',
+  'Line',
+  'Chart',
+  'Table',
+  'SmartArt',
+  'Ink',
+  'Video',
+  'Audio',
+  'Media',
+  'Unsupported',
+  'Unknown'
+])
+
+const shapeSupportsText = (
+  shape: { isNullObject?: boolean; type?: string } | null | undefined
+) => {
+  if (!shape || shape.isNullObject) {
+    return false
+  }
+  const type = shape.type
+  if (!type) {
+    return true
+  }
+  return !TEXT_INCAPABLE_SHAPE_TYPES.has(type)
+}
+
+/** Shape types whose `.fill.setSolidColor` call fails — Lines use lineFormat, Images/Media aren't fillable. */
+const FILL_INCAPABLE_SHAPE_TYPES = new Set<string>([
+  'Line',
+  'Image',
+  'Chart',
+  'Table',
+  'SmartArt',
+  'Ink',
+  'Video',
+  'Audio',
+  'Media',
+  'Unsupported',
+  'Unknown'
+])
+
+const shapeSupportsFill = (
+  shape: { isNullObject?: boolean; type?: string } | null | undefined
+) => {
+  if (!shape || shape.isNullObject) {
+    return false
+  }
+  const type = shape.type
+  if (!type) {
+    return true
+  }
+  return !FILL_INCAPABLE_SHAPE_TYPES.has(type)
+}
+
 const looksLikeAutoPollText = (value: string) => {
   const text = value.trim()
   if (!text) {
@@ -403,6 +459,10 @@ const loadPollTextSyncState = (
   shape: PowerPoint.Shape | null | undefined
 ): PollTextSyncState | null => {
   if (!shape || isShapeNullObject(shape)) {
+    return null
+  }
+  /** A shape replaced with an image/line on another device throws InvalidArgument when textFrame is accessed. */
+  if (!shapeSupportsText(shape)) {
     return null
   }
   const autoTag = shape.tags.getItemOrNullObject(POLL_TEXT_SYNC_TAG)
@@ -1876,25 +1936,25 @@ export async function updatePollWidget(
 
       let shadowShape = shapeIds.shadow ? resolveShape(shapeIds.shadow) : null
       if (shadowShape) {
-        shadowShape.load('id')
+        shadowShape.load(['id', 'type'])
       }
 
       let container = shapeIds.container ? resolveShape(shapeIds.container) : null
       if (container) {
-        container.load(['id', 'width', 'left', 'top', 'height'])
+        container.load(['id', 'width', 'left', 'top', 'height', 'type'])
       }
 
       let title = resolveShape(shapeIds.title)
-      title.load('id')
+      title.load(['id', 'type'])
       let questionShape = shapeIds.question ? resolveShape(shapeIds.question) : null
       if (questionShape) {
-        questionShape.load('id')
+        questionShape.load(['id', 'type'])
       }
 
       let bodyShape: PowerPoint.Shape | null = null
       if (shapeIds.body) {
         bodyShape = resolveShape(shapeIds.body)
-        bodyShape.load('id')
+        bodyShape.load(['id', 'type'])
       }
 
       const itemEntries = (shapeIds.items ?? []).map((item) => {
@@ -1907,7 +1967,7 @@ export async function updatePollWidget(
         if (itemGroup) {
           itemGroup.load(['id', 'type'])
         }
-        label.load('id')
+        label.load(['id', 'type'])
         return {
           label,
           group: itemGroup,
@@ -1928,8 +1988,8 @@ export async function updatePollWidget(
         const fill = barScope
           ? barScope.getItemOrNullObject(entry.fillId)
           : info.slide.shapes.getItemOrNullObject(entry.fillId)
-        bg.load(['id', 'width', 'left', 'height', 'top'])
-        fill.load(['id', 'width', 'left', 'height', 'top'])
+        bg.load(['id', 'width', 'left', 'height', 'top', 'type'])
+        fill.load(['id', 'width', 'left', 'height', 'top', 'type'])
         return { label: entry.label, group: entry.group, bg, fill }
       })
 
@@ -2267,31 +2327,31 @@ export async function updatePollWidget(
       }
 
       if (applyStyle) {
-        if (shadowShape && !shadowShape.isNullObject) {
-          shadowShape.fill.setSolidColor(style.shadowColor)
-          shadowShape.fill.transparency = style.shadowOpacity
-          shadowShape.lineFormat.visible = false
+        if (shapeSupportsFill(shadowShape)) {
+          shadowShape!.fill.setSolidColor(style.shadowColor)
+          shadowShape!.fill.transparency = style.shadowOpacity
+          shadowShape!.lineFormat.visible = false
         }
-        if (container && !container.isNullObject) {
-          container.fill.setSolidColor(style.panelColor)
-          container.lineFormat.color = style.borderColor
-          container.lineFormat.weight = 1
+        if (shapeSupportsFill(container)) {
+          container!.fill.setSolidColor(style.panelColor)
+          container!.lineFormat.color = style.borderColor
+          container!.lineFormat.weight = 1
         }
-        if (!title.isNullObject) {
+        if (shapeSupportsText(title)) {
           applyFont(title.textFrame.textRange, style, {
             size: 20,
             bold: true,
             color: style.textColor
           })
         }
-        if (questionShape && !questionShape.isNullObject) {
-          applyFont(questionShape.textFrame.textRange, style, {
+        if (shapeSupportsText(questionShape)) {
+          applyFont(questionShape!.textFrame.textRange, style, {
             size: 14,
             color: style.mutedColor
           })
         }
-        if (bodyShape && !bodyShape.isNullObject) {
-          applyFont(bodyShape.textFrame.textRange, style, {
+        if (shapeSupportsText(bodyShape)) {
+          applyFont(bodyShape!.textFrame.textRange, style, {
             size: 13,
             color: style.mutedColor
           })
@@ -2301,12 +2361,18 @@ export async function updatePollWidget(
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
           return
         }
-        applyFont(item.label.textFrame.textRange, style, { size: 13, color: style.textColor })
+        if (shapeSupportsText(item.label)) {
+          applyFont(item.label.textFrame.textRange, style, { size: 13, color: style.textColor })
+        }
         if (applyStyle) {
-          item.bg.fill.setSolidColor(style.barColor)
-          item.bg.lineFormat.visible = false
-          item.fill.fill.setSolidColor(style.accentColor)
-          item.fill.lineFormat.visible = false
+          if (shapeSupportsFill(item.bg)) {
+            item.bg.fill.setSolidColor(style.barColor)
+            item.bg.lineFormat.visible = false
+          }
+          if (shapeSupportsFill(item.fill)) {
+            item.fill.fill.setSolidColor(style.accentColor)
+            item.fill.lineFormat.visible = false
+          }
         }
       })
 
@@ -2333,47 +2399,58 @@ export async function updatePollWidget(
         )
       }
 
+      const isFiniteNum = (n: unknown): n is number =>
+        typeof n === 'number' && Number.isFinite(n)
+
       itemShapes.forEach((item, index) => {
         const data = optionData[index]
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
           return
         }
+        /** Skip bar geometry/color writes entirely if bg or fill was swapped for a non-fillable shape on another device. */
+        const canStyleBars = shapeSupportsFill(item.bg) && shapeSupportsFill(item.fill)
+        const bgTop = item.bg.top
+        const bgLeft = item.bg.left
+        const bgWidth = item.bg.width
+        const bgHeight = item.bg.height
+        const bgGeometryValid =
+          isFiniteNum(bgTop) && isFiniteNum(bgLeft) && isFiniteNum(bgWidth) && isFiniteNum(bgHeight)
         if (!data || index >= visibleOptions) {
           syncPollText(labelTextStates[index] ?? null, '', { force: true })
-          if (isVertical) {
-            const barHeight = item.bg.height
-            item.fill.height = 2
-            item.fill.top = item.bg.top + Math.max(0, barHeight - 2)
-            item.fill.width = item.bg.width
-            item.fill.left = item.bg.left
-          } else {
-            item.fill.width = 2
-            item.fill.height = item.bg.height
-            item.fill.left = item.bg.left
-            item.fill.top = item.bg.top
+          if (canStyleBars && bgGeometryValid) {
+            if (isVertical) {
+              item.fill.height = 2
+              item.fill.top = bgTop + Math.max(0, bgHeight - 2)
+              item.fill.width = bgWidth
+              item.fill.left = bgLeft
+            } else {
+              item.fill.width = 2
+              item.fill.height = bgHeight
+              item.fill.left = bgLeft
+              item.fill.top = bgTop
+            }
+            item.fill.fill.transparency = 1
+            item.bg.fill.transparency = hasPollData ? 1 : 0.35
           }
-          item.fill.fill.transparency = 1
-          item.bg.fill.transparency = hasPollData ? 1 : 0.35
           return
         }
         syncPollText(labelTextStates[index] ?? null, data.label)
-        if (isVertical) {
-          const barHeight = item.bg.height
-          const fillHeight = Math.max(2, barHeight * data.ratio)
-          item.fill.height = fillHeight
-          item.fill.top = item.bg.top + (barHeight - fillHeight)
-          item.fill.width = item.bg.width
-          item.fill.left = item.bg.left
-        } else {
-          const barWidth = item.bg.width
-          const left = item.bg.left
-          item.fill.left = left
-          item.fill.width = Math.max(2, barWidth * data.ratio)
-          item.fill.top = item.bg.top
-          item.fill.height = item.bg.height
+        if (canStyleBars && bgGeometryValid) {
+          if (isVertical) {
+            const fillHeight = Math.max(2, bgHeight * data.ratio)
+            item.fill.height = fillHeight
+            item.fill.top = bgTop + (bgHeight - fillHeight)
+            item.fill.width = bgWidth
+            item.fill.left = bgLeft
+          } else {
+            item.fill.left = bgLeft
+            item.fill.width = Math.max(2, bgWidth * data.ratio)
+            item.fill.top = bgTop
+            item.fill.height = bgHeight
+          }
+          item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
+          item.bg.fill.transparency = 0
         }
-        item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
-        item.bg.fill.transparency = 0
       })
 
       if (isPending || recovered) {
