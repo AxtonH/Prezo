@@ -2462,12 +2462,15 @@ export async function updatePollWidget(
                 item.fill.top = bgTop
               }
             }, `bar dims ${index}`)
-            await tryItemWrite(() => {
-              item.fill.fill.transparency = 1
-            }, `fill transparency ${index}`)
-            await tryItemWrite(() => {
-              item.bg.fill.transparency = hasPollData ? 1 : 0.35
-            }, `bg transparency ${index}`)
+            /** Only overwrite user-adjusted transparency when the widget's style is explicitly locked. */
+            if (applyStyle) {
+              await tryItemWrite(() => {
+                item.fill.fill.transparency = 1
+              }, `fill transparency ${index}`)
+              await tryItemWrite(() => {
+                item.bg.fill.transparency = hasPollData ? 1 : 0.35
+              }, `bg transparency ${index}`)
+            }
           }
           continue
         }
@@ -2491,12 +2494,14 @@ export async function updatePollWidget(
               item.fill.height = bgHeight
             }
           }, `bar dims ${index}`)
-          await tryItemWrite(() => {
-            item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
-          }, `fill transparency ${index}`)
-          await tryItemWrite(() => {
-            item.bg.fill.transparency = 0
-          }, `bg transparency ${index}`)
+          if (applyStyle) {
+            await tryItemWrite(() => {
+              item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
+            }, `fill transparency ${index}`)
+            await tryItemWrite(() => {
+              item.bg.fill.transparency = 0
+            }, `bg transparency ${index}`)
+          }
         }
       }
 
