@@ -514,22 +514,32 @@ const reapplyPollTextFont = (
 const syncPollText = (
   state: PollTextSyncState | null,
   nextText: string,
-  options?: { force?: boolean }
+  options?: { force?: boolean; option?: PollOptionValues }
 ) => {
   if (!state || isShapeNullObject(state.shape)) {
     return
   }
   const currentText = state.shape.textFrame.textRange.text ?? ''
   const force = Boolean(options?.force)
+  const option = options?.option
+
+  /** If the user reformatted the label (e.g. dropped "(N) •"), preserve their template by regenerating in-place. */
+  const regenerated = option ? regeneratePollLabel(currentText, option) : null
+  const targetText = regenerated ?? nextText
 
   if (state.autoTag.isNullObject) {
-    if (force || currentText === nextText || looksLikeAutoPollText(currentText)) {
+    if (
+      force ||
+      currentText === targetText ||
+      regenerated !== null ||
+      looksLikeAutoPollText(currentText)
+    ) {
       /** Only rewrite text when it actually differs — textRange.text = ... wipes inline font formatting. */
-      if (currentText !== nextText) {
-        state.shape.textFrame.textRange.text = nextText
+      if (currentText !== targetText) {
+        state.shape.textFrame.textRange.text = targetText
         reapplyPollTextFont(state.shape, state.font)
       }
-      setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
+      setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, targetText)
       return
     }
     setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, currentText)
@@ -537,16 +547,21 @@ const syncPollText = (
   }
 
   const lastAutoText = state.autoTag.value ?? ''
-  /** Allow updates when the current text still looks auto-generated — covers tag drift (stale values from prior devices, tag cleared on save). */
-  if (!force && currentText !== lastAutoText && !looksLikeAutoPollText(currentText)) {
+  /** Allow updates when the current text still looks auto-generated OR fits a known template — covers tag drift and user reformatting. */
+  if (
+    !force &&
+    currentText !== lastAutoText &&
+    regenerated === null &&
+    !looksLikeAutoPollText(currentText)
+  ) {
     return
   }
 
-  if (currentText !== nextText) {
-    state.shape.textFrame.textRange.text = nextText
+  if (currentText !== targetText) {
+    state.shape.textFrame.textRange.text = targetText
     reapplyPollTextFont(state.shape, state.font)
   }
-  setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, nextText)
+  setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, targetText)
 }
 
 
@@ -608,9 +623,42 @@ const buildPollOptions = (poll: Poll | null) => {
     const percent = Math.round(ratio * 100)
     return {
       label: `${option.label} (${option.votes}) • ${percent}%`,
-      ratio
+      ratio,
+      name: option.label,
+      votes: option.votes,
+      percent
     }
   })
+}
+
+type PollOptionValues = {
+  name: string
+  votes: number
+  percent: number
+}
+
+/** Regenerate a label in whatever format the user left it in — so removing "(N) •" etc. sticks across updates. */
+const regeneratePollLabel = (
+  currentText: string,
+  option: PollOptionValues
+): string | null => {
+  const trimmed = currentText.replace(/\s+$/, '')
+  const fullMatch = trimmed.match(/^(.*?)\s*\(\d+\)\s*(?:•|\u2022)\s*\d+%$/s)
+  if (fullMatch) {
+    const prefix = fullMatch[1].length ? fullMatch[1] : option.name
+    return `${prefix} (${option.votes}) • ${option.percent}%`
+  }
+  const percentOnly = trimmed.match(/^(.*?)\s*\d+%$/s)
+  if (percentOnly) {
+    const prefix = percentOnly[1].length ? percentOnly[1] : option.name
+    return `${prefix} ${option.percent}%`
+  }
+  const votesOnly = trimmed.match(/^(.*?)\s*\(\d+\)$/s)
+  if (votesOnly) {
+    const prefix = votesOnly[1].length ? votesOnly[1] : option.name
+    return `${prefix} (${option.votes})`
+  }
+  return null
 }
 
 export async function insertQnaWidget(sessionId?: string | null, code?: string | null) {
@@ -2518,7 +2566,10 @@ export async function updatePollWidget(
         }
 
         await tryItemWrite(
-          () => syncPollText(labelTextStates[index] ?? null, data.label),
+          () =>
+            syncPollText(labelTextStates[index] ?? null, data.label, {
+              option: { name: data.name, votes: data.votes, percent: data.percent }
+            }),
           `label ${index}`
         )
         if (canStyleBars && bgGeometryValid) {
