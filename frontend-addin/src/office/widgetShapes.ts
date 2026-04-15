@@ -1630,7 +1630,7 @@ export async function updatePollWidget(
         const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
         pollTag.load('value')
         roleTag.load('value')
-        shape.load(['id', 'left', 'top', 'width', 'height'])
+        shape.load(['id', 'left', 'top', 'width', 'height', 'type'])
         return { shape, pollTag, roleTag }
       })
       await context.sync()
@@ -1678,7 +1678,10 @@ export async function updatePollWidget(
               fills.push(shape)
               return
             case 'poll-bar-group':
-              barGroups.push(shape)
+              /** Files edited on another device can leave a `poll-bar-group` tag on a shape that was ungrouped. Accessing `shape.group.shapes` on a non-group throws GeneralException on sync. */
+              if (shape.type === 'Group') {
+                barGroups.push(shape)
+              }
               return
             default:
               return
@@ -1859,13 +1862,15 @@ export async function updatePollWidget(
         ? info.slide.shapes.getItemOrNullObject(shapeIds.group)
         : null
       if (groupShape) {
-        groupShape.load('id')
+        groupShape.load(['id', 'type'])
       }
 
       await context.sync()
 
-      const shapeScope =
-        groupShape && !groupShape.isNullObject ? groupShape.group.shapes : null
+      /** A widget edited on another device may have had its group ungrouped — accessing `.group.shapes` on a non-group throws RichApi GeneralException. */
+      const groupShapeIsGroup =
+        !!groupShape && !groupShape.isNullObject && groupShape.type === 'Group'
+      const shapeScope = groupShapeIsGroup ? groupShape!.group.shapes : null
       const resolveShape = (id: string) =>
         shapeScope ? shapeScope.getItemOrNullObject(id) : info.slide.shapes.getItemOrNullObject(id)
 
@@ -1900,7 +1905,7 @@ export async function updatePollWidget(
             : info.slide.shapes.getItemOrNullObject(item.group)
           : null
         if (itemGroup) {
-          itemGroup.load('id')
+          itemGroup.load(['id', 'type'])
         }
         label.load('id')
         return {
@@ -1914,8 +1919,9 @@ export async function updatePollWidget(
       await context.sync()
 
       let itemShapes = itemEntries.map((entry) => {
-        const barScope =
-          entry.group && !entry.group.isNullObject ? entry.group.group.shapes : shapeScope
+        const entryGroupIsGroup =
+          !!entry.group && !entry.group.isNullObject && entry.group.type === 'Group'
+        const barScope = entryGroupIsGroup ? entry.group!.group.shapes : shapeScope
         const bg = barScope
           ? barScope.getItemOrNullObject(entry.bgId)
           : info.slide.shapes.getItemOrNullObject(entry.bgId)
@@ -1938,14 +1944,13 @@ export async function updatePollWidget(
         )
 
       if (needsFallback) {
-        const fallbackScope =
-          groupShape && !groupShape.isNullObject ? groupShape.group.shapes : info.slide.shapes
+        const fallbackScope = groupShapeIsGroup ? groupShape!.group.shapes : info.slide.shapes
         fallbackScope.load('items')
         await context.sync()
         const tagged = fallbackScope.items.map((shape) => {
           const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
           roleTag.load('value')
-          shape.load(['id', 'left', 'top', 'width', 'height'])
+          shape.load(['id', 'left', 'top', 'width', 'height', 'type'])
           return { shape, roleTag }
         })
         await context.sync()
@@ -1989,7 +1994,10 @@ export async function updatePollWidget(
               fills.push(shape)
               break
             case 'poll-bar-group':
-              barGroups.push(shape)
+              /** Skip shapes tagged as bar-group but no longer a group (ungrouped on another device). */
+              if (shape.type === 'Group') {
+                barGroups.push(shape)
+              }
               break
             default:
               break
