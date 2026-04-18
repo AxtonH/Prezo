@@ -42,6 +42,12 @@ export function HostSearchBar({
   const showPanel = open && q.length > 0
 
   useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.setAttribute('aria-expanded', showPanel ? 'true' : 'false')
+    }
+  }, [showPanel])
+
+  useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
@@ -93,15 +99,18 @@ export function HostSearchBar({
         <input
           ref={inputRef}
           type="search"
+          role="combobox"
           autoComplete="off"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setOpen(true)}
           placeholder="Search sessions or activities..."
+          title="Search sessions or activities"
           className="!min-w-0 !flex-1 !bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !font-medium !tracking-tight !p-0 !text-slate-900 placeholder:!text-slate-400"
-          aria-expanded={showPanel}
+          aria-expanded="false"
           aria-controls="host-search-results"
           aria-autocomplete="list"
+          aria-haspopup="listbox"
         />
         {value ? (
           <button
@@ -122,7 +131,6 @@ export function HostSearchBar({
       {showPanel ? (
         <div
           id="host-search-results"
-          role="listbox"
           className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-[60] max-h-[min(24rem,70vh)] overflow-y-auto rounded-xl border border-slate-200/95 bg-white py-2 shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
         >
           {sessionMatches.length > 0 ? (
@@ -130,23 +138,24 @@ export function HostSearchBar({
               <p className="px-3 pb-1.5 pt-1 text-[0.65rem] font-bold uppercase tracking-widest text-muted">
                 Sessions
               </p>
-              <ul className="space-y-0.5 px-1">
+              <ul role="listbox" aria-label="Sessions" className="space-y-0.5 px-1">
                 {sessionMatches.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => handlePickSession(s)}
-                    >
-                      <span className="text-sm font-semibold text-slate-900 truncate">
-                        {sessionLabel(s)}
-                      </span>
-                      <span className="font-mono text-xs font-medium tracking-wider text-muted">
-                        {s.code}
-                      </span>
-                    </button>
+                  <li
+                    key={s.id}
+                    role="option"
+                    aria-selected="false"
+                    tabIndex={0}
+                    className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handlePickSession(s)}
+                    onKeyDown={(e) => e.key === 'Enter' && handlePickSession(s)}
+                  >
+                    <span className="text-sm font-semibold text-slate-900 truncate">
+                      {sessionLabel(s)}
+                    </span>
+                    <span className="font-mono text-xs font-medium tracking-wider text-muted">
+                      {s.code}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -169,7 +178,7 @@ export function HostSearchBar({
               {!activitiesLoading && activityHits.length === 0 && sessionMatches.length > 0 ? (
                 <p className="px-3 pb-2 text-xs text-muted">No polls or questions match this search.</p>
               ) : null}
-              <ul className="space-y-0.5 px-1">
+              <ul role="listbox" aria-label="Polls and questions" className="space-y-0.5 px-1">
                 {activityHits.map((hit, i) => {
                   const key = `${hit.session.id}-${hit.kind}-${
                     hit.kind === 'poll'
@@ -184,24 +193,25 @@ export function HostSearchBar({
                   else primary = hit.prompt.prompt
                   const sub = sessionLabel(hit.session)
                   return (
-                    <li key={key}>
-                      <button
-                        type="button"
-                        role="option"
-                        className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => handlePickActivity(hit)}
-                      >
-                        <span className="text-[0.65rem] font-bold uppercase tracking-wider text-primary/90">
-                          {hit.kind === 'poll'
-                            ? 'Poll'
-                            : hit.kind === 'question'
-                              ? 'Question'
-                              : 'Q&A prompt'}
-                        </span>
-                        <span className="text-sm font-medium text-slate-900 line-clamp-2">{primary}</span>
-                        <span className="text-xs text-muted truncate">{sub}</span>
-                      </button>
+                    <li
+                      key={key}
+                      role="option"
+                      aria-selected="false"
+                      tabIndex={0}
+                      className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handlePickActivity(hit)}
+                      onKeyDown={(e) => e.key === 'Enter' && handlePickActivity(hit)}
+                    >
+                      <span className="text-[0.65rem] font-bold uppercase tracking-wider text-primary/90">
+                        {hit.kind === 'poll'
+                          ? 'Poll'
+                          : hit.kind === 'question'
+                            ? 'Question'
+                            : 'Q&A prompt'}
+                      </span>
+                      <span className="text-sm font-medium text-slate-900 line-clamp-2">{primary}</span>
+                      <span className="text-xs text-muted truncate">{sub}</span>
                     </li>
                   )
                 })}
