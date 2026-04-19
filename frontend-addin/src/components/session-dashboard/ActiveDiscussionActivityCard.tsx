@@ -100,7 +100,7 @@ export function ActiveDiscussionActivityCard({
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const responseTotal = pendingCount + approvedCount
-  const expandByDefault = pendingCount > 0 || approvedCount > 0
+  const expandByDefault = false
 
   const [bindBusy, setBindBusy] = useState(false)
   const [bindMessage, setBindMessage] = useState<string | null>(null)
