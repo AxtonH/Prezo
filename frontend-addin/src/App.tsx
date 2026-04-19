@@ -1458,7 +1458,7 @@ function HostConsole({
                   className="min-w-0 truncate flex-1"
                 />
                 <div className="flex shrink-0 items-center gap-0.5 ml-auto">
-                  {hostConsoleView === 'host' && session && workspaceNav !== 'editor' ? (
+                  {!isAddinHost && hostConsoleView === 'host' && session && workspaceNav !== 'editor' ? (
                     <button
                       type="button"
                       onClick={() => setWorkspaceNav('editor')}
@@ -1470,7 +1470,7 @@ function HostConsole({
                       <span className="max-[380px]:hidden">Editor</span>
                     </button>
                   ) : null}
-                  {hostConsoleView === 'host' ? (
+                  {!isAddinHost && hostConsoleView === 'host' ? (
                     <button
                       type="button"
                       onClick={() => setHostConsoleView('settings')}

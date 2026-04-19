@@ -291,7 +291,7 @@ export function SideNav({
       <div
         className={`mt-auto flex flex-col border-t border-border/30 ${collapsed ? 'p-2' : 'p-4'}`}
       >
-        {editorLink && !workspaceMode && !isAddinHost ? (
+        {editorLink && !workspaceMode ? (
           onOpenEditorInline ? (
             <button
               type="button"
@@ -325,30 +325,28 @@ export function SideNav({
         ) : null}
 
         <div className="mt-1 space-y-1">
-          {!isAddinHost ? (
-            onOpenSettings ? (
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className={sessionNavBtn(settingsNavActive)}
-                title={collapsed ? 'Settings' : undefined}
-              >
-                <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-                {!collapsed ? (
-                  <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
-                ) : null}
-              </button>
-            ) : (
-              <a
-                href="#"
-                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
-                onClick={(e) => e.preventDefault()}
-              >
-                <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-                <span>Settings</span>
-              </a>
-            )
-          ) : null}
+          {onOpenSettings ? (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className={sessionNavBtn(settingsNavActive)}
+              title={collapsed ? 'Settings' : undefined}
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+              {!collapsed ? (
+                <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
+              ) : null}
+            </button>
+          ) : (
+            <a
+              href="#"
+              className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
+              onClick={(e) => e.preventDefault()}
+            >
+              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+              <span>Settings</span>
+            </a>
+          )}
           {onToggleSidebarCollapse ? (
             collapsed ? (
               <button
