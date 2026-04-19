@@ -1678,6 +1678,9 @@ import {
     if (raw === ARTIFACT_BRAND_REFERENCE_VALUE) {
       state.artifact.conversationAnswers.brandProfileName = ''
       syncArtifactReferencePanelVisibility()
+      if (!el.artifactBrandReferenceInput.disabled) {
+        el.artifactBrandReferenceInput.click()
+      }
       return
     }
     state.artifact.conversationAnswers.referenceImageGuidelines = ''
