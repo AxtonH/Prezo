@@ -2326,13 +2326,12 @@ h1 {
   color: var(--chrome-text-secondary);
 }
 
-.artifact-prompt-bar-footer > #artifact-brand-reference-status:empty {
-  display: none;
+.artifact-prompt-bar-footer > #artifact-brand-reference-status {
+  margin-left: auto;
+  text-align: right;
 }
 
-.artifact-prompt-bar-footer
-  > #artifact-brand-reference-status:not(:empty)
-  ~ .artifact-prompt-hint {
+.artifact-prompt-bar-footer > #artifact-brand-reference-status:empty {
   display: none;
 }
 
