@@ -54,6 +54,8 @@ export interface SessionDashboardPageProps {
   onCreateDiscussionPrompt?: (prompt: string) => Promise<void>
   /** PowerPoint add-in: bind slide widget to a poll. */
   onBindPollWidget?: (pollId: string) => Promise<void>
+  /** PowerPoint add-in: bind slide open-discussion widget to a prompt. */
+  onBindDiscussionWidget?: (promptId: string) => Promise<void>
 }
 
 export function SessionDashboardPage({
@@ -83,7 +85,8 @@ export function SessionDashboardPage({
   onCreatePoll,
   onOpenAudienceQna,
   onCreateDiscussionPrompt,
-  onBindPollWidget
+  onBindPollWidget,
+  onBindDiscussionWidget
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -216,6 +219,7 @@ export function SessionDashboardPage({
           onApproveAudienceQuestion={onApproveAudienceQuestion}
           onHideAudienceQuestion={onHideAudienceQuestion}
           onBindPollWidget={onBindPollWidget}
+          onBindDiscussionWidget={onBindDiscussionWidget}
         />
       </div>
 

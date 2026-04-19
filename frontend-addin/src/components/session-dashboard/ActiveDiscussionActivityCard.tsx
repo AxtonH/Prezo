@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import type { QnaPrompt, Question } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
@@ -14,6 +16,11 @@ export interface ActiveDiscussionActivityCardProps {
   onDelete?: () => void
   onApproveQuestion?: (questionId: string) => void | Promise<void>
   onHideQuestion?: (questionId: string) => void | Promise<void>
+  /**
+   * PowerPoint only: link the open discussion widget on the selected slide
+   * to this prompt (updates tags + text only).
+   */
+  onBindWidget?: (promptId: string) => Promise<void>
 }
 
 function DiscussionAnswerRow({
@@ -86,13 +93,50 @@ export function ActiveDiscussionActivityCard({
   onResume,
   onDelete,
   onApproveQuestion,
-  onHideQuestion
+  onHideQuestion,
+  onBindWidget
 }: ActiveDiscussionActivityCardProps) {
   const inactive = variant === 'inactive'
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const responseTotal = pendingCount + approvedCount
   const expandByDefault = pendingCount > 0 || approvedCount > 0
+
+  const [bindBusy, setBindBusy] = useState(false)
+  const [bindMessage, setBindMessage] = useState<string | null>(null)
+  const [bindError, setBindError] = useState<string | null>(null)
+
+  const handleBindWidget = async () => {
+    if (!onBindWidget) {
+      return
+    }
+    setBindBusy(true)
+    setBindMessage(null)
+    setBindError(null)
+    try {
+      await onBindWidget(prompt.id)
+      setBindMessage('Slide widget linked to this discussion.')
+    } catch (err) {
+      setBindError(err instanceof Error ? err.message : 'Could not bind widget.')
+    } finally {
+      setBindBusy(false)
+    }
+  }
+
+  const bindButton = onBindWidget ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        void handleBindWidget()
+      }}
+      disabled={bindBusy}
+      title="Link the open discussion widget on the selected PowerPoint slide to this discussion"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
+    >
+      {bindBusy ? 'Binding…' : 'Bind widget'}
+    </button>
+  ) : null
 
   return (
     <CollapsibleActivityPanelShell
@@ -250,6 +294,7 @@ export function ActiveDiscussionActivityCard({
                 Delete
               </button>
             ) : null}
+            {bindButton}
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 pt-1">
@@ -275,8 +320,15 @@ export function ActiveDiscussionActivityCard({
                 Delete
               </button>
             ) : null}
+            {bindButton}
           </div>
         )}
+        {onBindWidget && (bindMessage || bindError) ? (
+          <div className="space-y-1 pt-1">
+            {bindError ? <p className="text-xs text-red-600">{bindError}</p> : null}
+            {bindMessage ? <p className="text-xs text-emerald-800">{bindMessage}</p> : null}
+          </div>
+        ) : null}
       </div>
     </CollapsibleActivityPanelShell>
   )

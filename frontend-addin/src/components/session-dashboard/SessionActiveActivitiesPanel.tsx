@@ -46,6 +46,8 @@ export interface SessionActiveActivitiesPanelProps {
   onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
   /** PowerPoint: bind the slide poll widget to this session poll (tags + text only). */
   onBindPollWidget?: (pollId: string) => Promise<void>
+  /** PowerPoint: bind the slide open-discussion widget to this prompt (tags + text only). */
+  onBindDiscussionWidget?: (promptId: string) => Promise<void>
 }
 
 function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
@@ -100,7 +102,8 @@ export function SessionActiveActivitiesPanel({
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
   onHideAudienceQuestion,
-  onBindPollWidget
+  onBindPollWidget,
+  onBindDiscussionWidget
 }: SessionActiveActivitiesPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<
     null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
@@ -306,6 +309,7 @@ export function SessionActiveActivitiesPanel({
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}
+                onBindWidget={onBindDiscussionWidget}
               />
             )
           })}
@@ -349,6 +353,7 @@ export function SessionActiveActivitiesPanel({
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}
+                onBindWidget={onBindDiscussionWidget}
               />
             )
           })}

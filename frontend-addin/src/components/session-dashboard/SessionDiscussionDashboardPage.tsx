@@ -25,6 +25,8 @@ export interface SessionDiscussionDashboardPageProps {
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onCreateDiscussion: (prompt: string) => Promise<void>
+  /** PowerPoint add-in: bind slide open-discussion widget to a prompt. */
+  onBindDiscussionWidget?: (promptId: string) => Promise<void>
 }
 
 export function SessionDiscussionDashboardPage({
@@ -37,7 +39,8 @@ export function SessionDiscussionDashboardPage({
   onDeleteDiscussion,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
-  onCreateDiscussion
+  onCreateDiscussion,
+  onBindDiscussionWidget
 }: SessionDiscussionDashboardPageProps) {
   const builderStackRef = useRef<HTMLDivElement>(null)
   const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
@@ -151,6 +154,7 @@ export function SessionDiscussionDashboardPage({
                     onHideDiscussionQuestion={onHideDiscussionQuestion}
                     onApproveAudienceQuestion={undefined}
                     onHideAudienceQuestion={undefined}
+                    onBindDiscussionWidget={onBindDiscussionWidget}
                   />
                 </div>
               </div>

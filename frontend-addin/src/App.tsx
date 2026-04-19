@@ -36,6 +36,7 @@ import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
 import {
+  setDiscussionWidgetBinding,
   setPollWidgetBinding,
   updateDiscussionWidget,
   updatePollWidget,
@@ -1287,6 +1288,25 @@ function HostConsole({
     },
     [session, polls]
   )
+
+  const handleBindDiscussionWidget = useCallback(
+    async (promptId: string) => {
+      if (!session) {
+        return
+      }
+      await setDiscussionWidgetBinding(session.id, promptId)
+      try {
+        await updateDiscussionWidget(session.id, session.code, questions, prompts)
+      } catch (err) {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : 'PowerPoint could not refresh the discussion widget. Select the slide with the widget and try again.'
+        throw new Error(message)
+      }
+    },
+    [session, questions, prompts]
+  )
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<
     'active' | 'host' | 'cohost'
@@ -1682,6 +1702,7 @@ function HostConsole({
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onCreateDiscussion={createDiscussionPrompt}
+                  onBindDiscussionWidget={isAddinHost ? handleBindDiscussionWidget : undefined}
                 />
               ) : workspaceNav !== 'dashboard' ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">
@@ -1736,6 +1757,7 @@ function HostConsole({
                     await createDiscussionPrompt(prompt)
                   }}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
+                  onBindDiscussionWidget={isAddinHost ? handleBindDiscussionWidget : undefined}
                 />
               )}
             </>

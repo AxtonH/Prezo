@@ -87,6 +87,8 @@ type QnaWidgetConfig = {
   emptyBodyPrompt: string
   useAudienceWhenUnbound: boolean
   unboundMode?: QnaMode
+  /** When no prompt is explicitly bound, pick one to display (e.g. latest open). */
+  pickUnboundPrompt?: (prompts: QnaPrompt[]) => QnaPrompt | null
   buildLegacyTitle: (
     code: string | null | undefined,
     mode: QnaMode,
@@ -209,6 +211,23 @@ const DEFAULT_POLL_STYLE: PollStyleConfig = {
   maxOptions: 5
 }
 
+const pickLatestOpenPrompt = (prompts: QnaPrompt[]): QnaPrompt | null => {
+  if (prompts.length === 0) {
+    return null
+  }
+  const open = prompts.filter((p) => p.status === 'open')
+  const pool = open.length > 0 ? open : prompts
+  const sorted = [...pool].sort((a, b) => {
+    const aTime = Date.parse(a.created_at)
+    const bTime = Date.parse(b.created_at)
+    if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+      return 0
+    }
+    return bTime - aTime
+  })
+  return sorted[0] ?? null
+}
+
 const QNA_WIDGET_CONFIG: QnaWidgetConfig = {
   tags: {
     widgetTag: WIDGET_TAG,
@@ -254,6 +273,7 @@ const DISCUSSION_WIDGET_CONFIG: QnaWidgetConfig = {
   emptyBodyPrompt: 'No answers yet.',
   useAudienceWhenUnbound: false,
   unboundMode: 'audience',
+  pickUnboundPrompt: pickLatestOpenPrompt,
   buildLegacyTitle: buildDiscussionTitle
 }
 
@@ -1419,11 +1439,19 @@ export async function updateQnaWidget(
         })
       }
 
-      const boundPromptId =
+      const explicitBoundPromptId =
         !info.promptBindingTag.isNullObject && info.promptBindingTag.value
           ? info.promptBindingTag.value.trim()
           : ''
-      const boundPrompt = boundPromptId ? promptMap.get(boundPromptId) ?? null : null
+      const explicitBoundPrompt = explicitBoundPromptId
+        ? promptMap.get(explicitBoundPromptId) ?? null
+        : null
+      const fallbackPrompt =
+        !explicitBoundPromptId && config.pickUnboundPrompt
+          ? config.pickUnboundPrompt(prompts)
+          : null
+      const boundPromptId = explicitBoundPromptId || fallbackPrompt?.id || ''
+      const boundPrompt = explicitBoundPrompt ?? fallbackPrompt ?? null
       const resolvedMode: QnaMode =
         boundPromptId ? 'prompt' : config.unboundMode ?? 'audience'
       const filteredQuestions = boundPromptId
