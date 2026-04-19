@@ -302,8 +302,8 @@ import {
     artifactPromptQueue: must('artifact-prompt-queue'),
     artifactChatLog: must('artifact-chat-log'),
     artifactPromptForm: must('artifact-prompt-form'),
-    artifactTypeReferenceRow: must('artifact-type-reference-row'),
-    artifactTypeReferenceDropzone: must('artifact-type-reference-dropzone'),
+    artifactTypeReferenceInline: must('artifact-type-reference-inline'),
+    artifactTypeReferencePaperclip: must('artifact-type-reference-paperclip'),
     artifactTypeReferenceInput: must('artifact-type-reference-input'),
     artifactTypeReferencePreview: must('artifact-type-reference-preview'),
     artifactTypeReferencePreviewImg: must('artifact-type-reference-preview-img'),
@@ -1289,10 +1289,10 @@ import {
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
     el.artifactBrandReferenceInput.addEventListener('change', handleArtifactBrandReferenceInputChange)
-    el.artifactTypeReferenceDropzone.addEventListener('click', handleArtifactTypeReferenceDropzoneClick)
-    el.artifactTypeReferenceDropzone.addEventListener('keydown', handleArtifactTypeReferenceDropzoneKeydown)
-    el.artifactTypeReferenceDropzone.addEventListener('dragover', handleArtifactTypeReferenceDragOver)
-    el.artifactTypeReferenceDropzone.addEventListener('drop', handleArtifactTypeReferenceDrop)
+    el.artifactTypeReferencePaperclip.addEventListener('click', handleArtifactTypeReferencePaperclipClick)
+    el.artifactPromptForm.addEventListener('dragover', handleArtifactTypeReferenceDragOver)
+    el.artifactPromptForm.addEventListener('dragleave', handleArtifactTypeReferenceDragLeave)
+    el.artifactPromptForm.addEventListener('drop', handleArtifactTypeReferenceDrop)
     el.artifactTypeReferenceInput.addEventListener('change', handleArtifactTypeReferenceInputChange)
     el.artifactTypeReferenceClear.addEventListener('click', handleArtifactTypeReferenceClearClick)
     document.addEventListener('paste', handleArtifactBuildReferencePaste, true)
@@ -1542,19 +1542,14 @@ import {
   function syncArtifactTypeReferenceRow() {
     const currentStep = getArtifactConversationStep()
     const show = Boolean(currentStep?.key === 'artifactType')
-    el.artifactTypeReferenceRow.classList.toggle('hidden', !show)
-    el.artifactTypeReferenceRow.setAttribute('aria-hidden', show ? 'false' : 'true')
     if (show) {
       setEditorShellExpanded(true)
     }
     const refInteractDisabled = !show || state.artifact.busy
+    el.artifactTypeReferenceInline.classList.toggle('hidden', !show)
     el.artifactTypeReferenceInput.disabled = refInteractDisabled
     el.artifactTypeReferenceClear.disabled = refInteractDisabled
-    el.artifactTypeReferenceDropzone.classList.toggle(
-      'artifact-type-reference-dropzone--disabled',
-      refInteractDisabled
-    )
-    el.artifactTypeReferenceDropzone.setAttribute('aria-disabled', refInteractDisabled ? 'true' : 'false')
+    el.artifactTypeReferencePaperclip.disabled = refInteractDisabled
   }
 
   function setArtifactBuildReferenceFromFile(file) {
@@ -1581,7 +1576,7 @@ import {
         buildReferencePreviewObjectUrl = URL.createObjectURL(file)
         el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
         el.artifactTypeReferencePreview.classList.remove('hidden')
-        el.artifactTypeReferenceStatus.textContent = 'Reference image will be used when the artifact is generated.'
+        el.artifactTypeReferenceStatus.textContent = ''
       } catch {
         el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
       }
@@ -1596,30 +1591,34 @@ import {
     setArtifactBuildReferenceFromFile(file)
   }
 
-  function handleArtifactTypeReferenceDropzoneClick() {
+  function handleArtifactTypeReferencePaperclipClick() {
     if (el.artifactTypeReferenceInput.disabled) {
       return
     }
     el.artifactTypeReferenceInput.click()
   }
 
-  function handleArtifactTypeReferenceDropzoneKeydown(event) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      handleArtifactTypeReferenceDropzoneClick()
-    }
-  }
-
   function handleArtifactTypeReferenceDragOver(event) {
+    if (el.artifactTypeReferenceInput.disabled) {
+      return
+    }
     event.preventDefault()
     event.dataTransfer.dropEffect = 'copy'
+    el.artifactPromptForm.closest('.artifact-prompt-bar')?.classList.add('artifact-prompt-bar--drag-over')
+  }
+
+  function handleArtifactTypeReferenceDragLeave(event) {
+    if (!el.artifactPromptForm.contains(event.relatedTarget)) {
+      el.artifactPromptForm.closest('.artifact-prompt-bar')?.classList.remove('artifact-prompt-bar--drag-over')
+    }
   }
 
   function handleArtifactTypeReferenceDrop(event) {
-    event.preventDefault()
-    if (el.artifactTypeReferenceDropzone.classList.contains('artifact-type-reference-dropzone--disabled')) {
+    el.artifactPromptForm.closest('.artifact-prompt-bar')?.classList.remove('artifact-prompt-bar--drag-over')
+    if (el.artifactTypeReferenceInput.disabled) {
       return
     }
+    event.preventDefault()
     const file = event.dataTransfer?.files?.[0]
     if (file) {
       setArtifactBuildReferenceFromFile(file)
@@ -10673,10 +10672,10 @@ import {
     el.artifactComposerFab.removeEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerVisibilityToggle.removeEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.removeEventListener('submit', handleArtifactPromptFormSubmit)
-    el.artifactTypeReferenceDropzone.removeEventListener('click', handleArtifactTypeReferenceDropzoneClick)
-    el.artifactTypeReferenceDropzone.removeEventListener('keydown', handleArtifactTypeReferenceDropzoneKeydown)
-    el.artifactTypeReferenceDropzone.removeEventListener('dragover', handleArtifactTypeReferenceDragOver)
-    el.artifactTypeReferenceDropzone.removeEventListener('drop', handleArtifactTypeReferenceDrop)
+    el.artifactTypeReferencePaperclip.removeEventListener('click', handleArtifactTypeReferencePaperclipClick)
+    el.artifactPromptForm.removeEventListener('dragover', handleArtifactTypeReferenceDragOver)
+    el.artifactPromptForm.removeEventListener('dragleave', handleArtifactTypeReferenceDragLeave)
+    el.artifactPromptForm.removeEventListener('drop', handleArtifactTypeReferenceDrop)
     el.artifactTypeReferenceInput.removeEventListener('change', handleArtifactTypeReferenceInputChange)
     el.artifactTypeReferenceClear.removeEventListener('click', handleArtifactTypeReferenceClearClick)
     document.removeEventListener('paste', handleArtifactBuildReferencePaste, true)
