@@ -291,7 +291,7 @@ export function SideNav({
       <div
         className={`mt-auto flex flex-col border-t border-border/30 ${collapsed ? 'p-2' : 'p-4'}`}
       >
-        {editorLink && !workspaceMode ? (
+        {editorLink && !workspaceMode && !isAddinHost ? (
           onOpenEditorInline ? (
             <button
               type="button"
@@ -325,46 +325,59 @@ export function SideNav({
         ) : null}
 
         <div className="mt-1 space-y-1">
-          {onOpenSettings ? (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className={sessionNavBtn(settingsNavActive)}
-              title={collapsed ? 'Settings' : undefined}
-            >
-              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-              {!collapsed ? (
-                <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
-              ) : null}
-            </button>
-          ) : (
-            <a
-              href="#"
-              className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
-              onClick={(e) => e.preventDefault()}
-            >
-              <span className="material-symbols-outlined text-[1.25rem]">settings</span>
-              <span>Settings</span>
-            </a>
-          )}
+          {!isAddinHost ? (
+            onOpenSettings ? (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className={sessionNavBtn(settingsNavActive)}
+                title={collapsed ? 'Settings' : undefined}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+                {!collapsed ? (
+                  <span className={settingsNavActive ? 'font-medium' : ''}>Settings</span>
+                ) : null}
+              </button>
+            ) : (
+              <a
+                href="#"
+                className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
+                onClick={(e) => e.preventDefault()}
+              >
+                <span className="material-symbols-outlined text-[1.25rem]">settings</span>
+                <span>Settings</span>
+              </a>
+            )
+          ) : null}
           {onToggleSidebarCollapse ? (
-            <button
-              type="button"
-              onClick={onToggleSidebarCollapse}
-              className={
-                collapsed
-                  ? 'flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-slate-900/70 transition-all duration-200 hover:bg-slate-200'
-                  : 'flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200'
-              }
-              aria-expanded={!collapsed}
-              aria-controls="host-sidenav"
-              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              <span className="material-symbols-outlined text-[1.25rem]" aria-hidden>
-                {collapsed ? 'right_panel_open' : 'left_panel_close'}
-              </span>
-              {!collapsed ? <span>Collapse sidebar</span> : null}
-            </button>
+            collapsed ? (
+              <button
+                type="button"
+                onClick={onToggleSidebarCollapse}
+                className="flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-slate-900/70 transition-all duration-200 hover:bg-slate-200"
+                aria-expanded="false"
+                aria-controls="host-sidenav"
+                title="Expand sidebar"
+              >
+                <span className="material-symbols-outlined text-[1.25rem]" aria-hidden>
+                  right_panel_open
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onToggleSidebarCollapse}
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-slate-900/70 transition-all duration-200 ease-in-out hover:bg-slate-200"
+                aria-expanded="true"
+                aria-controls="host-sidenav"
+                title="Collapse sidebar"
+              >
+                <span className="material-symbols-outlined text-[1.25rem]" aria-hidden>
+                  left_panel_close
+                </span>
+                <span>Collapse sidebar</span>
+              </button>
+            )
           ) : (
             <a
               href="#"

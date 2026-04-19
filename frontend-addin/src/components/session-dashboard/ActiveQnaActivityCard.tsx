@@ -90,7 +90,7 @@ export function ActiveQnaActivityCard({
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const questionTotal = pendingCount + approvedCount
-  const expandByDefault = pendingCount > 0 || approvedCount > 0
+  const expandByDefault = false
 
   return (
     <CollapsibleActivityPanelShell
