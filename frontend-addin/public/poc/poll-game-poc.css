@@ -2327,6 +2327,7 @@ h1 {
 }
 
 .artifact-prompt-bar-footer > #artifact-brand-reference-status {
+  order: 2;
   margin-left: auto;
   text-align: right;
 }
