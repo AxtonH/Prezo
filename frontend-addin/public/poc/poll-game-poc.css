@@ -2319,30 +2319,6 @@ h1 {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
 }
 
-.artifact-brand-reference-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.artifact-brand-reference-panel.hidden {
-  display: none;
-}
-
-.artifact-brand-reference-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--chrome-text-secondary);
-}
-
-.artifact-brand-reference-input {
-  width: 100%;
-  max-width: 100%;
-  font-size: 11px;
-  color: var(--chrome-text);
-}
-
 .artifact-brand-reference-status {
   margin: 0;
   font-size: 11px;

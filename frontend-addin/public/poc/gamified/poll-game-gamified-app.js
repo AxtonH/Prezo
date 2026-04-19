@@ -311,7 +311,6 @@ import {
     artifactTypeReferenceStatus: must('artifact-type-reference-status'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
-    artifactBrandReferencePanel: must('artifact-brand-reference-panel'),
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
     artifactPromptInput: must('artifact-prompt-input'),
@@ -1453,7 +1452,6 @@ import {
     clearArtifactReferenceFileUi()
     clearArtifactBuildReferenceUi()
     artifactBrandReferenceBusy = false
-    syncArtifactReferencePanelVisibility()
     syncArtifactConversationUi()
   }
 
@@ -1666,18 +1664,10 @@ import {
     }
   }
 
-  function syncArtifactReferencePanelVisibility() {
-    const isRef =
-      asText(el.artifactBrandProfileSelect.value).trim() === ARTIFACT_BRAND_REFERENCE_VALUE
-    el.artifactBrandReferencePanel.classList.toggle('hidden', !isRef)
-    el.artifactBrandReferencePanel.setAttribute('aria-hidden', isRef ? 'false' : 'true')
-  }
-
   function handleArtifactBrandProfileSelectChange() {
     const raw = asText(el.artifactBrandProfileSelect.value).trim()
     if (raw === ARTIFACT_BRAND_REFERENCE_VALUE) {
       state.artifact.conversationAnswers.brandProfileName = ''
-      syncArtifactReferencePanelVisibility()
       if (!el.artifactBrandReferenceInput.disabled) {
         el.artifactBrandReferenceInput.click()
       }
@@ -1686,7 +1676,6 @@ import {
     state.artifact.conversationAnswers.referenceImageGuidelines = ''
     clearArtifactReferenceFileUi()
     state.artifact.conversationAnswers.brandProfileName = raw
-    syncArtifactReferencePanelVisibility()
   }
 
   let artifactBrandProfilesFetchPromise = null
@@ -1823,7 +1812,6 @@ import {
         } else {
           el.artifactBrandProfileSelect.value = ''
         }
-        syncArtifactReferencePanelVisibility()
       })
     }
   }
