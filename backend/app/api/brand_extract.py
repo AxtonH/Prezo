@@ -978,6 +978,43 @@ def _extract_images_from_pptx(file_bytes: bytes) -> list[dict[str, Any]]:
     return candidates[:IMAGE_MAX_CANDIDATES]
 
 
+PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+PPTX_TEXT_MAX_CHARS = 60_000
+
+
+def _extract_text_from_pptx(file_bytes: bytes) -> str:
+    """Return per-slide text content from a PPTX file."""
+    try:
+        from pptx import Presentation
+    except ImportError:
+        logger.info("python-pptx not installed — skipping PPTX text extraction")
+        return ""
+
+    try:
+        prs = Presentation(io.BytesIO(file_bytes))
+    except Exception as exc:
+        logger.warning("Failed to open PPTX for text extraction: %s", exc)
+        return ""
+
+    slides: list[str] = []
+    for slide_num, slide in enumerate(prs.slides, 1):
+        lines: list[str] = []
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para in shape.text_frame.paragraphs:
+                text = "".join(run.text for run in para.runs).strip()
+                if text:
+                    lines.append(text)
+        if lines:
+            slides.append(f"--- Slide {slide_num} ---\n" + "\n".join(lines))
+        if sum(len(s) for s in slides) > PPTX_TEXT_MAX_CHARS:
+            break
+
+    joined = "\n\n".join(slides)
+    return joined[:PPTX_TEXT_MAX_CHARS]
+
+
 def _extract_images_from_upload(
     file_bytes: bytes, content_type: str,
 ) -> list[dict[str, Any]]:
@@ -1268,26 +1305,50 @@ async def extract_brand_profile(
 
         file_uri: str | None = None
         try:
-            if file_size > INLINE_MAX_FILE_SIZE:
-                logger.info(
-                    "Uploading large file (%d MB) via Gemini File API",
-                    file_size // (1024 * 1024),
-                )
-                file_uri = await _upload_to_gemini_files_api(
-                    file_bytes, content_type, file.filename or "file", api_key
-                )
+            if content_type == PPTX_MIME:
+                # Gemini does not accept PPTX bytes directly; send slide text
+                # plus the extracted images as inline image parts.
+                pptx_text = _extract_text_from_pptx(file_bytes)
+                for img in extracted_images:
+                    data_url = img.get("data_url") or ""
+                    if not data_url.startswith("data:"):
+                        continue
+                    try:
+                        header, b64data = data_url.split(",", 1)
+                        mime = header.split(";", 1)[0].removeprefix("data:")
+                    except ValueError:
+                        continue
+                    parts.append({
+                        "inlineData": {"mimeType": mime, "data": b64data}
+                    })
                 parts.append({
-                    "fileData": {"mimeType": content_type, "fileUri": file_uri}
+                    "text": (
+                        f"Extract brand guidelines from this PowerPoint deck "
+                        f"({file.filename or 'file'}). Slide text content follows:\n\n"
+                        f"{pptx_text or '(no text content extracted)'}"
+                    )
                 })
             else:
-                b64 = base64.standard_b64encode(file_bytes).decode("ascii")
-                parts.append({
-                    "inlineData": {"mimeType": content_type, "data": b64}
-                })
+                if file_size > INLINE_MAX_FILE_SIZE:
+                    logger.info(
+                        "Uploading large file (%d MB) via Gemini File API",
+                        file_size // (1024 * 1024),
+                    )
+                    file_uri = await _upload_to_gemini_files_api(
+                        file_bytes, content_type, file.filename or "file", api_key
+                    )
+                    parts.append({
+                        "fileData": {"mimeType": content_type, "fileUri": file_uri}
+                    })
+                else:
+                    b64 = base64.standard_b64encode(file_bytes).decode("ascii")
+                    parts.append({
+                        "inlineData": {"mimeType": content_type, "data": b64}
+                    })
 
-            parts.append({
-                "text": f"Extract brand guidelines from this uploaded file ({file.filename or 'file'})."
-            })
+                parts.append({
+                    "text": f"Extract brand guidelines from this uploaded file ({file.filename or 'file'})."
+                })
             _append_logo_candidate_hint(parts, extracted_images)
 
             source_type = "file"
