@@ -164,10 +164,10 @@ export function NewBrandIdentityModal({ open, mode, existingName, onClose, onSav
               <span className="text-sm font-medium text-slate-700">
                 {file ? file.name : 'Choose file'}
               </span>
-              <span className="text-xs text-slate-500">PDF, PNG, JPG up to your server limit</span>
+              <span className="text-xs text-slate-500">PDF, PPTX, PNG, JPG up to your server limit</span>
               <input
                 type="file"
-                accept=".pdf,image/*"
+                accept=".pdf,.pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
                 className="hidden"
                 disabled={busy}
                 onChange={(e) => {
