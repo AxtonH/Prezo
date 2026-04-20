@@ -926,6 +926,22 @@ def artifact_attachment_ext_from_media_type(media_type: str) -> str | None:
     }.get(normalized)
 
 
+def normalize_artifact_attachment_url_for_backend(url: str, request: Request) -> str:
+    """Ensure returned local attachment URLs are reachable by this backend."""
+    raw = str(url or "").strip()
+    if not raw:
+        return raw
+    parsed = urlparse(raw)
+    if not parsed.scheme:
+        base = str(request.base_url).rstrip("/")
+        return f"{base}/{raw.lstrip('/')}"
+    # Local fallback uploads are served by this backend path; pin host to current backend origin.
+    if parsed.path.startswith("/library/poll-game/brand-logos/files/"):
+        base = str(request.base_url).rstrip("/")
+        return f"{base}{parsed.path}"
+    return raw
+
+
 @router.post("/poll-game-artifact-attachments/upload")
 async def upload_poll_game_artifact_attachment(
     request: Request,
@@ -962,8 +978,9 @@ async def upload_poll_game_artifact_attachment(
         media_type=media_type,
         request=request,
     )
+    normalized_url = normalize_artifact_attachment_url_for_backend(url, request)
     return {
-        "url": url,
+        "url": normalized_url,
         "media_type": media_type,
         "name": (file.filename or "attachment").strip()[:256] or "attachment",
         "size_bytes": len(raw),
