@@ -6,12 +6,14 @@ import logging
 import re
 import time
 import colorsys
+import uuid
 from typing import Any, Callable
+from urllib.parse import quote, urlparse
 
 logger = logging.getLogger("prezo.ai")
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
 from ..auth import AuthUser, get_optional_library_user
@@ -37,6 +39,7 @@ from ..artifact_patch import (
 )
 from ..config import settings
 from ..models import ArtifactPackage
+from .brand_logos import upload_brand_logo_bytes
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-sonnet-4-6"
@@ -344,6 +347,7 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- If context.artifact.requestMode == 'edit', treat the latest user request as a targeted refinement of the current artifact.",
         "- If context.artifact.requestMode == 'repair', treat context.artifact.currentArtifactHtml as the last stable working artifact, treat context.artifact.failedArtifactHtml as the broken prior attempt, and satisfy the latest edit request while avoiding context.artifact.runtimeRenderError.",
         "- In edit mode, make the smallest viable change that satisfies the latest request.",
+        "- If reference images are attached and the user says 'this image' without naming a target, default to applying it to the background/backdrop while preserving foreground gameplay visuals.",
         "- In repair mode, do not simply return the unchanged stable artifact unless the latest request is already satisfied.",
         "- In edit and repair mode, treat the current artifact as a working codebase. Patch it conservatively instead of reimagining it.",
         "- Preserve the current concept, layout, visual metaphor, typography, palette, and motion unless the user explicitly asks to change them.",
@@ -416,6 +420,7 @@ POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION = "\n".join(
         "You are a text assistant for the Prezo artifact editor.",
         "Answer questions about the current artifact, its behavior, its live poll data, and likely causes of issues.",
         "Use the provided context.artifact.currentArtifactHtml and context.artifact.currentArtifactLiveHooks when helpful.",
+        "If reference images are attached and the user asks about 'this image', interpret it as the attached image set.",
         "Do not return HTML, CSS, JavaScript, JSON, markdown fences, or code unless the user explicitly asks for code.",
         "Do not redesign or rebuild the artifact when the user is asking a question.",
         "If the user asks an explanatory question, answer directly and concisely.",
@@ -463,7 +468,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         "Fix by setting `overflow: visible` on the clipping ancestor, or reposition the element within bounds.",
         "- Do not output a full rewritten artifact in JSON fields.",
         "- Never invent, guess, or fabricate third-party asset URLs.",
-        "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL, return an empty edits array and explain that a direct asset URL is required.",
+        "- If the request needs a new external image, photo, texture, or logo URL and the user did not provide a direct URL or attached image, return an empty edits array and explain that a direct asset URL or attachment is required.",
         "- If patch mode is not suitable, return an empty edits array and explain that in assistantMessage.",
     ]
 )
@@ -603,18 +608,28 @@ class PollGameEditPlanResponse(BaseModel):
     model: str
 
 
-ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 4 * 1024 * 1024
+ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 20 * 1024 * 1024
 ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS = 2
 ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg", "image/gif", "image/webp"}
 )
+ARTIFACT_REFERENCE_IMAGE_FETCH_TIMEOUT_SECONDS = 20.0
+ARTIFACT_REFERENCE_IMAGE_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
 class ArtifactReferenceImagePayload(BaseModel):
-    """Base64 image data for initial artifact build (Anthropic vision)."""
+    """Base64 image data for artifact multimodal requests."""
 
     media_type: str = Field(default="image/png", max_length=48)
-    data: str = Field(..., min_length=20, max_length=8_000_000)
+    data: str = Field(..., min_length=20, max_length=40_000_000)
+
+
+class ArtifactAttachmentPayload(BaseModel):
+    """Uploaded image metadata that points to a public URL."""
+
+    url: str = Field(..., min_length=8, max_length=2048)
+    media_type: str = Field(default="image/png", max_length=48)
+    name: str | None = Field(default=None, max_length=256)
 
 
 class PollGameArtifactBuildRequest(BaseModel):
@@ -623,6 +638,21 @@ class PollGameArtifactBuildRequest(BaseModel):
     model: str | None = Field(default=None, max_length=120)
     brand_profile_name: str | None = Field(default=None, max_length=64)
     reference_images: list[ArtifactReferenceImagePayload] | None = Field(
+        default=None,
+        max_length=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
+    )
+    attachments: list[ArtifactAttachmentPayload] | None = Field(
+        default=None,
+        max_length=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
+    )
+
+
+class PollGameArtifactAnswerRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=16000)
+    context: dict[str, Any] = Field(default_factory=dict)
+    model: str | None = Field(default=None, max_length=120)
+    brand_profile_name: str | None = Field(default=None, max_length=64)
+    attachments: list[ArtifactAttachmentPayload] | None = Field(
         default=None,
         max_length=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
     )
@@ -753,7 +783,10 @@ def normalize_anthropic_reference_images(
         if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Each reference image must be at most 4MB after decoding.",
+                detail=(
+                    "Each reference image must be at most "
+                    f"{ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES // (1024 * 1024)}MB after decoding."
+                ),
             )
         mt = str(it.media_type).strip().lower()
         if mt in {"image/jpg"}:
@@ -769,6 +802,172 @@ def normalize_anthropic_reference_images(
             )
         out.append((mt, raw_b64))
     return out
+
+
+def normalize_reference_image_media_type(media_type: str | None) -> str:
+    mt = str(media_type or "").strip().lower()
+    if mt == "image/jpg":
+        return "image/jpeg"
+    return mt or "image/png"
+
+
+def _guess_media_type_from_url(url: str) -> str:
+    lowered = (url or "").strip().lower()
+    if lowered.endswith(".png"):
+        return "image/png"
+    if lowered.endswith(".jpg") or lowered.endswith(".jpeg"):
+        return "image/jpeg"
+    if lowered.endswith(".gif"):
+        return "image/gif"
+    if lowered.endswith(".webp"):
+        return "image/webp"
+    return "image/png"
+
+
+async def fetch_reference_image_from_url(
+    url: str,
+    *,
+    fallback_media_type: str = "image/png",
+) -> tuple[str, str]:
+    parsed = urlparse(url)
+    if parsed.scheme not in ARTIFACT_REFERENCE_IMAGE_ALLOWED_SCHEMES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="attachments.url must use http or https.",
+        )
+    if not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="attachments.url is missing a host.",
+        )
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                ARTIFACT_REFERENCE_IMAGE_FETCH_TIMEOUT_SECONDS, connect=8.0
+            ),
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(url)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Could not fetch attachment image from URL: {exc.__class__.__name__}",
+        ) from exc
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"attachments.url fetch failed ({response.status_code}).",
+        )
+    raw = response.content or b""
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="attachments.url returned an empty file.",
+        )
+    if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Each attachment image must be at most "
+                f"{ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES // (1024 * 1024)}MB."
+            ),
+        )
+    content_type = normalize_reference_image_media_type(
+        str(response.headers.get("content-type") or "").split(";")[0]
+    )
+    if content_type not in ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES:
+        content_type = normalize_reference_image_media_type(fallback_media_type)
+    if content_type not in ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES:
+        content_type = _guess_media_type_from_url(url)
+    if content_type not in ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES:
+        allowed = ", ".join(sorted(ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported attachment media type. Allowed: {allowed}.",
+        )
+    return content_type, base64.b64encode(raw).decode("ascii")
+
+
+async def normalize_attachment_reference_images(
+    attachments: list[ArtifactAttachmentPayload] | None,
+) -> list[tuple[str, str]]:
+    if not attachments:
+        return []
+    out: list[tuple[str, str]] = []
+    for item in attachments[:ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS]:
+        media_type = normalize_reference_image_media_type(item.media_type)
+        out.append(
+            await fetch_reference_image_from_url(item.url, fallback_media_type=media_type)
+        )
+    return out
+
+
+async def collect_reference_images(
+    *,
+    inline_images: list[ArtifactReferenceImagePayload] | None,
+    attachments: list[ArtifactAttachmentPayload] | None,
+) -> list[tuple[str, str]]:
+    collected: list[tuple[str, str]] = []
+    if inline_images:
+        collected.extend(normalize_anthropic_reference_images(list(inline_images)))
+    if len(collected) < ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS and attachments:
+        remaining = ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS - len(collected)
+        collected.extend(await normalize_attachment_reference_images(attachments[:remaining]))
+    return collected[:ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS]
+
+
+def artifact_attachment_ext_from_media_type(media_type: str) -> str | None:
+    normalized = normalize_reference_image_media_type(media_type)
+    return {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }.get(normalized)
+
+
+@router.post("/poll-game-artifact-attachments/upload")
+async def upload_poll_game_artifact_attachment(
+    request: Request,
+    file: UploadFile = File(...),
+    library_user: AuthUser | None = Depends(get_optional_library_user),
+) -> dict[str, Any]:
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Attachment file is empty.",
+        )
+    if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Image too large (max "
+                f"{ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES // (1024 * 1024)}MB)"
+            ),
+        )
+    media_type = normalize_reference_image_media_type(file.content_type)
+    ext = artifact_attachment_ext_from_media_type(media_type)
+    if ext is None:
+        allowed = ", ".join(sorted(ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image type. Allowed: {allowed}",
+        )
+    user_id = library_user.id if library_user else f"anon-{uuid.uuid4().hex}"
+    url = await upload_brand_logo_bytes(
+        user_id=quote(user_id, safe=""),
+        raw=raw,
+        ext=ext,
+        media_type=media_type,
+        request=request,
+    )
+    return {
+        "url": url,
+        "media_type": media_type,
+        "name": (file.filename or "attachment").strip()[:256] or "attachment",
+        "size_bytes": len(raw),
+    }
 
 
 async def request_anthropic_text(
@@ -893,9 +1092,22 @@ async def request_gemini_text(
     response_mime_type: str | None = None,
     response_json_schema: dict[str, Any] | None = None,
     thinking_budget: int | None = None,
+    reference_images: list[tuple[str, str]] | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_gemini_base_url()
     endpoint = build_gemini_generate_content_endpoint(base_url, model)
+    parts: list[dict[str, Any]] = []
+    if reference_images:
+        for media_type, b64_data in reference_images:
+            parts.append(
+                {
+                    "inlineData": {
+                        "mimeType": media_type,
+                        "data": b64_data,
+                    }
+                }
+            )
+    parts.append({"text": prompt_text})
     body = {
         "systemInstruction": {
             "parts": [
@@ -907,11 +1119,7 @@ async def request_gemini_text(
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {
-                        "text": prompt_text,
-                    }
-                ],
+                "parts": parts,
             }
         ],
         "generationConfig": {
@@ -1047,6 +1255,12 @@ async def create_poll_game_artifact_build(
         if isinstance(request_context.get("artifact"), dict)
         else {}
     )
+    reference_images = await collect_reference_images(
+        inline_images=payload.reference_images,
+        attachments=payload.attachments,
+    )
+    if isinstance(artifact_context, dict):
+        artifact_context["hasAttachedReferenceImages"] = bool(reference_images)
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     is_initial_build = request_mode not in {"edit", "repair"}
     original_edit_request = extract_artifact_original_edit_request(
@@ -1266,9 +1480,7 @@ async def create_poll_game_artifact_build(
                 reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
             ),
         )
-        ref_parts: list[tuple[str, str]] = []
-        if payload.reference_images:
-            ref_parts = normalize_anthropic_reference_images(list(payload.reference_images))
+        ref_parts = reference_images
         prompt_text = json.dumps(
             {"prompt": payload.prompt, "context": model_context},
             indent=2,
@@ -1277,6 +1489,8 @@ async def create_poll_game_artifact_build(
             prompt_text = (
                 "The user attached one or more reference image(s). Prioritize the visual style, layout density, "
                 "color mood, typography weight, and overall composition of these images when generating the artifact. "
+                "If the user says 'this image' or similar and the target is unclear, treat the image as the requested visual reference, "
+                "apply it to the most likely target (background if unspecified), and explain your assumption in assistantMessage. "
                 "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image.\n\n"
                 + prompt_text
             )
@@ -1324,7 +1538,16 @@ async def create_poll_game_artifact_build(
             api_key=build_api_key,
             model=model,
             system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-            prompt_text=json.dumps(
+            prompt_text=(
+                (
+                    "The user attached one or more reference image(s). "
+                    "If they refer to 'this image' ambiguously, apply the image to the most likely intended target "
+                    "(background by default) and state that assumption in assistantMessage.\n\n"
+                )
+                if reference_images
+                else ""
+            )
+            + json.dumps(
                 {"prompt": payload.prompt, "context": model_context},
                 indent=2,
             ),
@@ -1333,6 +1556,7 @@ async def create_poll_game_artifact_build(
             timeout_seconds=timeout_seconds,
             request_stage=request_stage,
             remaining_budget_seconds=remaining_budget_seconds,
+            reference_images=reference_images or None,
         )
         generation_provider_name = "Gemini"
 
@@ -1379,6 +1603,7 @@ async def create_poll_game_artifact_build(
             timeout_seconds=fallback_timeout_seconds,
             request_stage="artifact edit fallback generation",
             remaining_budget_seconds=remaining_budget_seconds,
+            reference_images=reference_images or None,
         )
         fallback_html = normalize_poll_game_artifact_html(fallback_text)
         if fallback_html:
@@ -1433,7 +1658,7 @@ async def create_poll_game_artifact_build(
 
 @router.post("/poll-game-artifact-answer", response_model=PollGameArtifactAssistantResponse)
 async def create_poll_game_artifact_answer(
-    payload: PollGameArtifactBuildRequest,
+    payload: PollGameArtifactAnswerRequest,
     store: InMemoryStore = Depends(get_store),
     library_user: AuthUser | None = Depends(get_optional_library_user),
 ) -> PollGameArtifactAssistantResponse:
@@ -1455,6 +1680,17 @@ async def create_poll_game_artifact_answer(
         library_user,
         store,
     )
+    reference_images = await collect_reference_images(
+        inline_images=None,
+        attachments=payload.attachments,
+    )
+    artifact_context = (
+        request_context.get("artifact")
+        if isinstance(request_context.get("artifact"), dict)
+        else {}
+    )
+    if isinstance(artifact_context, dict):
+        artifact_context["hasAttachedReferenceImages"] = bool(reference_images)
 
     model = resolve_gemini_artifact_answer_model()
     text, _stop_reason = await request_gemini_text(
@@ -1469,6 +1705,7 @@ async def create_poll_game_artifact_answer(
         max_tokens=900,
         timeout_seconds=settings.gemini_artifact_answer_timeout_seconds,
         request_stage="artifact question answer",
+        reference_images=reference_images or None,
     )
 
     answer = (text or "").strip()
@@ -1493,12 +1730,16 @@ async def attempt_artifact_patch_edit(
     remaining_budget_seconds: float | None = None,
     use_anthropic_patch_planner: bool = False,
 ) -> tuple[str, dict[str, Any] | None, str, list[str], str]:
-    if artifact_edit_request_requires_external_asset_url(original_edit_request):
+    artifact_context = context.get("artifact") if isinstance(context, dict) else {}
+    if artifact_edit_request_requires_external_asset_url(
+        original_edit_request,
+        has_reference_images=artifact_context_has_reference_images(artifact_context),
+    ):
         return (
             "",
             current_package,
-            "This edit needs a direct image URL. Provide the exact image URL and the editor can swap only the requested background image.",
-            ["the requested edit needs a direct external image URL."],
+            "This edit needs either an attached image or a direct image URL. Attach an image in the composer or provide the exact URL.",
+            ["the requested edit needs an attached image or a direct external image URL."],
             "",
         )
     patch_prompt = build_artifact_patch_edit_prompt(
@@ -2373,12 +2614,15 @@ def should_route_artifact_edit_to_anthropic(
     if request_mode != "edit":
         return False
     normalized = (original_edit_request or "").strip()
+    has_reference_images = artifact_context_has_reference_images(artifact_context)
     if not normalized:
         return False
     if is_layout_orientation_artifact_edit_request(normalized):
         return not bool(get_artifact_patch_source_html(artifact_context))
     if is_background_visual_edit_request(normalized):
-        if artifact_edit_request_requires_external_asset_url(normalized):
+        if artifact_edit_request_requires_external_asset_url(
+            normalized, has_reference_images=has_reference_images
+        ):
             return False
         return not bool(get_artifact_patch_source_html(artifact_context))
     return classify_artifact_edit_request_scope(normalized) in {
@@ -2393,7 +2637,9 @@ def should_use_anthropic_for_artifact_patch_edit(
     if request_mode != "edit":
         return False
     normalized = (original_edit_request or "").strip()
-    if not normalized or artifact_edit_request_requires_external_asset_url(normalized):
+    if not normalized or artifact_edit_request_requires_external_asset_url(
+        normalized, has_reference_images=False
+    ):
         return False
     return is_background_visual_edit_request(normalized)
 
@@ -2520,7 +2766,8 @@ def build_artifact_patch_edit_prompt(
     )
     is_city_background_edit = is_city_background_edit_request(original_edit_request)
     requires_external_asset_url = artifact_edit_request_requires_external_asset_url(
-        original_edit_request
+        original_edit_request,
+        has_reference_images=artifact_context_has_reference_images(artifact_context),
     )
     style_selector_candidates = extract_artifact_style_rule_selectors(current_html)
     background_selector_candidates = prefer_selectors_with_existing_css_rule(
@@ -2878,9 +3125,19 @@ def apply_string_artifact_patch_edit(
     return working, f"used unsupported type `{edit_type}`."
 
 
-def artifact_edit_request_requires_external_asset_url(request: str) -> bool:
+def artifact_context_has_reference_images(artifact_context: Any) -> bool:
+    if not isinstance(artifact_context, dict):
+        return False
+    return bool(artifact_context.get("hasAttachedReferenceImages"))
+
+
+def artifact_edit_request_requires_external_asset_url(
+    request: str, *, has_reference_images: bool = False
+) -> bool:
     text = (request or "").strip()
     if not text:
+        return False
+    if has_reference_images:
         return False
     lowered = text.lower()
     if re.search(r"\bhttps?://\S+", text, re.IGNORECASE) or "data:image/" in lowered:
@@ -5562,7 +5819,9 @@ def attempt_builtin_cityscape_background_patch(
     current_html: str,
     original_edit_request: str,
 ) -> tuple[str, str]:
-    if artifact_edit_request_requires_external_asset_url(original_edit_request):
+    if artifact_edit_request_requires_external_asset_url(
+        original_edit_request, has_reference_images=False
+    ):
         return "", ""
     if not is_city_background_edit_request(original_edit_request):
         return "", ""

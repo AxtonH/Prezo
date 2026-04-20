@@ -83,7 +83,8 @@ import {
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
-  const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 4 * 1024 * 1024
+  const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 20 * 1024 * 1024
+  const ARTIFACT_MAX_REFERENCE_ATTACHMENTS = 2
   const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
@@ -216,8 +217,8 @@ import {
       loaderTime: 0,
       conversationStepIndex: 0,
       conversationAnswers: createEmptyArtifactAnswers(),
-      /** Optional { media_type, data } for initial Anthropic build (first wizard step). */
-      buildReferenceImage: null
+      /** Uploaded image attachments for build/edit/question turns. */
+      referenceAttachments: []
     },
     ai: {
       open: false,
@@ -1473,7 +1474,7 @@ import {
   }
 
   function clearArtifactBuildReferenceUi() {
-    state.artifact.buildReferenceImage = null
+    state.artifact.referenceAttachments = []
     if (buildReferencePreviewObjectUrl) {
       URL.revokeObjectURL(buildReferencePreviewObjectUrl)
       buildReferencePreviewObjectUrl = null
@@ -1495,51 +1496,81 @@ import {
     return 'image/png'
   }
 
-  function validateReferenceImagePayload(mediaType, b64) {
-    const data = asText(b64).replace(/\s/g, '')
-    if (data.length < 20) {
-      return null
+  function cloneArtifactReferenceAttachments(value) {
+    if (!Array.isArray(value)) {
+      return []
     }
-    let binary
-    try {
-      binary = atob(data)
-    } catch {
-      return null
-    }
-    if (binary.length > ARTIFACT_BUILD_REFERENCE_MAX_BYTES) {
-      return null
-    }
-    return { media_type: mediaType, data }
+    return value
+      .map((item) => ({
+        url: asText(item?.url),
+        media_type: normalizeArtifactReferenceMediaType(item?.media_type),
+        name: asText(item?.name)
+      }))
+      .filter((item) => item.url && item.media_type)
+      .slice(0, ARTIFACT_MAX_REFERENCE_ATTACHMENTS)
   }
 
-  function dataUrlToReferencePayload(dataUrl) {
-    const raw = asText(dataUrl)
-    const comma = raw.indexOf(',')
-    if (comma === -1) {
-      return null
+  function updateArtifactAttachmentPreview(file) {
+    if (buildReferencePreviewObjectUrl) {
+      URL.revokeObjectURL(buildReferencePreviewObjectUrl)
+      buildReferencePreviewObjectUrl = null
     }
-    const header = raw.slice(0, comma)
-    const b64 = raw.slice(comma + 1)
-    if (!/;base64/i.test(header)) {
-      return null
+    if (file) {
+      buildReferencePreviewObjectUrl = URL.createObjectURL(file)
+      el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
+      el.artifactTypeReferencePreview.classList.remove('hidden')
+      return
     }
-    const mediaMatch = /^data:([^;,]+)/i.exec(header)
-    const mediaType = normalizeArtifactReferenceMediaType(mediaMatch ? mediaMatch[1] : 'image/png')
-    return validateReferenceImagePayload(mediaType, b64)
+    const fallback = state.artifact.referenceAttachments[0]
+    if (fallback?.url) {
+      el.artifactTypeReferencePreviewImg.src = fallback.url
+      el.artifactTypeReferencePreview.classList.remove('hidden')
+      return
+    }
+    el.artifactTypeReferencePreview.classList.add('hidden')
+    el.artifactTypeReferencePreviewImg.removeAttribute('src')
   }
 
-  function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
+  function refreshArtifactAttachmentStatus() {
+    const count = state.artifact.referenceAttachments.length
+    if (count === 0) {
+      if (!el.artifactTypeReferenceStatus.textContent.startsWith('Upload')) {
+        el.artifactTypeReferenceStatus.textContent = ''
+      }
+      updateArtifactAttachmentPreview(null)
+      return
+    }
+    const label = count === 1 ? '1 image attached' : `${count} images attached`
+    el.artifactTypeReferenceStatus.textContent = `${label} (used for build/edit/question until removed).`
+  }
+
+  async function uploadArtifactReferenceImage(file) {
+    const token = getLibraryAccessToken()
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`${state.apiBase}/ai/poll-game-artifact-attachments/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: formData
     })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message = extractApiErrorMessage(payload, response.status)
+      throw new Error(message)
+    }
+    const url = asText(payload?.url)
+    if (!url) {
+      throw new Error('Upload succeeded but no URL was returned.')
+    }
+    return {
+      url,
+      media_type: normalizeArtifactReferenceMediaType(payload?.media_type),
+      name: asText(payload?.name) || asText(file?.name)
+    }
   }
 
   function syncArtifactTypeReferenceRow() {
-    const currentStep = getArtifactConversationStep()
-    const show = Boolean(currentStep?.key === 'artifactType')
+    const show = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     if (show) {
       setEditorShellExpanded(true)
     }
@@ -1548,6 +1579,7 @@ import {
     el.artifactTypeReferenceInput.disabled = refInteractDisabled
     el.artifactTypeReferenceClear.disabled = refInteractDisabled
     el.artifactTypeReferencePaperclip.disabled = refInteractDisabled
+    refreshArtifactAttachmentStatus()
   }
 
   function setArtifactBuildReferenceFromFile(file) {
@@ -1556,27 +1588,26 @@ import {
       return
     }
     if (file.size > ARTIFACT_BUILD_REFERENCE_MAX_BYTES) {
-      el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 4MB).'
+      el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 20MB).'
+      return
+    }
+    if (state.artifact.referenceAttachments.length >= ARTIFACT_MAX_REFERENCE_ATTACHMENTS) {
+      el.artifactTypeReferenceStatus.textContent =
+        `You can attach up to ${ARTIFACT_MAX_REFERENCE_ATTACHMENTS} images. Remove one to add another.`
       return
     }
     void (async () => {
+      el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
       try {
-        const dataUrl = await readFileAsDataUrl(file)
-        const payload = dataUrlToReferencePayload(dataUrl)
-        if (!payload) {
-          el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
-          return
-        }
-        state.artifact.buildReferenceImage = payload
-        if (buildReferencePreviewObjectUrl) {
-          URL.revokeObjectURL(buildReferencePreviewObjectUrl)
-        }
-        buildReferencePreviewObjectUrl = URL.createObjectURL(file)
-        el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
-        el.artifactTypeReferencePreview.classList.remove('hidden')
-        el.artifactTypeReferenceStatus.textContent = ''
+        const attachment = await uploadArtifactReferenceImage(file)
+        state.artifact.referenceAttachments = [
+          ...state.artifact.referenceAttachments,
+          attachment
+        ].slice(0, ARTIFACT_MAX_REFERENCE_ATTACHMENTS)
+        updateArtifactAttachmentPreview(file)
+        refreshArtifactAttachmentStatus()
       } catch {
-        el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
+        el.artifactTypeReferenceStatus.textContent = 'Could not upload that image.'
       }
     })()
   }
@@ -1627,7 +1658,17 @@ import {
     if (el.artifactTypeReferenceClear.disabled) {
       return
     }
-    clearArtifactBuildReferenceUi()
+    if (state.artifact.referenceAttachments.length === 0) {
+      clearArtifactBuildReferenceUi()
+      return
+    }
+    state.artifact.referenceAttachments = state.artifact.referenceAttachments.slice(0, -1)
+    if (state.artifact.referenceAttachments.length === 0) {
+      clearArtifactBuildReferenceUi()
+      return
+    }
+    updateArtifactAttachmentPreview(null)
+    refreshArtifactAttachmentStatus()
   }
 
   function handleArtifactBuildReferencePaste(event) {
@@ -1639,9 +1680,6 @@ import {
     }
     const active = document.activeElement
     if (!active || !el.artifactComposer.contains(active)) {
-      return
-    }
-    if (getArtifactConversationStep()?.key !== 'artifactType') {
       return
     }
     if (state.artifact.busy) {
@@ -2482,16 +2520,10 @@ import {
 
     const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
     const prompt = buildArtifactConversationPrompt(conversationAnswers)
-    const buildRef =
-      state.artifact.buildReferenceImage &&
-      state.artifact.buildReferenceImage.data &&
-      state.artifact.buildReferenceImage.media_type
-        ? {
-            media_type: state.artifact.buildReferenceImage.media_type,
-            data: state.artifact.buildReferenceImage.data
-          }
-        : null
-    await submitArtifactPrompt(prompt, { conversationAnswers, buildReferenceImage: buildRef })
+    await submitArtifactPrompt(prompt, {
+      conversationAnswers,
+      referenceAttachments: cloneArtifactReferenceAttachments(state.artifact.referenceAttachments)
+    })
   }
 
   function clearArtifactEditPromptQueue() {
@@ -2633,7 +2665,9 @@ import {
         },
         context.poll
       )
-      const answer = await requestAiArtifactAnswer(request, context)
+      const answer = await requestAiArtifactAnswer(request, context, {
+        attachments: cloneArtifactReferenceAttachments(state.artifact.referenceAttachments)
+      })
       appendArtifactEditMessage('assistant', answer.text)
     } catch (error) {
       const message = `Artifact question failed: ${errorToMessage(error)}`
@@ -2654,17 +2688,9 @@ import {
     }
 
     const requestKind = options.requestKind === 'edit' ? 'edit' : 'build'
-    const buildReferenceSnapshot =
-      requestKind === 'build' &&
-      options.buildReferenceImage &&
-      typeof options.buildReferenceImage === 'object' &&
-      asText(options.buildReferenceImage.data) &&
-      asText(options.buildReferenceImage.media_type)
-        ? {
-            media_type: asText(options.buildReferenceImage.media_type),
-            data: asText(options.buildReferenceImage.data)
-          }
-        : null
+    const referenceAttachments = cloneArtifactReferenceAttachments(
+      options.referenceAttachments || state.artifact.referenceAttachments
+    )
     const conversationAnswers =
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
@@ -2694,7 +2720,7 @@ import {
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context, {
-        referenceImages: buildReferenceSnapshot ? [buildReferenceSnapshot] : null
+        attachments: referenceAttachments
       })
       const applied = applyArtifactMarkup(buildResult.html, {
         requestKind,
@@ -2718,7 +2744,7 @@ import {
           state.artifact.pendingSuccessMessage = statusMessage
         }
         if (requestKind === 'build') {
-          clearArtifactBuildReferenceUi()
+          refreshArtifactAttachmentStatus()
         }
       }
     } catch (error) {
@@ -3467,11 +3493,12 @@ import {
     if (brandProfileName) {
       body.brand_profile_name = brandProfileName
     }
-    const refImages = options.referenceImages
-    if (Array.isArray(refImages) && refImages.length > 0) {
-      body.reference_images = refImages.slice(0, 2).map((item) => ({
-        media_type: asText(item?.media_type) || 'image/png',
-        data: asText(item?.data)
+    const attachments = cloneArtifactReferenceAttachments(options.attachments)
+    if (attachments.length > 0) {
+      body.attachments = attachments.slice(0, ARTIFACT_MAX_REFERENCE_ATTACHMENTS).map((item) => ({
+        url: asText(item?.url),
+        media_type: normalizeArtifactReferenceMediaType(item?.media_type),
+        name: asText(item?.name)
       }))
     }
     const response = await fetchWithTimeout(endpoint, {
@@ -3505,13 +3532,21 @@ import {
     }
   }
 
-  async function requestAiArtifactAnswer(prompt, context) {
+  async function requestAiArtifactAnswer(prompt, context, options = {}) {
     const model = asText(state.ai.model) || AI_DEFAULT_MODEL
     const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
     const body = {
       prompt,
       context,
       model
+    }
+    const attachments = cloneArtifactReferenceAttachments(options.attachments)
+    if (attachments.length > 0) {
+      body.attachments = attachments.slice(0, ARTIFACT_MAX_REFERENCE_ATTACHMENTS).map((item) => ({
+        url: asText(item?.url),
+        media_type: normalizeArtifactReferenceMediaType(item?.media_type),
+        name: asText(item?.name)
+      }))
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
