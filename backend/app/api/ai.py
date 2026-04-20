@@ -1276,8 +1276,9 @@ async def create_poll_game_artifact_build(
         inline_images=payload.reference_images,
         attachments=payload.attachments,
     )
+    has_reference_images = bool(reference_images)
     if isinstance(artifact_context, dict):
-        artifact_context["hasAttachedReferenceImages"] = bool(reference_images)
+        artifact_context["hasAttachedReferenceImages"] = has_reference_images
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     is_initial_build = request_mode not in {"edit", "repair"}
     original_edit_request = extract_artifact_original_edit_request(
@@ -1295,7 +1296,7 @@ async def create_poll_game_artifact_build(
     patch_failure_reasons: list[str] = []
     patch_debug: str = ""
     force_full_generation_after_patch = False
-    if should_attempt_artifact_patch_edit(
+    if (not has_reference_images) and should_attempt_artifact_patch_edit(
         request_mode,
         artifact_context,
         original_edit_request,
