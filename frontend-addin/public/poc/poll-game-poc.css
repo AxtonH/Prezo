@@ -579,10 +579,25 @@ body.editor-panel-resizing {
   display: none !important;
 }
 
-/* Footer hint hidden in dock: keeps prompt bar height identical collapsed vs expanded. */
-#ai-chat-shell .ai-prompt-bar-footer,
-#ai-chat-shell .artifact-prompt-bar-footer {
+/* Footer hint hidden in dock for AI chat; artifact footer stays visible for attachments. */
+#ai-chat-shell .ai-prompt-bar-footer {
   display: none !important;
+}
+
+#ai-chat-shell .artifact-prompt-bar-footer {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 6px;
+}
+
+#ai-chat-shell .artifact-prompt-bar-footer > #artifact-brand-reference-status,
+#ai-chat-shell .artifact-prompt-bar-footer > .artifact-prompt-hint {
+  display: none !important;
+}
+
+#ai-chat-shell .artifact-prompt-bar-footer > #artifact-type-reference-inline {
+  margin-left: auto;
 }
 
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-composer-header,
