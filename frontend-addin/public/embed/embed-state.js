@@ -60,9 +60,16 @@
     typeof PowerPoint !== "undefined" && typeof PowerPoint.run === "function"
 
   // Resolve (and cache for the lifetime of this iframe) the UUID that
-  // identifies *this* embed instance. First load queries the host slide's
-  // tag collection; if the tag exists we inherit the saved ID, otherwise we
-  // mint a fresh UUID and write it back to the tag.
+  // identifies *this* embed instance. First activation queries the host
+  // slide's tag collection; if the tag exists we inherit the saved ID,
+  // otherwise we mint a fresh UUID and write it back to the tag.
+  //
+  // Identity resolution is DEFERRED until activate() is called (typically
+  // after a user click) because `getSelectedSlides()` returns the UI-selected
+  // slide, not the embed's host slide. At presentation-open time only one
+  // slide is selected, so if every embed queried immediately they would all
+  // identify as the same slide. A user click on an embed selects that
+  // embed's slide first, which is when identity can be resolved reliably.
   let embedIdPromise = null
 
   const resolveEmbedId = async () => {
@@ -96,12 +103,21 @@
     }
   }
 
-  const getEmbedId = () => {
+  const activate = () => {
     if (!embedIdPromise) {
       embedIdPromise = resolveEmbedId()
     }
     return embedIdPromise
   }
+
+  const getEmbedId = async () => {
+    if (!embedIdPromise) {
+      return null
+    }
+    return embedIdPromise
+  }
+
+  const isActivated = () => embedIdPromise !== null
 
   const readLocalAll = () => {
     try {
@@ -292,6 +308,9 @@ ${instances}
 
   const load = async () => {
     const embedId = await getEmbedId()
+    if (!embedId) {
+      return { ...EMPTY_STATE }
+    }
     const localAll = readLocalAll()
     const fromLocal = localAll[embedId] ? normalize(localAll[embedId]) : null
     const xmlStates = await readAllStatesFromXml()
@@ -308,6 +327,11 @@ ${instances}
 
   const save = async (partial) => {
     const embedId = await getEmbedId()
+    if (!embedId) {
+      // Not yet activated — silently drop. The shell will retry after the
+      // user clicks to activate this embed.
+      return { ...EMPTY_STATE }
+    }
     const localAll = readLocalAll()
     const current = localAll[embedId] ? normalize(localAll[embedId]) : { ...EMPTY_STATE }
     const next = normalize({
@@ -353,6 +377,9 @@ ${instances}
       }
       try {
         const embedId = await getEmbedId()
+        if (!embedId) {
+          return
+        }
         const parsed = event.newValue ? JSON.parse(event.newValue) : null
         const entries = parsed?.entries && typeof parsed.entries === "object" ? parsed.entries : {}
         const entry = entries[embedId]
@@ -370,5 +397,13 @@ ${instances}
   // this always returns true now.
   const ownsActiveClaim = () => true
 
-  window.PrezoEmbedState = { load, save, clear, onExternalChange, ownsActiveClaim }
+  window.PrezoEmbedState = {
+    load,
+    save,
+    clear,
+    onExternalChange,
+    activate,
+    isActivated,
+    ownsActiveClaim
+  }
 })()

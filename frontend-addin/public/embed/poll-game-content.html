@@ -249,6 +249,29 @@
         display: flex;
       }
 
+      .overlay--activatable {
+        cursor: pointer;
+      }
+
+      .overlay--activatable:hover .overlay-card,
+      .overlay--activatable:focus-visible .overlay-card {
+        border-color: var(--primary);
+        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.18);
+      }
+
+      .overlay-cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 4px;
+        padding: 9px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        background: var(--primary);
+        border-radius: var(--radius-md);
+      }
+
       .overlay-card {
         max-width: 420px;
         background: var(--surface);
@@ -409,10 +432,11 @@
                 fill="#ffffff"
               >P</text>
             </svg>
-            <p class="overlay-title" id="overlay-title">Connect a Prezo session</p>
+            <p class="overlay-title" id="overlay-title">Click to start this embed</p>
             <p class="overlay-body" id="overlay-message">
-              Open the Prezo Host add-in while signed in, then pick a session above to embed it on this slide.
+              PowerPoint needs a click on each embed so we can wire it to the right slide and restore any saved session.
             </p>
+            <span class="overlay-cta" id="overlay-cta">Start embed</span>
           </div>
         </div>
       </section>
@@ -443,6 +467,7 @@
         const overlay = document.getElementById("overlay")
         const overlayTitleEl = document.getElementById("overlay-title")
         const overlayMessageEl = document.getElementById("overlay-message")
+        const overlayCtaEl = document.getElementById("overlay-cta")
         const exitPresentBtn = document.getElementById("exit-present-btn")
 
         const STATUS_TONE = {
@@ -460,6 +485,7 @@
         let sessionsList = []
         let savedArtifactName = ""
         let savedPresentMode = false
+        let activationPromise = null
 
         const setStatus = (value) => {
           if (statusLabelEl) {
@@ -859,14 +885,73 @@
           return false
         }
 
+        const showActivationOverlay = () => {
+          if (overlayTitleEl) {
+            overlayTitleEl.textContent = "Click to start this embed"
+          }
+          if (overlayMessageEl) {
+            overlayMessageEl.textContent =
+              "PowerPoint needs a click on each embed so we can wire it to the right slide and restore any saved session."
+          }
+          if (overlayCtaEl) {
+            overlayCtaEl.style.display = ""
+          }
+          overlay.classList.add("visible", "overlay--activatable")
+          overlay.setAttribute("role", "button")
+          overlay.setAttribute("tabindex", "0")
+        }
+
+        const dismissActivationChrome = () => {
+          overlay.classList.remove("overlay--activatable")
+          overlay.removeAttribute("role")
+          overlay.removeAttribute("tabindex")
+          if (overlayCtaEl) {
+            overlayCtaEl.style.display = "none"
+          }
+        }
+
+        /* User-gesture gate: when the user clicks the embed, PowerPoint also
+           selects the host slide in the UI. That's the only moment
+           `PowerPoint.run → getSelectedSlides()` reliably reports *this*
+           embed's slide (Office.js exposes no host-slide identity otherwise).
+           We resolve the per-embed UUID here, load only this embed's saved
+           state, then boot the rest of the UI. */
+        const activateEmbed = () => {
+          if (activationPromise) {
+            return activationPromise
+          }
+          activationPromise = (async () => {
+            dismissActivationChrome()
+            setStatus("loading")
+            try {
+              await window.PrezoEmbedState?.activate?.()
+            } catch {
+              // Fall through — identity resolution failed, load() will
+              // return EMPTY_STATE and the user can still use the embed.
+            }
+            const saved = window.PrezoEmbedState
+              ? await window.PrezoEmbedState.load()
+              : null
+            if (saved?.sessionId && !selectedSessionId) {
+              selectedSessionId = saved.sessionId
+            }
+            if (saved?.pollId && !selectedPollId) {
+              selectedPollId = saved.pollId
+            }
+            if (saved?.artifactName) {
+              savedArtifactName = saved.artifactName
+            }
+            if (saved?.presentMode) {
+              savedPresentMode = true
+            }
+            await loadSessions()
+          })()
+          return activationPromise
+        }
+
         const init = async () => {
           setStatus("loading")
           await refreshLibrarySyncFromDocument()
-          /* State is keyed per-embed via a UUID stored in the host slide's
-             tag collection, so each embed loads only its own saved state. */
-          const saved = window.PrezoEmbedState
-            ? await window.PrezoEmbedState.load()
-            : null
           const binding = await readBindingFromDocument()
           if (binding?.apiBaseUrl) {
             apiBase = binding.apiBaseUrl
@@ -874,19 +959,7 @@
           if (binding?.sessionId && !selectedSessionId) {
             selectedSessionId = binding.sessionId
           }
-          if (saved?.sessionId && !selectedSessionId) {
-            selectedSessionId = saved.sessionId
-          }
-          if (saved?.pollId && !selectedPollId) {
-            selectedPollId = saved.pollId
-          }
-          if (saved?.artifactName) {
-            savedArtifactName = saved.artifactName
-          }
-          if (saved?.presentMode) {
-            savedPresentMode = true
-          }
-          await loadSessions()
+          showActivationOverlay()
           if (!librarySyncState?.token) {
             // Host may write the token moments after this embed loads; keep
             // watching for a short while so the user doesn't have to refresh.
@@ -916,6 +989,22 @@
         })
         refreshBtn.addEventListener("click", () => {
           void loadSessions()
+        })
+        overlay.addEventListener("click", () => {
+          if (!overlay.classList.contains("overlay--activatable")) {
+            return
+          }
+          void activateEmbed()
+        })
+        overlay.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") {
+            return
+          }
+          if (!overlay.classList.contains("overlay--activatable")) {
+            return
+          }
+          event.preventDefault()
+          void activateEmbed()
         })
         const requestExitPresentMode = () => {
           try {
