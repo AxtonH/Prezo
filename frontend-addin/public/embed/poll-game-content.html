@@ -89,7 +89,8 @@
         color: var(--muted);
       }
 
-      .field input {
+      .field input,
+      .field select {
         width: 100%;
         border: 1px solid var(--panel-border);
         background: var(--panel);
@@ -97,6 +98,23 @@
         border-radius: 8px;
         padding: 7px 8px;
         font-size: 12px;
+      }
+
+      .field select:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .poll-picker {
+        margin-top: 8px;
+        display: none;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: end;
+      }
+
+      .poll-picker.visible {
+        display: grid;
       }
 
       .actions {
@@ -188,6 +206,17 @@
             <button id="connect-btn" type="button">Connect</button>
           </div>
         </div>
+        <div class="poll-picker" id="poll-picker">
+          <div class="field">
+            <label for="poll-select">Poll</label>
+            <select id="poll-select" disabled>
+              <option value="">Loading polls…</option>
+            </select>
+          </div>
+          <div class="actions">
+            <button id="poll-refresh-btn" type="button" title="Reload the list of polls for this session">Refresh</button>
+          </div>
+        </div>
       </header>
       <section class="frame-wrap">
         <iframe id="game-frame" title="Prezo game surface" allowfullscreen></iframe>
@@ -206,7 +235,7 @@
         const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
         const PREZO_LIBRARY_SYNC_REQUEST_MESSAGE = "prezo:request-library-sync"
         const params = new URLSearchParams(window.location.search)
-        const pollId = params.get("pollId")
+        const initialPollId = params.get("pollId") || ""
 
         const statusEl = document.getElementById("status")
         const metaEl = document.getElementById("meta")
@@ -216,7 +245,12 @@
         const connectBtn = document.getElementById("connect-btn")
         const frame = document.getElementById("game-frame")
         const overlay = document.getElementById("overlay")
+        const pollPickerEl = document.getElementById("poll-picker")
+        const pollSelectEl = document.getElementById("poll-select")
+        const pollRefreshBtn = document.getElementById("poll-refresh-btn")
         let librarySyncState = null
+        let selectedPollId = initialPollId
+        let resolvedSessionId = ""
 
         const setStatus = (value) => {
           statusEl.textContent = value
@@ -362,6 +396,127 @@
           }
         }
 
+        const describePollOption = (poll, index) => {
+          const question =
+            typeof poll?.question === "string" && poll.question.trim()
+              ? poll.question.trim()
+              : `Poll ${index + 1}`
+          const status =
+            typeof poll?.status === "string" && poll.status.trim()
+              ? ` · ${poll.status}`
+              : ""
+          return `${question}${status}`
+        }
+
+        const setPollPickerMessage = (message) => {
+          pollSelectEl.replaceChildren()
+          const opt = document.createElement("option")
+          opt.value = ""
+          opt.textContent = message
+          pollSelectEl.appendChild(opt)
+          pollSelectEl.disabled = true
+        }
+
+        const populatePollPicker = (polls) => {
+          if (!Array.isArray(polls) || polls.length === 0) {
+            setPollPickerMessage("No polls in this session")
+            return
+          }
+          const sorted = [...polls].sort((a, b) => {
+            const left = Date.parse(a?.created_at || "") || 0
+            const right = Date.parse(b?.created_at || "") || 0
+            return right - left
+          })
+          pollSelectEl.replaceChildren()
+          for (let i = 0; i < sorted.length; i += 1) {
+            const poll = sorted[i]
+            const opt = document.createElement("option")
+            opt.value = poll?.id || ""
+            opt.textContent = describePollOption(poll, i)
+            pollSelectEl.appendChild(opt)
+          }
+          const match = sorted.find((poll) => poll?.id === selectedPollId)
+          if (match) {
+            pollSelectEl.value = selectedPollId
+          } else {
+            const open = sorted.find((poll) => poll?.status === "open") || sorted[0]
+            selectedPollId = open?.id || ""
+            if (selectedPollId) {
+              pollSelectEl.value = selectedPollId
+            }
+          }
+          pollSelectEl.disabled = false
+        }
+
+        const resolveSessionId = async (apiBase, sessionId, code) => {
+          if (sessionId) {
+            return sessionId
+          }
+          if (!code) {
+            return ""
+          }
+          try {
+            const resp = await window.fetch(
+              `${apiBase}/sessions/code/${encodeURIComponent(code)}`
+            )
+            if (!resp.ok) {
+              return ""
+            }
+            const data = await resp.json().catch(() => null)
+            return (data && typeof data.id === "string" && data.id) || ""
+          } catch {
+            return ""
+          }
+        }
+
+        const loadPolls = async () => {
+          const apiBase = apiBaseInput.value.trim()
+          if (!apiBase || !resolvedSessionId) {
+            pollPickerEl.classList.remove("visible")
+            return
+          }
+          pollPickerEl.classList.add("visible")
+          setPollPickerMessage("Loading polls…")
+          try {
+            const resp = await window.fetch(
+              `${apiBase}/sessions/${encodeURIComponent(resolvedSessionId)}/snapshot`
+            )
+            if (!resp.ok) {
+              setPollPickerMessage(`Failed to load polls (HTTP ${resp.status})`)
+              return
+            }
+            const data = await resp.json().catch(() => null)
+            populatePollPicker(data?.polls || [])
+          } catch {
+            setPollPickerMessage("Failed to load polls")
+          }
+        }
+
+        const loadGameFrame = () => {
+          const sessionId = sessionIdInput.value.trim()
+          const code = sessionCodeInput.value.trim().toUpperCase()
+          const apiBase = apiBaseInput.value.trim()
+          const qs = new URLSearchParams()
+          if (sessionId) {
+            qs.set("sessionId", sessionId)
+          }
+          if (!sessionId && code) {
+            qs.set("code", code)
+          }
+          if (apiBase) {
+            qs.set("apiBase", apiBase)
+          }
+          if (selectedPollId) {
+            qs.set("pollId", selectedPollId)
+          }
+          frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
+          overlay.classList.remove("visible")
+          setStatus("connected")
+          const mode = sessionId ? "sessionId" : "code"
+          const pollSuffix = selectedPollId ? ` · poll ${selectedPollId.slice(0, 8)}` : ""
+          setMeta(`Loaded game surface (${mode} mode)${pollSuffix}.`)
+        }
+
         const connect = async () => {
           librarySyncState = await readLibrarySyncFromDocument()
           const sessionId = sessionIdInput.value.trim()
@@ -375,25 +530,9 @@
             return
           }
 
-          const qs = new URLSearchParams()
-          if (sessionId) {
-            qs.set("sessionId", sessionId)
-          }
-          if (!sessionId && code) {
-            qs.set("code", code)
-          }
-          if (apiBase) {
-            qs.set("apiBase", apiBase)
-          }
-          if (pollId) {
-            qs.set("pollId", pollId)
-          }
-
-          const target = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
-          frame.src = target
-          overlay.classList.remove("visible")
-          setStatus("connected")
-          setMeta(`Loaded game surface (${sessionId ? "sessionId" : "code"} mode).`)
+          resolvedSessionId = await resolveSessionId(apiBase, sessionId, code)
+          loadGameFrame()
+          void loadPolls()
         }
 
         const init = async () => {
@@ -436,6 +575,17 @@
           if (event.key === "Enter") {
             void connect()
           }
+        })
+        pollSelectEl.addEventListener("change", () => {
+          const next = pollSelectEl.value || ""
+          if (next === selectedPollId) {
+            return
+          }
+          selectedPollId = next
+          loadGameFrame()
+        })
+        pollRefreshBtn.addEventListener("click", () => {
+          void loadPolls()
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
