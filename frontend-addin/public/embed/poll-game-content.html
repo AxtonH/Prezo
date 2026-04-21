@@ -483,12 +483,23 @@
           pollFieldEl.classList.remove("hidden")
         }
 
+        const refreshLibrarySyncFromDocument = async () => {
+          librarySyncState = await readLibrarySyncFromDocument()
+          if (librarySyncState?.apiBaseUrl) {
+            apiBase = librarySyncState.apiBaseUrl
+          }
+          return Boolean(librarySyncState?.token)
+        }
+
         const loadSessions = async () => {
+          if (!librarySyncState?.token) {
+            await refreshLibrarySyncFromDocument()
+          }
           if (!librarySyncState?.token) {
             setSelectMessage(sessionSelectEl, "Sign in via Prezo Host")
             pollFieldEl.classList.add("hidden")
             showOverlay(
-              "Open the Prezo Host add-in while signed in, then reload this embed to pick a session."
+              "Open the Prezo Host add-in while signed in, then click Refresh to pick a session."
             )
             setStatus("not signed in")
             setMeta("Waiting for Prezo Host library sync token...")
@@ -569,12 +580,24 @@
           setMeta(`${sessionLabel}${pollSuffix}`)
         }
 
+        const pollForLibrarySyncToken = async (attempts = 10, delayMs = 1500) => {
+          for (let i = 0; i < attempts; i += 1) {
+            if (librarySyncState?.token) {
+              return true
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, delayMs))
+            await refreshLibrarySyncFromDocument()
+            if (librarySyncState?.token) {
+              await loadSessions()
+              return true
+            }
+          }
+          return false
+        }
+
         const init = async () => {
           setStatus("loading")
-          librarySyncState = await readLibrarySyncFromDocument()
-          if (librarySyncState?.apiBaseUrl) {
-            apiBase = librarySyncState.apiBaseUrl
-          }
+          await refreshLibrarySyncFromDocument()
           const binding = await readBindingFromDocument()
           if (binding?.apiBaseUrl) {
             apiBase = binding.apiBaseUrl
@@ -583,6 +606,11 @@
             selectedSessionId = binding.sessionId
           }
           await loadSessions()
+          if (!librarySyncState?.token) {
+            // Host may write the token moments after this embed loads; keep
+            // watching for a short while so the user doesn't have to refresh.
+            void pollForLibrarySyncToken()
+          }
         }
 
         sessionSelectEl.addEventListener("change", async () => {
