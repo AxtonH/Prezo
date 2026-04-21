@@ -4,6 +4,7 @@ export function createPollGameArtifactBridge({
   stageEl,
   frameEl,
   getIsArtifactMode,
+  getIsPresentMode = () => false,
   getCurrentPollPayload,
   buildPayloadKey,
   clone,
@@ -156,7 +157,19 @@ export function createPollGameArtifactBridge({
     }
   }
 
+  function clearInlineFrameSizing() {
+    stageEl.style.height = ''
+    frameEl.style.width = ''
+    frameEl.style.height = ''
+    frameEl.style.transform = ''
+    frameEl.style.transformOrigin = ''
+  }
+
   function setFrameHeight(value, options = {}) {
+    if (getIsPresentMode()) {
+      clearInlineFrameSizing()
+      return
+    }
     const force = Boolean(options.force)
     const stageSize = readStageLayoutSize()
     const stageWidth = stageSize.width
@@ -195,6 +208,10 @@ export function createPollGameArtifactBridge({
    * Artifacts should fill the stage with % / flex / 100% height instead.
    */
   function applyFrameFit() {
+    if (getIsPresentMode()) {
+      clearInlineFrameSizing()
+      return
+    }
     const stageSize = readStageLayoutSize()
     const stageWidth = stageSize.width
     const stageHeight = stageSize.height

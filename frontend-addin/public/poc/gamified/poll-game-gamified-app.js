@@ -546,6 +546,7 @@ import {
     stageEl: el.artifactStage,
     frameEl: el.artifactFrame,
     getIsArtifactMode: () => currentTheme.visualMode === ARTIFACT_VISUAL_MODE,
+    getIsPresentMode: () => Boolean(state.presentMode),
     getCurrentPollPayload: () => {
       if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.currentPoll) {
         return null
