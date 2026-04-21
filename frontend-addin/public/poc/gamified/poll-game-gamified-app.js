@@ -18,6 +18,7 @@ import {
   HISTORY_LIMIT,
   LIBRARY_SYNC_TOKEN_KEY,
   MIN_RESIZE_HANDLE_SIZE_PX,
+  PRESENT_MODE_KEY,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
   RIBBON_TAB_KEY,
@@ -637,11 +638,46 @@ import {
     void refreshArtifactVersionHistory()
     renderInitialState()
     initializeHistoryState()
-    void hydrateSavedLibraries()
+    restoreActiveArtifactFromLibrary()
+    void hydrateSavedLibraries().then(() => {
+      restoreActiveArtifactFromLibrary()
+    })
     void startSessionFeed()
+    void restoreSavedPresentMode()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
     el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
+  }
+
+  const initialActiveArtifactParam = asText(query.get('activeArtifact'))
+  const initialPresentModeParam = query.get('presentMode') === '1'
+
+  let restoredArtifactName = ''
+  function restoreActiveArtifactFromLibrary() {
+    const name = initialActiveArtifactParam || asText(artifactLibrary?.activeName)
+    if (!name || name === restoredArtifactName) {
+      return
+    }
+    const record = artifactLibrary?.artifacts?.[name]
+    if (!record) {
+      return
+    }
+    restoredArtifactName = name
+    applyArtifactLibraryRecord(name, record, {
+      historyLabel: 'Restore artifact',
+      silent: true
+    })
+  }
+
+  async function restoreSavedPresentMode() {
+    const shouldRestore =
+      initialPresentModeParam || safeStorageGet(PRESENT_MODE_KEY) === '1'
+    if (!shouldRestore) {
+      return
+    }
+    try {
+      await setPresentMode(true)
+    } catch {}
   }
 
   function setupSettingsPanel() {
@@ -1224,6 +1260,9 @@ import {
       return
     }
     state.presentMode = nextValue
+    try {
+      localStorage.setItem(PRESENT_MODE_KEY, nextValue ? '1' : '0')
+    } catch {}
     const activeRichTextHost = getActiveRichTextHost()
     if (state.presentMode && activeRichTextHost && typeof activeRichTextHost.blur === 'function') {
       activeRichTextHost.blur()
@@ -9016,10 +9055,25 @@ import {
       showArtifactStageFrame()
     }
     recordHistoryCheckpoint(asText(options.historyLabel) || 'Load artifact')
-    const successMessage = asText(options.successMessage) || `Artifact "${name}" loaded.`
-    const failureMessage =
-      asText(options.failureMessage) || `Artifact "${name}" could not be loaded.`
-    showArtifactFeedback(applied ? successMessage : failureMessage, applied ? 'success' : 'error')
+    if (!options.silent) {
+      const successMessage = asText(options.successMessage) || `Artifact "${name}" loaded.`
+      const failureMessage =
+        asText(options.failureMessage) || `Artifact "${name}" could not be loaded.`
+      showArtifactFeedback(
+        applied ? successMessage : failureMessage,
+        applied ? 'success' : 'error'
+      )
+    }
+    if (applied) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'prezo:artifact-changed', name },
+            parentPostMessageOrigin
+          )
+        }
+      } catch {}
+    }
     return applied
   }
 

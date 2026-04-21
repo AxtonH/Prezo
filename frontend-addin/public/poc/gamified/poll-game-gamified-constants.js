@@ -9,6 +9,7 @@ export const LIBRARY_SYNC_TOKEN_KEY = 'prezo.poll-game-poc.library-sync-token.v1
 export const RIBBON_TAB_KEY = 'prezo.poll-game-poc.ribbon-tab.v1'
 export const RIBBON_COLLAPSED_KEY = 'prezo.poll-game-poc.ribbon-collapsed.v1'
 export const RIBBON_HIDDEN_KEY = 'prezo.poll-game-poc.ribbon-hidden.v1'
+export const PRESENT_MODE_KEY = 'prezo.poll-game-poc.present-mode.v1'
 export const TEXT_OVERRIDES_KEY = 'prezo.poll-game-poc.text-overrides.v1'
 export const AI_CHAT_OPEN_KEY = 'prezo.poll-game-poc.ai-chat-open.v1'
 /** When false, Poll AI / artifact dock shows only the prompt bar (input). */

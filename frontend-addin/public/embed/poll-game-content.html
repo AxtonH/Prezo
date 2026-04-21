@@ -425,6 +425,8 @@
         let selectedSessionId = initialSessionId
         let selectedPollId = initialPollId
         let sessionsList = []
+        let savedArtifactName = ""
+        let savedPresentMode = false
 
         const setStatus = (value) => {
           if (statusLabelEl) {
@@ -798,6 +800,12 @@
           if (selectedPollId) {
             qs.set("pollId", selectedPollId)
           }
+          if (savedArtifactName) {
+            qs.set("activeArtifact", savedArtifactName)
+          }
+          if (savedPresentMode) {
+            qs.set("presentMode", "1")
+          }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
@@ -835,6 +843,12 @@
             }
             if (saved?.pollId && !selectedPollId) {
               selectedPollId = saved.pollId
+            }
+            if (saved?.artifactName) {
+              savedArtifactName = saved.artifactName
+            }
+            if (saved?.presentMode) {
+              savedPresentMode = true
             }
           }
           await loadSessions()
@@ -878,6 +892,12 @@
           if (!next) {
             return
           }
+          if (typeof next.artifactName === "string") {
+            savedArtifactName = next.artifactName
+          }
+          if (typeof next.presentMode === "boolean") {
+            savedPresentMode = next.presentMode
+          }
           let changed = false
           if (next.sessionId && next.sessionId !== selectedSessionId) {
             selectedSessionId = next.sessionId
@@ -910,9 +930,22 @@
             return
           }
           if (message.type === "prezo:present-mode") {
+            const active = Boolean(message.active)
             const app = document.querySelector(".app")
             if (app) {
-              app.classList.toggle("present-mode", Boolean(message.active))
+              app.classList.toggle("present-mode", active)
+            }
+            if (active !== savedPresentMode) {
+              savedPresentMode = active
+              void window.PrezoEmbedState?.save({ presentMode: active })
+            }
+            return
+          }
+          if (message.type === "prezo:artifact-changed") {
+            const name = typeof message.name === "string" ? message.name : ""
+            if (name !== savedArtifactName) {
+              savedArtifactName = name
+              void window.PrezoEmbedState?.save({ artifactName: name })
             }
             return
           }
