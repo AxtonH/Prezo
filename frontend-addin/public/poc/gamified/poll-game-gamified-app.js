@@ -640,12 +640,11 @@ import {
     void refreshArtifactVersionHistory()
     renderInitialState()
     initializeHistoryState()
-    restoreActiveArtifactFromLibrary()
     void hydrateSavedLibraries().then(() => {
       restoreActiveArtifactFromLibrary()
+      void restoreSavedPresentMode()
     })
     void startSessionFeed()
-    void restoreSavedPresentMode()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
     el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
