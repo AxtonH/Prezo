@@ -4,17 +4,29 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Prezo Game Content Add-in (PoC)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
-        --bg: #06183a;
-        --bg-accent: #0f2f68;
-        --panel: #0b1f47;
-        --panel-border: #2c4f84;
-        --text: #d5e7ff;
-        --muted: #91a9cb;
-        --line: #2a4f86;
-        --btn: #2d6bff;
-        --btn-hover: #2558d1;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --border: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text: #0f172a;
+        --muted: #64748b;
+        --subtle: #94a3b8;
+        --brand-navy: #004080;
+        --brand-coral: #ff7f60;
+        --primary: #2563eb;
+        --primary-hover: #1d4ed8;
+        --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+        --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
+        --radius-md: 10px;
+        --radius-lg: 14px;
       }
 
       * {
@@ -26,9 +38,10 @@
         margin: 0;
         width: 100%;
         height: 100%;
-        font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
         color: var(--text);
-        background: linear-gradient(145deg, var(--bg), var(--bg-accent));
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
       }
 
       .app {
@@ -39,40 +52,81 @@
       }
 
       .bar {
-        padding: 8px 12px;
-        border-bottom: 1px solid var(--line);
-        background: rgba(4, 12, 32, 0.76);
+        padding: 12px 16px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
       }
 
       .bar-top {
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 12px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
         gap: 10px;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        width: 26px;
+        height: 26px;
+        flex-shrink: 0;
       }
 
       .title {
         margin: 0;
-        font-size: 14px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: var(--text);
       }
 
-      .status {
-        font-size: 12px;
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 500;
         color: var(--muted);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 4px 10px;
+        white-space: nowrap;
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--subtle);
+      }
+
+      .status-pill[data-tone="connected"] .status-dot {
+        background: #16a34a;
+      }
+
+      .status-pill[data-tone="loading"] .status-dot {
+        background: var(--brand-coral);
+      }
+
+      .status-pill[data-tone="error"] .status-dot {
+        background: #ef4444;
       }
 
       .meta {
-        margin: 6px 0 0;
+        margin: 4px 0 0;
         font-size: 12px;
         color: var(--muted);
+        line-height: 1.4;
       }
 
       .setup {
-        border-top: 1px solid var(--line);
-        margin-top: 8px;
-        padding-top: 8px;
+        margin-top: 12px;
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
         gap: 10px;
@@ -88,23 +142,39 @@
 
       .field label {
         font-size: 11px;
+        font-weight: 500;
         color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
       }
 
-      .field input,
       .field select {
         width: 100%;
-        border: 1px solid var(--panel-border);
-        background: var(--panel);
+        border: 1px solid var(--border);
+        background: var(--surface);
         color: var(--text);
-        border-radius: 8px;
-        padding: 7px 8px;
-        font-size: 12px;
+        border-radius: var(--radius-md);
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+        cursor: pointer;
+      }
+
+      .field select:hover:not(:disabled) {
+        border-color: var(--border-strong);
+      }
+
+      .field select:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
       }
 
       .field select:disabled {
-        opacity: 0.5;
+        opacity: 0.55;
         cursor: not-allowed;
+        background: var(--bg);
       }
 
       .field--poll.hidden {
@@ -117,30 +187,51 @@
         gap: 8px;
       }
 
-      .actions button {
+      .btn {
         border: 0;
-        border-radius: 8px;
-        background: var(--btn);
+        border-radius: var(--radius-md);
+        background: var(--primary);
         color: #fff;
-        padding: 8px 10px;
-        font-size: 12px;
+        padding: 9px 14px;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: inherit;
         cursor: pointer;
+        transition: background 120ms ease, transform 80ms ease;
+        box-shadow: var(--shadow-sm);
       }
 
-      .actions button:hover {
-        background: var(--btn-hover);
+      .btn:hover {
+        background: var(--primary-hover);
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn--ghost {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        box-shadow: none;
+      }
+
+      .btn--ghost:hover {
+        background: var(--bg);
+        border-color: var(--border-strong);
       }
 
       .frame-wrap {
         position: relative;
         flex: 1;
+        background: var(--bg);
       }
 
       iframe {
         border: 0;
         width: 100%;
         height: 100%;
-        background: #03102b;
+        background: var(--surface);
       }
 
       .overlay {
@@ -150,13 +241,44 @@
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 28px;
-        background: rgba(2, 8, 22, 0.88);
-        color: var(--muted);
+        padding: 40px 24px;
+        background: var(--bg);
       }
 
       .overlay.visible {
         display: flex;
+      }
+
+      .overlay-card {
+        max-width: 420px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        padding: 28px 24px;
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .overlay-mark {
+        width: 44px;
+        height: 44px;
+      }
+
+      .overlay-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .overlay-body {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--muted);
       }
 
       .app.present-mode .bar {
@@ -175,8 +297,39 @@
     <div class="app">
       <header class="bar">
         <div class="bar-top">
-          <p class="title">Prezo Game Embed PoC</p>
-          <span class="status" id="status">initializing</span>
+          <div class="brand">
+            <svg
+              class="brand-mark"
+              viewBox="0 0 100 100"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <circle cx="50" cy="50" r="46" fill="#004080" />
+              <circle
+                cx="50"
+                cy="50"
+                r="46"
+                fill="none"
+                stroke="#FF7F60"
+                stroke-width="4"
+                stroke-dasharray="12 6"
+              />
+              <text
+                x="50"
+                y="64"
+                text-anchor="middle"
+                font-family="Inter, system-ui, sans-serif"
+                font-size="46"
+                font-weight="700"
+                fill="#ffffff"
+              >P</text>
+            </svg>
+            <p class="title">Prezo Game Embed</p>
+          </div>
+          <span class="status-pill" id="status" data-tone="loading">
+            <span class="status-dot"></span>
+            <span class="status-label">initializing</span>
+          </span>
         </div>
         <p class="meta" id="meta">Waiting for session binding...</p>
         <div class="setup">
@@ -193,15 +346,44 @@
             </select>
           </div>
           <div class="actions">
-            <button id="refresh-btn" type="button" title="Reload sessions and polls">Refresh</button>
+            <button id="refresh-btn" type="button" class="btn btn--ghost" title="Reload sessions and polls">Refresh</button>
           </div>
         </div>
       </header>
       <section class="frame-wrap">
         <iframe id="game-frame" title="Prezo game surface" allowfullscreen></iframe>
         <div class="overlay visible" id="overlay">
-          <div id="overlay-message">
-            Open the Prezo Host add-in while signed in, then pick a session above to embed it on this slide.
+          <div class="overlay-card">
+            <svg
+              class="overlay-mark"
+              viewBox="0 0 100 100"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <circle cx="50" cy="50" r="46" fill="#004080" />
+              <circle
+                cx="50"
+                cy="50"
+                r="46"
+                fill="none"
+                stroke="#FF7F60"
+                stroke-width="4"
+                stroke-dasharray="12 6"
+              />
+              <text
+                x="50"
+                y="64"
+                text-anchor="middle"
+                font-family="Inter, system-ui, sans-serif"
+                font-size="46"
+                font-weight="700"
+                fill="#ffffff"
+              >P</text>
+            </svg>
+            <p class="overlay-title" id="overlay-title">Connect a Prezo session</p>
+            <p class="overlay-body" id="overlay-message">
+              Open the Prezo Host add-in while signed in, then pick a session above to embed it on this slide.
+            </p>
           </div>
         </div>
       </section>
@@ -220,6 +402,7 @@
         const initialApiBase = (params.get("apiBase") || "").trim()
 
         const statusEl = document.getElementById("status")
+        const statusLabelEl = statusEl.querySelector(".status-label")
         const metaEl = document.getElementById("meta")
         const sessionSelectEl = document.getElementById("session-select")
         const pollFieldEl = document.getElementById("poll-field")
@@ -227,7 +410,17 @@
         const refreshBtn = document.getElementById("refresh-btn")
         const frame = document.getElementById("game-frame")
         const overlay = document.getElementById("overlay")
+        const overlayTitleEl = document.getElementById("overlay-title")
         const overlayMessageEl = document.getElementById("overlay-message")
+
+        const STATUS_TONE = {
+          initializing: "loading",
+          loading: "loading",
+          connected: "connected",
+          error: "error",
+          "no sessions": "error",
+          "not signed in": "error"
+        }
         let librarySyncState = null
         let apiBase = initialApiBase || DEFAULT_API_BASE
         let selectedSessionId = initialSessionId
@@ -235,7 +428,11 @@
         let sessionsList = []
 
         const setStatus = (value) => {
-          statusEl.textContent = value
+          if (statusLabelEl) {
+            statusLabelEl.textContent = value
+          }
+          const tone = STATUS_TONE[value] || "loading"
+          statusEl.setAttribute("data-tone", tone)
         }
 
         const setMeta = (message) => {
@@ -449,7 +646,10 @@
           selectEl.disabled = true
         }
 
-        const showOverlay = (message) => {
+        const showOverlay = (message, title) => {
+          if (title && overlayTitleEl) {
+            overlayTitleEl.textContent = title
+          }
           if (message) {
             overlayMessageEl.textContent = message
           }
@@ -462,7 +662,8 @@
             setSelectMessage(sessionSelectEl, "No sessions yet")
             pollFieldEl.classList.add("hidden")
             showOverlay(
-              "You don't have any sessions yet. Create one from the Prezo Host add-in, then reopen this embed."
+              "You don't have any sessions yet. Create one from the Prezo Host add-in, then reopen this embed.",
+              "No sessions yet"
             )
             setStatus("no sessions")
             setMeta("Sign in via Prezo Host and create a session to embed it here.")
@@ -536,7 +737,8 @@
             setSelectMessage(sessionSelectEl, "Sign in via Prezo Host")
             pollFieldEl.classList.add("hidden")
             showOverlay(
-              "Open the Prezo Host add-in while signed in, then click Refresh to pick a session."
+              "Open the Prezo Host add-in while signed in, then click Refresh to pick a session.",
+              "Sign in to get started"
             )
             setStatus("not signed in")
             setMeta("Waiting for Prezo Host library sync token...")
@@ -553,7 +755,10 @@
             if (!resp.ok) {
               setSelectMessage(sessionSelectEl, `Failed to load (HTTP ${resp.status})`)
               pollFieldEl.classList.add("hidden")
-              showOverlay(`Could not load sessions (HTTP ${resp.status}). Try Refresh.`)
+              showOverlay(
+                `Could not load sessions (HTTP ${resp.status}). Try Refresh.`,
+                "Couldn't load sessions"
+              )
               setStatus("error")
               return
             }
@@ -566,7 +771,10 @@
           } catch {
             setSelectMessage(sessionSelectEl, "Failed to load sessions")
             pollFieldEl.classList.add("hidden")
-            showOverlay("Network error while loading sessions. Try Refresh.")
+            showOverlay(
+              "Network error while loading sessions. Try Refresh.",
+              "Connection problem"
+            )
             setStatus("error")
           }
         }
