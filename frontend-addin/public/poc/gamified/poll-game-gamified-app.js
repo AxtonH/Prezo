@@ -649,12 +649,10 @@ import {
     el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
   }
 
-  const initialActiveArtifactParam = asText(query.get('activeArtifact'))
-  const initialPresentModeParam = query.get('presentMode') === '1'
-
   let restoredArtifactName = ''
   function restoreActiveArtifactFromLibrary() {
-    const name = initialActiveArtifactParam || asText(artifactLibrary?.activeName)
+    const forced = asText(query.get('activeArtifact'))
+    const name = forced || asText(artifactLibrary?.activeName)
     if (!name || name === restoredArtifactName) {
       return
     }
@@ -670,8 +668,8 @@ import {
   }
 
   async function restoreSavedPresentMode() {
-    const shouldRestore =
-      initialPresentModeParam || safeStorageGet(PRESENT_MODE_KEY) === '1'
+    const forced = query.get('presentMode') === '1'
+    const shouldRestore = forced || safeStorageGet(PRESENT_MODE_KEY) === '1'
     if (!shouldRestore) {
       return
     }
