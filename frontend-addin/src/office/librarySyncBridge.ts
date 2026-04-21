@@ -3,12 +3,36 @@ import { API_BASE_URL } from '../api/client'
 import { runPowerPoint } from './powerpointRun'
 
 const PREZO_LIBRARY_SYNC_NAMESPACE = 'https://prezo.app/library-sync'
+const PREZO_LIBRARY_SYNC_STORAGE_KEY = 'prezo:library-sync'
 
 export type LibrarySyncBridge = {
   token: string
   expiresAt: string
   apiBaseUrl?: string
   updatedAt?: string
+}
+
+const writeLocalStorage = (binding: LibrarySyncBridge) => {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return
+    }
+    if (!binding.token) {
+      window.localStorage.removeItem(PREZO_LIBRARY_SYNC_STORAGE_KEY)
+      return
+    }
+    window.localStorage.setItem(
+      PREZO_LIBRARY_SYNC_STORAGE_KEY,
+      JSON.stringify({
+        token: binding.token,
+        expiresAt: binding.expiresAt,
+        apiBaseUrl: binding.apiBaseUrl ?? '',
+        updatedAt: binding.updatedAt ?? new Date().toISOString()
+      })
+    )
+  } catch {
+    // localStorage may be blocked (private mode, strict ITP) — XML fallback still runs.
+  }
 }
 
 const escapeXml = (value: string) =>
@@ -128,22 +152,22 @@ async function writeXml(xml: string): Promise<void> {
 }
 
 export async function writeLibrarySyncBridge(binding: LibrarySyncBridge): Promise<void> {
-  await writeXml(
-    buildXml({
-      ...binding,
-      apiBaseUrl: binding.apiBaseUrl ?? API_BASE_URL,
-      updatedAt: binding.updatedAt ?? new Date().toISOString()
-    })
-  )
+  const full = {
+    ...binding,
+    apiBaseUrl: binding.apiBaseUrl ?? API_BASE_URL,
+    updatedAt: binding.updatedAt ?? new Date().toISOString()
+  }
+  writeLocalStorage(full)
+  await writeXml(buildXml(full))
 }
 
 export async function clearLibrarySyncBridge(): Promise<void> {
-  await writeXml(
-    buildXml({
-      token: '',
-      expiresAt: '',
-      apiBaseUrl: API_BASE_URL,
-      updatedAt: new Date().toISOString()
-    })
-  )
+  const cleared = {
+    token: '',
+    expiresAt: '',
+    apiBaseUrl: API_BASE_URL,
+    updatedAt: new Date().toISOString()
+  }
+  writeLocalStorage(cleared)
+  await writeXml(buildXml(cleared))
 }

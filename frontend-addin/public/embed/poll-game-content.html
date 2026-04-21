@@ -212,6 +212,7 @@
         const PREZO_LIBRARY_SYNC_NAMESPACE = "https://prezo.app/library-sync"
         const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
         const PREZO_LIBRARY_SYNC_REQUEST_MESSAGE = "prezo:request-library-sync"
+        const PREZO_LIBRARY_SYNC_STORAGE_KEY = "prezo:library-sync"
         const DEFAULT_API_BASE = "https://prezo-backend-production.up.railway.app"
         const params = new URLSearchParams(window.location.search)
         const initialPollId = params.get("pollId") || ""
@@ -325,7 +326,43 @@
           }
         }
 
+        const readLibrarySyncFromLocalStorage = () => {
+          try {
+            if (typeof window === "undefined" || !window.localStorage) {
+              return null
+            }
+            const raw = window.localStorage.getItem(PREZO_LIBRARY_SYNC_STORAGE_KEY)
+            if (!raw) {
+              return null
+            }
+            const parsed = JSON.parse(raw)
+            if (!parsed || typeof parsed !== "object") {
+              return null
+            }
+            const token = typeof parsed.token === "string" ? parsed.token : ""
+            const expiresAt = typeof parsed.expiresAt === "string" ? parsed.expiresAt : ""
+            if (!token || !expiresAt) {
+              return null
+            }
+            const expiresAtMs = Date.parse(expiresAt)
+            if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+              return null
+            }
+            return {
+              token,
+              expiresAt,
+              apiBaseUrl: typeof parsed.apiBaseUrl === "string" ? parsed.apiBaseUrl : ""
+            }
+          } catch {
+            return null
+          }
+        }
+
         const readLibrarySyncFromDocument = async () => {
+          const fromStorage = readLibrarySyncFromLocalStorage()
+          if (fromStorage) {
+            return fromStorage
+          }
           try {
             const parts = await getPartsByNamespace(PREZO_LIBRARY_SYNC_NAMESPACE)
             if (!parts || parts.length === 0) {
@@ -632,6 +669,12 @@
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {
+          void loadSessions()
+        })
+        window.addEventListener("storage", (event) => {
+          if (event.key !== PREZO_LIBRARY_SYNC_STORAGE_KEY) {
+            return
+          }
           void loadSessions()
         })
         frame.addEventListener("load", () => {
