@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
-from ..auth import AuthUser, get_current_user, get_optional_user
+from ..auth import AuthUser, get_current_user, get_library_user, get_optional_user
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
@@ -105,7 +105,7 @@ async def list_sessions(
     status: SessionStatus | None = Query(default=None),
     limit: int = Query(default=10, ge=1, le=100),
     store: InMemoryStore = Depends(get_store),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> list[Session]:
     sessions = await store.list_sessions(user.id, status=status, limit=limit)
     return [with_join_url(session) for session in sessions]

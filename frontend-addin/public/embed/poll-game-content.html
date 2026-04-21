@@ -74,14 +74,16 @@
         margin-top: 8px;
         padding-top: 8px;
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: end;
       }
 
       .field {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
       }
 
       .field label {
@@ -105,16 +107,8 @@
         cursor: not-allowed;
       }
 
-      .poll-picker {
-        margin-top: 8px;
+      .field--poll.hidden {
         display: none;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
-        align-items: end;
-      }
-
-      .poll-picker.visible {
-        display: grid;
       }
 
       .actions {
@@ -187,43 +181,27 @@
         <p class="meta" id="meta">Waiting for session binding...</p>
         <div class="setup">
           <div class="field">
-            <label for="session-id">Session ID</label>
-            <input id="session-id" type="text" placeholder="UUID" />
+            <label for="session-select">Session</label>
+            <select id="session-select" disabled>
+              <option value="">Loading sessions…</option>
+            </select>
           </div>
-          <div class="field">
-            <label for="session-code">Join Code</label>
-            <input id="session-code" type="text" placeholder="9H6B22" />
-          </div>
-          <div class="field">
-            <label for="api-base">API Base</label>
-            <input
-              id="api-base"
-              type="text"
-              value="https://prezo-backend-production.up.railway.app"
-            />
-          </div>
-          <div class="actions">
-            <button id="connect-btn" type="button">Connect</button>
-          </div>
-        </div>
-        <div class="poll-picker" id="poll-picker">
-          <div class="field">
+          <div class="field field--poll hidden" id="poll-field">
             <label for="poll-select">Poll</label>
             <select id="poll-select" disabled>
               <option value="">Loading polls…</option>
             </select>
           </div>
           <div class="actions">
-            <button id="poll-refresh-btn" type="button" title="Reload the list of polls for this session">Refresh</button>
+            <button id="refresh-btn" type="button" title="Reload sessions and polls">Refresh</button>
           </div>
         </div>
       </header>
       <section class="frame-wrap">
         <iframe id="game-frame" title="Prezo game surface" allowfullscreen></iframe>
         <div class="overlay visible" id="overlay">
-          <div>
-            Enter a Session ID or Join Code, or run the Prezo Host add-in first so this
-            add-in can auto-read the session binding from the presentation.
+          <div id="overlay-message">
+            Open the Prezo Host add-in while signed in, then pick a session above to embed it on this slide.
           </div>
         </div>
       </section>
@@ -234,23 +212,26 @@
         const PREZO_LIBRARY_SYNC_NAMESPACE = "https://prezo.app/library-sync"
         const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
         const PREZO_LIBRARY_SYNC_REQUEST_MESSAGE = "prezo:request-library-sync"
+        const DEFAULT_API_BASE = "https://prezo-backend-production.up.railway.app"
         const params = new URLSearchParams(window.location.search)
         const initialPollId = params.get("pollId") || ""
+        const initialSessionId = (params.get("sessionId") || "").trim()
+        const initialApiBase = (params.get("apiBase") || "").trim()
 
         const statusEl = document.getElementById("status")
         const metaEl = document.getElementById("meta")
-        const sessionIdInput = document.getElementById("session-id")
-        const sessionCodeInput = document.getElementById("session-code")
-        const apiBaseInput = document.getElementById("api-base")
-        const connectBtn = document.getElementById("connect-btn")
+        const sessionSelectEl = document.getElementById("session-select")
+        const pollFieldEl = document.getElementById("poll-field")
+        const pollSelectEl = document.getElementById("poll-select")
+        const refreshBtn = document.getElementById("refresh-btn")
         const frame = document.getElementById("game-frame")
         const overlay = document.getElementById("overlay")
-        const pollPickerEl = document.getElementById("poll-picker")
-        const pollSelectEl = document.getElementById("poll-select")
-        const pollRefreshBtn = document.getElementById("poll-refresh-btn")
+        const overlayMessageEl = document.getElementById("overlay-message")
         let librarySyncState = null
+        let apiBase = initialApiBase || DEFAULT_API_BASE
+        let selectedSessionId = initialSessionId
         let selectedPollId = initialPollId
-        let resolvedSessionId = ""
+        let sessionsList = []
 
         const setStatus = (value) => {
           statusEl.textContent = value
@@ -375,7 +356,7 @@
                 type: PREZO_LIBRARY_SYNC_MESSAGE,
                 token: librarySyncState.token,
                 expiresAt: librarySyncState.expiresAt,
-                apiBaseUrl: librarySyncState.apiBaseUrl || apiBaseInput.value.trim() || ""
+                apiBaseUrl: librarySyncState.apiBaseUrl || apiBase || ""
               },
               window.location.origin
             )
@@ -384,16 +365,30 @@
           }
         }
 
-        const applyConfig = ({ sessionId, code, apiBaseUrl }) => {
-          if (sessionId) {
-            sessionIdInput.value = sessionId
-          }
+        const authHeaders = () =>
+          librarySyncState?.token
+            ? { Authorization: `Bearer ${librarySyncState.token}` }
+            : {}
+
+        const describeSessionOption = (session) => {
+          const title =
+            typeof session?.title === "string" && session.title.trim()
+              ? session.title.trim()
+              : `Session ${typeof session?.code === "string" ? session.code : ""}`.trim()
+          const code =
+            typeof session?.code === "string" && session.code.trim() ? session.code.trim() : ""
+          const status =
+            typeof session?.status === "string" && session.status.trim()
+              ? session.status.trim()
+              : ""
+          const parts = [title || "Untitled session"]
           if (code) {
-            sessionCodeInput.value = code.toUpperCase()
+            parts.push(code)
           }
-          if (apiBaseUrl) {
-            apiBaseInput.value = apiBaseUrl
+          if (status) {
+            parts.push(status)
           }
+          return parts.join(" · ")
         }
 
         const describePollOption = (poll, index) => {
@@ -408,18 +403,57 @@
           return `${question}${status}`
         }
 
-        const setPollPickerMessage = (message) => {
-          pollSelectEl.replaceChildren()
+        const setSelectMessage = (selectEl, message) => {
+          selectEl.replaceChildren()
           const opt = document.createElement("option")
           opt.value = ""
           opt.textContent = message
-          pollSelectEl.appendChild(opt)
-          pollSelectEl.disabled = true
+          selectEl.appendChild(opt)
+          selectEl.disabled = true
+        }
+
+        const showOverlay = (message) => {
+          if (message) {
+            overlayMessageEl.textContent = message
+          }
+          overlay.classList.add("visible")
+          frame.removeAttribute("src")
+        }
+
+        const populateSessionPicker = (sessions) => {
+          if (!Array.isArray(sessions) || sessions.length === 0) {
+            setSelectMessage(sessionSelectEl, "No sessions yet")
+            pollFieldEl.classList.add("hidden")
+            showOverlay(
+              "You don't have any sessions yet. Create one from the Prezo Host add-in, then reopen this embed."
+            )
+            setStatus("no sessions")
+            setMeta("Sign in via Prezo Host and create a session to embed it here.")
+            return
+          }
+          sessionsList = sessions
+          sessionSelectEl.replaceChildren()
+          for (const session of sessions) {
+            const opt = document.createElement("option")
+            opt.value = session?.id || ""
+            opt.textContent = describeSessionOption(session)
+            sessionSelectEl.appendChild(opt)
+          }
+          const match = sessions.find((session) => session?.id === selectedSessionId)
+          if (!match) {
+            selectedSessionId = sessions[0]?.id || ""
+            selectedPollId = initialPollId && match ? initialPollId : ""
+          }
+          if (selectedSessionId) {
+            sessionSelectEl.value = selectedSessionId
+          }
+          sessionSelectEl.disabled = false
         }
 
         const populatePollPicker = (polls) => {
           if (!Array.isArray(polls) || polls.length === 0) {
-            setPollPickerMessage("No polls in this session")
+            setSelectMessage(pollSelectEl, "No polls in this session")
+            pollFieldEl.classList.remove("hidden")
             return
           }
           const sorted = [...polls].sort((a, b) => {
@@ -446,63 +480,78 @@
             }
           }
           pollSelectEl.disabled = false
+          pollFieldEl.classList.remove("hidden")
         }
 
-        const resolveSessionId = async (apiBase, sessionId, code) => {
-          if (sessionId) {
-            return sessionId
+        const loadSessions = async () => {
+          if (!librarySyncState?.token) {
+            setSelectMessage(sessionSelectEl, "Sign in via Prezo Host")
+            pollFieldEl.classList.add("hidden")
+            showOverlay(
+              "Open the Prezo Host add-in while signed in, then reload this embed to pick a session."
+            )
+            setStatus("not signed in")
+            setMeta("Waiting for Prezo Host library sync token...")
+            return
           }
-          if (!code) {
-            return ""
-          }
+          setSelectMessage(sessionSelectEl, "Loading sessions…")
+          setStatus("loading")
+          setMeta("Fetching your sessions from Prezo…")
           try {
             const resp = await window.fetch(
-              `${apiBase}/sessions/code/${encodeURIComponent(code)}`
+              `${apiBase}/sessions?limit=50`,
+              { headers: authHeaders() }
             )
             if (!resp.ok) {
-              return ""
+              setSelectMessage(sessionSelectEl, `Failed to load (HTTP ${resp.status})`)
+              pollFieldEl.classList.add("hidden")
+              showOverlay(`Could not load sessions (HTTP ${resp.status}). Try Refresh.`)
+              setStatus("error")
+              return
             }
             const data = await resp.json().catch(() => null)
-            return (data && typeof data.id === "string" && data.id) || ""
+            populateSessionPicker(Array.isArray(data) ? data : [])
+            if (selectedSessionId) {
+              await loadPolls()
+              loadGameFrame()
+            }
           } catch {
-            return ""
+            setSelectMessage(sessionSelectEl, "Failed to load sessions")
+            pollFieldEl.classList.add("hidden")
+            showOverlay("Network error while loading sessions. Try Refresh.")
+            setStatus("error")
           }
         }
 
         const loadPolls = async () => {
-          const apiBase = apiBaseInput.value.trim()
-          if (!apiBase || !resolvedSessionId) {
-            pollPickerEl.classList.remove("visible")
+          if (!selectedSessionId) {
+            pollFieldEl.classList.add("hidden")
             return
           }
-          pollPickerEl.classList.add("visible")
-          setPollPickerMessage("Loading polls…")
+          pollFieldEl.classList.remove("hidden")
+          setSelectMessage(pollSelectEl, "Loading polls…")
           try {
             const resp = await window.fetch(
-              `${apiBase}/sessions/${encodeURIComponent(resolvedSessionId)}/snapshot`
+              `${apiBase}/sessions/${encodeURIComponent(selectedSessionId)}/snapshot`,
+              { headers: authHeaders() }
             )
             if (!resp.ok) {
-              setPollPickerMessage(`Failed to load polls (HTTP ${resp.status})`)
+              setSelectMessage(pollSelectEl, `Failed to load (HTTP ${resp.status})`)
               return
             }
             const data = await resp.json().catch(() => null)
             populatePollPicker(data?.polls || [])
           } catch {
-            setPollPickerMessage("Failed to load polls")
+            setSelectMessage(pollSelectEl, "Failed to load polls")
           }
         }
 
         const loadGameFrame = () => {
-          const sessionId = sessionIdInput.value.trim()
-          const code = sessionCodeInput.value.trim().toUpperCase()
-          const apiBase = apiBaseInput.value.trim()
+          if (!selectedSessionId) {
+            return
+          }
           const qs = new URLSearchParams()
-          if (sessionId) {
-            qs.set("sessionId", sessionId)
-          }
-          if (!sessionId && code) {
-            qs.set("code", code)
-          }
+          qs.set("sessionId", selectedSessionId)
           if (apiBase) {
             qs.set("apiBase", apiBase)
           }
@@ -512,69 +561,39 @@
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
-          const mode = sessionId ? "sessionId" : "code"
           const pollSuffix = selectedPollId ? ` · poll ${selectedPollId.slice(0, 8)}` : ""
-          setMeta(`Loaded game surface (${mode} mode)${pollSuffix}.`)
-        }
-
-        const connect = async () => {
-          librarySyncState = await readLibrarySyncFromDocument()
-          const sessionId = sessionIdInput.value.trim()
-          const code = sessionCodeInput.value.trim().toUpperCase()
-          const apiBase = apiBaseInput.value.trim()
-
-          if (!sessionId && !code) {
-            overlay.classList.add("visible")
-            setStatus("missing session")
-            setMeta("Provide a Session ID or Join Code.")
-            return
-          }
-
-          resolvedSessionId = await resolveSessionId(apiBase, sessionId, code)
-          loadGameFrame()
-          void loadPolls()
+          const session = sessionsList.find((s) => s?.id === selectedSessionId)
+          const sessionLabel = session
+            ? describeSessionOption(session)
+            : selectedSessionId.slice(0, 8)
+          setMeta(`${sessionLabel}${pollSuffix}`)
         }
 
         const init = async () => {
           setStatus("loading")
           librarySyncState = await readLibrarySyncFromDocument()
+          if (librarySyncState?.apiBaseUrl) {
+            apiBase = librarySyncState.apiBaseUrl
+          }
           const binding = await readBindingFromDocument()
-          if (binding) {
-            applyConfig(binding)
-            setMeta("Session binding found in presentation. Loading game surface...")
-            await connect()
-            return
+          if (binding?.apiBaseUrl) {
+            apiBase = binding.apiBaseUrl
           }
-
-          const querySessionId = (params.get("sessionId") || "").trim()
-          const queryCode = (params.get("code") || "").trim().toUpperCase()
-          const queryApiBase = (params.get("apiBase") || "").trim()
-          if (querySessionId || queryCode) {
-            applyConfig({
-              sessionId: querySessionId,
-              code: queryCode,
-              apiBaseUrl: queryApiBase
-            })
-            await connect()
-            return
+          if (binding?.sessionId && !selectedSessionId) {
+            selectedSessionId = binding.sessionId
           }
-
-          setStatus("awaiting input")
-          setMeta("No document binding found. Enter session details below.")
+          await loadSessions()
         }
 
-        connectBtn.addEventListener("click", () => {
-          void connect()
-        })
-        sessionIdInput.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") {
-            void connect()
+        sessionSelectEl.addEventListener("change", async () => {
+          const next = sessionSelectEl.value || ""
+          if (next === selectedSessionId) {
+            return
           }
-        })
-        sessionCodeInput.addEventListener("keydown", (event) => {
-          if (event.key === "Enter") {
-            void connect()
-          }
+          selectedSessionId = next
+          selectedPollId = ""
+          await loadPolls()
+          loadGameFrame()
         })
         pollSelectEl.addEventListener("change", () => {
           const next = pollSelectEl.value || ""
@@ -584,8 +603,8 @@
           selectedPollId = next
           loadGameFrame()
         })
-        pollRefreshBtn.addEventListener("click", () => {
-          void loadPolls()
+        refreshBtn.addEventListener("click", () => {
+          void loadSessions()
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
