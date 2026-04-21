@@ -118,13 +118,6 @@
         background: #ef4444;
       }
 
-      .meta {
-        margin: 4px 0 0;
-        font-size: 12px;
-        color: var(--muted);
-        line-height: 1.4;
-      }
-
       .setup {
         margin-top: 12px;
         display: grid;
@@ -331,7 +324,6 @@
             <span class="status-label">initializing</span>
           </span>
         </div>
-        <p class="meta" id="meta">Waiting for session binding...</p>
         <div class="setup">
           <div class="field">
             <label for="session-select">Session</label>
@@ -403,7 +395,6 @@
 
         const statusEl = document.getElementById("status")
         const statusLabelEl = statusEl.querySelector(".status-label")
-        const metaEl = document.getElementById("meta")
         const sessionSelectEl = document.getElementById("session-select")
         const pollFieldEl = document.getElementById("poll-field")
         const pollSelectEl = document.getElementById("poll-select")
@@ -433,10 +424,6 @@
           }
           const tone = STATUS_TONE[value] || "loading"
           statusEl.setAttribute("data-tone", tone)
-        }
-
-        const setMeta = (message) => {
-          metaEl.textContent = message
         }
 
         const parseBindingXml = (xml) => {
@@ -666,7 +653,6 @@
               "No sessions yet"
             )
             setStatus("no sessions")
-            setMeta("Sign in via Prezo Host and create a session to embed it here.")
             return
           }
           sessionsList = sessions
@@ -741,12 +727,10 @@
               "Sign in to get started"
             )
             setStatus("not signed in")
-            setMeta("Waiting for Prezo Host library sync token...")
             return
           }
           setSelectMessage(sessionSelectEl, "Loading sessions…")
           setStatus("loading")
-          setMeta("Fetching your sessions from Prezo…")
           try {
             const resp = await window.fetch(
               `${apiBase}/sessions?limit=50`,
@@ -817,12 +801,6 @@
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
-          const pollSuffix = selectedPollId ? ` · poll ${selectedPollId.slice(0, 8)}` : ""
-          const session = sessionsList.find((s) => s?.id === selectedSessionId)
-          const sessionLabel = session
-            ? describeSessionOption(session)
-            : selectedSessionId.slice(0, 8)
-          setMeta(`${sessionLabel}${pollSuffix}`)
         }
 
         const pollForLibrarySyncToken = async (attempts = 10, delayMs = 1500) => {
@@ -912,10 +890,7 @@
           librarySyncState = await readLibrarySyncFromDocument()
           if (librarySyncState?.token) {
             postLibrarySyncToFrame()
-            setMeta("Shared library sync refreshed from the presentation.")
-            return
           }
-          setMeta("Open Prezo Host while signed in to sync saved themes and artifacts.")
         })
 
         if (window.Office?.onReady) {
