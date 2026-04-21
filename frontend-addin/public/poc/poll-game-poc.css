@@ -3460,6 +3460,7 @@ body.present-mode .wrap {
   padding: 12px;
   border-radius: 18px;
   transform: none;
+  transition: none;
   z-index: 35;
   overflow: auto;
 }
