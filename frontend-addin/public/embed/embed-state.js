@@ -2,6 +2,14 @@
   const NAMESPACE = "https://prezo.app/game-embed"
   const STORAGE_KEY = "prezo:game-embed"
   const STORAGE_VERSION = 1
+  // Lock key lives in localStorage (shared per origin) so any currently-running
+  // embed in the same PowerPoint session is visible to every other embed on the
+  // same machine. The XML part is presentation-scoped and can't distinguish
+  // instances, so this lock is what prevents a newly-added embed from
+  // inheriting the first embed's state.
+  const CLAIM_KEY = "prezo:game-embed:claim"
+  const CLAIM_TTL_MS = 15000
+  const HEARTBEAT_MS = 5000
 
   const EMPTY_STATE = {
     sessionId: "",
@@ -193,7 +201,131 @@
     }
   }
 
+  const generateInstanceId = () => {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID()
+      }
+    } catch {}
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  const instanceId = generateInstanceId()
+  let ownsClaim = false
+  let heartbeatTimer = null
+
+  const readClaim = () => {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return null
+      }
+      const raw = window.localStorage.getItem(CLAIM_KEY)
+      if (!raw) {
+        return null
+      }
+      const parsed = JSON.parse(raw)
+      if (!parsed || typeof parsed !== "object") {
+        return null
+      }
+      const ownerId = typeof parsed.ownerId === "string" ? parsed.ownerId : ""
+      const lastSeenAt = Number(parsed.lastSeenAt)
+      if (!ownerId || !Number.isFinite(lastSeenAt)) {
+        return null
+      }
+      return { ownerId, lastSeenAt }
+    } catch {
+      return null
+    }
+  }
+
+  const writeClaim = (ownerId) => {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return
+      }
+      window.localStorage.setItem(
+        CLAIM_KEY,
+        JSON.stringify({ ownerId, lastSeenAt: Date.now() })
+      )
+    } catch {}
+  }
+
+  const clearClaim = () => {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return
+      }
+      window.localStorage.removeItem(CLAIM_KEY)
+    } catch {}
+  }
+
+  const claimIsActive = (claim) =>
+    Boolean(claim) && Date.now() - claim.lastSeenAt < CLAIM_TTL_MS
+
+  const tryClaim = () => {
+    const existing = readClaim()
+    if (claimIsActive(existing) && existing.ownerId !== instanceId) {
+      return false
+    }
+    writeClaim(instanceId)
+    // Short delay + re-read lets us detect a race where two embeds boot in the
+    // same tick and both write their own ID; the last writer wins and the loser
+    // gives up.
+    const confirm = readClaim()
+    if (!confirm || confirm.ownerId !== instanceId) {
+      return false
+    }
+    ownsClaim = true
+    startHeartbeat()
+    return true
+  }
+
+  const startHeartbeat = () => {
+    if (heartbeatTimer || typeof window === "undefined") {
+      return
+    }
+    heartbeatTimer = window.setInterval(() => {
+      const existing = readClaim()
+      if (existing && existing.ownerId !== instanceId) {
+        ownsClaim = false
+        if (heartbeatTimer) {
+          window.clearInterval(heartbeatTimer)
+          heartbeatTimer = null
+        }
+        return
+      }
+      writeClaim(instanceId)
+    }, HEARTBEAT_MS)
+  }
+
+  const releaseClaim = () => {
+    if (!ownsClaim) {
+      return
+    }
+    const existing = readClaim()
+    if (existing && existing.ownerId === instanceId) {
+      clearClaim()
+    }
+    ownsClaim = false
+    if (heartbeatTimer && typeof window !== "undefined") {
+      window.clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", releaseClaim)
+    window.addEventListener("beforeunload", releaseClaim)
+  }
+
   const load = async () => {
+    // Only the first embed to load in a PowerPoint session may claim ownership
+    // of the saved state. Subsequent embeds (e.g. a second one added to the
+    // deck during the same session) see an active heartbeat and start blank
+    // so they don't inherit the first embed's session/poll/artifact.
+    if (!tryClaim()) {
+      return { ...EMPTY_STATE }
+    }
     const fromLocal = readLocalStorage()
     const fromXml = await readCustomXml()
     // Custom XML is the authoritative source because it travels with the
@@ -206,6 +338,11 @@
   }
 
   const save = async (partial) => {
+    // Embeds that didn't win the claim shouldn't persist state — they'd
+    // overwrite the owning embed's data.
+    if (!ownsClaim) {
+      return { ...EMPTY_STATE }
+    }
     const current = readLocalStorage() || { ...EMPTY_STATE }
     const next = normalize({
       sessionId:
@@ -248,5 +385,7 @@
     return () => window.removeEventListener("storage", handler)
   }
 
-  window.PrezoEmbedState = { load, save, clear, onExternalChange }
+  const ownsActiveClaim = () => ownsClaim
+
+  window.PrezoEmbedState = { load, save, clear, onExternalChange, ownsActiveClaim }
 })()

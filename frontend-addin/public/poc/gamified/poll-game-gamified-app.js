@@ -18,7 +18,6 @@ import {
   HISTORY_LIMIT,
   LIBRARY_SYNC_TOKEN_KEY,
   MIN_RESIZE_HANDLE_SIZE_PX,
-  PRESENT_MODE_KEY,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
   RIBBON_TAB_KEY,
@@ -647,12 +646,28 @@ import {
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
+    window.addEventListener('message', handleShellExitPresentMessage)
     el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
   }
 
+  function handleShellExitPresentMessage(event) {
+    /* The outer embed shell relays its Escape key / Exit-button clicks here
+       because the iframe may not have keyboard focus when present mode was
+       auto-restored (no user gesture, no real fullscreen). */
+    const message = event?.data
+    if (!message || typeof message !== 'object' || message.type !== 'prezo:exit-present-mode') {
+      return
+    }
+    if (state.presentMode) {
+      void setPresentMode(false)
+    }
+  }
+
   function restoreActiveArtifactFromLibrary() {
-    const forced = asText(query.get('activeArtifact'))
-    const name = forced || asText(artifactLibrary?.activeName)
+    /* Only the shell's URL param drives auto-restore — artifactLibrary.activeName
+       lives in shared localStorage and would leak across embed instances. The
+       shell only sets activeArtifact when it owns the claim. */
+    const name = asText(query.get('activeArtifact'))
     if (!name || name === restoredArtifactName) {
       return
     }
@@ -668,14 +683,17 @@ import {
   }
 
   async function restoreSavedPresentMode() {
-    const forced = query.get('presentMode') === '1'
-    const shouldRestore = forced || safeStorageGet(PRESENT_MODE_KEY) === '1'
-    if (!shouldRestore) {
+    /* Only the shell's URL param drives auto-restore — localStorage is shared
+       across every embed on the origin, so a second instance would inherit
+       the first one's present-mode flag. The shell only sets presentMode=1
+       when it owns the claim and has saved state to apply. */
+    if (query.get('presentMode') !== '1') {
       return
     }
-    try {
-      await setPresentMode(true)
-    } catch {}
+    /* Auto-restore can't request real fullscreen without a user gesture, so
+       applying the UI state keeps presentModeUsingFullscreen=false. Escape
+       then exits via the keydown handler rather than fullscreenchange. */
+    applyPresentModeState(true)
   }
 
   function setupSettingsPanel() {
@@ -1258,9 +1276,8 @@ import {
       return
     }
     state.presentMode = nextValue
-    try {
-      localStorage.setItem(PRESENT_MODE_KEY, nextValue ? '1' : '0')
-    } catch {}
+    /* Persistence is owned by the embed shell (claim-gated PrezoEmbedState).
+       Writing a localStorage key here would leak state across instances. */
     const activeRichTextHost = getActiveRichTextHost()
     if (state.presentMode && activeRichTextHost && typeof activeRichTextHost.blur === 'function') {
       activeRichTextHost.blur()
@@ -10729,6 +10746,7 @@ import {
     window.removeEventListener('resize', handleEditorDockViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
+    window.removeEventListener('message', handleShellExitPresentMessage)
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
     artifactBridge.dispose()
     disposeLibrarySyncManager()

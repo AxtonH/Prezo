@@ -290,6 +290,35 @@
         inset: 0;
         z-index: 100;
       }
+
+      .exit-present-btn {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 200;
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        color: #ffffff;
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 999px;
+        cursor: pointer;
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+      }
+
+      .exit-present-btn:hover {
+        background: rgba(15, 23, 42, 0.92);
+      }
+
+      .app.present-mode .exit-present-btn {
+        display: inline-flex;
+      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script src="./embed-state.js"></script>
@@ -387,6 +416,9 @@
           </div>
         </div>
       </section>
+      <button type="button" class="exit-present-btn" id="exit-present-btn" aria-label="Exit present mode">
+        Exit present mode
+      </button>
     </div>
     <script>
       ;(() => {
@@ -411,6 +443,7 @@
         const overlay = document.getElementById("overlay")
         const overlayTitleEl = document.getElementById("overlay-title")
         const overlayMessageEl = document.getElementById("overlay-message")
+        const exitPresentBtn = document.getElementById("exit-present-btn")
 
         const STATUS_TONE = {
           initializing: "loading",
@@ -829,15 +862,25 @@
         const init = async () => {
           setStatus("loading")
           await refreshLibrarySyncFromDocument()
+          /* Establish claim ownership FIRST so non-owning (newly-added) embeds
+             skip both saved-state and the Host-written session binding. If
+             PrezoEmbedState failed to load we fall back to the pre-claim
+             behavior (single-embed assumption). */
+          const saved = window.PrezoEmbedState
+            ? await window.PrezoEmbedState.load()
+            : null
+          const claimActive = typeof window.PrezoEmbedState?.ownsActiveClaim === "function"
+          const ownsEmbedState = claimActive
+            ? window.PrezoEmbedState.ownsActiveClaim()
+            : true
           const binding = await readBindingFromDocument()
           if (binding?.apiBaseUrl) {
             apiBase = binding.apiBaseUrl
           }
-          if (binding?.sessionId && !selectedSessionId) {
-            selectedSessionId = binding.sessionId
-          }
-          if (window.PrezoEmbedState) {
-            const saved = await window.PrezoEmbedState.load()
+          if (ownsEmbedState) {
+            if (binding?.sessionId && !selectedSessionId) {
+              selectedSessionId = binding.sessionId
+            }
             if (saved?.sessionId && !selectedSessionId) {
               selectedSessionId = saved.sessionId
             }
@@ -882,6 +925,29 @@
         refreshBtn.addEventListener("click", () => {
           void loadSessions()
         })
+        const requestExitPresentMode = () => {
+          try {
+            frame.contentWindow?.postMessage(
+              { type: "prezo:exit-present-mode" },
+              window.location.origin
+            )
+          } catch {}
+        }
+        exitPresentBtn.addEventListener("click", requestExitPresentMode)
+        /* Relay Escape from the shell window so the user can exit present mode
+           even when the iframe doesn't hold keyboard focus — common right after
+           auto-restore, when no user gesture has activated the iframe. */
+        window.addEventListener("keydown", (event) => {
+          if (event.key !== "Escape") {
+            return
+          }
+          const appEl = document.querySelector(".app")
+          if (!appEl || !appEl.classList.contains("present-mode")) {
+            return
+          }
+          event.preventDefault()
+          requestExitPresentMode()
+        })
         window.addEventListener("storage", (event) => {
           if (event.key !== PREZO_LIBRARY_SYNC_STORAGE_KEY) {
             return
@@ -889,6 +955,12 @@
           void loadSessions()
         })
         window.PrezoEmbedState?.onExternalChange(async (next) => {
+          /* Only the embed that owns the state claim mirrors external changes,
+             otherwise a second instance would be dragged back into the owner's
+             session/poll every time the owner edits its state. */
+          if (!window.PrezoEmbedState?.ownsActiveClaim?.()) {
+            return
+          }
           if (!next) {
             return
           }
