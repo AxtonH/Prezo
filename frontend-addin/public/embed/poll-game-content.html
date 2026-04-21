@@ -249,29 +249,6 @@
         display: flex;
       }
 
-      .overlay--activatable {
-        cursor: pointer;
-      }
-
-      .overlay--activatable:hover .overlay-card,
-      .overlay--activatable:focus-visible .overlay-card {
-        border-color: var(--primary);
-        box-shadow: 0 6px 18px rgba(37, 99, 235, 0.18);
-      }
-
-      .overlay-cta {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-top: 4px;
-        padding: 9px 16px;
-        font-size: 13px;
-        font-weight: 600;
-        color: #fff;
-        background: var(--primary);
-        border-radius: var(--radius-md);
-      }
-
       .overlay-card {
         max-width: 420px;
         background: var(--surface);
@@ -313,38 +290,8 @@
         inset: 0;
         z-index: 100;
       }
-
-      .exit-present-btn {
-        position: fixed;
-        top: 12px;
-        right: 12px;
-        z-index: 200;
-        display: none;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 600;
-        color: #ffffff;
-        background: rgba(15, 23, 42, 0.78);
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        border-radius: 999px;
-        cursor: pointer;
-        -webkit-backdrop-filter: blur(6px);
-        backdrop-filter: blur(6px);
-      }
-
-      .exit-present-btn:hover {
-        background: rgba(15, 23, 42, 0.92);
-      }
-
-      .app.present-mode .exit-present-btn {
-        display: inline-flex;
-      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-    <script src="./embed-state.js"></script>
   </head>
   <body>
     <div class="app">
@@ -432,17 +379,13 @@
                 fill="#ffffff"
               >P</text>
             </svg>
-            <p class="overlay-title" id="overlay-title">Click to start this embed</p>
+            <p class="overlay-title" id="overlay-title">Connect a Prezo session</p>
             <p class="overlay-body" id="overlay-message">
-              PowerPoint needs a click on each embed so we can wire it to the right slide and restore any saved session.
+              Open the Prezo Host add-in while signed in, then pick a session above to embed it on this slide.
             </p>
-            <span class="overlay-cta" id="overlay-cta">Start embed</span>
           </div>
         </div>
       </section>
-      <button type="button" class="exit-present-btn" id="exit-present-btn" aria-label="Exit present mode">
-        Exit present mode
-      </button>
     </div>
     <script>
       ;(() => {
@@ -467,8 +410,6 @@
         const overlay = document.getElementById("overlay")
         const overlayTitleEl = document.getElementById("overlay-title")
         const overlayMessageEl = document.getElementById("overlay-message")
-        const overlayCtaEl = document.getElementById("overlay-cta")
-        const exitPresentBtn = document.getElementById("exit-present-btn")
 
         const STATUS_TONE = {
           initializing: "loading",
@@ -483,9 +424,6 @@
         let selectedSessionId = initialSessionId
         let selectedPollId = initialPollId
         let sessionsList = []
-        let savedArtifactName = ""
-        let savedPresentMode = false
-        let activationPromise = null
 
         const setStatus = (value) => {
           if (statusLabelEl) {
@@ -859,12 +797,6 @@
           if (selectedPollId) {
             qs.set("pollId", selectedPollId)
           }
-          if (savedArtifactName) {
-            qs.set("activeArtifact", savedArtifactName)
-          }
-          if (savedPresentMode) {
-            qs.set("presentMode", "1")
-          }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
@@ -885,70 +817,6 @@
           return false
         }
 
-        const showActivationOverlay = () => {
-          if (overlayTitleEl) {
-            overlayTitleEl.textContent = "Click to start this embed"
-          }
-          if (overlayMessageEl) {
-            overlayMessageEl.textContent =
-              "PowerPoint needs a click on each embed so we can wire it to the right slide and restore any saved session."
-          }
-          if (overlayCtaEl) {
-            overlayCtaEl.style.display = ""
-          }
-          overlay.classList.add("visible", "overlay--activatable")
-          overlay.setAttribute("role", "button")
-          overlay.setAttribute("tabindex", "0")
-        }
-
-        const dismissActivationChrome = () => {
-          overlay.classList.remove("overlay--activatable")
-          overlay.removeAttribute("role")
-          overlay.removeAttribute("tabindex")
-          if (overlayCtaEl) {
-            overlayCtaEl.style.display = "none"
-          }
-        }
-
-        /* User-gesture gate: when the user clicks the embed, PowerPoint also
-           selects the host slide in the UI. That's the only moment
-           `PowerPoint.run → getSelectedSlides()` reliably reports *this*
-           embed's slide (Office.js exposes no host-slide identity otherwise).
-           We resolve the per-embed UUID here, load only this embed's saved
-           state, then boot the rest of the UI. */
-        const activateEmbed = () => {
-          if (activationPromise) {
-            return activationPromise
-          }
-          activationPromise = (async () => {
-            dismissActivationChrome()
-            setStatus("loading")
-            try {
-              await window.PrezoEmbedState?.activate?.()
-            } catch {
-              // Fall through — identity resolution failed, load() will
-              // return EMPTY_STATE and the user can still use the embed.
-            }
-            const saved = window.PrezoEmbedState
-              ? await window.PrezoEmbedState.load()
-              : null
-            if (saved?.sessionId && !selectedSessionId) {
-              selectedSessionId = saved.sessionId
-            }
-            if (saved?.pollId && !selectedPollId) {
-              selectedPollId = saved.pollId
-            }
-            if (saved?.artifactName) {
-              savedArtifactName = saved.artifactName
-            }
-            if (saved?.presentMode) {
-              savedPresentMode = true
-            }
-            await loadSessions()
-          })()
-          return activationPromise
-        }
-
         const init = async () => {
           setStatus("loading")
           await refreshLibrarySyncFromDocument()
@@ -959,7 +827,7 @@
           if (binding?.sessionId && !selectedSessionId) {
             selectedSessionId = binding.sessionId
           }
-          showActivationOverlay()
+          await loadSessions()
           if (!librarySyncState?.token) {
             // Host may write the token moments after this embed loads; keep
             // watching for a short while so the user doesn't have to refresh.
@@ -974,7 +842,6 @@
           }
           selectedSessionId = next
           selectedPollId = ""
-          void window.PrezoEmbedState?.save({ sessionId: next, pollId: "" })
           await loadPolls()
           loadGameFrame()
         })
@@ -984,86 +851,16 @@
             return
           }
           selectedPollId = next
-          void window.PrezoEmbedState?.save({ pollId: next })
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {
           void loadSessions()
-        })
-        overlay.addEventListener("click", () => {
-          if (!overlay.classList.contains("overlay--activatable")) {
-            return
-          }
-          void activateEmbed()
-        })
-        overlay.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" && event.key !== " ") {
-            return
-          }
-          if (!overlay.classList.contains("overlay--activatable")) {
-            return
-          }
-          event.preventDefault()
-          void activateEmbed()
-        })
-        const requestExitPresentMode = () => {
-          try {
-            frame.contentWindow?.postMessage(
-              { type: "prezo:exit-present-mode" },
-              window.location.origin
-            )
-          } catch {}
-        }
-        exitPresentBtn.addEventListener("click", requestExitPresentMode)
-        /* Relay Escape from the shell window so the user can exit present mode
-           even when the iframe doesn't hold keyboard focus — common right after
-           auto-restore, when no user gesture has activated the iframe. */
-        window.addEventListener("keydown", (event) => {
-          if (event.key !== "Escape") {
-            return
-          }
-          const appEl = document.querySelector(".app")
-          if (!appEl || !appEl.classList.contains("present-mode")) {
-            return
-          }
-          event.preventDefault()
-          requestExitPresentMode()
         })
         window.addEventListener("storage", (event) => {
           if (event.key !== PREZO_LIBRARY_SYNC_STORAGE_KEY) {
             return
           }
           void loadSessions()
-        })
-        window.PrezoEmbedState?.onExternalChange(async (next) => {
-          /* Storage events carry the full multi-embed entry map; the state
-             module resolves just this embed's entry, so `next` here is
-             already scoped to us. */
-          if (!next) {
-            return
-          }
-          if (typeof next.artifactName === "string") {
-            savedArtifactName = next.artifactName
-          }
-          if (typeof next.presentMode === "boolean") {
-            savedPresentMode = next.presentMode
-          }
-          let changed = false
-          if (next.sessionId && next.sessionId !== selectedSessionId) {
-            selectedSessionId = next.sessionId
-            sessionSelectEl.value = selectedSessionId
-            selectedPollId = next.pollId || ""
-            changed = true
-          } else if (next.pollId && next.pollId !== selectedPollId) {
-            selectedPollId = next.pollId
-            pollSelectEl.value = selectedPollId
-            changed = true
-          }
-          if (!changed) {
-            return
-          }
-          await loadPolls()
-          loadGameFrame()
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
@@ -1080,22 +877,9 @@
             return
           }
           if (message.type === "prezo:present-mode") {
-            const active = Boolean(message.active)
             const app = document.querySelector(".app")
             if (app) {
-              app.classList.toggle("present-mode", active)
-            }
-            if (active !== savedPresentMode) {
-              savedPresentMode = active
-              void window.PrezoEmbedState?.save({ presentMode: active })
-            }
-            return
-          }
-          if (message.type === "prezo:artifact-changed") {
-            const name = typeof message.name === "string" ? message.name : ""
-            if (name !== savedArtifactName) {
-              savedArtifactName = name
-              void window.PrezoEmbedState?.save({ artifactName: name })
+              app.classList.toggle("present-mode", Boolean(message.active))
             }
             return
           }
