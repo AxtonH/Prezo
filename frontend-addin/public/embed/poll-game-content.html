@@ -292,6 +292,7 @@
       }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script src="./embed-state.js"></script>
   </head>
   <body>
     <div class="app">
@@ -827,6 +828,15 @@
           if (binding?.sessionId && !selectedSessionId) {
             selectedSessionId = binding.sessionId
           }
+          if (window.PrezoEmbedState) {
+            const saved = await window.PrezoEmbedState.load()
+            if (saved?.sessionId && !selectedSessionId) {
+              selectedSessionId = saved.sessionId
+            }
+            if (saved?.pollId && !selectedPollId) {
+              selectedPollId = saved.pollId
+            }
+          }
           await loadSessions()
           if (!librarySyncState?.token) {
             // Host may write the token moments after this embed loads; keep
@@ -842,6 +852,7 @@
           }
           selectedSessionId = next
           selectedPollId = ""
+          void window.PrezoEmbedState?.save({ sessionId: next, pollId: "" })
           await loadPolls()
           loadGameFrame()
         })
@@ -851,6 +862,7 @@
             return
           }
           selectedPollId = next
+          void window.PrezoEmbedState?.save({ pollId: next })
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {
@@ -861,6 +873,27 @@
             return
           }
           void loadSessions()
+        })
+        window.PrezoEmbedState?.onExternalChange(async (next) => {
+          if (!next) {
+            return
+          }
+          let changed = false
+          if (next.sessionId && next.sessionId !== selectedSessionId) {
+            selectedSessionId = next.sessionId
+            sessionSelectEl.value = selectedSessionId
+            selectedPollId = next.pollId || ""
+            changed = true
+          } else if (next.pollId && next.pollId !== selectedPollId) {
+            selectedPollId = next.pollId
+            pollSelectEl.value = selectedPollId
+            changed = true
+          }
+          if (!changed) {
+            return
+          }
+          await loadPolls()
+          loadGameFrame()
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
