@@ -616,6 +616,8 @@ import {
     advanced: false
   }
 
+  let restoredArtifactName = ''
+
   init()
 
   function init() {
@@ -649,7 +651,6 @@ import {
     el.librarySyncStatus.addEventListener('click', handleLibrarySyncStatusClick)
   }
 
-  let restoredArtifactName = ''
   function restoreActiveArtifactFromLibrary() {
     const forced = asText(query.get('activeArtifact'))
     const name = forced || asText(artifactLibrary?.activeName)
