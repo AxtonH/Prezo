@@ -120,8 +120,9 @@
 
       .setup {
         margin-top: 12px;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
         gap: 10px;
         align-items: end;
       }
@@ -131,6 +132,11 @@
         flex-direction: column;
         gap: 4px;
         min-width: 0;
+        width: 220px;
+      }
+
+      .field--poll {
+        width: 260px;
       }
 
       .field label {
@@ -178,6 +184,7 @@
         display: flex;
         align-items: end;
         gap: 8px;
+        margin-left: auto;
       }
 
       .btn {
@@ -595,21 +602,13 @@
           const title =
             typeof session?.title === "string" && session.title.trim()
               ? session.title.trim()
-              : `Session ${typeof session?.code === "string" ? session.code : ""}`.trim()
+              : ""
+          if (title) {
+            return title
+          }
           const code =
             typeof session?.code === "string" && session.code.trim() ? session.code.trim() : ""
-          const status =
-            typeof session?.status === "string" && session.status.trim()
-              ? session.status.trim()
-              : ""
-          const parts = [title || "Untitled session"]
-          if (code) {
-            parts.push(code)
-          }
-          if (status) {
-            parts.push(status)
-          }
-          return parts.join(" · ")
+          return code ? `Session ${code}` : "Untitled session"
         }
 
         const describePollOption = (poll, index) => {
@@ -733,7 +732,7 @@
           setStatus("loading")
           try {
             const resp = await window.fetch(
-              `${apiBase}/sessions?limit=50`,
+              `${apiBase}/sessions?limit=50&status=active`,
               { headers: authHeaders() }
             )
             if (!resp.ok) {
