@@ -1,15 +1,15 @@
 ;(() => {
   const NAMESPACE = "https://prezo.app/game-embed"
   const STORAGE_KEY = "prezo:game-embed"
-  const STORAGE_VERSION = 1
-  // Lock key lives in localStorage (shared per origin) so any currently-running
-  // embed in the same PowerPoint session is visible to every other embed on the
-  // same machine. The XML part is presentation-scoped and can't distinguish
-  // instances, so this lock is what prevents a newly-added embed from
-  // inheriting the first embed's state.
-  const CLAIM_KEY = "prezo:game-embed:claim"
-  const CLAIM_TTL_MS = 15000
-  const HEARTBEAT_MS = 5000
+  const STORAGE_VERSION = 2
+  // Slide tag key used to mint a stable per-embed identity. Slide IDs alone
+  // aren't guaranteed stable across saves/machines, so each embed writes its
+  // own UUID into the host slide's tag collection on first load and uses that
+  // UUID to key its state. The tag travels with the .pptx.
+  const EMBED_TAG_KEY = "prezoEmbedId"
+  // Used when the PowerPoint API isn't available (older hosts, snapshot mode)
+  // so the embed still works with a single shared state entry.
+  const FALLBACK_EMBED_ID = "__fallback__"
 
   const EMPTY_STATE = {
     sessionId: "",
@@ -39,43 +39,6 @@
   const isEmpty = (state) =>
     !state.sessionId && !state.pollId && !state.artifactName && !state.presentMode
 
-  const readLocalStorage = () => {
-    try {
-      if (typeof window === "undefined" || !window.localStorage) {
-        return null
-      }
-      const raw = window.localStorage.getItem(STORAGE_KEY)
-      if (!raw) {
-        return null
-      }
-      const parsed = JSON.parse(raw)
-      if (!parsed || parsed.version !== STORAGE_VERSION) {
-        return null
-      }
-      return normalize(parsed.state)
-    } catch {
-      return null
-    }
-  }
-
-  const writeLocalStorage = (state) => {
-    try {
-      if (typeof window === "undefined" || !window.localStorage) {
-        return
-      }
-      if (isEmpty(state)) {
-        window.localStorage.removeItem(STORAGE_KEY)
-        return
-      }
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ version: STORAGE_VERSION, state })
-      )
-    } catch {
-      // localStorage may be blocked — custom XML fallback still runs.
-    }
-  }
-
   const escapeXml = (value) =>
     String(value)
       .replace(/&/g, "&amp;")
@@ -84,17 +47,97 @@
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&apos;")
 
-  const buildXml = (state) => {
-    const tag = (name, value) =>
-      value ? `<${name}>${escapeXml(value)}</${name}>` : ""
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<prezoGameEmbed xmlns="${NAMESPACE}">
-  ${tag("sessionId", state.sessionId)}
-  ${tag("pollId", state.pollId)}
-  ${tag("artifactName", state.artifactName)}
-  ${tag("presentMode", state.presentMode ? "1" : "")}
-  ${tag("updatedAt", state.updatedAt)}
-</prezoGameEmbed>`
+  const generateEmbedId = () => {
+    try {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID()
+      }
+    } catch {}
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  const hasPowerPointRun = () =>
+    typeof PowerPoint !== "undefined" && typeof PowerPoint.run === "function"
+
+  // Resolve (and cache for the lifetime of this iframe) the UUID that
+  // identifies *this* embed instance. First load queries the host slide's
+  // tag collection; if the tag exists we inherit the saved ID, otherwise we
+  // mint a fresh UUID and write it back to the tag.
+  let embedIdPromise = null
+
+  const resolveEmbedId = async () => {
+    if (!hasPowerPointRun()) {
+      return FALLBACK_EMBED_ID
+    }
+    try {
+      return await PowerPoint.run(async (context) => {
+        const slides = context.presentation.getSelectedSlides()
+        slides.load("items/id")
+        await context.sync()
+        if (!slides.items.length) {
+          return FALLBACK_EMBED_ID
+        }
+        const slide = slides.items[0]
+        const tags = slide.tags
+        tags.load("items/key,items/value")
+        await context.sync()
+        const existing = tags.items.find((t) => t.key === EMBED_TAG_KEY)
+        if (existing && existing.value) {
+          return existing.value
+        }
+        const fresh = generateEmbedId()
+        slide.tags.add(EMBED_TAG_KEY, fresh)
+        await context.sync()
+        return fresh
+      })
+    } catch (error) {
+      console.warn("Prezo embed state: failed to resolve embed ID, using fallback", error)
+      return FALLBACK_EMBED_ID
+    }
+  }
+
+  const getEmbedId = () => {
+    if (!embedIdPromise) {
+      embedIdPromise = resolveEmbedId()
+    }
+    return embedIdPromise
+  }
+
+  const readLocalAll = () => {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return {}
+      }
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      if (!raw) {
+        return {}
+      }
+      const parsed = JSON.parse(raw)
+      if (!parsed || parsed.version !== STORAGE_VERSION) {
+        return {}
+      }
+      return parsed.entries && typeof parsed.entries === "object" ? parsed.entries : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const writeLocalAll = (entries) => {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return
+      }
+      if (!entries || Object.keys(entries).length === 0) {
+        window.localStorage.removeItem(STORAGE_KEY)
+        return
+      }
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ version: STORAGE_VERSION, entries })
+      )
+    } catch {
+      // localStorage may be blocked — custom XML fallback still runs.
+    }
   }
 
   const hasCommonCustomXmlParts = () =>
@@ -152,43 +195,89 @@
       })
     })
 
-  const parseXml = (xml) => {
+  const parseAllStates = (xml) => {
+    const map = new Map()
     try {
       const doc = new DOMParser().parseFromString(xml, "application/xml")
-      const readNode = (name) =>
-        doc.getElementsByTagNameNS(NAMESPACE, name)[0]?.textContent ||
-        doc.getElementsByTagName(name)[0]?.textContent ||
-        ""
-      return normalize({
-        sessionId: readNode("sessionId"),
-        pollId: readNode("pollId"),
-        artifactName: readNode("artifactName"),
-        presentMode: readNode("presentMode") === "1",
-        updatedAt: readNode("updatedAt")
-      })
+      const nsNodes = doc.getElementsByTagNameNS(NAMESPACE, "instance")
+      const plainNodes = doc.getElementsByTagName("instance")
+      const seen = new Set()
+      const nodes = []
+      for (const n of nsNodes) {
+        nodes.push(n)
+        seen.add(n)
+      }
+      for (const n of plainNodes) {
+        if (!seen.has(n)) {
+          nodes.push(n)
+        }
+      }
+      for (const el of nodes) {
+        const id = el.getAttribute("id")
+        if (!id) {
+          continue
+        }
+        const read = (name) =>
+          el.getElementsByTagNameNS(NAMESPACE, name)[0]?.textContent ||
+          el.getElementsByTagName(name)[0]?.textContent ||
+          ""
+        map.set(
+          id,
+          normalize({
+            sessionId: read("sessionId"),
+            pollId: read("pollId"),
+            artifactName: read("artifactName"),
+            presentMode: read("presentMode") === "1",
+            updatedAt: read("updatedAt")
+          })
+        )
+      }
     } catch {
-      return null
+      // Fall through with whatever we collected.
     }
+    return map
   }
 
-  const readCustomXml = async () => {
+  const buildAllStatesXml = (map) => {
+    const tag = (name, value) =>
+      value ? `<${name}>${escapeXml(value)}</${name}>` : ""
+    const instances = [...map.entries()]
+      .filter(([, state]) => state && !isEmpty(state))
+      .map(
+        ([id, state]) =>
+          `  <instance id="${escapeXml(id)}">` +
+          tag("sessionId", state.sessionId) +
+          tag("pollId", state.pollId) +
+          tag("artifactName", state.artifactName) +
+          tag("presentMode", state.presentMode ? "1" : "") +
+          tag("updatedAt", state.updatedAt) +
+          `</instance>`
+      )
+      .join("\n")
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<prezoGameEmbed xmlns="${NAMESPACE}">
+${instances}
+</prezoGameEmbed>`
+  }
+
+  const readAllStatesFromXml = async () => {
     try {
       const parts = await getCommonParts()
       if (!parts.length) {
-        return null
+        return new Map()
       }
       const xml = await readPartXml(parts[0])
-      return parseXml(xml)
+      return parseAllStates(xml)
     } catch {
-      return null
+      return new Map()
     }
   }
 
-  const writeCustomXml = async (state) => {
+  const writeAllStatesToXml = async (map) => {
     if (!hasCommonCustomXmlParts()) {
       return
     }
-    const xml = buildXml(state)
+    const xml = buildAllStatesXml(map)
     try {
       const parts = await getCommonParts()
       if (parts.length) {
@@ -201,149 +290,26 @@
     }
   }
 
-  const generateInstanceId = () => {
-    try {
-      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-        return crypto.randomUUID()
-      }
-    } catch {}
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  }
-
-  const instanceId = generateInstanceId()
-  let ownsClaim = false
-  let heartbeatTimer = null
-
-  const readClaim = () => {
-    try {
-      if (typeof window === "undefined" || !window.localStorage) {
-        return null
-      }
-      const raw = window.localStorage.getItem(CLAIM_KEY)
-      if (!raw) {
-        return null
-      }
-      const parsed = JSON.parse(raw)
-      if (!parsed || typeof parsed !== "object") {
-        return null
-      }
-      const ownerId = typeof parsed.ownerId === "string" ? parsed.ownerId : ""
-      const lastSeenAt = Number(parsed.lastSeenAt)
-      if (!ownerId || !Number.isFinite(lastSeenAt)) {
-        return null
-      }
-      return { ownerId, lastSeenAt }
-    } catch {
-      return null
-    }
-  }
-
-  const writeClaim = (ownerId) => {
-    try {
-      if (typeof window === "undefined" || !window.localStorage) {
-        return
-      }
-      window.localStorage.setItem(
-        CLAIM_KEY,
-        JSON.stringify({ ownerId, lastSeenAt: Date.now() })
-      )
-    } catch {}
-  }
-
-  const clearClaim = () => {
-    try {
-      if (typeof window === "undefined" || !window.localStorage) {
-        return
-      }
-      window.localStorage.removeItem(CLAIM_KEY)
-    } catch {}
-  }
-
-  const claimIsActive = (claim) =>
-    Boolean(claim) && Date.now() - claim.lastSeenAt < CLAIM_TTL_MS
-
-  const tryClaim = () => {
-    const existing = readClaim()
-    if (claimIsActive(existing) && existing.ownerId !== instanceId) {
-      return false
-    }
-    writeClaim(instanceId)
-    // Short delay + re-read lets us detect a race where two embeds boot in the
-    // same tick and both write their own ID; the last writer wins and the loser
-    // gives up.
-    const confirm = readClaim()
-    if (!confirm || confirm.ownerId !== instanceId) {
-      return false
-    }
-    ownsClaim = true
-    startHeartbeat()
-    return true
-  }
-
-  const startHeartbeat = () => {
-    if (heartbeatTimer || typeof window === "undefined") {
-      return
-    }
-    heartbeatTimer = window.setInterval(() => {
-      const existing = readClaim()
-      if (existing && existing.ownerId !== instanceId) {
-        ownsClaim = false
-        if (heartbeatTimer) {
-          window.clearInterval(heartbeatTimer)
-          heartbeatTimer = null
-        }
-        return
-      }
-      writeClaim(instanceId)
-    }, HEARTBEAT_MS)
-  }
-
-  const releaseClaim = () => {
-    if (!ownsClaim) {
-      return
-    }
-    const existing = readClaim()
-    if (existing && existing.ownerId === instanceId) {
-      clearClaim()
-    }
-    ownsClaim = false
-    if (heartbeatTimer && typeof window !== "undefined") {
-      window.clearInterval(heartbeatTimer)
-      heartbeatTimer = null
-    }
-  }
-
-  if (typeof window !== "undefined") {
-    window.addEventListener("pagehide", releaseClaim)
-    window.addEventListener("beforeunload", releaseClaim)
-  }
-
   const load = async () => {
-    // Only the first embed to load in a PowerPoint session may claim ownership
-    // of the saved state. Subsequent embeds (e.g. a second one added to the
-    // deck during the same session) see an active heartbeat and start blank
-    // so they don't inherit the first embed's session/poll/artifact.
-    if (!tryClaim()) {
-      return { ...EMPTY_STATE }
-    }
-    const fromLocal = readLocalStorage()
-    const fromXml = await readCustomXml()
-    // Custom XML is the authoritative source because it travels with the
-    // .pptx across machines. localStorage is only a fast-path mirror.
+    const embedId = await getEmbedId()
+    const localAll = readLocalAll()
+    const fromLocal = localAll[embedId] ? normalize(localAll[embedId]) : null
+    const xmlStates = await readAllStatesFromXml()
+    const fromXml = xmlStates.get(embedId)
+    // Custom XML is authoritative because it travels with the .pptx across
+    // machines. localStorage is only a fast-path mirror for this origin.
     if (fromXml && !isEmpty(fromXml)) {
-      writeLocalStorage(fromXml)
+      localAll[embedId] = fromXml
+      writeLocalAll(localAll)
       return fromXml
     }
     return fromLocal || { ...EMPTY_STATE }
   }
 
   const save = async (partial) => {
-    // Embeds that didn't win the claim shouldn't persist state — they'd
-    // overwrite the owning embed's data.
-    if (!ownsClaim) {
-      return { ...EMPTY_STATE }
-    }
-    const current = readLocalStorage() || { ...EMPTY_STATE }
+    const embedId = await getEmbedId()
+    const localAll = readLocalAll()
+    const current = localAll[embedId] ? normalize(localAll[embedId]) : { ...EMPTY_STATE }
     const next = normalize({
       sessionId:
         typeof partial?.sessionId === "string" ? partial.sessionId : current.sessionId,
@@ -358,8 +324,19 @@
           : current.presentMode,
       updatedAt: new Date().toISOString()
     })
-    writeLocalStorage(next)
-    await writeCustomXml(next)
+    if (isEmpty(next)) {
+      delete localAll[embedId]
+    } else {
+      localAll[embedId] = next
+    }
+    writeLocalAll(localAll)
+    const xmlStates = await readAllStatesFromXml()
+    if (isEmpty(next)) {
+      xmlStates.delete(embedId)
+    } else {
+      xmlStates.set(embedId, next)
+    }
+    await writeAllStatesToXml(xmlStates)
     return next
   }
 
@@ -370,13 +347,16 @@
     if (typeof callback !== "function" || typeof window === "undefined") {
       return () => {}
     }
-    const handler = (event) => {
+    const handler = async (event) => {
       if (event.key !== STORAGE_KEY) {
         return
       }
       try {
+        const embedId = await getEmbedId()
         const parsed = event.newValue ? JSON.parse(event.newValue) : null
-        callback(parsed?.state ? normalize(parsed.state) : null)
+        const entries = parsed?.entries && typeof parsed.entries === "object" ? parsed.entries : {}
+        const entry = entries[embedId]
+        callback(entry ? normalize(entry) : null)
       } catch {
         callback(null)
       }
@@ -385,7 +365,10 @@
     return () => window.removeEventListener("storage", handler)
   }
 
-  const ownsActiveClaim = () => ownsClaim
+  // Retained for backwards compatibility with the previous claim-based API.
+  // Per-embed keying means every instance owns its own state naturally, so
+  // this always returns true now.
+  const ownsActiveClaim = () => true
 
   window.PrezoEmbedState = { load, save, clear, onExternalChange, ownsActiveClaim }
 })()

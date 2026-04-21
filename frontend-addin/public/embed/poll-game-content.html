@@ -862,37 +862,29 @@
         const init = async () => {
           setStatus("loading")
           await refreshLibrarySyncFromDocument()
-          /* Establish claim ownership FIRST so non-owning (newly-added) embeds
-             skip both saved-state and the Host-written session binding. If
-             PrezoEmbedState failed to load we fall back to the pre-claim
-             behavior (single-embed assumption). */
+          /* State is keyed per-embed via a UUID stored in the host slide's
+             tag collection, so each embed loads only its own saved state. */
           const saved = window.PrezoEmbedState
             ? await window.PrezoEmbedState.load()
             : null
-          const claimActive = typeof window.PrezoEmbedState?.ownsActiveClaim === "function"
-          const ownsEmbedState = claimActive
-            ? window.PrezoEmbedState.ownsActiveClaim()
-            : true
           const binding = await readBindingFromDocument()
           if (binding?.apiBaseUrl) {
             apiBase = binding.apiBaseUrl
           }
-          if (ownsEmbedState) {
-            if (binding?.sessionId && !selectedSessionId) {
-              selectedSessionId = binding.sessionId
-            }
-            if (saved?.sessionId && !selectedSessionId) {
-              selectedSessionId = saved.sessionId
-            }
-            if (saved?.pollId && !selectedPollId) {
-              selectedPollId = saved.pollId
-            }
-            if (saved?.artifactName) {
-              savedArtifactName = saved.artifactName
-            }
-            if (saved?.presentMode) {
-              savedPresentMode = true
-            }
+          if (binding?.sessionId && !selectedSessionId) {
+            selectedSessionId = binding.sessionId
+          }
+          if (saved?.sessionId && !selectedSessionId) {
+            selectedSessionId = saved.sessionId
+          }
+          if (saved?.pollId && !selectedPollId) {
+            selectedPollId = saved.pollId
+          }
+          if (saved?.artifactName) {
+            savedArtifactName = saved.artifactName
+          }
+          if (saved?.presentMode) {
+            savedPresentMode = true
           }
           await loadSessions()
           if (!librarySyncState?.token) {
@@ -955,12 +947,9 @@
           void loadSessions()
         })
         window.PrezoEmbedState?.onExternalChange(async (next) => {
-          /* Only the embed that owns the state claim mirrors external changes,
-             otherwise a second instance would be dragged back into the owner's
-             session/poll every time the owner edits its state. */
-          if (!window.PrezoEmbedState?.ownsActiveClaim?.()) {
-            return
-          }
+          /* Storage events carry the full multi-embed entry map; the state
+             module resolves just this embed's entry, so `next` here is
+             already scoped to us. */
           if (!next) {
             return
           }
