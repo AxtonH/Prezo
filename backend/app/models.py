@@ -306,3 +306,33 @@ class SessionActivity(BaseModel):
     type: str
     payload: dict[str, Any]
     ts: datetime
+
+
+class EmbedInstance(BaseModel):
+    id: str
+    owner_user_id: str | None = None
+    session_id: str | None = None
+    poll_id: str | None = None
+    artifact_kind: str = "poll-game"
+    screen_mode: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    last_seen_at: datetime
+
+
+class EmbedInstanceCreate(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    session_id: str | None = None
+    poll_id: str | None = None
+    artifact_kind: str = Field(default="poll-game", max_length=64)
+    screen_mode: str | None = Field(default=None, max_length=64)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbedInstanceUpdate(BaseModel):
+    session_id: str | None = None
+    poll_id: str | None = None
+    artifact_kind: str | None = Field(default=None, max_length=64)
+    screen_mode: str | None = Field(default=None, max_length=64)
+    metadata: dict[str, Any] | None = None

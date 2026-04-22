@@ -292,6 +292,8 @@
       }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <script src="./embed-identity.js"></script>
+    <script src="./embed-state-client.js"></script>
   </head>
   <body>
     <div class="app">
@@ -424,6 +426,81 @@
         let selectedSessionId = initialSessionId
         let selectedPollId = initialPollId
         let sessionsList = []
+        let embedIdentity = null
+        let storedEmbedInstance = null
+        let persistEmbedInFlight = Promise.resolve()
+
+        const getEmbedStateOptions = () => ({
+          apiBase: apiBase || DEFAULT_API_BASE,
+          token: librarySyncState?.token || "",
+        })
+
+        const canPersistEmbedState = () =>
+          Boolean(
+            embedIdentity?.id &&
+              embedIdentity?.persisted &&
+              librarySyncState?.token &&
+              window.PrezoEmbedStateClient
+          )
+
+        const ensureEmbedInstanceOnServer = async () => {
+          if (!canPersistEmbedState()) {
+            return null
+          }
+          try {
+            const row = await window.PrezoEmbedStateClient.ensure(
+              getEmbedStateOptions(),
+              embedIdentity.id,
+              {
+                session_id: selectedSessionId || null,
+                poll_id: selectedPollId || null,
+                artifact_kind: "poll-game",
+              }
+            )
+            storedEmbedInstance = row
+            return row
+          } catch (error) {
+            console.warn("embed-instance ensure failed:", error)
+            return null
+          }
+        }
+
+        const queueEmbedStatePatch = (patch) => {
+          if (!canPersistEmbedState()) {
+            return
+          }
+          const options = getEmbedStateOptions()
+          const id = embedIdentity.id
+          persistEmbedInFlight = persistEmbedInFlight
+            .catch(() => undefined)
+            .then(() =>
+              window.PrezoEmbedStateClient.update(options, id, patch).catch(
+                (error) => {
+                  console.warn("embed-instance update failed:", error)
+                }
+              )
+            )
+        }
+
+        const applyStoredEmbedInstance = (row) => {
+          if (!row || typeof row !== "object") {
+            return
+          }
+          if (
+            typeof row.session_id === "string" &&
+            row.session_id &&
+            !initialSessionId
+          ) {
+            selectedSessionId = row.session_id
+          }
+          if (
+            typeof row.poll_id === "string" &&
+            row.poll_id &&
+            !initialPollId
+          ) {
+            selectedPollId = row.poll_id
+          }
+        }
 
         const setStatus = (value) => {
           if (statusLabelEl) {
@@ -810,6 +887,7 @@
             await new Promise((resolve) => window.setTimeout(resolve, delayMs))
             await refreshLibrarySyncFromDocument()
             if (librarySyncState?.token) {
+              await hydrateFromStoredEmbedInstance()
               await loadSessions()
               return true
             }
@@ -817,9 +895,30 @@
           return false
         }
 
+        const resolveEmbedIdentityOnce = async () => {
+          if (embedIdentity?.id || !window.PrezoEmbedIdentity) {
+            return
+          }
+          try {
+            embedIdentity = await window.PrezoEmbedIdentity.resolve()
+          } catch (error) {
+            console.warn("embed-identity resolve failed:", error)
+            embedIdentity = null
+          }
+        }
+
+        const hydrateFromStoredEmbedInstance = async () => {
+          if (!canPersistEmbedState()) {
+            return
+          }
+          const row = await ensureEmbedInstanceOnServer()
+          applyStoredEmbedInstance(row)
+        }
+
         const init = async () => {
           setStatus("loading")
           await refreshLibrarySyncFromDocument()
+          await resolveEmbedIdentityOnce()
           const binding = await readBindingFromDocument()
           if (binding?.apiBaseUrl) {
             apiBase = binding.apiBaseUrl
@@ -827,6 +926,7 @@
           if (binding?.sessionId && !selectedSessionId) {
             selectedSessionId = binding.sessionId
           }
+          await hydrateFromStoredEmbedInstance()
           await loadSessions()
           if (!librarySyncState?.token) {
             // Host may write the token moments after this embed loads; keep
@@ -842,6 +942,10 @@
           }
           selectedSessionId = next
           selectedPollId = ""
+          queueEmbedStatePatch({
+            session_id: selectedSessionId || null,
+            poll_id: null,
+          })
           await loadPolls()
           loadGameFrame()
         })
@@ -851,6 +955,7 @@
             return
           }
           selectedPollId = next
+          queueEmbedStatePatch({ poll_id: selectedPollId || null })
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {
