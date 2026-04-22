@@ -741,8 +741,15 @@
           }
           const match = sessions.find((session) => session?.id === selectedSessionId)
           if (!match) {
+            const previousSessionId = selectedSessionId
             selectedSessionId = sessions[0]?.id || ""
             selectedPollId = initialPollId && match ? initialPollId : ""
+            if (selectedSessionId && selectedSessionId !== previousSessionId) {
+              queueEmbedStatePatch({
+                session_id: selectedSessionId,
+                poll_id: selectedPollId || null,
+              })
+            }
           }
           if (selectedSessionId) {
             sessionSelectEl.value = selectedSessionId
@@ -773,10 +780,14 @@
           if (match) {
             pollSelectEl.value = selectedPollId
           } else {
+            const previousPollId = selectedPollId
             const open = sorted.find((poll) => poll?.status === "open") || sorted[0]
             selectedPollId = open?.id || ""
             if (selectedPollId) {
               pollSelectEl.value = selectedPollId
+            }
+            if (selectedPollId && selectedPollId !== previousPollId) {
+              queueEmbedStatePatch({ poll_id: selectedPollId })
             }
           }
           pollSelectEl.disabled = false
