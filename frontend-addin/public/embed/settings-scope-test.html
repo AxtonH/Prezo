@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prezo Settings Scope Test</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #f5f6f8;
+      color: #1a1a1a;
+    }
+    h1 {
+      font-size: 16px;
+      margin: 0 0 8px;
+    }
+    p.test-note {
+      font-size: 12px;
+      color: #555;
+      margin: 0 0 12px;
+    }
+    .test-panel {
+      background: white;
+      border: 1px solid #d4d7dc;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .test-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      margin: 4px 0;
+    }
+    .test-row strong {
+      font-weight: 600;
+    }
+    .test-badge {
+      display: inline-block;
+      background: #1f6feb;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    .test-value {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      background: #f0f2f5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .test-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .test-buttons button {
+      font-size: 13px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #c0c4cc;
+      background: white;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .test-buttons button:hover {
+      background: #eef0f3;
+    }
+    #test-log {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      background: #111;
+      color: #8fe08f;
+      padding: 10px;
+      border-radius: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .test-instructions {
+      font-size: 12px;
+      color: #444;
+      line-height: 1.5;
+    }
+    .test-instructions ol {
+      margin: 6px 0 0 18px;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Settings Scope Test</h1>
+  <p class="test-note">Temporary harness. Verifies whether Office.context.document.settings is per-instance or shared across instances in a PowerPoint content add-in.</p>
+
+  <div class="test-panel">
+    <div class="test-row">
+      <span>Instance load badge</span>
+      <span class="test-badge" id="test-instance-id">…</span>
+    </div>
+    <div class="test-row">
+      <span>settings.get("testScopeValue")</span>
+      <span class="test-value" id="test-current-value">(not yet read)</span>
+    </div>
+    <div class="test-row">
+      <span>Office.onReady status</span>
+      <span class="test-value" id="test-ready-status">pending…</span>
+    </div>
+  </div>
+
+  <div class="test-panel">
+    <div class="test-buttons">
+      <button id="test-write-a-button" type="button">Write "A"</button>
+      <button id="test-write-b-button" type="button">Write "B"</button>
+      <button id="test-clear-button" type="button">Clear</button>
+      <button id="test-refresh-button" type="button">Re-read</button>
+    </div>
+  </div>
+
+  <div class="test-panel">
+    <div id="test-log" aria-live="polite"></div>
+  </div>
+
+  <div class="test-panel">
+    <div class="test-instructions">
+      <strong>How to run the test:</strong>
+      <ol>
+        <li>Insert two instances of this add-in onto two different slides.</li>
+        <li>In instance 1 click "Write A". In instance 2 click "Write B".</li>
+        <li>Save the .pptx. Close PowerPoint.</li>
+        <li>Reopen the file. Each instance auto-reads its value on load.</li>
+        <li>If instance 1 shows "A" and instance 2 shows "B" → per-instance settings confirmed. If both show the same value → shared bag confirmed.</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    (function testHarnessMain() {
+      var TEST_SETTINGS_KEY = "testScopeValue";
+
+      function testRandomInstanceId() {
+        return Math.random().toString(36).slice(2, 8).toUpperCase();
+      }
+
+      var testInstanceId = testRandomInstanceId();
+      document.getElementById("test-instance-id").textContent = testInstanceId;
+
+      function testLogLine(message) {
+        var log = document.getElementById("test-log");
+        var timestamp = new Date().toLocaleTimeString();
+        log.textContent += "[" + timestamp + "] " + message + "\n";
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function testReadCurrentSetting() {
+        try {
+          var value = Office.context.document.settings.get(TEST_SETTINGS_KEY);
+          var display = value === undefined || value === null ? "(undefined)" : JSON.stringify(value);
+          document.getElementById("test-current-value").textContent = display;
+          testLogLine("Read value: " + display);
+        } catch (err) {
+          testLogLine("Read error: " + (err && err.message ? err.message : String(err)));
+        }
+      }
+
+      function testWriteAndSave(nextValue) {
+        try {
+          Office.context.document.settings.set(TEST_SETTINGS_KEY, nextValue);
+          Office.context.document.settings.saveAsync(function (result) {
+            if (result.status === Office.AsyncResultStatus.Succeeded) {
+              testLogLine('Wrote "' + nextValue + '" and called saveAsync. Remember: you must also save the .pptx itself.');
+            } else {
+              var msg = result.error && result.error.message ? result.error.message : "unknown error";
+              testLogLine("saveAsync failed: " + msg);
+            }
+            testReadCurrentSetting();
+          });
+        } catch (err) {
+          testLogLine("Write error: " + (err && err.message ? err.message : String(err)));
+        }
+      }
+
+      function testClearAndSave() {
+        try {
+          Office.context.document.settings.remove(TEST_SETTINGS_KEY);
+          Office.context.document.settings.saveAsync(function (result) {
+            if (result.status === Office.AsyncResultStatus.Succeeded) {
+              testLogLine("Cleared setting and called saveAsync. Remember: save the .pptx too.");
+            } else {
+              var msg = result.error && result.error.message ? result.error.message : "unknown error";
+              testLogLine("saveAsync failed: " + msg);
+            }
+            testReadCurrentSetting();
+          });
+        } catch (err) {
+          testLogLine("Clear error: " + (err && err.message ? err.message : String(err)));
+        }
+      }
+
+      function testBindUiHandlers() {
+        document.getElementById("test-write-a-button").addEventListener("click", function () {
+          testWriteAndSave("A");
+        });
+        document.getElementById("test-write-b-button").addEventListener("click", function () {
+          testWriteAndSave("B");
+        });
+        document.getElementById("test-clear-button").addEventListener("click", testClearAndSave);
+        document.getElementById("test-refresh-button").addEventListener("click", testReadCurrentSetting);
+      }
+
+      Office.onReady(function (info) {
+        document.getElementById("test-ready-status").textContent = "ready (" + (info && info.host ? info.host : "unknown") + ")";
+        testLogLine("Office.onReady fired. Instance load badge: " + testInstanceId);
+        testBindUiHandlers();
+        testReadCurrentSetting();
+      });
+    })();
+  </script>
+</body>
+</html>
