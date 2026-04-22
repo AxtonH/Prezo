@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..auth import AuthUser, get_current_user
+from ..auth import AuthUser, get_library_user
 from ..embed_instances_store import (
     EmbedInstanceNotFoundError,
     EmbedInstanceStoreError,
@@ -42,7 +42,7 @@ def _store_dependency() -> EmbedInstancesStore:
 async def create_embed_instance(
     payload: EmbedInstanceCreate,
     store: EmbedInstancesStore = Depends(_store_dependency),
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(get_library_user),
 ) -> EmbedInstance:
     try:
         return await store.create(payload, owner_user_id=user.id)
@@ -54,7 +54,7 @@ async def create_embed_instance(
 async def get_embed_instance(
     embed_id: str,
     store: EmbedInstancesStore = Depends(_store_dependency),
-    _user: AuthUser = Depends(get_current_user),
+    _user: AuthUser = Depends(get_library_user),
 ) -> EmbedInstance:
     try:
         instance = await store.get(embed_id)
@@ -75,7 +75,7 @@ async def update_embed_instance(
     embed_id: str,
     payload: EmbedInstanceUpdate,
     store: EmbedInstancesStore = Depends(_store_dependency),
-    _user: AuthUser = Depends(get_current_user),
+    _user: AuthUser = Depends(get_library_user),
 ) -> EmbedInstance:
     try:
         return await store.update(embed_id, payload)
@@ -89,7 +89,7 @@ async def update_embed_instance(
 async def delete_embed_instance(
     embed_id: str,
     store: EmbedInstancesStore = Depends(_store_dependency),
-    _user: AuthUser = Depends(get_current_user),
+    _user: AuthUser = Depends(get_library_user),
 ) -> None:
     try:
         await store.delete(embed_id)
