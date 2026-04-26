@@ -91,6 +91,7 @@ class EmbedInstancesStore:
             artifact_kind=row.get("artifact_kind") or "poll-game",
             artifact_name=row.get("artifact_name"),
             screen_mode=row.get("screen_mode"),
+            present_mode=bool(row.get("present_mode")),
             metadata=row.get("metadata") or {},
             created_at=_parse_timestamp(row["created_at"]),
             updated_at=_parse_timestamp(row["updated_at"]),
@@ -117,6 +118,7 @@ class EmbedInstancesStore:
             "artifact_kind": payload.artifact_kind,
             "artifact_name": payload.artifact_name,
             "screen_mode": payload.screen_mode,
+            "present_mode": payload.present_mode,
             "metadata": payload.metadata,
         }
         response = await self._request(
@@ -146,6 +148,8 @@ class EmbedInstancesStore:
             body["artifact_name"] = patch.artifact_name or None
         if patch.screen_mode is not None:
             body["screen_mode"] = patch.screen_mode or None
+        if patch.present_mode is not None:
+            body["present_mode"] = bool(patch.present_mode)
         if patch.metadata is not None:
             body["metadata"] = patch.metadata
         body["last_seen_at"] = datetime.now(timezone.utc).isoformat()

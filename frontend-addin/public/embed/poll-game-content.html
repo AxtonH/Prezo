@@ -431,6 +431,7 @@
         let persistEmbedInFlight = Promise.resolve()
         let currentScreenMode = ""
         let currentArtifactName = ""
+        let currentPresentMode = false
 
         const getEmbedStateOptions = () => ({
           apiBase: apiBase || DEFAULT_API_BASE,
@@ -544,6 +545,9 @@
           }
           if (typeof row.artifact_name === "string" && row.artifact_name) {
             currentArtifactName = row.artifact_name
+          }
+          if (typeof row.present_mode === "boolean") {
+            currentPresentMode = row.present_mode
           }
         }
 
@@ -1104,6 +1108,9 @@
           if (currentArtifactName) {
             qs.set("artifactName", currentArtifactName)
           }
+          if (currentPresentMode) {
+            qs.set("presentMode", "1")
+          }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
@@ -1213,10 +1220,23 @@
             return
           }
           if (message.type === "prezo:present-mode") {
+            const isActive = Boolean(message.active)
             const app = document.querySelector(".app")
             if (app) {
-              app.classList.toggle("present-mode", Boolean(message.active))
+              app.classList.toggle("present-mode", isActive)
             }
+            // [prezo-embed-debug] TEMPORARY
+            console.log('[prezo-embed-debug] outer-embed received present-mode', {
+              isActive: isActive,
+              currentPresentMode: currentPresentMode,
+              willPatch: isActive !== currentPresentMode,
+              canPersist: canPersistEmbedState(),
+            })
+            if (isActive === currentPresentMode) {
+              return
+            }
+            currentPresentMode = isActive
+            queueEmbedStatePatch({ present_mode: isActive })
             return
           }
           if (message.type === "prezo:active-artifact") {

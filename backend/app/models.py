@@ -316,6 +316,7 @@ class EmbedInstance(BaseModel):
     artifact_kind: str = "poll-game"
     artifact_name: str | None = None
     screen_mode: str | None = None
+    present_mode: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -329,6 +330,7 @@ class EmbedInstanceCreate(BaseModel):
     artifact_kind: str = Field(default="poll-game", max_length=64)
     artifact_name: str | None = Field(default=None, max_length=64)
     screen_mode: str | None = Field(default=None, max_length=64)
+    present_mode: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -338,4 +340,5 @@ class EmbedInstanceUpdate(BaseModel):
     artifact_kind: str | None = Field(default=None, max_length=64)
     artifact_name: str | None = Field(default=None, max_length=64)
     screen_mode: str | None = Field(default=None, max_length=64)
+    present_mode: bool | None = None
     metadata: dict[str, Any] | None = None

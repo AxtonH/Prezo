@@ -586,6 +586,7 @@ import {
   }
 
   const artifactNameFromQuery = asText(query.get('artifactName')).trim()
+  const presentModeFromQuery = asText(query.get('presentMode')).trim() === '1'
   let pendingArtifactRestoreName = artifactNameFromQuery
   let artifactRestoreTimerId = 0
   let artifactRestoreAttempts = 0
@@ -773,6 +774,22 @@ import {
     initializeHistoryState()
     void hydrateSavedLibraries()
     scheduleArtifactRestoreFromQuery()
+    // Auto-enter present mode if the embed was saved that way. Deferred so
+    // applyPresentModeState reads stable state. Browsers don't allow
+    // requestFullscreen without a user gesture, so we use applyPresentModeState
+    // (the synchronous CSS-only path) instead of setPresentMode here.
+    if (presentModeFromQuery) {
+      window.setTimeout(() => {
+        try {
+          // [prezo-embed-debug] TEMPORARY
+          console.log('[prezo-embed-debug] inner-iframe auto-entering present mode (URL param)')
+          applyPresentModeState(true)
+        } catch (error) {
+          // [prezo-embed-debug] TEMPORARY
+          console.warn('[prezo-embed-debug] inner-iframe auto-enter present mode failed', error)
+        }
+      }, 0)
+    }
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
