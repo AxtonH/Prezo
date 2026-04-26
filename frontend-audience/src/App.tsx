@@ -30,6 +30,58 @@ const upsertById = <T extends { id: string }>(items: T[], item: T) => {
   return updated
 }
 
+// Per-session local persistence for "which option(s) has this client already
+// voted on, per poll." The server already enforces this server-side via
+// (client_id, poll_id, option_id), but we mirror it locally so the audience
+// UI selection survives page reloads. Without this, after a reload the
+// client thinks every click is a first vote — and the server's idempotent
+// vote_poll_atomic returns "no change," producing the visible "+1 then -1".
+const pollVoteHistoryStorageKey = (sessionId: string) =>
+  `prezo:audience:poll-vote-history:${sessionId}`
+
+const readPollVoteHistory = (
+  sessionId: string
+): Record<string, Set<string>> => {
+  try {
+    const raw = window.localStorage.getItem(pollVoteHistoryStorageKey(sessionId))
+    if (!raw) {
+      return {}
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return {}
+    }
+    const result: Record<string, Set<string>> = {}
+    for (const [pollId, optionList] of Object.entries(parsed)) {
+      if (Array.isArray(optionList)) {
+        result[pollId] = new Set(optionList.filter((value): value is string => typeof value === 'string'))
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+const writePollVoteHistory = (
+  sessionId: string,
+  history: Record<string, Set<string>>
+): void => {
+  try {
+    const serialized: Record<string, string[]> = {}
+    for (const [pollId, options] of Object.entries(history)) {
+      serialized[pollId] = Array.from(options)
+    }
+    window.localStorage.setItem(
+      pollVoteHistoryStorageKey(sessionId),
+      JSON.stringify(serialized)
+    )
+  } catch {
+    // localStorage unavailable or quota exceeded — non-fatal; in-memory ref
+    // is still correct for the current page lifetime.
+  }
+}
+
 const parseJoinCode = () => {
   const parts = window.location.pathname.split('/').filter(Boolean)
   if (parts[0] === 'join' && parts[1]) {
@@ -62,6 +114,13 @@ export default function App() {
   const pollVotePendingRef = useRef<
     Record<string, { inFlight: boolean; queuedOptionId: string | null }>
   >({})
+  // True while *this* client is mid-flight on a vote for the keyed poll.
+  // Used by the websocket activity handler to drop conflicting broadcasts
+  // for the user's own poll while their own vote is still settling — the
+  // API response (which we apply directly) is the authoritative state for
+  // that window, and out-of-order broadcasts otherwise produce the visible
+  // "+1 then -1" revert.
+  const pollVoteInFlightRef = useRef<Record<string, boolean>>({})
   const questionVoteHistoryRef = useRef<Set<string>>(new Set())
 
   const handleSessionActivity = useCallback((activity: SessionActivity) => {
@@ -88,6 +147,13 @@ export default function App() {
 
     if (activity.payload.poll) {
       const poll = activity.payload.poll as Poll
+      // Skip while this client is voting on this poll. Their API response
+      // is applied directly to state below (in votePoll), so the broadcast
+      // would only race with it. After their own vote settles, the next
+      // broadcast applies normally and any other voters' updates flow in.
+      if (pollVoteInFlightRef.current[poll.id]) {
+        return
+      }
       setPolls((prev) => upsertById(prev, poll))
     }
 
@@ -103,8 +169,13 @@ export default function App() {
     setJoinError(null)
     try {
       const sessionData = await api.getSessionByCode(code)
-      pollVoteHistoryRef.current = {}
+      // Restore vote history from localStorage so the UI selection state
+      // survives page reloads. Without this the client treats every click
+      // after reload as a first vote, which trips the server's idempotent
+      // vote-on-same-option path and shows the "+1 then -1" revert.
+      pollVoteHistoryRef.current = readPollVoteHistory(sessionData.id)
       pollVotePendingRef.current = {}
+      pollVoteInFlightRef.current = {}
       questionVoteHistoryRef.current = new Set()
       setSession(sessionData)
       const snapshot = await api.getSnapshot(sessionData.id)
@@ -202,6 +273,7 @@ export default function App() {
     }
     nextHistory.add(optionId)
     pollVoteHistoryRef.current[pollId] = nextHistory
+    writePollVoteHistory(session.id, pollVoteHistoryRef.current)
     const removeSet = new Set(removeIds)
     setPolls((prev) =>
       prev.map((poll) => {
@@ -222,23 +294,51 @@ export default function App() {
       })
     )
 
+    // Mark this poll as in-flight so the websocket activity handler ignores
+    // any conflicting `poll_vote_updated` broadcasts that might arrive
+    // mid-vote (the user's own vote broadcast races with their optimistic
+    // update). The API response, applied below, is the authoritative state
+    // for this window.
+    pollVoteInFlightRef.current[pollId] = true
+
+    const applyPollFromServer = (next: Poll) => {
+      setPolls((prev) => upsertById(prev, next))
+    }
+
+    const handleVoteFailure = async (
+      err: unknown,
+      attemptedOptionId: string
+    ) => {
+      logPollDebug(
+        `votePoll error session=${session.id} poll=${pollId} option=${attemptedOptionId} error=${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        true
+      )
+      // Roll the local history back to whatever the server actually has,
+      // so the UI selection state matches reality.
+      const snapshot = await api.getSnapshot(session.id).catch(() => null)
+      if (snapshot) {
+        setPolls(snapshot.polls)
+      }
+    }
+
     if (allowMultiple) {
       try {
-        await api.votePoll(session.id, pollId, optionId, getClientId())
+        const updated = await api.votePoll(
+          session.id,
+          pollId,
+          optionId,
+          getClientId()
+        )
+        applyPollFromServer(updated)
         logPollDebug(
           `votePoll success session=${session.id} poll=${pollId} option=${optionId}`
         )
       } catch (err) {
-        logPollDebug(
-          `votePoll error session=${session.id} poll=${pollId} option=${optionId} error=${
-            err instanceof Error ? err.message : String(err)
-          }`,
-          true
-        )
-        const snapshot = await api.getSnapshot(session.id).catch(() => null)
-        if (snapshot) {
-          setPolls(snapshot.polls)
-        }
+        await handleVoteFailure(err, optionId)
+      } finally {
+        pollVoteInFlightRef.current[pollId] = false
       }
       return
     }
@@ -254,35 +354,48 @@ export default function App() {
 
     const sendVote = async (targetOptionId: string) => {
       try {
-        await api.votePoll(session.id, pollId, targetOptionId, getClientId())
+        const updated = await api.votePoll(
+          session.id,
+          pollId,
+          targetOptionId,
+          getClientId()
+        )
+        applyPollFromServer(updated)
         logPollDebug(
           `votePoll success session=${session.id} poll=${pollId} option=${targetOptionId}`
         )
       } catch (err) {
-        logPollDebug(
-          `votePoll error session=${session.id} poll=${pollId} option=${targetOptionId} error=${
-            err instanceof Error ? err.message : String(err)
-          }`,
-          true
-        )
-        const snapshot = await api.getSnapshot(session.id).catch(() => null)
-        if (snapshot) {
-          setPolls(snapshot.polls)
-        }
+        await handleVoteFailure(err, targetOptionId)
       }
     }
 
-    pollVotePendingRef.current[pollId] = { inFlight: true, queuedOptionId: null }
-    let currentOptionId = optionId
-    await sendVote(currentOptionId)
-    let queued = pollVotePendingRef.current[pollId]?.queuedOptionId
-    while (queued && queued !== currentOptionId) {
-      pollVotePendingRef.current[pollId] = { inFlight: true, queuedOptionId: null }
-      await sendVote(queued)
-      currentOptionId = queued
-      queued = pollVotePendingRef.current[pollId]?.queuedOptionId
+    // try/finally guarantees the queue and in-flight flag clear even if
+    // an unexpected throw propagates past sendVote's own catch — without
+    // this, a stuck flag locks future clicks for the entire session.
+    try {
+      pollVotePendingRef.current[pollId] = {
+        inFlight: true,
+        queuedOptionId: null
+      }
+      let currentOptionId = optionId
+      await sendVote(currentOptionId)
+      let queued = pollVotePendingRef.current[pollId]?.queuedOptionId
+      while (queued && queued !== currentOptionId) {
+        pollVotePendingRef.current[pollId] = {
+          inFlight: true,
+          queuedOptionId: null
+        }
+        await sendVote(queued)
+        currentOptionId = queued
+        queued = pollVotePendingRef.current[pollId]?.queuedOptionId
+      }
+    } finally {
+      pollVotePendingRef.current[pollId] = {
+        inFlight: false,
+        queuedOptionId: null
+      }
+      pollVoteInFlightRef.current[pollId] = false
     }
-    pollVotePendingRef.current[pollId] = { inFlight: false, queuedOptionId: null }
   }
 
   const approvedQuestions = useMemo(
