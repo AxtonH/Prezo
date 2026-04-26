@@ -585,6 +585,99 @@ import {
     currentTheme = sanitizeTheme({ ...currentTheme, visualMode: visualModeFromQuery })
   }
 
+  const artifactNameFromQuery = asText(query.get('artifactName')).trim()
+  let pendingArtifactRestoreName = artifactNameFromQuery
+  let artifactRestoreTimerId = 0
+  let artifactRestoreAttempts = 0
+  const ARTIFACT_RESTORE_INTERVAL_MS = 1500
+  const ARTIFACT_RESTORE_MAX_ATTEMPTS = 20
+
+  /**
+   * Apply the artifact named in the URL once the user's artifact library
+   * finishes syncing from the server. The library can populate at any of:
+   * the very first hydrateSavedLibraries call, a later force-refresh after
+   * a library-sync token arrives from the host, or a manual user retry.
+   * Polling avoids tight coupling to those internal hydration paths.
+   */
+  function scheduleArtifactRestoreFromQuery() {
+    if (!pendingArtifactRestoreName) {
+      return
+    }
+    if (artifactRestoreTimerId) {
+      return
+    }
+    artifactRestoreAttempts = 0
+    runArtifactRestoreAttempt()
+  }
+
+  function runArtifactRestoreAttempt() {
+    artifactRestoreTimerId = 0
+    if (!pendingArtifactRestoreName) {
+      return
+    }
+    const record =
+      artifactLibrary &&
+      artifactLibrary.artifacts &&
+      artifactLibrary.artifacts[pendingArtifactRestoreName]
+    if (record) {
+      const nameToApply = pendingArtifactRestoreName
+      // Clear before applying so any post-apply postMessage doesn't trigger
+      // another restore attempt.
+      pendingArtifactRestoreName = ''
+      // [prezo-embed-debug] TEMPORARY
+      console.log('[prezo-embed-debug] inner-iframe artifact-restore: applying', {
+        artifactName: nameToApply,
+        attempt: artifactRestoreAttempts,
+      })
+      applyArtifactLibraryRecord(nameToApply, record, {
+        historyLabel: 'Restore artifact',
+        successMessage: '',
+      })
+      return
+    }
+    artifactRestoreAttempts += 1
+    if (artifactRestoreAttempts >= ARTIFACT_RESTORE_MAX_ATTEMPTS) {
+      // [prezo-embed-debug] TEMPORARY
+      console.warn('[prezo-embed-debug] inner-iframe artifact-restore: gave up', {
+        artifactName: pendingArtifactRestoreName,
+        attempts: artifactRestoreAttempts,
+      })
+      return
+    }
+    artifactRestoreTimerId = window.setTimeout(
+      runArtifactRestoreAttempt,
+      ARTIFACT_RESTORE_INTERVAL_MS
+    )
+  }
+
+  /**
+   * Tell the embed parent which named artifact (from artifactLibrary) this
+   * iframe currently has active. Called from every site that mutates
+   * artifactLibrary.activeName. Empty string clears the link.
+   */
+  function postActiveArtifactToParent(reason) {
+    try {
+      if (window.parent && window.parent !== window) {
+        const name = asText(artifactLibrary && artifactLibrary.activeName)
+        // [prezo-embed-debug] TEMPORARY: remove once artifact_name persistence is verified.
+        console.log('[prezo-embed-debug] inner-iframe posting active-artifact', {
+          reason: reason || 'unknown',
+          artifactName: name,
+        })
+        window.parent.postMessage(
+          { type: 'prezo:active-artifact', artifactName: name },
+          parentPostMessageOrigin
+        )
+      }
+    } catch (error) {
+      // [prezo-embed-debug] TEMPORARY
+      console.warn('[prezo-embed-debug] inner-iframe postActiveArtifactToParent threw', {
+        reason: reason || 'unknown',
+        error: error,
+      })
+    }
+  }
+
   /**
    * Tell the embed parent (poll-game-content.html) what visual mode this
    * iframe is currently rendering. Called from every site that mutates
@@ -675,6 +768,7 @@ import {
     renderInitialState()
     initializeHistoryState()
     void hydrateSavedLibraries()
+    scheduleArtifactRestoreFromQuery()
     void startSessionFeed()
     window.addEventListener('beforeunload', handleUnload)
     window.addEventListener('message', handleLibrarySyncMessage)
@@ -9003,6 +9097,7 @@ import {
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
     saveArtifactLibrary(artifactLibrary)
+    postActiveArtifactToParent('artifact-saved')
     refreshArtifactSelect(name)
     el.artifactName.value = name
     const syncResult = await persistArtifactToAccount(name, artifactRecord)
@@ -9024,6 +9119,7 @@ import {
     currentTheme = nextTheme
     artifactLibrary.activeName = name
     saveArtifactLibrary(artifactLibrary)
+    postActiveArtifactToParent('artifact-preset-load')
     saveThemeDraft(currentTheme)
     applyTheme(currentTheme)
     postVisualModeToParent('artifact-preset-load')
@@ -9084,10 +9180,14 @@ import {
       return
     }
     delete artifactLibrary.artifacts[name]
-    if (artifactLibrary.activeName === name) {
+    const wasActive = artifactLibrary.activeName === name
+    if (wasActive) {
       artifactLibrary.activeName = null
     }
     saveArtifactLibrary(artifactLibrary)
+    if (wasActive) {
+      postActiveArtifactToParent('artifact-deleted')
+    }
     refreshArtifactSelect(artifactLibrary.activeName)
     const syncResult = await deleteArtifactFromAccount(name)
     showArtifactFeedback(syncResult.message || `Artifact "${name}" deleted.`, syncResult.type)

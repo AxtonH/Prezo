@@ -89,6 +89,7 @@ class EmbedInstancesStore:
             session_id=str(row["session_id"]) if row.get("session_id") else None,
             poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
             artifact_kind=row.get("artifact_kind") or "poll-game",
+            artifact_name=row.get("artifact_name"),
             screen_mode=row.get("screen_mode"),
             metadata=row.get("metadata") or {},
             created_at=_parse_timestamp(row["created_at"]),
@@ -114,6 +115,7 @@ class EmbedInstancesStore:
             "session_id": payload.session_id,
             "poll_id": payload.poll_id,
             "artifact_kind": payload.artifact_kind,
+            "artifact_name": payload.artifact_name,
             "screen_mode": payload.screen_mode,
             "metadata": payload.metadata,
         }
@@ -140,6 +142,8 @@ class EmbedInstancesStore:
             body["poll_id"] = patch.poll_id or None
         if patch.artifact_kind is not None:
             body["artifact_kind"] = patch.artifact_kind
+        if patch.artifact_name is not None:
+            body["artifact_name"] = patch.artifact_name or None
         if patch.screen_mode is not None:
             body["screen_mode"] = patch.screen_mode or None
         if patch.metadata is not None:

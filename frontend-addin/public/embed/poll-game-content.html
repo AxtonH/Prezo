@@ -430,6 +430,7 @@
         let storedEmbedInstance = null
         let persistEmbedInFlight = Promise.resolve()
         let currentScreenMode = ""
+        let currentArtifactName = ""
 
         const getEmbedStateOptions = () => ({
           apiBase: apiBase || DEFAULT_API_BASE,
@@ -540,6 +541,9 @@
             row.metadata.screenMode
           ) {
             currentScreenMode = row.metadata.screenMode
+          }
+          if (typeof row.artifact_name === "string" && row.artifact_name) {
+            currentArtifactName = row.artifact_name
           }
         }
 
@@ -1097,6 +1101,9 @@
           if (currentScreenMode) {
             qs.set("visualMode", currentScreenMode)
           }
+          if (currentArtifactName) {
+            qs.set("artifactName", currentArtifactName)
+          }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
           setStatus("connected")
@@ -1210,6 +1217,27 @@
             if (app) {
               app.classList.toggle("present-mode", Boolean(message.active))
             }
+            return
+          }
+          if (message.type === "prezo:active-artifact") {
+            const nextName =
+              typeof message.artifactName === "string"
+                ? message.artifactName
+                : ""
+            // [prezo-embed-debug] TEMPORARY: remove once artifact_name persistence is verified.
+            console.log('[prezo-embed-debug] outer-embed received active-artifact', {
+              nextName: nextName,
+              currentArtifactName: currentArtifactName,
+              willPatch: nextName !== currentArtifactName,
+              canPersist: canPersistEmbedState(),
+            })
+            if (nextName === currentArtifactName) {
+              return
+            }
+            currentArtifactName = nextName
+            // Send empty string when clearing so the backend nulls the column.
+            // (See store.update — empty string maps to None.)
+            queueEmbedStatePatch({ artifact_name: nextName || "" })
             return
           }
           if (message.type === "prezo:visual-mode") {

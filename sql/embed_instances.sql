@@ -14,12 +14,18 @@ create table if not exists public.embed_instances (
   session_id uuid,
   poll_id uuid,
   artifact_kind text not null default 'poll-game',
+  artifact_name text,
   screen_mode text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now()
 );
+
+-- Idempotent migration for projects that already ran an earlier version of
+-- this script before artifact_name existed.
+alter table public.embed_instances
+  add column if not exists artifact_name text;
 
 create index if not exists embed_instances_owner_user_id_idx
   on public.embed_instances (owner_user_id);
