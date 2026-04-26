@@ -607,7 +607,11 @@ import {
       return
     }
     artifactRestoreAttempts = 0
-    runArtifactRestoreAttempt()
+    // Defer even the first attempt so init() can return and the rest of
+    // the IIFE can finish initializing the let/const declarations that
+    // applyArtifactLibraryRecord touches (e.g. pendingArtifactStyleOverrides).
+    // Without this, calling apply during init triggers a TDZ ReferenceError.
+    artifactRestoreTimerId = window.setTimeout(runArtifactRestoreAttempt, 0)
   }
 
   function runArtifactRestoreAttempt() {
