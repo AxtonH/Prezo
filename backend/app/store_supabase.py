@@ -1142,6 +1142,45 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_poll(poll_data, option_rows)
 
+    async def remove_poll_vote(
+        self,
+        session_id: str,
+        poll_id: str,
+        option_id: str,
+        client_id: str | None,
+    ) -> Poll:
+        """Calls the remove_poll_vote_atomic RPC. Same payload shape as
+        vote_poll so the audience toggle path treats add and remove
+        identically downstream.
+        """
+        try:
+            payload = await self._rpc(
+                "remove_poll_vote_atomic",
+                {
+                    "p_session_id": session_id,
+                    "p_poll_id": poll_id,
+                    "p_option_id": option_id,
+                    "p_client_id": client_id,
+                },
+            )
+        except SupabaseError as exc:
+            detail = exc.detail.lower()
+            if exc.code == "P0002" or "not found" in detail:
+                raise NotFoundError(exc.detail) from exc
+            if exc.code == "P0001" or "closed" in detail:
+                raise ConflictError(exc.detail) from exc
+            raise
+
+        if not isinstance(payload, dict):
+            raise SupabaseError(
+                500, "remove_poll_vote_atomic returned an invalid payload"
+            )
+        options = payload.get("options")
+        option_rows = options if isinstance(options, list) else []
+        poll_data = {key: value for key, value in payload.items() if key != "options"}
+        self._invalidate_session_snapshot(session_id)
+        return self._to_poll(poll_data, option_rows)
+
     async def delete_poll(self, session_id: str, poll_id: str, user_id: str) -> None:
         await self.get_session(session_id, user_id)
         existing = await self._select(

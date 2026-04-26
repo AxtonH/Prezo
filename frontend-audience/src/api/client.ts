@@ -84,6 +84,16 @@ export const api = {
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote`, {
       method: 'POST',
       body: JSON.stringify({ option_id: optionId, client_id: clientId ?? null })
+    }),
+  removePollVote: (
+    sessionId: string,
+    pollId: string,
+    optionId: string,
+    clientId?: string
+  ) =>
+    request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote/remove`, {
+      method: 'POST',
+      body: JSON.stringify({ option_id: optionId, client_id: clientId ?? null })
     })
 }
 

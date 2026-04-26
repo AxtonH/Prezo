@@ -600,6 +600,39 @@ class InMemoryStore:
             option.votes += 1
             return self._to_poll(poll)
 
+    async def remove_poll_vote(
+        self,
+        session_id: str,
+        poll_id: str,
+        option_id: str,
+        client_id: str | None,
+    ) -> Poll:
+        """Idempotent un-vote: drop one (poll, option, client) vote.
+
+        Mirrors vote_poll's shape so the audience toggle path can swap
+        between add and remove using the same Poll response contract.
+        """
+        async with self._lock:
+            poll = self._get_poll(session_id, poll_id)
+            if poll.status != PollStatus.open:
+                raise ConflictError("poll is closed")
+            option = next((opt for opt in poll.options if opt.id == option_id), None)
+            if not option:
+                raise NotFoundError("option not found")
+            if not client_id:
+                return self._to_poll(poll)
+            history = self._poll_votes[poll_id].get(client_id, set())
+            if option_id not in history:
+                # No-op — caller's local state was out of sync with server.
+                return self._to_poll(poll)
+            history.discard(option_id)
+            if history:
+                self._poll_votes[poll_id][client_id] = history
+            else:
+                self._poll_votes[poll_id].pop(client_id, None)
+            option.votes = max(0, option.votes - 1)
+            return self._to_poll(poll)
+
     async def delete_poll(self, session_id: str, poll_id: str, user_id: str) -> None:
         async with self._lock:
             self._ensure_host_access(session_id, user_id)

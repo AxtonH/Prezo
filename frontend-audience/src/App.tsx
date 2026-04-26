@@ -288,14 +288,73 @@ export default function App() {
     )
     if (history.has(optionId)) {
       // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] click IGNORED (option already in local history)', {
+      console.log('[poll-vote-debug] click is TOGGLE-OFF (option already in local history)', {
         pollId: pollId,
         optionId: optionId,
         history: Array.from(history),
       })
       logPollDebug(
-        `votePoll ignored (already selected) session=${session.id} poll=${pollId} option=${optionId}`
+        `votePoll toggle-off session=${session.id} poll=${pollId} option=${optionId}`
       )
+      // Clicking an already-voted option un-votes it. The server has a
+      // mirror endpoint (POST .../vote/remove) that idempotently removes
+      // the (poll, option, client) row. Optimistically subtract 1 from
+      // the local count, then apply the API response as truth.
+      const nextHistoryAfterToggle = new Set(history)
+      nextHistoryAfterToggle.delete(optionId)
+      pollVoteHistoryRef.current[pollId] = nextHistoryAfterToggle
+      writePollVoteHistory(session.id, pollVoteHistoryRef.current)
+      setPolls((prev) =>
+        prev.map((p) => {
+          if (p.id !== pollId) {
+            return p
+          }
+          return {
+            ...p,
+            options: p.options.map((option) =>
+              option.id === optionId
+                ? { ...option, votes: Math.max(0, option.votes - 1) }
+                : option
+            )
+          }
+        })
+      )
+      pollVoteInFlightRef.current[pollId] = true
+      try {
+        // [poll-vote-debug] TEMPORARY
+        console.log('[poll-vote-debug] removePollVote API call sent', {
+          pollId: pollId,
+          optionId: optionId,
+          clientId: getClientId(),
+        })
+        const updated = await api.removePollVote(
+          session.id,
+          pollId,
+          optionId,
+          getClientId()
+        )
+        // [poll-vote-debug] TEMPORARY
+        console.log('[poll-vote-debug] removePollVote API response received', {
+          pollId: pollId,
+          optionId: optionId,
+          rowOptionVotes: updated.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
+        })
+        setPolls((prev) => upsertById(prev, updated))
+      } catch (err) {
+        logPollDebug(
+          `votePoll toggle-off error session=${session.id} poll=${pollId} option=${optionId} error=${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          true
+        )
+        // Roll local history back to whatever the server actually has.
+        const snapshot = await api.getSnapshot(session.id).catch(() => null)
+        if (snapshot) {
+          setPolls(snapshot.polls)
+        }
+      } finally {
+        pollVoteInFlightRef.current[pollId] = false
+      }
       return
     }
     const nextHistory = new Set(history)

@@ -146,3 +146,38 @@ async def vote_poll(
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)
     return poll
+
+
+@router.post("/{poll_id}/vote/remove", response_model=Poll)
+async def remove_poll_vote(
+    session_id: str,
+    poll_id: str,
+    payload: PollVote,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+) -> Poll:
+    """Toggle-off counterpart to POST .../vote. Removes a single
+    (poll, option, client) vote and broadcasts the updated poll. Idempotent:
+    removing a non-existent vote returns the unchanged poll without error.
+    """
+    logger.info(
+        "poll_vote_remove session=%s poll=%s option=%s client=%s",
+        session_id,
+        poll_id,
+        payload.option_id,
+        payload.client_id,
+    )
+    try:
+        poll = await store.remove_poll_vote(
+            session_id, poll_id, payload.option_id, payload.client_id
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    activity = make_activity(
+        "poll_vote_updated", {"poll": poll.model_dump(mode="json")}
+    )
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+    return poll
