@@ -119,9 +119,53 @@
     }
   }
 
+  /**
+   * Write a new embed id into settings, overwriting any existing value, and
+   * saveAsync. Used when the fork logic decides this instance must adopt a
+   * fresh uuid because it shares a uuid with a sibling (slide duplicate or
+   * copy-paste). Returns the same shape as resolveEmbedIdentity.
+   */
+  async function replaceEmbedIdentity(nextId) {
+    if (!isOfficeReady()) {
+      return {
+        id: null,
+        existed: false,
+        persisted: false,
+        error: "Office not ready",
+      }
+    }
+    if (typeof nextId !== "string" || nextId.length === 0) {
+      return {
+        id: null,
+        existed: false,
+        persisted: false,
+        error: "replaceEmbedIdentity requires a non-empty id",
+      }
+    }
+    try {
+      globalObj.Office.context.document.settings.set(SETTINGS_KEY, nextId)
+    } catch (error) {
+      return {
+        id: null,
+        existed: false,
+        persisted: false,
+        error: String(error && error.message) || "settings.set threw",
+      }
+    }
+    var saveResult = await saveSettingsAsync()
+    return {
+      id: nextId,
+      existed: false,
+      persisted: saveResult.ok,
+      error: saveResult.ok ? null : saveResult.error,
+    }
+  }
+
   globalObj.PrezoEmbedIdentity = {
     SETTINGS_KEY: SETTINGS_KEY,
     resolve: resolveEmbedIdentity,
+    replace: replaceEmbedIdentity,
     peek: readExistingEmbedId,
+    generateUuid: generateUuid,
   }
 })(typeof window !== "undefined" ? window : this)

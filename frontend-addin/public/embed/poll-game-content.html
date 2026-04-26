@@ -429,6 +429,7 @@
         let embedIdentity = null
         let storedEmbedInstance = null
         let persistEmbedInFlight = Promise.resolve()
+        let currentScreenMode = ""
 
         const getEmbedStateOptions = () => ({
           apiBase: apiBase || DEFAULT_API_BASE,
@@ -500,6 +501,159 @@
           ) {
             selectedPollId = row.poll_id
           }
+          if (
+            row.metadata &&
+            typeof row.metadata === "object" &&
+            typeof row.metadata.screenMode === "string" &&
+            row.metadata.screenMode
+          ) {
+            currentScreenMode = row.metadata.screenMode
+          }
+        }
+
+        const DUPLICATE_DETECTION_DELAY_MS = 1500
+        let duplicateDetectionStarted = false
+        let embedLoadToken = ""
+
+        const generateLoadToken = () => {
+          if (
+            window.PrezoEmbedIdentity &&
+            typeof window.PrezoEmbedIdentity.generateUuid === "function"
+          ) {
+            return window.PrezoEmbedIdentity.generateUuid()
+          }
+          return `lt-${Date.now().toString(36)}-${Math.random()
+            .toString(36)
+            .slice(2, 10)}`
+        }
+
+        const writeOwnLoadTokenToRow = async () => {
+          if (!canPersistEmbedState()) {
+            return false
+          }
+          embedLoadToken = generateLoadToken()
+          const nextMetadata = Object.assign(
+            {},
+            storedEmbedInstance?.metadata && typeof storedEmbedInstance.metadata === "object"
+              ? storedEmbedInstance.metadata
+              : {},
+            { loadToken: embedLoadToken, loadTokenAt: new Date().toISOString() }
+          )
+          try {
+            const updated = await window.PrezoEmbedStateClient.update(
+              getEmbedStateOptions(),
+              embedIdentity.id,
+              { metadata: nextMetadata }
+            )
+            storedEmbedInstance = updated
+            return true
+          } catch (error) {
+            console.warn("embed duplicate-detect write failed:", error)
+            return false
+          }
+        }
+
+        const readRowForDuplicateCheck = async () => {
+          if (!canPersistEmbedState()) {
+            return null
+          }
+          try {
+            return await window.PrezoEmbedStateClient.fetch(
+              getEmbedStateOptions(),
+              embedIdentity.id
+            )
+          } catch (error) {
+            console.warn("embed duplicate-detect read failed:", error)
+            return null
+          }
+        }
+
+        const forkEmbedIdentity = async (siblingRow) => {
+          if (!window.PrezoEmbedIdentity) {
+            return false
+          }
+          const previousEmbedId = embedIdentity.id
+          const newId = window.PrezoEmbedIdentity.generateUuid()
+          const replaceResult = await window.PrezoEmbedIdentity.replace(newId)
+          if (!replaceResult || !replaceResult.id) {
+            console.warn("embed fork: failed to write new id to settings")
+            return false
+          }
+          embedIdentity = replaceResult
+          if (!replaceResult.persisted) {
+            console.warn(
+              "embed fork minted new id but Office saveAsync failed; the fork will not persist unless the .pptx is saved."
+            )
+          }
+          try {
+            const nextRow = await window.PrezoEmbedStateClient.create(
+              getEmbedStateOptions(),
+              {
+                id: newId,
+                session_id: selectedSessionId || null,
+                poll_id: selectedPollId || null,
+                artifact_kind: "poll-game",
+                screen_mode: currentScreenMode || null,
+                metadata: {
+                  forkedFrom: previousEmbedId,
+                  forkedAt: new Date().toISOString(),
+                  loadToken: embedLoadToken,
+                },
+              }
+            )
+            storedEmbedInstance = nextRow
+            return true
+          } catch (error) {
+            console.warn("embed fork: creating new row failed:", error)
+            return false
+          }
+        }
+
+        const scheduleDuplicateDetection = () => {
+          if (duplicateDetectionStarted || !canPersistEmbedState()) {
+            return
+          }
+          duplicateDetectionStarted = true
+          ;(async () => {
+            const wroteToken = await writeOwnLoadTokenToRow()
+            if (!wroteToken) {
+              duplicateDetectionStarted = false
+              return
+            }
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, DUPLICATE_DETECTION_DELAY_MS)
+            )
+            const latest = await readRowForDuplicateCheck()
+            if (!latest || !latest.metadata || typeof latest.metadata !== "object") {
+              return
+            }
+            const latestToken =
+              typeof latest.metadata.loadToken === "string"
+                ? latest.metadata.loadToken
+                : ""
+            if (latestToken === embedLoadToken) {
+              // Our token survived — we are alone (or the last writer) on
+              // this uuid. Nothing to fork.
+              storedEmbedInstance = latest
+              return
+            }
+            // Another instance with the same uuid overwrote our token.
+            // Deterministic fork: the instance whose token sorts greater
+            // forks; the smaller one keeps the original uuid. Ties are
+            // astronomically unlikely with random uuids.
+            if (embedLoadToken <= latestToken) {
+              storedEmbedInstance = latest
+              return
+            }
+            console.info(
+              "embed duplicate detected on uuid",
+              embedIdentity.id,
+              "— forking"
+            )
+            await forkEmbedIdentity(latest)
+          })().catch((error) => {
+            console.warn("embed duplicate-detect flow error:", error)
+          })
         }
 
         const setStatus = (value) => {
@@ -757,10 +911,13 @@
           sessionSelectEl.disabled = false
         }
 
+        const POLL_PLACEHOLDER_LABEL = "— Select a poll —"
+
         const populatePollPicker = (polls) => {
           if (!Array.isArray(polls) || polls.length === 0) {
             setSelectMessage(pollSelectEl, "No polls in this session")
             pollFieldEl.classList.remove("hidden")
+            selectedPollId = ""
             return
           }
           const sorted = [...polls].sort((a, b) => {
@@ -769,6 +926,10 @@
             return right - left
           })
           pollSelectEl.replaceChildren()
+          const placeholder = document.createElement("option")
+          placeholder.value = ""
+          placeholder.textContent = POLL_PLACEHOLDER_LABEL
+          pollSelectEl.appendChild(placeholder)
           for (let i = 0; i < sorted.length; i += 1) {
             const poll = sorted[i]
             const opt = document.createElement("option")
@@ -780,15 +941,21 @@
           if (match) {
             pollSelectEl.value = selectedPollId
           } else {
-            const previousPollId = selectedPollId
-            const open = sorted.find((poll) => poll?.status === "open") || sorted[0]
-            selectedPollId = open?.id || ""
+            // No stored value, OR the stored value no longer exists in the
+            // session. Either way: show the placeholder and require the user
+            // to pick explicitly. We do NOT auto-default-and-persist, because
+            // doing so silently locks in a value the user never chose, which
+            // produces phantom "duplicate poll" rows when a session is shared
+            // across multiple slides.
             if (selectedPollId) {
-              pollSelectEl.value = selectedPollId
+              // Stored poll vanished. Drop our local copy so loadGameFrame
+              // shows the "pick a poll" prompt instead of trying to render
+              // an iframe pointed at a missing poll. We do NOT patch the row
+              // — the stored poll_id stays in DB so the user can recover it
+              // by recreating that poll if they want.
+              selectedPollId = ""
             }
-            if (selectedPollId && selectedPollId !== previousPollId) {
-              queueEmbedStatePatch({ poll_id: selectedPollId })
-            }
+            pollSelectEl.value = ""
           }
           pollSelectEl.disabled = false
           pollFieldEl.classList.remove("hidden")
@@ -877,13 +1044,26 @@
           if (!selectedSessionId) {
             return
           }
+          if (!selectedPollId) {
+            // Don't render the inner iframe with a missing poll. Show the
+            // overlay so the user knows they have to pick one before the
+            // artifact appears. This is the silent-default fix: we never
+            // assume a poll for them.
+            showOverlay(
+              "Pick a poll above to load this slide's artifact.",
+              "Select a poll"
+            )
+            setStatus("loading")
+            return
+          }
           const qs = new URLSearchParams()
           qs.set("sessionId", selectedSessionId)
           if (apiBase) {
             qs.set("apiBase", apiBase)
           }
-          if (selectedPollId) {
-            qs.set("pollId", selectedPollId)
+          qs.set("pollId", selectedPollId)
+          if (currentScreenMode) {
+            qs.set("visualMode", currentScreenMode)
           }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")
@@ -924,6 +1104,7 @@
           }
           const row = await ensureEmbedInstanceOnServer()
           applyStoredEmbedInstance(row)
+          scheduleDuplicateDetection()
         }
 
         const init = async () => {
@@ -997,6 +1178,26 @@
             if (app) {
               app.classList.toggle("present-mode", Boolean(message.active))
             }
+            return
+          }
+          if (message.type === "prezo:visual-mode") {
+            const nextMode =
+              typeof message.visualMode === "string" ? message.visualMode : ""
+            if (!nextMode || nextMode === currentScreenMode) {
+              return
+            }
+            currentScreenMode = nextMode
+            const mergedMetadata = Object.assign(
+              {},
+              storedEmbedInstance?.metadata && typeof storedEmbedInstance.metadata === "object"
+                ? storedEmbedInstance.metadata
+                : {},
+              { screenMode: nextMode }
+            )
+            queueEmbedStatePatch({
+              screen_mode: nextMode,
+              metadata: mergedMetadata,
+            })
             return
           }
           if (message.type !== PREZO_LIBRARY_SYNC_REQUEST_MESSAGE) {

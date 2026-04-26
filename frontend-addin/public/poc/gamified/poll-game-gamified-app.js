@@ -580,6 +580,10 @@ import {
     loading: false
   }
   let currentTheme = loadInitialTheme(themeLibrary)
+  const visualModeFromQuery = asText(query.get('visualMode')).trim()
+  if (visualModeFromQuery) {
+    currentTheme = sanitizeTheme({ ...currentTheme, visualMode: visualModeFromQuery })
+  }
   const dragState = {
     enabled: false,
     active: null,
@@ -9454,6 +9458,16 @@ import {
     }
     if (recordHistory) {
       recordHistoryCheckpoint(historyLabel)
+    }
+    if (previousVisualMode !== currentTheme.visualMode) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
+            parentPostMessageOrigin
+          )
+        }
+      } catch {}
     }
   }
 
