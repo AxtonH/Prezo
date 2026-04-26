@@ -629,11 +629,6 @@ import {
       // Clear before applying so any post-apply postMessage doesn't trigger
       // another restore attempt.
       pendingArtifactRestoreName = ''
-      // [prezo-embed-debug] TEMPORARY
-      console.log('[prezo-embed-debug] inner-iframe artifact-restore: applying', {
-        artifactName: nameToApply,
-        attempt: artifactRestoreAttempts,
-      })
       applyArtifactLibraryRecord(nameToApply, record, {
         historyLabel: 'Restore artifact',
         successMessage: '',
@@ -642,11 +637,6 @@ import {
     }
     artifactRestoreAttempts += 1
     if (artifactRestoreAttempts >= ARTIFACT_RESTORE_MAX_ATTEMPTS) {
-      // [prezo-embed-debug] TEMPORARY
-      console.warn('[prezo-embed-debug] inner-iframe artifact-restore: gave up', {
-        artifactName: pendingArtifactRestoreName,
-        attempts: artifactRestoreAttempts,
-      })
       return
     }
     artifactRestoreTimerId = window.setTimeout(
@@ -660,26 +650,17 @@ import {
    * iframe currently has active. Called from every site that mutates
    * artifactLibrary.activeName. Empty string clears the link.
    */
-  function postActiveArtifactToParent(reason) {
+  function postActiveArtifactToParent(_reason) {
     try {
       if (window.parent && window.parent !== window) {
         const name = asText(artifactLibrary && artifactLibrary.activeName)
-        // [prezo-embed-debug] TEMPORARY: remove once artifact_name persistence is verified.
-        console.log('[prezo-embed-debug] inner-iframe posting active-artifact', {
-          reason: reason || 'unknown',
-          artifactName: name,
-        })
         window.parent.postMessage(
           { type: 'prezo:active-artifact', artifactName: name },
           parentPostMessageOrigin
         )
       }
-    } catch (error) {
-      // [prezo-embed-debug] TEMPORARY
-      console.warn('[prezo-embed-debug] inner-iframe postActiveArtifactToParent threw', {
-        reason: reason || 'unknown',
-        error: error,
-      })
+    } catch {
+      /* ignore cross-frame postMessage failures */
     }
   }
 
@@ -691,26 +672,16 @@ import {
    * load) which bypass updateTheme. The outer embed deduplicates against its
    * own currentScreenMode, so calling here unconditionally is safe.
    */
-  function postVisualModeToParent(reason) {
+  function postVisualModeToParent(_reason) {
     try {
       if (window.parent && window.parent !== window) {
-        // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
-        console.log('[prezo-embed-debug] inner-iframe posting visual-mode', {
-          reason: reason || 'unknown',
-          visualMode: currentTheme.visualMode,
-          parentPostMessageOrigin: parentPostMessageOrigin,
-        })
         window.parent.postMessage(
           { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
           parentPostMessageOrigin
         )
       }
-    } catch (error) {
-      // [prezo-embed-debug] TEMPORARY
-      console.warn('[prezo-embed-debug] inner-iframe postVisualModeToParent threw', {
-        reason: reason || 'unknown',
-        error: error,
-      })
+    } catch {
+      /* ignore cross-frame postMessage failures */
     }
   }
   const dragState = {
@@ -781,12 +752,9 @@ import {
     if (presentModeFromQuery) {
       window.setTimeout(() => {
         try {
-          // [prezo-embed-debug] TEMPORARY
-          console.log('[prezo-embed-debug] inner-iframe auto-entering present mode (URL param)')
           applyPresentModeState(true)
-        } catch (error) {
-          // [prezo-embed-debug] TEMPORARY
-          console.warn('[prezo-embed-debug] inner-iframe auto-enter present mode failed', error)
+        } catch {
+          /* ignore — applyPresentModeState may not be defined yet on edge cases */
         }
       }, 0)
     }

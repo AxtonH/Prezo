@@ -147,28 +147,13 @@ export default function App() {
 
     if (activity.payload.poll) {
       const poll = activity.payload.poll as Poll
-      // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] websocket poll activity', {
-        activityType: activity.type,
-        pollId: poll.id,
-        inFlight: Boolean(pollVoteInFlightRef.current[poll.id]),
-        optionVotes: poll.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
-      })
       // Skip while this client is voting on this poll. Their API response
       // is applied directly to state below (in votePoll), so the broadcast
       // would only race with it. After their own vote settles, the next
       // broadcast applies normally and any other voters' updates flow in.
       if (pollVoteInFlightRef.current[poll.id]) {
-        // [poll-vote-debug] TEMPORARY
-        console.log('[poll-vote-debug] websocket poll activity SKIPPED (in-flight)', {
-          pollId: poll.id,
-        })
         return
       }
-      // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] websocket poll activity APPLIED', {
-        pollId: poll.id,
-      })
       setPolls((prev) => upsertById(prev, poll))
     }
 
@@ -264,10 +249,6 @@ export default function App() {
     }
     const poll = polls.find((entry) => entry.id === pollId)
     if (!poll) {
-      // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] click IGNORED (poll not found in state)', {
-        pollId: pollId,
-      })
       logPollDebug(
         `votePoll ignored (poll not found in state) session=${session.id} poll=${pollId}`
       )
@@ -275,24 +256,10 @@ export default function App() {
     }
     const allowMultiple = poll.allow_multiple
     const history = pollVoteHistoryRef.current[pollId] ?? new Set<string>()
-    // [poll-vote-debug] TEMPORARY
-    console.log('[poll-vote-debug] click', {
-      pollId: pollId,
-      optionId: optionId,
-      allowMultiple: allowMultiple,
-      historyBeforeClick: Array.from(history),
-      currentOptionVotes: poll.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
-    })
     logPollDebug(
       `votePoll attempt session=${session.id} poll=${pollId} option=${optionId} api=${API_BASE_URL}`
     )
     if (history.has(optionId)) {
-      // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] click is TOGGLE-OFF (option already in local history)', {
-        pollId: pollId,
-        optionId: optionId,
-        history: Array.from(history),
-      })
       logPollDebug(
         `votePoll toggle-off session=${session.id} poll=${pollId} option=${optionId}`
       )
@@ -321,24 +288,12 @@ export default function App() {
       )
       pollVoteInFlightRef.current[pollId] = true
       try {
-        // [poll-vote-debug] TEMPORARY
-        console.log('[poll-vote-debug] removePollVote API call sent', {
-          pollId: pollId,
-          optionId: optionId,
-          clientId: getClientId(),
-        })
         const updated = await api.removePollVote(
           session.id,
           pollId,
           optionId,
           getClientId()
         )
-        // [poll-vote-debug] TEMPORARY
-        console.log('[poll-vote-debug] removePollVote API response received', {
-          pollId: pollId,
-          optionId: optionId,
-          rowOptionVotes: updated.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
-        })
         setPolls((prev) => upsertById(prev, updated))
       } catch (err) {
         logPollDebug(
@@ -394,11 +349,6 @@ export default function App() {
     pollVoteInFlightRef.current[pollId] = true
 
     const applyPollFromServer = (next: Poll) => {
-      // [poll-vote-debug] TEMPORARY
-      console.log('[poll-vote-debug] applying API response to state', {
-        pollId: next.id,
-        optionVotes: next.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
-      })
       setPolls((prev) => upsertById(prev, next))
     }
 
@@ -451,24 +401,12 @@ export default function App() {
 
     const sendVote = async (targetOptionId: string) => {
       try {
-        // [poll-vote-debug] TEMPORARY
-        console.log('[poll-vote-debug] API call sent', {
-          pollId: pollId,
-          optionId: targetOptionId,
-          clientId: getClientId(),
-        })
         const updated = await api.votePoll(
           session.id,
           pollId,
           targetOptionId,
           getClientId()
         )
-        // [poll-vote-debug] TEMPORARY
-        console.log('[poll-vote-debug] API response received', {
-          pollId: pollId,
-          optionId: targetOptionId,
-          rowOptionVotes: updated.options.map((o) => ({ id: o.id, label: o.label, votes: o.votes })),
-        })
         applyPollFromServer(updated)
         logPollDebug(
           `votePoll success session=${session.id} poll=${pollId} option=${targetOptionId}`

@@ -470,47 +470,18 @@
 
         const queueEmbedStatePatch = (patch) => {
           if (!canPersistEmbedState()) {
-            // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
-            console.warn('[prezo-embed-debug] queueEmbedStatePatch DROPPED (cannot persist)', {
-              patch: patch,
-              embedIdentityId: embedIdentity?.id || null,
-              embedIdentityPersisted: embedIdentity?.persisted || false,
-              hasToken: Boolean(librarySyncState?.token),
-              hasClient: Boolean(window.PrezoEmbedStateClient),
-            })
             return
           }
           const options = getEmbedStateOptions()
           const id = embedIdentity.id
-          // [prezo-embed-debug] TEMPORARY
-          console.log('[prezo-embed-debug] queueEmbedStatePatch enqueueing', {
-            embedId: id,
-            patch: patch,
-          })
           persistEmbedInFlight = persistEmbedInFlight
             .catch(() => undefined)
             .then(() =>
-              window.PrezoEmbedStateClient.update(options, id, patch)
-                .then((result) => {
-                  // [prezo-embed-debug] TEMPORARY
-                  console.log('[prezo-embed-debug] update RESOLVED', {
-                    embedId: id,
-                    patch: patch,
-                    rowScreenMode: result?.screen_mode || null,
-                    rowSessionId: result?.session_id || null,
-                    rowPollId: result?.poll_id || null,
-                  })
-                })
-                .catch((error) => {
-                  // [prezo-embed-debug] TEMPORARY: kept warn behavior intact, added detail.
-                  console.warn('[prezo-embed-debug] update REJECTED', {
-                    embedId: id,
-                    patch: patch,
-                    errorStatus: error?.status,
-                    errorDetail: error?.detail,
-                    errorMessage: error?.message,
-                  })
-                })
+              window.PrezoEmbedStateClient.update(options, id, patch).catch(
+                (error) => {
+                  console.warn("embed-instance update failed:", error)
+                }
+              )
             )
         }
 
@@ -1225,13 +1196,6 @@
             if (app) {
               app.classList.toggle("present-mode", isActive)
             }
-            // [prezo-embed-debug] TEMPORARY
-            console.log('[prezo-embed-debug] outer-embed received present-mode', {
-              isActive: isActive,
-              currentPresentMode: currentPresentMode,
-              willPatch: isActive !== currentPresentMode,
-              canPersist: canPersistEmbedState(),
-            })
             if (isActive === currentPresentMode) {
               return
             }
@@ -1244,13 +1208,6 @@
               typeof message.artifactName === "string"
                 ? message.artifactName
                 : ""
-            // [prezo-embed-debug] TEMPORARY: remove once artifact_name persistence is verified.
-            console.log('[prezo-embed-debug] outer-embed received active-artifact', {
-              nextName: nextName,
-              currentArtifactName: currentArtifactName,
-              willPatch: nextName !== currentArtifactName,
-              canPersist: canPersistEmbedState(),
-            })
             if (nextName === currentArtifactName) {
               return
             }
@@ -1263,19 +1220,6 @@
           if (message.type === "prezo:visual-mode") {
             const nextMode =
               typeof message.visualMode === "string" ? message.visualMode : ""
-            // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
-            console.log('[prezo-embed-debug] outer-embed received visual-mode', {
-              eventOrigin: event.origin,
-              expectedOrigin: window.location.origin,
-              sourceMatches: event.source === frame.contentWindow,
-              nextMode: nextMode,
-              currentScreenMode: currentScreenMode,
-              willPatch: Boolean(nextMode) && nextMode !== currentScreenMode,
-              canPersist: canPersistEmbedState(),
-              embedIdentityId: embedIdentity?.id || null,
-              embedIdentityPersisted: embedIdentity?.persisted || false,
-              hasToken: Boolean(librarySyncState?.token),
-            })
             if (!nextMode || nextMode === currentScreenMode) {
               return
             }
