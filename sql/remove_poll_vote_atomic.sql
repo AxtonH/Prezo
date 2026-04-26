@@ -1,81 +1,92 @@
 -- Companion to vote_poll_atomic. Removes a single (poll, option, client) vote
--- and returns the updated poll with current vote counts in the same shape as
--- vote_poll_atomic. Idempotent — if the vote doesn't exist, returns the poll
--- unchanged. Errors with P0002 if poll not found, P0001 if poll is closed.
+-- from the poll_votes table AND decrements the denormalized counter on
+-- poll_options.votes, then returns the updated poll in the same payload
+-- shape as vote_poll_atomic. Idempotent — if no matching row exists, the
+-- counter is left alone and the unchanged poll is returned.
 --
--- Schema assumptions (adjust if your real schema differs):
---   polls(id, session_id, question, status, allow_multiple, created_at)
---   poll_options(id, poll_id, label, position)
---   poll_votes(poll_id, option_id, client_id, created_at)
---
--- If your `vote_poll_atomic` uses different column names or table names,
--- mirror them here so the two RPCs produce identical poll payloads.
+-- This MUST stay aligned with vote_poll_atomic's storage model: that
+-- function inserts into poll_votes AND updates poll_options.votes, and
+-- reads vote counts back from poll_options.votes (not from count(*) over
+-- poll_votes). If you change one, change both.
 
 create or replace function public.remove_poll_vote_atomic(
   p_session_id uuid,
   p_poll_id uuid,
   p_option_id uuid,
-  p_client_id text
+  p_client_id text default null::text
 )
 returns jsonb
 language plpgsql
-as $$
+security definer
+set search_path to 'public'
+as $function$
 declare
-  v_status text;
-  v_result jsonb;
+  v_poll polls%rowtype;
+  v_option poll_options%rowtype;
+  v_client_id text;
+  v_deleted_count integer := 0;
 begin
-  select status into v_status
-    from public.polls
-   where id = p_poll_id
-     and session_id = p_session_id;
+  v_client_id := nullif(btrim(coalesce(p_client_id, '')), '');
+
+  select *
+    into v_poll
+    from polls
+   where id = p_poll_id and session_id = p_session_id
+   for update;
 
   if not found then
     raise exception 'poll not found' using errcode = 'P0002';
   end if;
 
-  if v_status <> 'open' then
+  if v_poll.status <> 'open' then
     raise exception 'poll is closed' using errcode = 'P0001';
   end if;
 
-  -- Idempotent delete. No-op if the vote was not present.
-  delete from public.poll_votes
-   where poll_id = p_poll_id
-     and option_id = p_option_id
-     and client_id = p_client_id;
+  select *
+    into v_option
+    from poll_options
+   where id = p_option_id and poll_id = p_poll_id
+   for update;
 
-  -- Build the same payload shape as vote_poll_atomic returns.
-  select jsonb_build_object(
-           'id',             p.id,
-           'session_id',     p.session_id,
-           'question',       p.question,
-           'status',         p.status,
-           'allow_multiple', p.allow_multiple,
-           'created_at',     p.created_at,
-           'options',        coalesce(
-                               (
-                                 select jsonb_agg(
-                                          jsonb_build_object(
-                                            'id',    o.id,
-                                            'label', o.label,
-                                            'votes', (
-                                              select count(*)
-                                                from public.poll_votes v
-                                               where v.poll_id   = p.id
-                                                 and v.option_id = o.id
-                                            )
-                                          )
-                                          order by o.position
-                                        )
-                                   from public.poll_options o
-                                  where o.poll_id = p.id
-                               ),
-                               '[]'::jsonb
-                             )
-         )
-    into v_result
-    from public.polls p
-   where p.id = p_poll_id;
+  if not found then
+    raise exception 'option not found' using errcode = 'P0002';
+  end if;
 
-  return v_result;
+  if v_client_id is not null then
+    delete from poll_votes
+     where poll_id = p_poll_id
+       and option_id = p_option_id
+       and client_id = v_client_id;
+
+    get diagnostics v_deleted_count = row_count;
+
+    if v_deleted_count > 0 then
+      update poll_options
+         set votes = greatest(0, votes - 1)
+       where poll_id = p_poll_id
+         and id = p_option_id;
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'id',             v_poll.id,
+    'session_id',     v_poll.session_id,
+    'question',       v_poll.question,
+    'status',         v_poll.status,
+    'allow_multiple', v_poll.allow_multiple,
+    'created_at',     v_poll.created_at,
+    'options',
+    coalesce(
+      (
+        select jsonb_agg(
+                 jsonb_build_object('id', po.id, 'label', po.label, 'votes', po.votes)
+                 order by po.position asc
+               )
+          from poll_options po
+         where po.poll_id = v_poll.id
+      ),
+      '[]'::jsonb
+    )
+  );
 end;
-$$;
+$function$;
