@@ -9,6 +9,7 @@ import type {
   SessionActivity,
   SessionSnapshot
 } from './api/types'
+import { CollapsibleSection } from './components/CollapsibleSection'
 import { JoinPanel } from './components/JoinPanel'
 import { PrezoLogo } from './components/PrezoLogo'
 import { PollsPanel } from './components/PollsPanel'
@@ -508,17 +509,27 @@ export default function App() {
             <p className="muted">Stay tuned for real-time updates.</p>
           </div>
           {session.qna_open ? (
-            <QuestionComposer
-              onSubmit={submitQuestion}
-              mode="audience"
-              prompt={null}
-              approvedQuestions={approvedQuestions}
-              onUpvote={voteQuestion}
-            />
+            <CollapsibleSection
+              title="Ask a question"
+              storageKey="audience:section:qna"
+              defaultOpen
+            >
+              <QuestionComposer
+                onSubmit={submitQuestion}
+                mode="audience"
+                prompt={null}
+                approvedQuestions={approvedQuestions}
+                onUpvote={voteQuestion}
+              />
+            </CollapsibleSection>
           ) : null}
           {activePrompts.length > 0 ? (
-            <div className="panel">
-              <h2>Prompt questions</h2>
+            <CollapsibleSection
+              title="Prompt questions"
+              storageKey="audience:section:prompts"
+              defaultOpen
+              headerExtras={<span className="badge">{activePrompts.length}</span>}
+            >
               <p className="muted">Share your thoughts on each prompt below.</p>
               <div className="prompt-list">
                 {activePrompts.map((prompt) => (
@@ -552,7 +563,7 @@ export default function App() {
                   </div>
                 ))}
               </div>
-            </div>
+            </CollapsibleSection>
           ) : null}
           {activePolls.length > 0 ? (
             <PollsPanel polls={activePolls} onVote={votePoll} />

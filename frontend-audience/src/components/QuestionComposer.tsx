@@ -68,8 +68,7 @@ export function QuestionComposer({
   }
 
   return (
-    <div className="panel">
-      <h2>{isPrompt ? 'Answer the host question' : 'Ask a question'}</h2>
+    <>
       {isPrompt && prompt ? (
         <div className="prompt-card">
           <span className="eyebrow">Prompt</span>
@@ -138,6 +137,6 @@ export function QuestionComposer({
           )}
         </div>
       ) : null}
-    </div>
+    </>
   )
 }

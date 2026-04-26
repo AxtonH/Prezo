@@ -1,4 +1,5 @@
 import type { Poll } from '../api/types'
+import { CollapsibleSection } from './CollapsibleSection'
 
 interface PollsPanelProps {
   polls: Poll[]
@@ -8,25 +9,37 @@ interface PollsPanelProps {
 export function PollsPanel({ polls, onVote }: PollsPanelProps) {
   if (polls.length === 0) {
     return (
-      <div className="panel">
-        <h2>Polls</h2>
+      <CollapsibleSection
+        title="Polls"
+        storageKey="audience:section:polls"
+        defaultOpen
+      >
         <p className="muted">No polls are live right now.</p>
-      </div>
+      </CollapsibleSection>
     )
   }
 
   return (
-    <div className="panel">
-      <h2>Polls</h2>
+    <CollapsibleSection
+      title="Polls"
+      storageKey="audience:section:polls"
+      defaultOpen
+      headerExtras={<span className="badge">{polls.length}</span>}
+    >
       <div className="polls">
         {polls.map((poll) => {
           const totalVotes = poll.options.reduce((sum, opt) => sum + opt.votes, 0)
           return (
-            <div key={poll.id} className="poll-card">
-              <div className="poll-header">
-                <span>{poll.question}</span>
+            <CollapsibleSection
+              key={poll.id}
+              variant="card"
+              title={poll.question}
+              storageKey={`audience:section:poll:${poll.id}`}
+              defaultOpen
+              headerExtras={
                 <span className={`chip ${poll.status}`}>{poll.status}</span>
-              </div>
+              }
+            >
               <div className="poll-options">
                 {poll.options.map((option) => {
                   const percentage = totalVotes
@@ -50,10 +63,10 @@ export function PollsPanel({ polls, onVote }: PollsPanelProps) {
                   )
                 })}
               </div>
-            </div>
+            </CollapsibleSection>
           )
         })}
       </div>
-    </div>
+    </CollapsibleSection>
   )
 }
