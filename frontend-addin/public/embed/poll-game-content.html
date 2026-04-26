@@ -468,18 +468,47 @@
 
         const queueEmbedStatePatch = (patch) => {
           if (!canPersistEmbedState()) {
+            // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
+            console.warn('[prezo-embed-debug] queueEmbedStatePatch DROPPED (cannot persist)', {
+              patch: patch,
+              embedIdentityId: embedIdentity?.id || null,
+              embedIdentityPersisted: embedIdentity?.persisted || false,
+              hasToken: Boolean(librarySyncState?.token),
+              hasClient: Boolean(window.PrezoEmbedStateClient),
+            })
             return
           }
           const options = getEmbedStateOptions()
           const id = embedIdentity.id
+          // [prezo-embed-debug] TEMPORARY
+          console.log('[prezo-embed-debug] queueEmbedStatePatch enqueueing', {
+            embedId: id,
+            patch: patch,
+          })
           persistEmbedInFlight = persistEmbedInFlight
             .catch(() => undefined)
             .then(() =>
-              window.PrezoEmbedStateClient.update(options, id, patch).catch(
-                (error) => {
-                  console.warn("embed-instance update failed:", error)
-                }
-              )
+              window.PrezoEmbedStateClient.update(options, id, patch)
+                .then((result) => {
+                  // [prezo-embed-debug] TEMPORARY
+                  console.log('[prezo-embed-debug] update RESOLVED', {
+                    embedId: id,
+                    patch: patch,
+                    rowScreenMode: result?.screen_mode || null,
+                    rowSessionId: result?.session_id || null,
+                    rowPollId: result?.poll_id || null,
+                  })
+                })
+                .catch((error) => {
+                  // [prezo-embed-debug] TEMPORARY: kept warn behavior intact, added detail.
+                  console.warn('[prezo-embed-debug] update REJECTED', {
+                    embedId: id,
+                    patch: patch,
+                    errorStatus: error?.status,
+                    errorDetail: error?.detail,
+                    errorMessage: error?.message,
+                  })
+                })
             )
         }
 
@@ -501,7 +530,10 @@
           ) {
             selectedPollId = row.poll_id
           }
-          if (
+          // Prefer the typed column, fall back to metadata for older rows.
+          if (typeof row.screen_mode === "string" && row.screen_mode) {
+            currentScreenMode = row.screen_mode
+          } else if (
             row.metadata &&
             typeof row.metadata === "object" &&
             typeof row.metadata.screenMode === "string" &&
@@ -1183,21 +1215,28 @@
           if (message.type === "prezo:visual-mode") {
             const nextMode =
               typeof message.visualMode === "string" ? message.visualMode : ""
+            // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
+            console.log('[prezo-embed-debug] outer-embed received visual-mode', {
+              eventOrigin: event.origin,
+              expectedOrigin: window.location.origin,
+              sourceMatches: event.source === frame.contentWindow,
+              nextMode: nextMode,
+              currentScreenMode: currentScreenMode,
+              willPatch: Boolean(nextMode) && nextMode !== currentScreenMode,
+              canPersist: canPersistEmbedState(),
+              embedIdentityId: embedIdentity?.id || null,
+              embedIdentityPersisted: embedIdentity?.persisted || false,
+              hasToken: Boolean(librarySyncState?.token),
+            })
             if (!nextMode || nextMode === currentScreenMode) {
               return
             }
             currentScreenMode = nextMode
-            const mergedMetadata = Object.assign(
-              {},
-              storedEmbedInstance?.metadata && typeof storedEmbedInstance.metadata === "object"
-                ? storedEmbedInstance.metadata
-                : {},
-              { screenMode: nextMode }
-            )
-            queueEmbedStatePatch({
-              screen_mode: nextMode,
-              metadata: mergedMetadata,
-            })
+            // Patch only the typed screen_mode column. We deliberately do
+            // NOT touch metadata here — the duplicate-detection logic owns
+            // metadata.loadToken, and any merge race between the two writers
+            // can erase the load token and trick that logic into forking.
+            queueEmbedStatePatch({ screen_mode: nextMode })
             return
           }
           if (message.type !== PREZO_LIBRARY_SYNC_REQUEST_MESSAGE) {

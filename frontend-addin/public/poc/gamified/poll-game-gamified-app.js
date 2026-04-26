@@ -636,6 +636,25 @@ import {
     setupRibbonOffsetTracking()
     setupCanvasFitBehavior()
     applyTheme(currentTheme)
+    // Tell the embed parent what visual mode this iframe is rendering.
+    // Sending on init (not just on change) makes the outer embed's
+    // persistence robust to missed change events.
+    try {
+      if (window.parent && window.parent !== window) {
+        // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
+        console.log('[prezo-embed-debug] inner-iframe init posting visual-mode', {
+          visualMode: currentTheme.visualMode,
+          parentPostMessageOrigin: parentPostMessageOrigin,
+        })
+        window.parent.postMessage(
+          { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
+          parentPostMessageOrigin
+        )
+      }
+    } catch (error) {
+      // [prezo-embed-debug] TEMPORARY
+      console.warn('[prezo-embed-debug] inner-iframe init postMessage threw', error)
+    }
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
     refreshArtifactSelect(artifactLibrary.activeName)
@@ -9462,12 +9481,21 @@ import {
     if (previousVisualMode !== currentTheme.visualMode) {
       try {
         if (window.parent && window.parent !== window) {
+          // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
+          console.log('[prezo-embed-debug] inner-iframe updateTheme posting visual-mode', {
+            from: previousVisualMode,
+            to: currentTheme.visualMode,
+            parentPostMessageOrigin: parentPostMessageOrigin,
+          })
           window.parent.postMessage(
             { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
             parentPostMessageOrigin
           )
         }
-      } catch {}
+      } catch (error) {
+        // [prezo-embed-debug] TEMPORARY
+        console.warn('[prezo-embed-debug] inner-iframe updateTheme postMessage threw', error)
+      }
     }
   }
 
