@@ -584,6 +584,37 @@ import {
   if (visualModeFromQuery) {
     currentTheme = sanitizeTheme({ ...currentTheme, visualMode: visualModeFromQuery })
   }
+
+  /**
+   * Tell the embed parent (poll-game-content.html) what visual mode this
+   * iframe is currently rendering. Called from every site that mutates
+   * currentTheme.visualMode — both the standard updateTheme path AND the
+   * direct-assignment paths (history undo/redo, theme load, artifact preset
+   * load) which bypass updateTheme. The outer embed deduplicates against its
+   * own currentScreenMode, so calling here unconditionally is safe.
+   */
+  function postVisualModeToParent(reason) {
+    try {
+      if (window.parent && window.parent !== window) {
+        // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
+        console.log('[prezo-embed-debug] inner-iframe posting visual-mode', {
+          reason: reason || 'unknown',
+          visualMode: currentTheme.visualMode,
+          parentPostMessageOrigin: parentPostMessageOrigin,
+        })
+        window.parent.postMessage(
+          { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
+          parentPostMessageOrigin
+        )
+      }
+    } catch (error) {
+      // [prezo-embed-debug] TEMPORARY
+      console.warn('[prezo-embed-debug] inner-iframe postVisualModeToParent threw', {
+        reason: reason || 'unknown',
+        error: error,
+      })
+    }
+  }
   const dragState = {
     enabled: false,
     active: null,
@@ -636,25 +667,7 @@ import {
     setupRibbonOffsetTracking()
     setupCanvasFitBehavior()
     applyTheme(currentTheme)
-    // Tell the embed parent what visual mode this iframe is rendering.
-    // Sending on init (not just on change) makes the outer embed's
-    // persistence robust to missed change events.
-    try {
-      if (window.parent && window.parent !== window) {
-        // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
-        console.log('[prezo-embed-debug] inner-iframe init posting visual-mode', {
-          visualMode: currentTheme.visualMode,
-          parentPostMessageOrigin: parentPostMessageOrigin,
-        })
-        window.parent.postMessage(
-          { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
-          parentPostMessageOrigin
-        )
-      }
-    } catch (error) {
-      // [prezo-embed-debug] TEMPORARY
-      console.warn('[prezo-embed-debug] inner-iframe init postMessage threw', error)
-    }
+    postVisualModeToParent('init')
     syncThemeControls()
     refreshThemeSelect(themeLibrary.activeName)
     refreshArtifactSelect(artifactLibrary.activeName)
@@ -4584,6 +4597,7 @@ import {
       saveThemeDraft(currentTheme)
       saveTextOverrides(state.textOverrides)
       applyTheme(currentTheme)
+      postVisualModeToParent('history-snapshot')
       syncThemeControls()
       clearCachedRichTextSelection()
       hideSelectionToolbar()
@@ -8918,6 +8932,7 @@ import {
     }
     currentTheme = sanitizeTheme(themeLibrary.themes[name])
     applyTheme(currentTheme)
+    postVisualModeToParent('theme-load')
     syncThemeControls()
     themeLibrary.activeName = name
     saveThemeLibrary(themeLibrary)
@@ -9011,6 +9026,7 @@ import {
     saveArtifactLibrary(artifactLibrary)
     saveThemeDraft(currentTheme)
     applyTheme(currentTheme)
+    postVisualModeToParent('artifact-preset-load')
     syncThemeControls()
     state.artifact.lastPrompt = asText(artifactRecord.lastPrompt)
     state.artifact.savedStyleOverrides =
@@ -9479,23 +9495,7 @@ import {
       recordHistoryCheckpoint(historyLabel)
     }
     if (previousVisualMode !== currentTheme.visualMode) {
-      try {
-        if (window.parent && window.parent !== window) {
-          // [prezo-embed-debug] TEMPORARY: remove once screen_mode persistence is verified.
-          console.log('[prezo-embed-debug] inner-iframe updateTheme posting visual-mode', {
-            from: previousVisualMode,
-            to: currentTheme.visualMode,
-            parentPostMessageOrigin: parentPostMessageOrigin,
-          })
-          window.parent.postMessage(
-            { type: 'prezo:visual-mode', visualMode: currentTheme.visualMode },
-            parentPostMessageOrigin
-          )
-        }
-      } catch (error) {
-        // [prezo-embed-debug] TEMPORARY
-        console.warn('[prezo-embed-debug] inner-iframe updateTheme postMessage threw', error)
-      }
+      postVisualModeToParent('update-theme')
     }
   }
 
