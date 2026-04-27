@@ -125,10 +125,10 @@ export function SessionAudienceAccessCard({ sessionCode, joinUrl }: SessionAudie
               <button
                 type="button"
                 onClick={() => void copyQr()}
-                className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm border border-slate-200 transition-colors text-primary"
-                title={qrCopied ? 'Copied!' : 'Copy QR image'}
+                className="absolute top-2 right-2 p-2 rounded-lg hover:bg-white/60 transition-colors text-primary"
+                title="Copy QR image"
               >
-                <span className="material-symbols-outlined text-lg">
+                <span className="material-symbols-outlined text-xl">
                   {qrCopied ? 'check' : 'content_copy'}
                 </span>
               </button>
