@@ -24,7 +24,8 @@ import {
   SessionDashboardPage,
   SessionDiscussionDashboardPage,
   SessionEditorEmbed,
-  SessionPollsDashboardPage
+  SessionPollsDashboardPage,
+  SessionQnaDashboardPage
 } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
 import { BrandIdentitiesPage } from './components/brand-identities'
@@ -1582,6 +1583,7 @@ function HostConsole({
                 (workspaceNav === 'dashboard' ||
                   workspaceNav === 'polls' ||
                   workspaceNav === 'discussion' ||
+                  workspaceNav === 'qna' ||
                   workspaceNav === 'editor')
               ) ? (
                 <div className="mb-8">
@@ -1703,6 +1705,27 @@ function HostConsole({
                   onHideDiscussionQuestion={hideQuestion}
                   onCreateDiscussion={createDiscussionPrompt}
                   onBindDiscussionWidget={isAddinHost ? handleBindDiscussionWidget : undefined}
+                />
+              ) : workspaceNav === 'qna' ? (
+                <SessionQnaDashboardPage
+                  session={session}
+                  hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
+                  questions={questions}
+                  qnaDeletedEpoch={qnaDeletedEpoch}
+                  onOpenQna={() =>
+                    openQna().catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Failed to open Q&A')
+                    )
+                  }
+                  onStopQna={() => void closeQna()}
+                  onResumeQna={() =>
+                    openQna().catch((err) =>
+                      setError(err instanceof Error ? err.message : 'Failed to open Q&A')
+                    )
+                  }
+                  onDeleteQna={deleteQnaPanel}
+                  onApproveAudienceQuestion={approveQuestion}
+                  onHideAudienceQuestion={hideQuestion}
                 />
               ) : workspaceNav !== 'dashboard' ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">

@@ -8,10 +8,11 @@ import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 
 export interface SessionActiveActivitiesPanelProps {
   /**
-   * `'polls-only'` — polls workspace; `'discussions-only'` — open discussion workspace.
+   * `'polls-only'` — polls workspace; `'discussions-only'` — open discussion
+   * workspace; `'qna-only'` — Q&amp;A workspace (audience questions only).
    * Default: full activity mix.
    */
-  activitiesScope?: 'all' | 'polls-only' | 'discussions-only'
+  activitiesScope?: 'all' | 'polls-only' | 'discussions-only' | 'qna-only'
   openPolls: Poll[]
   /** Stopped polls — shown in the inactive block, oldest first when merged. */
   closedPolls: Poll[]
@@ -149,6 +150,12 @@ export function SessionActiveActivitiesPanel({
       rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
       return rows
     }
+    if (activitiesScope === 'qna-only') {
+      if (qnaOpen) {
+        rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
+      }
+      return rows
+    }
     if (qnaOpen) {
       rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
     }
@@ -190,6 +197,12 @@ export function SessionActiveActivitiesPanel({
         })
       }
       rows.sort((a, b) => sortKeyMs(a.sortAt) - sortKeyMs(b.sortAt))
+      return rows
+    }
+    if (activitiesScope === 'qna-only') {
+      if (showInactiveQna && !qnaOpen) {
+        rows.push({ kind: 'qna', sortAt: audienceQnaSortKey })
+      }
       return rows
     }
     /** Never show inactive Q&amp;A while the channel is open — avoids duplicating the same question lists. */
@@ -264,7 +277,9 @@ export function SessionActiveActivitiesPanel({
               ? 'No polls yet. Create one with the poll builder on the left.'
               : activitiesScope === 'discussions-only'
                 ? 'No discussions yet. Create one with the discussion builder on the left.'
-                : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
+                : activitiesScope === 'qna-only'
+                  ? 'Q&A is not open yet. Use the panel on the left to start collecting audience questions.'
+                  : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
           </p>
         </div>
       ) : (
