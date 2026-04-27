@@ -9,12 +9,18 @@ interface SessionAudienceAccessCardProps {
 export function SessionAudienceAccessCard({ sessionCode, joinUrl }: SessionAudienceAccessCardProps) {
   const [qrOpen, setQrOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [qrCopied, setQrCopied] = useState(false)
   const copyFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const qrCopyFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const qrCanvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     return () => {
       if (copyFlashTimerRef.current !== null) {
         clearTimeout(copyFlashTimerRef.current)
+      }
+      if (qrCopyFlashTimerRef.current !== null) {
+        clearTimeout(qrCopyFlashTimerRef.current)
       }
     }
   }, [])
@@ -32,6 +38,45 @@ export function SessionAudienceAccessCard({ sessionCode, joinUrl }: SessionAudie
       }, 2000)
     } catch {
       /* ignore */
+    }
+  }, [sessionCode])
+
+  const copyQr = useCallback(async () => {
+    const canvas = qrCanvasRef.current
+    if (!canvas) {
+      return
+    }
+    try {
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((result) => resolve(result), 'image/png')
+      })
+      if (!blob) {
+        return
+      }
+      // Browsers without ClipboardItem (older Safari, some embeds) get a
+      // PNG download instead so the host can still grab the image somehow.
+      if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        const objectUrl = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = objectUrl
+        link.download = `prezo-join-${sessionCode}.png`
+        document.body.appendChild(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(objectUrl)
+        return
+      }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      setQrCopied(true)
+      if (qrCopyFlashTimerRef.current !== null) {
+        clearTimeout(qrCopyFlashTimerRef.current)
+      }
+      qrCopyFlashTimerRef.current = setTimeout(() => {
+        qrCopyFlashTimerRef.current = null
+        setQrCopied(false)
+      }, 2000)
+    } catch {
+      /* ignore — clipboard write may be blocked by permission or focus */
     }
   }, [sessionCode])
 
@@ -69,8 +114,24 @@ export function SessionAudienceAccessCard({ sessionCode, joinUrl }: SessionAudie
             {qrOpen ? 'Hide QR code' : 'Show QR code'}
           </button>
           {qrOpen ? (
-            <div className="mt-4 flex justify-center rounded-xl border border-slate-200 bg-white p-4">
-              <QRCodeCanvas value={joinUrl} size={176} fgColor="#0f172a" bgColor="#ffffff" />
+            <div className="mt-4 relative rounded-xl border border-slate-200 bg-white p-4 flex justify-center">
+              <QRCodeCanvas
+                ref={qrCanvasRef}
+                value={joinUrl}
+                size={176}
+                fgColor="#0f172a"
+                bgColor="#ffffff"
+              />
+              <button
+                type="button"
+                onClick={() => void copyQr()}
+                className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/90 hover:bg-white shadow-sm border border-slate-200 transition-colors text-primary"
+                title={qrCopied ? 'Copied!' : 'Copy QR image'}
+              >
+                <span className="material-symbols-outlined text-lg">
+                  {qrCopied ? 'check' : 'content_copy'}
+                </span>
+              </button>
             </div>
           ) : null}
         </>
