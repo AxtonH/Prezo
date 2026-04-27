@@ -432,6 +432,13 @@
         let currentScreenMode = ""
         let currentArtifactName = ""
         let currentPresentMode = false
+        // Latches true after the first iframe URL is built that includes
+        // presentMode=1. Once latched, subsequent loadGameFrame calls in
+        // this outer-embed lifetime will NOT re-add the param — that's what
+        // was creating the exit-loop on iframe reloads. The user can still
+        // re-enter present mode manually via the toggle within the session;
+        // we just won't auto-re-trigger it from the URL.
+        let presentModeAutoRestoreApplied = false
 
         const getEmbedStateOptions = () => ({
           apiBase: apiBase || DEFAULT_API_BASE,
@@ -1079,8 +1086,14 @@
           if (currentArtifactName) {
             qs.set("artifactName", currentArtifactName)
           }
-          if (currentPresentMode) {
+          // Auto-restore present mode ONCE per outer-embed lifetime so the
+          // first iframe load on file open enters present mode, but any
+          // later iframe reload (picker change, late library-sync token)
+          // doesn't re-trigger it after the user exited. The user can
+          // re-enter manually via the toggle within the session.
+          if (currentPresentMode && !presentModeAutoRestoreApplied) {
             qs.set("presentMode", "1")
+            presentModeAutoRestoreApplied = true
           }
           frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           overlay.classList.remove("visible")

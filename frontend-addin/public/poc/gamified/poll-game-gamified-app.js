@@ -745,16 +745,18 @@ import {
     initializeHistoryState()
     void hydrateSavedLibraries()
     scheduleArtifactRestoreFromQuery()
-    // Auto-enter present mode if the embed was saved that way. Deferred so
-    // applyPresentModeState reads stable state. Browsers don't allow
-    // requestFullscreen without a user gesture, so we use applyPresentModeState
-    // (the synchronous CSS-only path) instead of setPresentMode here.
+    // Auto-enter present mode if the embed was saved that way. The outer
+    // embed only sets ?presentMode=1 on the FIRST iframe load per file open
+    // (latched after first use), so subsequent reloads in this session
+    // won't re-trigger and won't fight a user-initiated exit. We use
+    // applyPresentModeState (CSS-only) rather than setPresentMode here
+    // because requestFullscreen requires a user gesture.
     if (presentModeFromQuery) {
       window.setTimeout(() => {
         try {
           applyPresentModeState(true)
         } catch {
-          /* ignore — applyPresentModeState may not be defined yet on edge cases */
+          /* applyPresentModeState may not be defined on edge cases */
         }
       }, 0)
     }
