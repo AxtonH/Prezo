@@ -96,7 +96,6 @@ body {
 
 .nav-link:hover {
   color: #0f172a;
-  border-color: var(--border);
 }
 
 .nav-link.active {
@@ -335,9 +334,6 @@ button:disabled {
   transform: rotate(-135deg);
 }
 
-.top-questions-toggle:hover {
-  border-color: var(--primary);
-}
 
 .top-question-item {
   align-items: flex-start;
@@ -565,10 +561,6 @@ button:disabled {
 .collapsible-header:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
-}
-
-.collapsible-header:hover .collapsible-chevron {
-  border-color: var(--primary);
 }
 
 .collapsible-title {
