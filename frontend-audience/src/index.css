@@ -544,6 +544,17 @@ button:disabled {
   text-align: left;
   font: inherit;
   color: inherit;
+  /* The global button:hover rule applies a translateY + blue box-shadow to
+     every <button>. The collapsible header is a <button> for accessibility,
+     but visually it's a section heading — neutralize the lift/glow so it
+     doesn't look like a border on hover. */
+  transition: none;
+}
+
+.collapsible-header:hover,
+.collapsible-header:focus {
+  transform: none;
+  box-shadow: none;
 }
 
 .collapsible--panel > .collapsible-header {
