@@ -76,27 +76,6 @@ export function SessionQnaBuilderCard({
             )}
           </button>
         )}
-
-        <ul className="space-y-2 text-xs text-muted leading-relaxed">
-          <li className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-[1rem] text-slate-400 mt-0.5">
-              check
-            </span>
-            <span>Audience submits questions from the join page.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-[1rem] text-slate-400 mt-0.5">
-              check
-            </span>
-            <span>Approve or hide each question from the panel on the right.</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-[1rem] text-slate-400 mt-0.5">
-              check
-            </span>
-            <span>Approved questions show up live on audience devices for upvoting.</span>
-          </li>
-        </ul>
       </div>
     </div>
   )
