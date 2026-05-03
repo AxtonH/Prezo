@@ -4,16 +4,17 @@
     Builds the Prezo Windows installer (PrezoSetup-<version>.exe).
 
 .DESCRIPTION
-    Stages the latest manifest from frontend-addin/manifest into
-    installer/assets, reads the version out of the manifest XML,
-    then invokes Inno Setup's compiler (ISCC.exe) to produce a
-    single self-contained .exe in installer/dist.
+    Discovers every manifest*.xml under frontend-addin/manifest, stages them
+    into installer/assets, generates installer/src/manifests.iss with the
+    [Files] + [Registry] entries needed to register all of them, then
+    invokes Inno Setup's compiler (ISCC.exe) to produce a single
+    self-contained .exe in installer/dist.
 
     Run from anywhere; paths are resolved relative to this script.
 
 .PARAMETER Version
     Optional. Override the version string used by the installer.
-    Defaults to the <Version> element in manifest.xml.
+    Defaults to <Version> in the host manifest (manifest.xml).
 
 .PARAMETER Iscc
     Optional. Full path to ISCC.exe. Auto-detected from common Inno
@@ -35,46 +36,112 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 # Path setup — everything relative to this script so it works from any cwd.
 # ---------------------------------------------------------------------------
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$RepoRoot    = Split-Path -Parent $ScriptDir
-$SrcManifest = Join-Path $RepoRoot 'frontend-addin\manifest\manifest.xml'
-$AssetsDir   = Join-Path $ScriptDir 'assets'
-$SrcDir      = Join-Path $ScriptDir 'src'
-$DistDir     = Join-Path $ScriptDir 'dist'
-$IssEntry    = Join-Path $SrcDir   'prezo-installer.iss'
+$ScriptDir       = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$RepoRoot        = Split-Path -Parent $ScriptDir
+$SrcManifestDir  = Join-Path $RepoRoot 'frontend-addin\manifest'
+$AssetsDir       = Join-Path $ScriptDir 'assets'
+$SrcDir          = Join-Path $ScriptDir 'src'
+$DistDir         = Join-Path $ScriptDir 'dist'
+$IssEntry        = Join-Path $SrcDir   'prezo-installer.iss'
+$GeneratedIss    = Join-Path $SrcDir   'manifests.iss'
+$ManifestPattern = 'manifest*.xml'
 
 # ---------------------------------------------------------------------------
-# Step 1: Stage manifest. Single source of truth lives in frontend-addin;
-# we copy it next to the installer so ISCC can bundle it. Anything else
-# under assets/ (icon, etc.) is left untouched.
+# Step 1: Discover every manifest in frontend-addin/manifest. Each one is
+# treated as an independent add-in surface (host taskpane, content app, etc.)
+# and gets registered separately under HKCU\...\Wef\Developer.
+#
+# We stage the files into installer/assets so ISCC can bundle them, and
+# capture (FileName, Id, Version) for use when emitting manifests.iss.
 # ---------------------------------------------------------------------------
-if (-not (Test-Path $SrcManifest)) {
-    throw "Manifest not found at: $SrcManifest"
+if (-not (Test-Path $SrcManifestDir)) {
+    throw "Manifest source directory not found: $SrcManifestDir"
+}
+
+$srcManifests = @(Get-ChildItem -Path $SrcManifestDir -Filter $ManifestPattern -File)
+if ($srcManifests.Count -eq 0) {
+    throw "No $ManifestPattern files found in: $SrcManifestDir"
 }
 
 if (-not (Test-Path $AssetsDir)) {
     New-Item -ItemType Directory -Path $AssetsDir | Out-Null
 }
 
-Copy-Item -Path $SrcManifest -Destination (Join-Path $AssetsDir 'manifest.xml') -Force
-Write-Host "Staged manifest -> assets\manifest.xml"
+$manifests = @()
+foreach ($file in $srcManifests) {
+    [xml]$xml = Get-Content $file.FullName
+    $id  = $xml.OfficeApp.Id
+    $ver = $xml.OfficeApp.Version
+    if (-not $id) {
+        throw "Could not read <Id> from $($file.Name)"
+    }
+
+    Copy-Item -Path $file.FullName -Destination (Join-Path $AssetsDir $file.Name) -Force
+
+    $manifests += [pscustomobject]@{
+        FileName = $file.Name
+        Id       = $id
+        Version  = $ver
+    }
+    Write-Host ("Staged {0,-25}  Id: {1}" -f $file.Name, $id)
+}
 
 # ---------------------------------------------------------------------------
-# Step 2: Resolve the version. Caller override wins; otherwise read from
-# the staged manifest.xml. Inno requires a numeric x.y.z[.w] for AppVersion.
+# Step 2: Resolve the installer version. Caller override wins; otherwise we
+# read it from manifest.xml (the host taskpane manifest), falling back to
+# the first discovered manifest if the file isn't named that.
 # ---------------------------------------------------------------------------
 if (-not $Version) {
-    [xml]$manifestXml = Get-Content (Join-Path $AssetsDir 'manifest.xml')
-    $Version = $manifestXml.OfficeApp.Version
+    $hostManifest = $manifests | Where-Object { $_.FileName -eq 'manifest.xml' } | Select-Object -First 1
+    if (-not $hostManifest) { $hostManifest = $manifests[0] }
+    $Version = $hostManifest.Version
     if (-not $Version) {
-        throw "Could not read <Version> from manifest.xml"
+        throw "Could not read <Version> from $($hostManifest.FileName)"
     }
 }
+Write-Host ""
 Write-Host "Building Prezo installer version: $Version"
 
 # ---------------------------------------------------------------------------
-# Step 3: Locate ISCC.exe (Inno Setup compiler). We check the common install
-# paths so devs do not have to add it to PATH.
+# Step 3: Generate manifests.iss from the discovered manifest set. This is
+# the only auto-generated source file; everything else under src/ is hand-
+# written. Regenerated on every build, so it is gitignored.
+# ---------------------------------------------------------------------------
+$lines = @(
+    '; ============================================================================',
+    '; manifests.iss — AUTO-GENERATED by build.ps1. Do not edit by hand.',
+    ';',
+    '; Lists every manifest discovered in frontend-addin/manifest/. Each entry',
+    '; ships a manifest into {app}\Catalog and registers it under',
+    '; HKCU\Software\Microsoft\Office\<ver>\Wef\Developer using the manifest',
+    '; <Id> as the value name. To add a new add-in surface, drop a manifest',
+    '; into frontend-addin/manifest/ and re-run build.ps1.',
+    '; ============================================================================',
+    '',
+    '[Files]'
+)
+foreach ($m in $manifests) {
+    $lines += ('Source: "..\assets\{0}"; DestDir: "{{app}}\Catalog"; Flags: ignoreversion' -f $m.FileName)
+}
+
+$lines += @('', '[Registry]')
+foreach ($m in $manifests) {
+    $lines += (
+        'Root: HKCU; ' +
+        'Subkey: "Software\Microsoft\Office\{#OfficeVersion}\Wef\Developer"; ' +
+        'ValueType: string; ' +
+        ('ValueName: "{0}"; ' -f $m.Id) +
+        ('ValueData: "{{app}}\Catalog\{0}"; ' -f $m.FileName) +
+        'Flags: uninsdeletevalue'
+    )
+}
+
+Set-Content -Path $GeneratedIss -Value ($lines -join "`r`n") -Encoding UTF8
+Write-Host "Generated $GeneratedIss"
+
+# ---------------------------------------------------------------------------
+# Step 4: Locate ISCC.exe. We check the common install paths so devs do not
+# have to add it to PATH.
 # ---------------------------------------------------------------------------
 if (-not $Iscc) {
     $candidates = @(
@@ -96,7 +163,7 @@ or pass -Iscc <full path to ISCC.exe>.
 Write-Host "Using ISCC: $Iscc"
 
 # ---------------------------------------------------------------------------
-# Step 4: Ensure dist/ exists and run ISCC. AppVersion is passed as a /D
+# Step 5: Ensure dist/ exists and run ISCC. AppVersion is passed as a /D
 # preprocessor define so config.iss does not need editing per release.
 # ---------------------------------------------------------------------------
 if (-not (Test-Path $DistDir)) {

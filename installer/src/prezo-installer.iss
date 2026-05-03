@@ -55,5 +55,5 @@ UninstallDisplayName={#AppName}
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 #include "files.iss"
-#include "registry.iss"
+#include "manifests.iss"
 #include "code.iss"

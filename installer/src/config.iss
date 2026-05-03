@@ -19,12 +19,10 @@
 ; interpret the GUID as a constant like {app} and aborts.
 #define AppId              "{{B0E3C1A2-4D5F-4A2B-9F8E-7E6D3C2B1A0F}"
 
-; CatalogGuid — per-installation GUID for the TrustedCatalogs registry entry.
-; Office identifies the catalog by this GUID, so it must stay stable across upgrades
-; or users would end up with duplicate catalog entries. Same "{{" escape rule.
-#define CatalogGuid        "{{D4F2E1A0-1D2E-4A6B-8C90-ABCDEF123456}"
+; Manifests are discovered at build time and registered via the auto-generated
+; manifests.iss. There is no manifest list in this file by design — adding a
+; new add-in surface should require zero edits here.
 
-#define ManifestFileName   "manifest.xml"
 #define IconFileName       "prezo-icon.ico"
 
 ; Office major version — 16.0 covers Office 2016, 2019, 2021, and Microsoft 365.

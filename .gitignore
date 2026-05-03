@@ -36,4 +36,5 @@ backend/data/
 
 # Installer build artifacts
 installer/dist/
-installer/assets/manifest.xml
+installer/assets/manifest*.xml
+installer/src/manifests.iss
