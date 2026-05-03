@@ -33,3 +33,7 @@ Untitled
 
 # Backend local uploads (brand fonts, etc.)
 backend/data/
+
+# Installer build artifacts
+installer/dist/
+installer/assets/manifest.xml

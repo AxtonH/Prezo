@@ -33,6 +33,9 @@
       "Bash(git ls-tree *)",
       "Bash(git rm *)",
       "WebFetch(domain:community.slido.com)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
     ]
   }
 }
