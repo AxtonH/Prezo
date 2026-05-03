@@ -137,7 +137,16 @@ export function SideNav({
         collapsed ? 'w-16' : 'w-64'
       }`}
     >
-      <div className={`${collapsed ? 'px-2 pb-4 pt-6' : 'p-8 pb-10'}`}>
+      {/*
+        Header keeps the same vertical padding (pt-8 pb-10) and the same inner
+        layout in both modes — only the horizontal padding swaps. The tagline
+        always renders so it reserves its line-height; when collapsed it is
+        marked invisible (and whitespace-nowrap so collapsing doesn't cause it
+        to wrap into two lines and inflate the header height). This keeps the
+        header bottom edge at the same Y in both modes, which is what anchors
+        the rest of the icons.
+      */}
+      <div className={`pb-10 pt-8 ${collapsed ? 'px-2' : 'px-8'}`}>
         <div className={`mb-1 flex ${collapsed ? 'justify-center' : ''}`}>
           {collapsed ? (
             <PrezoLogo size={28} decorative />
@@ -148,9 +157,14 @@ export function SideNav({
             />
           )}
         </div>
-        {!collapsed ? (
-          <p className="text-[0.7rem] font-medium uppercase tracking-widest text-muted/60">Live Sessions</p>
-        ) : null}
+        <p
+          className={`text-[0.7rem] font-medium uppercase tracking-widest text-muted/60 ${
+            collapsed ? 'invisible whitespace-nowrap' : ''
+          }`}
+          aria-hidden={collapsed}
+        >
+          Live Sessions
+        </p>
       </div>
 
       <nav
@@ -288,8 +302,15 @@ export function SideNav({
         )}
       </nav>
 
+      {/*
+        Footer keeps the same vertical padding (py-4) in both modes — only
+        horizontal padding swaps. Combined with the equal-height pill below
+        (min-h-[4.5rem]) and the equal-height header above, this anchors
+        Settings, the Collapse toggle, and Logout at the same Y coordinates
+        regardless of collapse state.
+      */}
       <div
-        className={`mt-auto flex flex-col border-t border-border/30 ${collapsed ? 'p-2' : 'p-4'}`}
+        className={`mt-auto flex flex-col border-t border-border/30 py-4 ${collapsed ? 'px-2' : 'px-4'}`}
       >
         {editorLink && !workspaceMode ? (
           onOpenEditorInline ? (
