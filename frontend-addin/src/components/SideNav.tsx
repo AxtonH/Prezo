@@ -388,33 +388,34 @@ export function SideNav({
           )}
         </div>
 
-        {collapsed ? (
+        <div
+          className={`mt-3 flex min-h-[4.5rem] items-center rounded-xl ${
+            collapsed ? 'justify-center px-2' : 'gap-3 bg-slate-100/50 px-4 py-4'
+          }`}
+        >
+          {!collapsed ? (
+            <>
+              <ProfileAvatar avatarUrl={avatarUrl} displayName={displayName} />
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+                <p className="text-muted truncate text-xs">Prezo Workspace</p>
+              </div>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={onLogout}
-            className="mt-1 flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-slate-900/70 transition-all duration-200 hover:bg-slate-200 hover:text-danger"
+            className={
+              collapsed
+                ? 'flex w-full items-center justify-center rounded-lg px-2 py-2.5 text-slate-900/70 transition-all duration-200 hover:bg-slate-200 hover:text-danger'
+                : '!border-0 !bg-transparent !p-1 !shadow-none text-muted transition-colors hover:text-danger'
+            }
             title="Sign out"
-            aria-label="Sign out"
+            aria-label={collapsed ? 'Sign out' : undefined}
           >
             <span className="material-symbols-outlined text-[1.25rem]">logout</span>
           </button>
-        ) : (
-          <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-100/50 px-4 py-4">
-            <ProfileAvatar avatarUrl={avatarUrl} displayName={displayName} />
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
-              <p className="text-muted truncate text-xs">Prezo Workspace</p>
-            </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="!border-0 !bg-transparent !p-1 !shadow-none text-muted transition-colors hover:text-danger"
-              title="Sign out"
-            >
-              <span className="material-symbols-outlined text-[1.25rem]">logout</span>
-            </button>
-          </div>
-        )}
+        </div>
       </div>
     </aside>
   )
