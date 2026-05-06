@@ -2598,15 +2598,22 @@ export async function updatePollWidget(
                 item.fill.top = bgTop
               }
             }, `bar dims ${index}`)
-            /** Only overwrite user-adjusted transparency when the widget's style is explicitly locked. */
-            if (applyStyle) {
-              await tryItemWrite(() => {
-                item.fill.fill.transparency = 1
-              }, `fill transparency ${index}`)
-              await tryItemWrite(() => {
-                item.bg.fill.transparency = hasPollData ? 1 : 0.35
-              }, `bg transparency ${index}`)
-            }
+            /**
+             * Bar transparency reflects visibility, not aesthetics. The
+             * pre-allocated MAX_POLL_OPTIONS row shapes get hidden/shown
+             * as the bound poll's option count changes; without an
+             * unconditional update here, a row that was hidden under the
+             * previous binding stays invisible when a new binding makes it
+             * the Nth visible option (and vice versa). User-customized
+             * colors and geometry remain untouched — only the on/off
+             * visibility flag is system-controlled.
+             */
+            await tryItemWrite(() => {
+              item.fill.fill.transparency = 1
+            }, `fill transparency ${index}`)
+            await tryItemWrite(() => {
+              item.bg.fill.transparency = hasPollData ? 1 : 0.35
+            }, `bg transparency ${index}`)
           }
           continue
         }
@@ -2633,14 +2640,14 @@ export async function updatePollWidget(
               item.fill.height = bgHeight
             }
           }, `bar dims ${index}`)
-          if (applyStyle) {
-            await tryItemWrite(() => {
-              item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
-            }, `fill transparency ${index}`)
-            await tryItemWrite(() => {
-              item.bg.fill.transparency = 0
-            }, `bg transparency ${index}`)
-          }
+          /** See the matching note on the hidden branch above for why
+              transparency is system-controlled rather than gated on style lock. */
+          await tryItemWrite(() => {
+            item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
+          }, `fill transparency ${index}`)
+          await tryItemWrite(() => {
+            item.bg.fill.transparency = 0
+          }, `bg transparency ${index}`)
         }
       }
 
