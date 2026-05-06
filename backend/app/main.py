@@ -24,6 +24,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # ETag must be exposed explicitly: when allow_credentials=True the spec
+    # forbids the "*" wildcard for Access-Control-Expose-Headers, so the
+    # default header set (which excludes ETag) would hide it from JS even
+    # though the server sent it. Without this, browsers ignore the validator
+    # and never issue If-None-Match on subsequent fetches.
+    expose_headers=["ETag"],
 )
 
 app.include_router(sessions.router)

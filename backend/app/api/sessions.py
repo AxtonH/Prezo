@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 
 from ..auth import AuthUser, get_current_user, get_library_user, get_optional_user
+from ..cache_headers import apply_short_cache_headers, compute_etag, is_etag_match
 from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
@@ -182,16 +183,33 @@ async def get_session_by_code(
 @router.get("/{session_id}/snapshot", response_model=SessionSnapshot)
 async def get_snapshot(
     session_id: str,
+    request: Request,
+    response: Response,
     store: InMemoryStore = Depends(get_store),
     user: AuthUser | None = Depends(get_optional_user),
-) -> SessionSnapshot:
+):
+    """Return the session snapshot, with ETag-based conditional revalidation.
+
+    Snapshots are read on every embed boot, every disconnected-WebSocket
+    polling tick, and every prefetch from the host taskpane. Most of those
+    requests resolve to identical bodies, so we hash the rendered payload and
+    serve a 304 Not Modified when the client already has the same version.
+    See ``app.cache_headers`` for the policy details.
+    """
     try:
         viewer_id = user.id if user else None
         snapshot = await store.snapshot(session_id, viewer_user_id=viewer_id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    session = with_join_url(snapshot.session)
-    return snapshot.model_copy(update={"session": session})
+    snapshot = snapshot.model_copy(update={"session": with_join_url(snapshot.session)})
+
+    etag = compute_etag(snapshot)
+    if is_etag_match(request, etag):
+        # 304s carry the validator so the next round trip can match again.
+        return Response(status_code=304, headers={"ETag": etag})
+
+    apply_short_cache_headers(response, etag=etag)
+    return snapshot
 
 
 @router.post("/{session_id}/qna/open", response_model=Session)

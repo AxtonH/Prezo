@@ -6,6 +6,13 @@
     <title>Prezo Game Content Add-in (PoC)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Start the TLS handshake to the backend in parallel with HTML/CSS/JS
+      parsing. Saves ~100-300ms on the first /sessions or /snapshot fetch.
+      The href must match the production backend exactly; an extra preconnect
+      to a never-used origin is wasted but harmless.
+    -->
+    <link rel="preconnect" href="https://prezo-backend-production.up.railway.app" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"

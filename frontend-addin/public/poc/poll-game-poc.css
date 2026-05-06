@@ -3911,3 +3911,64 @@ body:not(.artifact-mode-active) .visual-mode-card-hint[data-visual-hint="classic
     box-shadow: 0 0 0 0 rgba(88, 240, 140, 0);
   }
 }
+
+/* ----------------------------------------------------------------
+   Initial-paint skeleton
+
+   Renders before any JavaScript runs so users see a poll-shaped
+   placeholder the instant the iframe loads. Dismissed by the JS
+   layer (see hideInitialSkeleton in poll-game-gamified-app.js) the
+   first time renderFromSnapshot fires, regardless of whether that
+   first paint came from the WebSocket push or the HTTP fallback.
+
+   Mirrors the live surface's vertical rhythm (question + meta line
+   + four answer bars) so the transition to populated state reads as
+   content arriving, not as a layout swap.
+   ---------------------------------------------------------------- */
+
+.initial-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 72px 80px;
+  background: #f8fafc;
+  pointer-events: none;
+}
+
+.initial-skeleton.skeleton-dismissed {
+  display: none;
+}
+
+.initial-skeleton .skeleton-block {
+  background: linear-gradient(90deg, #e2e8f0, #f1f5f9, #e2e8f0);
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: prezo-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.initial-skeleton .skeleton-question {
+  height: 56px;
+  width: 70%;
+}
+
+.initial-skeleton .skeleton-meta {
+  height: 18px;
+  width: 30%;
+  margin-bottom: 24px;
+}
+
+.initial-skeleton .skeleton-bar {
+  height: 44px;
+}
+.initial-skeleton .skeleton-bar--1 { width: 92%; }
+.initial-skeleton .skeleton-bar--2 { width: 76%; }
+.initial-skeleton .skeleton-bar--3 { width: 84%; }
+.initial-skeleton .skeleton-bar--4 { width: 60%; }
+
+@keyframes prezo-skeleton-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.9; }
+}

@@ -97,6 +97,12 @@ import {
   const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
   const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
   const SNAPSHOT_POLL_DISCONNECTED_MS = 15000
+  // Initial paint prefers the WebSocket's first-message snapshot push (no
+  // HTTP round trip). If the socket hasn't delivered within this grace
+  // window — usually because the WS handshake is unusually slow or the
+  // connection failed — fall back to a one-shot HTTP /snapshot fetch so the
+  // user isn't stuck on the skeleton until the 15s disconnected-poll tick.
+  const INITIAL_SNAPSHOT_FALLBACK_MS = 800
 
   const query = new URLSearchParams(window.location.search)
 
@@ -8135,12 +8141,31 @@ import {
         return
       }
 
+      // Open the WebSocket first; the server pushes a session_snapshot on
+      // connect (see backend/app/main.py) which becomes our first paint.
+      // The HTTP /snapshot fetch is no longer awaited inline because it
+      // duplicates the WS-delivered payload and adds a full round trip to
+      // initial render. scheduleInitialSnapshotFallback() is the safety net
+      // for when WS is slow or fails before delivering anything.
       connectSocket()
-      await refreshSnapshot(true)
+      scheduleInitialSnapshotFallback()
       startSnapshotPolling()
     } catch (error) {
       renderError(errorToMessage(error))
     }
+  }
+
+  function scheduleInitialSnapshotFallback() {
+    window.setTimeout(() => {
+      // If the socket has already populated state.snapshot, the WS path won
+      // and the HTTP fetch is unnecessary. We also bail when the user
+      // navigated away (state.isUnloading) so we don't kick off a doomed
+      // request during teardown.
+      if (state.snapshot || state.isUnloading) {
+        return
+      }
+      void refreshSnapshot(true)
+    }, INITIAL_SNAPSHOT_FALLBACK_MS)
   }
 
   function startSnapshotPolling() {
@@ -8364,7 +8389,20 @@ import {
     polls.push(nextPoll)
   }
 
+  function hideInitialSkeleton() {
+    // Idempotent: classList.add is a no-op once the class is present.
+    // We don't remove the element from the DOM because that would require
+    // tracking a flag, and a single getElementById per render is negligible.
+    document
+      .getElementById('initial-skeleton')
+      ?.classList.add('skeleton-dismissed')
+  }
+
   function renderFromSnapshot(forceRender) {
+    // First-paint dismiss: the skeleton overlay is in the DOM from page load
+    // and stays until the first real render completes, regardless of whether
+    // the trigger came from the WebSocket push or the HTTP fallback.
+    hideInitialSkeleton()
     flushRichTextHostsToOverrides()
     renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Visual Mode PoC')
     syncArtifactComposerVisibility()

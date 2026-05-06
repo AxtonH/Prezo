@@ -6,6 +6,12 @@
     <title>Prezo Editor</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      The inner iframe re-resolves connections per browsing context, so we
+      preconnect to the backend here too. The browser dedupes against the
+      outer wrapper's hint when both share an origin pool.
+    -->
+    <link rel="preconnect" href="https://prezo-backend-production.up.railway.app" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
       rel="stylesheet"
@@ -456,6 +462,22 @@
         aria-label="Font color"
         value="#16375e"
       />
+    </div>
+
+    <!--
+      Initial-paint skeleton: visible immediately on iframe load so users see
+      poll-shaped placeholders instead of a blank canvas while JS parses, the
+      WebSocket connects, and the first snapshot arrives. JS (hideInitialSkeleton)
+      adds .skeleton-dismissed on the first renderFromSnapshot call, which
+      triggers display:none. See poll-game-poc.css for the styles.
+    -->
+    <div id="initial-skeleton" class="initial-skeleton" aria-hidden="true">
+      <div class="skeleton-block skeleton-question"></div>
+      <div class="skeleton-block skeleton-meta"></div>
+      <div class="skeleton-block skeleton-bar skeleton-bar--1"></div>
+      <div class="skeleton-block skeleton-bar skeleton-bar--2"></div>
+      <div class="skeleton-block skeleton-bar skeleton-bar--3"></div>
+      <div class="skeleton-block skeleton-bar skeleton-bar--4"></div>
     </div>
 
     <main id="canvas-wrap" class="wrap">
