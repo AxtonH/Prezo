@@ -17,6 +17,16 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/poc/poll-game-poc.css" />
+    <!--
+      Embed-cache reader: exposes window.PrezoEmbedCache. Loaded in <head>
+      so it's available before poll-game-gamified-entry.js executes. The
+      cache is populated by the host taskpane's prefetcher; on cache hit
+      the embed renders the bundled snapshot before WebSocket connects.
+      Loading is non-blocking for parsing because we use defer-equivalent
+      placement (script-after-DOMContentLoaded behaviour is fine: the
+      gamified-entry script is type=module and waits for parsing anyway).
+    -->
+    <script src="/embed/prezo-embed-cache.js"></script>
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"

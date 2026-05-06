@@ -56,6 +56,7 @@ import {
 import { buildEditingStationUrl } from './utils/editingStationUrl'
 import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
+import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
 
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
@@ -1256,6 +1257,12 @@ function HostConsole({
   }
 
   const isAddinHost = isPowerPointAddinHost()
+
+  // Warm the embed cache for every Prezo embed in the open deck the first
+  // time the host taskpane mounts. The hook is a no-op outside PowerPoint
+  // and idempotent within it; see lib/embed-cache/use-embed-prefetch.ts.
+  useEmbedPrefetch()
+
   const editorLink = session
     ? buildEditingStationUrl({
         sessionId: session.id,

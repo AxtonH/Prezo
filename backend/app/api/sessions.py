@@ -180,6 +180,67 @@ async def get_session_by_code(
     return with_join_url(session)
 
 
+@router.get("/snapshots", response_model=dict[str, SessionSnapshot])
+async def get_snapshots_batch(
+    request: Request,
+    response: Response,
+    ids: str = Query(
+        ...,
+        description="Comma-separated session ids; missing sessions are omitted, not error.",
+    ),
+    store: InMemoryStore = Depends(get_store),
+):
+    """Return share-safe snapshots for multiple sessions in one round trip.
+
+    Used by the host-taskpane prefetcher to warm the embed cache for every
+    Prezo embed in the open deck. Snapshots are computed without a
+    ``viewer_user_id`` so the cached payload is share-safe — viewer-specific
+    overlays (currently only ``Session.is_original_host``) flow in over the
+    embed's own WebSocket once it connects.
+
+    Sessions the caller doesn't have access to or that don't exist are
+    silently omitted from the response map; the rest still resolve. This
+    keeps a single bad id from poisoning a whole prefetch batch.
+
+    The response gets the same ETag + Cache-Control treatment as the single
+    snapshot endpoint, with the hash computed over the full ordered map.
+    """
+    requested_ids = [chunk.strip() for chunk in ids.split(",") if chunk.strip()]
+    # Cap on count keeps a malicious caller from prefetching the whole
+    # universe in one request. 50 covers any realistic deck.
+    if len(requested_ids) > 50:
+        raise HTTPException(status_code=400, detail="too many ids (max 50)")
+    if not requested_ids:
+        return {}
+
+    # Dedupe while preserving order: callers may legitimately list the same
+    # session twice (e.g., two embeds with the same binding) and we don't
+    # want to do duplicate work or break the etag determinism.
+    seen: set[str] = set()
+    ordered_ids = []
+    for sid in requested_ids:
+        if sid not in seen:
+            seen.add(sid)
+            ordered_ids.append(sid)
+
+    snapshots: dict[str, SessionSnapshot] = {}
+    for session_id in ordered_ids:
+        try:
+            snapshot = await store.snapshot(session_id, viewer_user_id=None)
+        except NotFoundError:
+            continue
+        snapshots[session_id] = snapshot.model_copy(
+            update={"session": with_join_url(snapshot.session)}
+        )
+
+    etag = compute_etag(snapshots)
+    if is_etag_match(request, etag):
+        return Response(status_code=304, headers={"ETag": etag})
+
+    apply_short_cache_headers(response, etag=etag)
+    return snapshots
+
+
 @router.get("/{session_id}/snapshot", response_model=SessionSnapshot)
 async def get_snapshot(
     session_id: str,

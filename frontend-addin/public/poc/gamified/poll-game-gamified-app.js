@@ -8141,17 +8141,57 @@ import {
         return
       }
 
-      // Open the WebSocket first; the server pushes a session_snapshot on
-      // connect (see backend/app/main.py) which becomes our first paint.
-      // The HTTP /snapshot fetch is no longer awaited inline because it
-      // duplicates the WS-delivered payload and adds a full round trip to
-      // initial render. scheduleInitialSnapshotFallback() is the safety net
-      // for when WS is slow or fails before delivering anything.
+      // Cache-first paint: if the host taskpane's prefetcher has warmed
+      // either localStorage or document.settings for this session, render
+      // immediately from the cached snapshot. WS still opens and replaces
+      // any stale numbers within ~1s — see broadcast.ts and prefetcher.ts
+      // for the writer side. Cold cache (no prior prefetch, or fresh
+      // device opening a shared deck without bundled settings) is a no-op.
+      await hydrateFromEmbedCache(state.sessionId)
+
+      // Open the WebSocket; the server pushes a session_snapshot on
+      // connect (see backend/app/main.py) which becomes our authoritative
+      // paint. The HTTP /snapshot fetch is no longer awaited inline because
+      // it duplicates the WS-delivered payload and adds a full round trip
+      // to initial render. scheduleInitialSnapshotFallback() is the safety
+      // net for when WS is slow or fails before delivering anything.
       connectSocket()
       scheduleInitialSnapshotFallback()
       startSnapshotPolling()
     } catch (error) {
       renderError(errorToMessage(error))
+    }
+  }
+
+  async function hydrateFromEmbedCache(sessionId) {
+    // Fail-soft on every code path: a missing reader, a cache miss, or a
+    // malformed payload should never prevent the WebSocket flow from
+    // running. The reader exists only when /embed/prezo-embed-cache.js
+    // loaded successfully; older browsers or sandboxed contexts without
+    // it just skip this fast path.
+    if (!sessionId || !window.PrezoEmbedCache) {
+      return
+    }
+    try {
+      const entry = await window.PrezoEmbedCache.readFreshest(sessionId)
+      const cached = entry?.payload
+      if (!cached || typeof cached !== 'object') {
+        return
+      }
+      state.snapshot = cached
+      const cachedCode =
+        cached.session && typeof cached.session === 'object'
+          ? cached.session.code
+          : null
+      if (cachedCode) {
+        state.code = normalizeCode(cachedCode) || state.code
+      }
+      // Force a synchronous render so the first paint reflects the cached
+      // snapshot before WS opens. Subsequent WS messages will overwrite
+      // state.snapshot via the existing handleSocketMessage path.
+      renderFromSnapshot(true)
+    } catch {
+      // Cache read failures are non-fatal; the WS path still runs.
     }
   }
 
