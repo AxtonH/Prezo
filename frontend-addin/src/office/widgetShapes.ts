@@ -543,11 +543,30 @@ const syncPollText = (
   const force = Boolean(options?.force)
   const option = options?.option
 
+  /**
+   * "Fully auto": there is a recorded last-auto-write tag AND the current
+   * text matches it byte-for-byte. That means the user has not edited this
+   * label since we last wrote it, so the prefix in currentText is just the
+   * option name we baked in last time.
+   *
+   * When the bound poll changes, that stale prefix is from the OLD poll's
+   * options — preserving it would freeze labels like "Yes (1) • 50%" into a
+   * widget that's now showing a totally different question. In the fully-auto
+   * case we therefore skip regeneratePollLabel entirely and let nextText
+   * (built fresh from the new option) win. The user's manual customizations
+   * (currentText !== lastAutoText) still go through regeneratePollLabel so
+   * their reformatting is preserved across updates.
+   */
+  const hasAutoTag = !state.autoTag.isNullObject
+  const lastAutoText = hasAutoTag ? (state.autoTag.value ?? '') : ''
+  const isFullyAuto = hasAutoTag && currentText === lastAutoText
+
   /** If the user reformatted the label (e.g. dropped "(N) •"), preserve their template by regenerating in-place. */
-  const regenerated = option ? regeneratePollLabel(currentText, option) : null
+  const regenerated =
+    option && !isFullyAuto ? regeneratePollLabel(currentText, option) : null
   const targetText = regenerated ?? nextText
 
-  if (state.autoTag.isNullObject) {
+  if (!hasAutoTag) {
     if (
       force ||
       currentText === targetText ||
@@ -566,7 +585,6 @@ const syncPollText = (
     return
   }
 
-  const lastAutoText = state.autoTag.value ?? ''
   /** Allow updates when the current text still looks auto-generated OR fits a known template — covers tag drift and user reformatting. */
   if (
     !force &&
