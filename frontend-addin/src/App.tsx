@@ -280,9 +280,43 @@ export default function App() {
 
   useEffect(() => {
     let active = true
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+    const clearRefreshTimer = () => {
+      if (refreshTimer) {
+        clearTimeout(refreshTimer)
+        refreshTimer = null
+      }
+    }
+
+    /**
+     * Schedule the next token refresh before the current one expires.
+     *
+     * The library-sync token has a server-controlled TTL (see
+     * settings.library_sync_ttl_seconds). Without proactive refresh, the
+     * host writes a token once on sign-in and the embed iframes 401 the
+     * moment that token expires mid-session. We re-issue at 80% of the
+     * remaining lifetime, with bounds: at least 30s into the future (so
+     * we don't tight-loop on a clock-skewed token) and at most 5 min
+     * (so very long TTLs still get periodic refreshes that catch any
+     * server-side revocation).
+     */
+    const scheduleRefresh = (expiresAtIso: string) => {
+      clearRefreshTimer()
+      const expiresAtMs = Date.parse(expiresAtIso)
+      if (!Number.isFinite(expiresAtMs)) {
+        return
+      }
+      const remaining = Math.max(0, expiresAtMs - Date.now())
+      const delay = Math.min(Math.max(remaining * 0.8, 30_000), 5 * 60 * 1000)
+      refreshTimer = setTimeout(() => {
+        void syncLibraryBridge()
+      }, delay)
+    }
 
     const syncLibraryBridge = async () => {
       if (!authSession?.access_token) {
+        clearRefreshTimer()
         await clearLibrarySyncBridge()
         return
       }
@@ -295,6 +329,7 @@ export default function App() {
           token: syncToken.token,
           expiresAt: syncToken.expires_at
         })
+        scheduleRefresh(syncToken.expires_at)
       } catch (error) {
         if (!active) {
           return
@@ -307,6 +342,7 @@ export default function App() {
 
     return () => {
       active = false
+      clearRefreshTimer()
     }
   }, [authSession?.access_token])
 

@@ -9359,7 +9359,19 @@ import {
         return
       }
       artifactVersionState.versions = []
-      if (!String(errorToMessage(error)).includes('Sign in through Prezo Host')) {
+      // Auth-related failures (no token, expired token, server rejected token)
+      // are recoverable: the host taskpane refreshes the library-sync token
+      // on a timer (see App.tsx) and the embed will catch up on the next
+      // hydrateSavedLibraries cycle. We surface the "Local library only"
+      // status via the sync manager already; logging here would just spam
+      // the console for a state the embed handles gracefully. Match the
+      // same predicate hydrateSavedLibraries uses so the two paths agree.
+      const message = String(errorToMessage(error))
+      const isAuthFailure =
+        message.includes('Sign in through Prezo Host') ||
+        message.includes('Invalid auth token') ||
+        message.includes('Auth required')
+      if (!isAuthFailure) {
         console.warn('Failed to load artifact version history', error)
       }
     } finally {
