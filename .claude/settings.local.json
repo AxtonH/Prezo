@@ -38,7 +38,8 @@
       "Bash(Select-Object Name)",
       "Bash(python -m py_compile app/cache_headers.py app/api/sessions.py app/main.py)",
       "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/cache_headers.py c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/main.py)",
-      "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py)"
+      "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py)",
+      "WebFetch(domain:www.polleverywhere.com)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
