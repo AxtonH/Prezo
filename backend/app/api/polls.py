@@ -144,7 +144,7 @@ async def vote_poll(
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     activity = make_activity("poll_vote_updated", {"poll": poll.model_dump(mode="json")})
-    await store.record_activity(session_id, activity)
+    asyncio.create_task(store.record_activity(session_id, activity))
     asyncio.create_task(manager.broadcast(session_id, activity))
     return poll
 
@@ -179,6 +179,6 @@ async def remove_poll_vote(
     activity = make_activity(
         "poll_vote_updated", {"poll": poll.model_dump(mode="json")}
     )
-    await store.record_activity(session_id, activity)
+    asyncio.create_task(store.record_activity(session_id, activity))
     asyncio.create_task(manager.broadcast(session_id, activity))
     return poll
