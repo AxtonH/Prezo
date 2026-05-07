@@ -12,7 +12,7 @@
       The href must match the production backend exactly; an extra preconnect
       to a never-used origin is wasted but harmless.
     -->
-    <link rel="preconnect" href="https://prezo-backend-production.up.railway.app" crossorigin />
+    <link rel="preconnect" href="https://prezo-backend.up.railway.app" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
@@ -403,7 +403,7 @@
         const PREZO_LIBRARY_SYNC_MESSAGE = "prezo:library-sync"
         const PREZO_LIBRARY_SYNC_REQUEST_MESSAGE = "prezo:request-library-sync"
         const PREZO_LIBRARY_SYNC_STORAGE_KEY = "prezo:library-sync"
-        const DEFAULT_API_BASE = "https://prezo-backend-production.up.railway.app"
+        const DEFAULT_API_BASE = "https://prezo-backend.up.railway.app"
         const params = new URLSearchParams(window.location.search)
         const initialPollId = params.get("pollId") || ""
         const initialSessionId = (params.get("sessionId") || "").trim()

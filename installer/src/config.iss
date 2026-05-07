@@ -7,8 +7,8 @@
 
 #define AppName            "Prezo"
 #define AppPublisher       "Prezlab"
-#define AppURL             "https://prezo-frontend-addin-production.up.railway.app/"
-#define AppSupportURL      "https://prezo-frontend-addin-production.up.railway.app/"
+#define AppURL             "https://prezo-addin.up.railway.app/"
+#define AppSupportURL      "https://prezo-addin.up.railway.app/"
 #define AppExeBaseName     "PrezoSetup"
 
 ; AppId — stable per-product GUID. Inno uses it to detect upgrades vs fresh installs.

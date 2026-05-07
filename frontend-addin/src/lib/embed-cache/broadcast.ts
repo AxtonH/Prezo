@@ -2,7 +2,7 @@
  * BroadcastChannel-based pub/sub for cross-iframe cache updates.
  *
  * The host taskpane and the embed iframes all live on the same origin
- * (`prezo-frontend-addin-production.up.railway.app`), so they share a
+ * (`prezo-addin.up.railway.app`), so they share a
  * BroadcastChannel namespace. When the host's WebSocket receives a fresh
  * snapshot, it can push the new payload through this channel and every
  * mounted embed iframe with the same sessionId picks it up immediately —

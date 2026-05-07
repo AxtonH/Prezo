@@ -1,4 +1,4 @@
-export const DEFAULT_API_BASE = 'https://prezo-backend-production.up.railway.app'
+export const DEFAULT_API_BASE = 'https://prezo-backend.up.railway.app'
 export const DEFAULT_POLL_SELECTOR = 'latest/open'
 export const THEME_LIBRARY_KEY = 'prezo.poll-game-poc.themes.v1'
 export const THEME_DRAFT_KEY = 'prezo.poll-game-poc.theme-draft.v1'
