@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from typing import Iterable
 
 from fastapi import WebSocket
 
@@ -25,13 +24,18 @@ class ConnectionManager:
 
     async def broadcast(self, session_id: str, activity: SessionActivity) -> None:
         async with self._lock:
-            recipients: Iterable[WebSocket] = list(self._connections[session_id])
-        stale: list[WebSocket] = []
-        for ws in recipients:
-            try:
-                await ws.send_json(activity.model_dump(mode="json"))
-            except Exception:
-                stale.append(ws)
+            recipients: list[WebSocket] = list(self._connections[session_id])
+        if not recipients:
+            return
+        payload = activity.model_dump(mode="json")
+        results = await asyncio.gather(
+            *(ws.send_json(payload) for ws in recipients),
+            return_exceptions=True,
+        )
+        stale = [
+            ws for ws, result in zip(recipients, results)
+            if isinstance(result, BaseException)
+        ]
         if stale:
             async with self._lock:
                 for ws in stale:

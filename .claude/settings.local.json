@@ -40,7 +40,8 @@
       "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/cache_headers.py c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/main.py)",
       "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py)",
       "WebFetch(domain:www.polleverywhere.com)",
-      "Bash(ls c:\\\\\\\\Users\\\\\\\\Geeks\\\\\\\\Desktop\\\\\\\\SlidoTest\\\\\\\\repo\\\\\\\\frontend-addin\\\\\\\\public\\\\\\\\)"
+      "Bash(ls c:\\\\\\\\Users\\\\\\\\Geeks\\\\\\\\Desktop\\\\\\\\SlidoTest\\\\\\\\repo\\\\\\\\frontend-addin\\\\\\\\public\\\\\\\\)",
+      "PowerShell(\\(Get-Item c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\supabase\\\\schema.sql\\).Length)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
