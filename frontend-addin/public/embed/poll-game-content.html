@@ -1215,7 +1215,28 @@
           if (event.key !== PREZO_LIBRARY_SYNC_STORAGE_KEY) {
             return
           }
-          void loadSessions()
+          // The host taskpane rotates the library-sync token on a 30s–5min
+          // cadence. That used to trigger a full loadSessions() here, which
+          // ran a sessions + snapshot refetch and ended in loadGameFrame() —
+          // any transient empty-polls response or network blip during the
+          // refetch would clear selectedPollId, call showOverlay (which
+          // removes frame.src), and force the inner iframe to reload on
+          // the next pass. Token rotations are not a reason to reload the
+          // inner game; just refresh the cached token state and forward
+          // the new one to the inner frame.
+          void (async () => {
+            const hadToken = Boolean(librarySyncState?.token)
+            await refreshLibrarySyncFromDocument()
+            if (librarySyncState?.token) {
+              postLibrarySyncToFrame()
+            }
+            // If we were previously unauthenticated and just got a token,
+            // we DO need to populate the picker for the first time — but
+            // only in that transition, not on every rotation.
+            if (!hadToken && librarySyncState?.token) {
+              void loadSessions()
+            }
+          })()
         })
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
