@@ -446,6 +446,13 @@
         // re-enter present mode manually via the toggle within the session;
         // we just won't auto-re-trigger it from the URL.
         let presentModeAutoRestoreApplied = false
+        // Last URL written to the inner iframe. Used to short-circuit
+        // loadGameFrame when nothing relevant has changed — token refreshes
+        // and other idle-time triggers were re-running the function and
+        // reassigning frame.src with the same URL, which forced a full
+        // reload of the inner game (skeleton flash, lost UI state) mid-
+        // presentation.
+        let lastFrameSrc = ""
 
         const getEmbedStateOptions = () => ({
           apiBase: apiBase || DEFAULT_API_BASE,
@@ -897,6 +904,9 @@
           }
           overlay.classList.add("visible")
           frame.removeAttribute("src")
+          // We just blanked the iframe — invalidate the cached URL so the
+          // next loadGameFrame call rebuilds it instead of short-circuiting.
+          lastFrameSrc = ""
         }
 
         const populateSessionPicker = (sessions) => {
@@ -1102,7 +1112,18 @@
             qs.set("presentMode", "1")
             presentModeAutoRestoreApplied = true
           }
-          frame.src = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
+          const nextSrc = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
+          if (nextSrc === lastFrameSrc) {
+            // Same URL we already have loaded. Skip the reassignment so the
+            // inner iframe is not forced to reload (which would flash the
+            // skeleton and drop in-iframe UI state). The overlay/status
+            // updates below are still safe to apply.
+            overlay.classList.remove("visible")
+            setStatus("connected")
+            return
+          }
+          lastFrameSrc = nextSrc
+          frame.src = nextSrc
           overlay.classList.remove("visible")
           setStatus("connected")
         }
