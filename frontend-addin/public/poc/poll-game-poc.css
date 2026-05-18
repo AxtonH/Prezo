@@ -673,6 +673,45 @@ body:not(.artifact-mode-active)
   display: none;
 }
 
+/* Designer tools (rulers, grid, snap). Compact toggle + spacing controls. */
+.designer-tools-group .designer-tools-note {
+  margin: 0 0 10px;
+  color: var(--chrome-text-secondary);
+}
+.designer-tools-group .row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.designer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--chrome-text);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+.designer-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: rgba(155, 89, 182, 0.95);
+  cursor: pointer;
+}
+.designer-spacing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 13px;
+  color: var(--chrome-text);
+}
+.designer-spacing-row select {
+  margin-left: auto;
+  min-width: 90px;
+}
+
 .sidebar-section-title {
   display: flex;
   align-items: center;

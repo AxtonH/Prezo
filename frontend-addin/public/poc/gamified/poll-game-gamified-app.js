@@ -62,6 +62,10 @@ import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-se
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
 import {
+  createArtifactGuidesHandler,
+  DESIGNER_TOOLS_ALLOWED_SPACINGS
+} from './poll-game-gamified-artifact-guides.js'
+import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
   extractCopyFromStyleOverrides,
@@ -85,6 +89,7 @@ import {
   const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
   const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
   const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
+  const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -278,6 +283,10 @@ import {
     historyRedo: must('history-redo'),
     deleteSelectedObject: must('delete-selected-object'),
     presentModeToggle: must('present-mode-toggle'),
+    designerRulersToggle: must('designer-rulers-toggle'),
+    designerGridToggle: must('designer-grid-toggle'),
+    designerSnapToggle: must('designer-snap-toggle'),
+    designerGridSpacing: must('designer-grid-spacing'),
     resetPositions: document.getElementById('reset-positions'),
     themeName: must('theme-name'),
     themeSelect: must('theme-select'),
@@ -637,6 +646,15 @@ import {
   const artifactHistory = createArtifactHistoryHandler({
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
   })
+  // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
+  // preference, persisted in localStorage. Present mode unconditionally
+  // forces visual aids off — handled by the handler's getEffectiveConfig.
+  const artifactGuides = createArtifactGuidesHandler({
+    onConfigChange: () => {
+      pushArtifactGridConfig()
+      syncDesignerToolsUi()
+    }
+  })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
   const artifactVersionState = {
@@ -794,6 +812,7 @@ import {
     setupAiChat()
     setupArtifactMode()
     setupPresentMode()
+    setupDesignerTools()
     setupHistoryControls()
     setupDeleteControls()
     setupDragInteractions()
@@ -1318,6 +1337,41 @@ import {
     document.addEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
   }
 
+  /**
+   * Wire the Designer Tools form controls to artifactGuides + render the
+   * current state into the UI. Called once during setup; the handler's
+   * onConfigChange callback keeps the UI in sync on every change.
+   */
+  function setupDesignerTools() {
+    syncDesignerToolsUi()
+    el.designerRulersToggle.addEventListener('change', handleDesignerRulersToggle)
+    el.designerGridToggle.addEventListener('change', handleDesignerGridToggle)
+    el.designerSnapToggle.addEventListener('change', handleDesignerSnapToggle)
+    el.designerGridSpacing.addEventListener('change', handleDesignerGridSpacingChange)
+  }
+
+  function syncDesignerToolsUi() {
+    const cfg = artifactGuides.getConfig()
+    el.designerRulersToggle.checked = !!cfg.rulersVisible
+    el.designerGridToggle.checked = !!cfg.gridVisible
+    el.designerSnapToggle.checked = !!cfg.snapToGrid
+    // Coerce to a string so the <select> matches exactly.
+    el.designerGridSpacing.value = String(cfg.gridSpacing)
+  }
+
+  function handleDesignerRulersToggle(event) {
+    artifactGuides.setConfig({ rulersVisible: !!event.target.checked })
+  }
+  function handleDesignerGridToggle(event) {
+    artifactGuides.setConfig({ gridVisible: !!event.target.checked })
+  }
+  function handleDesignerSnapToggle(event) {
+    artifactGuides.setConfig({ snapToGrid: !!event.target.checked })
+  }
+  function handleDesignerGridSpacingChange(event) {
+    artifactGuides.setConfig({ gridSpacing: Number(event.target.value) })
+  }
+
   function handlePresentModeTogglePointerDown(event) {
     event.stopPropagation()
   }
@@ -1427,6 +1481,9 @@ import {
     syncPresentModeUi()
     syncEditorDockingState()
     scheduleArtifactLayoutRefit()
+    // Present-mode entry/exit swaps the effective grid config (everything
+    // off in present mode). Push to the iframe so visual aids hide / show.
+    pushArtifactGridConfig()
   }
 
   async function setPresentMode(enabled) {
@@ -2479,6 +2536,7 @@ import {
     // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
     setTimeout(pushArtifactStyleOverrides, 300)
     setTimeout(pushArtifactPositionOverrides, 300)
+    setTimeout(pushArtifactGridConfig, 300)
   }
 
   function handleArtifactRenderError(message) {
@@ -3993,6 +4051,7 @@ import {
     // Delay must exceed bridge batch (90ms) + renderer + scan (60ms).
     setTimeout(pushArtifactStyleOverrides, 250)
     setTimeout(pushArtifactPositionOverrides, 250)
+    setTimeout(pushArtifactGridConfig, 250)
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
@@ -5416,6 +5475,28 @@ import {
         type: ARTIFACT_POSITION_INIT_MESSAGE_TYPE,
         instanceId: state.artifact.instanceId,
         overrides
+      },
+      '*'
+    )
+  }
+
+  /**
+   * Push the user's designer-tool config (rulers/grid/snap) into the iframe
+   * so the bridge can render or hide the visual aids. Computed via
+   * getEffectiveConfig so present mode unconditionally overrides the saved
+   * preference to "all off".
+   */
+  function pushArtifactGridConfig() {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    const effective = artifactGuides.getEffectiveConfig({
+      presentMode: Boolean(state.presentMode)
+    })
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_GRID_CONFIG_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        config: effective
       },
       '*'
     )

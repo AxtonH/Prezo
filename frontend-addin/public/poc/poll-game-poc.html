@@ -203,6 +203,43 @@
             </div>
           </article>
 
+          <article class="ribbon-group designer-tools-group" data-designer-tools-group="true">
+            <h3 class="sidebar-section-title">Designer tools</h3>
+            <div class="sidebar-section-body">
+              <p class="note designer-tools-note">
+                Rulers, grid, and snap aids for laying out artifacts. Hidden automatically in present mode.
+              </p>
+              <div class="row">
+                <label class="designer-toggle">
+                  <input id="designer-rulers-toggle" type="checkbox" />
+                  <span>Show rulers</span>
+                </label>
+              </div>
+              <div class="row">
+                <label class="designer-toggle">
+                  <input id="designer-grid-toggle" type="checkbox" />
+                  <span>Show grid</span>
+                </label>
+              </div>
+              <div class="row">
+                <label class="designer-toggle">
+                  <input id="designer-snap-toggle" type="checkbox" />
+                  <span>Snap to grid</span>
+                </label>
+              </div>
+              <div class="row">
+                <label class="designer-spacing-row" for="designer-grid-spacing">
+                  <span>Grid spacing</span>
+                  <select id="designer-grid-spacing" aria-label="Grid spacing">
+                    <option value="50">50px</option>
+                    <option value="100">100px</option>
+                    <option value="200">200px</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </article>
+
           <article class="ribbon-group presets-group">
             <h3 class="sidebar-section-title">Presets</h3>
             <div class="sidebar-section-body">
