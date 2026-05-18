@@ -62,7 +62,9 @@ import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
   extractCopyFromStyleOverrides,
-  mergeCopyIntoStyleOverrides
+  mergeCopyIntoStyleOverrides,
+  isArtifactTextField,
+  getArtifactTextFieldId
 } from './poll-game-gamified-artifact-copy.js'
 
 ;(() => {
@@ -3849,7 +3851,8 @@ import {
       totalVotes: toInt(payload?.totalVotes),
       artifactCopy: {
         subtitle: copy.subtitle || '',
-        footerSuffix: copy.footerSuffix || ''
+        footerSuffix: copy.footerSuffix || '',
+        textOverrides: copy.textOverrides && typeof copy.textOverrides === 'object' ? copy.textOverrides : null
       }
     }
     return JSON.stringify(stable)
@@ -4951,11 +4954,18 @@ import {
    *  - Force-pushing during editing triggers the animation system which can
    *    cause a full re-render that wipes all styled HTML.
    */
-  function handleArtifactCopyEdit(field, text) {
+  function handleArtifactCopyEdit(field, text, extra) {
     if (field === 'subtitle') {
       pendingArtifactCopyOverrides.subtitle = text
     } else if (field === 'footer') {
       pendingArtifactCopyOverrides.footerSuffix = normalizeFooterTextToSuffix(text)
+    } else if (field === 'text') {
+      const stableId = extra && typeof extra.stableId === 'string' ? extra.stableId : ''
+      if (!stableId) return
+      if (!pendingArtifactCopyOverrides.textOverrides) {
+        pendingArtifactCopyOverrides.textOverrides = {}
+      }
+      pendingArtifactCopyOverrides.textOverrides[stableId] = text
     }
   }
 
@@ -4968,10 +4978,16 @@ import {
     const saved = extractCopyFromStyleOverrides(savedOverrides)
     const subtitle = pendingArtifactCopyOverrides.subtitle ?? saved.subtitle
     const footerSuffix = pendingArtifactCopyOverrides.footerSuffix ?? saved.footerSuffix
-    if (subtitle === undefined && footerSuffix === undefined) return null
+    const mergedTextOverrides = {
+      ...(saved.textOverrides || {}),
+      ...(pendingArtifactCopyOverrides.textOverrides || {})
+    }
+    const hasTextOverrides = Object.keys(mergedTextOverrides).length > 0
+    if (subtitle === undefined && footerSuffix === undefined && !hasTextOverrides) return null
     const result = {}
     if (subtitle !== undefined) result.subtitle = subtitle
     if (footerSuffix !== undefined) result.footerSuffix = footerSuffix
+    if (hasTextOverrides) result.textOverrides = mergedTextOverrides
     return result
   }
 

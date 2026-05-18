@@ -19,9 +19,33 @@ export const PREZO_COPY_STYLE_KEYS = /** @type {const} */ ({
   footerLegacy: '__prezo_copy_footer'
 })
 
+// Generic text-override keys are namespaced as "__prezo_copy_text:<stableId>"
+// so they share the style-overrides map with subtitle/footer without colliding
+// with the "field:optionId" convention used for question/option-label HTML.
+export const PREZO_TEXT_OVERRIDE_PREFIX = '__prezo_copy_text:'
+
 /** @param {string} field */
 export function isArtifactCopyField(field) {
-  return field === 'subtitle' || field === 'footer'
+  return field === 'subtitle' || field === 'footer' || isArtifactTextField(field)
+}
+
+/**
+ * Generic-text fields are encoded as "text:<stableId>" on the wire.
+ * @param {string} field
+ */
+export function isArtifactTextField(field) {
+  return typeof field === 'string' && field.indexOf('text:') === 0
+}
+
+/** @param {string} field */
+export function getArtifactTextFieldId(field) {
+  if (!isArtifactTextField(field)) return ''
+  return field.slice('text:'.length)
+}
+
+/** @param {string} stableId */
+export function buildArtifactTextOverrideKey(stableId) {
+  return `${PREZO_TEXT_OVERRIDE_PREFIX}${stableId}`
 }
 
 /**
@@ -44,11 +68,11 @@ export function normalizeFooterTextToSuffix(raw) {
  * Read copy values out of a merged style-overrides object.
  *
  * @param {Record<string, unknown> | null | undefined} styleOverrides
- * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined }}
+ * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string> }}
  */
 export function extractCopyFromStyleOverrides(styleOverrides) {
   if (!styleOverrides || typeof styleOverrides !== 'object') {
-    return { subtitle: undefined, footerSuffix: undefined }
+    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {} }
   }
 
   const subtitle =
@@ -63,14 +87,23 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
     footerSuffix = normalizeFooterTextToSuffix(styleOverrides[PREZO_COPY_STYLE_KEYS.footerLegacy])
   }
 
-  return { subtitle, footerSuffix }
+  const textOverrides = {}
+  for (const key of Object.keys(styleOverrides)) {
+    if (key.indexOf(PREZO_TEXT_OVERRIDE_PREFIX) !== 0) continue
+    const value = styleOverrides[key]
+    if (typeof value !== 'string') continue
+    const stableId = key.slice(PREZO_TEXT_OVERRIDE_PREFIX.length)
+    if (stableId) textOverrides[stableId] = value
+  }
+
+  return { subtitle, footerSuffix, textOverrides }
 }
 
 /**
  * Merge pending copy edits into a style-overrides object (immutably).
  *
  * @param {Record<string, unknown>} styleOverrides
- * @param {{ subtitle?: string, footerSuffix?: string } | null | undefined} pending
+ * @param {{ subtitle?: string, footerSuffix?: string, textOverrides?: Record<string, string> } | null | undefined} pending
  * @returns {Record<string, unknown>}
  */
 export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
@@ -82,6 +115,12 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
   if (pending && typeof pending.footerSuffix === 'string') {
     next[PREZO_COPY_STYLE_KEYS.footerSuffix] = pending.footerSuffix
     delete next[PREZO_COPY_STYLE_KEYS.footerLegacy]
+  }
+  if (pending && pending.textOverrides && typeof pending.textOverrides === 'object') {
+    for (const [stableId, value] of Object.entries(pending.textOverrides)) {
+      if (!stableId || typeof value !== 'string') continue
+      next[buildArtifactTextOverrideKey(stableId)] = value
+    }
   }
 
   return next
@@ -104,6 +143,11 @@ export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
   }
   if (copy.footerSuffix !== undefined) {
     next[PREZO_COPY_STYLE_KEYS.footerSuffix] = copy.footerSuffix
+  }
+  for (const [stableId, value] of Object.entries(copy.textOverrides || {})) {
+    if (stableId && typeof value === 'string') {
+      next[buildArtifactTextOverrideKey(stableId)] = value
+    }
   }
   return next
 }

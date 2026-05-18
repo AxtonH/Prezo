@@ -50,6 +50,18 @@ export function createArtifactTextEditHandler({
       }
       return
     }
+    // Generic text overrides ("text" field). The bridge reuses the optionId
+    // slot to carry the stable text-id derived from the node's DOM path.
+    if (field === 'text') {
+      if (!optionId) {
+        console.warn('[prezo-text-edit] text field without stable id, ignoring')
+        return
+      }
+      if (typeof onArtifactCopyEdit === 'function') {
+        onArtifactCopyEdit('text', text, { stableId: optionId })
+      }
+      return
+    }
     // Stat fields (votes, percentage, rank) are style-only — their text content
     // is overwritten on every poll state update, so we only persist style overrides
     // (handled by sendTextHtml in the bridge) and skip text-content persistence.

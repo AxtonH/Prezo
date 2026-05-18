@@ -41,7 +41,9 @@
       "Bash(python -m py_compile c:/Users/Geeks/Desktop/SlidoTest/repo/backend/app/api/sessions.py)",
       "WebFetch(domain:www.polleverywhere.com)",
       "Bash(ls c:\\\\\\\\Users\\\\\\\\Geeks\\\\\\\\Desktop\\\\\\\\SlidoTest\\\\\\\\repo\\\\\\\\frontend-addin\\\\\\\\public\\\\\\\\)",
-      "PowerShell(\\(Get-Item c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\supabase\\\\schema.sql\\).Length)"
+      "PowerShell(\\(Get-Item c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\supabase\\\\schema.sql\\).Length)",
+      "Bash(Find-Files -Pattern \"*.py\" -Path \"C:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\backend\\\\app\" -Filter \"*model*\")",
+      "Bash(node -e \"import\\('./public/poc/gamified/poll-game-gamified-app.js'\\).then\\(\\(\\) => console.log\\('app.js parses'\\)\\).catch\\(e => console.error\\('app.js error:', e.message\\)\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
