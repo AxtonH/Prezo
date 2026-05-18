@@ -220,6 +220,12 @@ export function createPollGameArtifactBridge({
    * state, so `vh`/`vw`/`clamp()` inside the artifact compute identically in
    * every context.
    *
+   * In edit mode the stage is aspect-locked to 16:9 by CSS, so the scaled
+   * iframe fills the stage exactly. In present mode the stage spans the
+   * whole viewport (no aspect lock); the iframe is centred and the smaller
+   * dimension of the viewport drives the scale, leaving black bars on the
+   * surplus axis.
+   *
    * Earlier implementations avoided `transform: scale()` because they tried
    * to fit measured *child content* size, which created a feedback loop
    * (iframe dims → child layout → measured size → new scale). Here we scale
@@ -232,24 +238,30 @@ export function createPollGameArtifactBridge({
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    // The stage is a strict 16:9 box (enforced by CSS in both edit and
-    // present mode), so either dimension yields the same scale factor.
-    // Compute both and use the smaller for safety in case the stage is
-    // briefly off-ratio during a layout transition.
+    // Scale by the limiting axis so the entire 1920×1080 reference fits
+    // inside the stage without cropping.
     const scaleX = stageWidth / ARTIFACT_REFERENCE_WIDTH
     const scaleY = stageHeight / ARTIFACT_REFERENCE_HEIGHT
     const scale = Math.min(scaleX, scaleY)
     if (!Number.isFinite(scale) || scale <= 0) {
       return
     }
+    // Centre the post-scale iframe inside the stage. `transform-origin: top
+    // left` means scale keeps the iframe's top-left at the stage's top-left;
+    // the translate then shifts the visual box to the centre. Transform
+    // operations apply right-to-left, so order is `translate(...) scale(...)`.
+    const scaledW = ARTIFACT_REFERENCE_WIDTH * scale
+    const scaledH = ARTIFACT_REFERENCE_HEIGHT * scale
+    const offsetX = Math.max(0, (stageWidth - scaledW) / 2)
+    const offsetY = Math.max(0, (stageHeight - scaledH) / 2)
     frameEl.style.width = `${ARTIFACT_REFERENCE_WIDTH}px`
     frameEl.style.height = `${ARTIFACT_REFERENCE_HEIGHT}px`
     frameEl.style.transformOrigin = 'top left'
-    frameEl.style.transform = `scale(${scale})`
+    frameEl.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`
     // Reported content dims reflect the rendered (post-scale) size that the
     // overlay / pointer code expects.
-    artifactState.reportedContentWidth = Math.round(stageWidth)
-    artifactState.reportedContentHeight = Math.round(stageHeight)
+    artifactState.reportedContentWidth = Math.round(scaledW)
+    artifactState.reportedContentHeight = Math.round(scaledH)
   }
 
   function clearRenderWatchdog() {

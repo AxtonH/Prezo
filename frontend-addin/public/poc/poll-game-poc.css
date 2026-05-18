@@ -3475,21 +3475,16 @@ body.present-mode-fullscreen .wrap {
 }
 
 /* ----------------------------------------------------------------
-   Present-mode artifact letterboxing
+   Present-mode artifact
 
-   The artifact is designed against a fixed 16:9 viewport. In edit mode
-   the .artifact-stage panel enforces that ratio (see `.artifact-stage`
-   above). In present mode the previous rules stretched the stage to
-   fill the entire viewport, which broke the artifact's internal layout
-   on any non-16:9 screen (e.g. PowerPoint fullscreen on 16:10 or
-   ultrawide monitors). Decorative imagery anchored by `vh` / inset
-   percentages drifted relative to flex/% layout, producing the
-   morphing we saw at fullscreen.
-
-   We now maintain a strict 16:9 stage centered inside a black wrap.
-   Letterbox bars appear on whichever pair of edges is the surplus.
-   The artifact iframe sees exactly the aspect ratio it was designed
-   for, in both regular present mode and fullscreen-with-Office.
+   In present mode the wrap fills the viewport with a black background
+   and the stage is full-bleed inside it. The iframe inside the stage
+   is sized by JS to a fixed 1920x1080 reference and centred via
+   `transform: scale()` so the artifact's internal layout (vh / vw /
+   clamp) is byte-identical to edit mode. Letterbox bars appear
+   automatically wherever the stage is wider/taller than 16:9 because
+   the scaled iframe occupies fewer pixels than the stage on the
+   surplus axis — the stage's black background shows through.
    ---------------------------------------------------------------- */
 
 body.present-mode-artifact .wrap,
@@ -3505,27 +3500,17 @@ body.present-mode-artifact.present-mode-fullscreen .wrap {
   padding: 0;
   border-radius: 0;
   overflow: hidden;
-  /* Center the 16:9 stage inside the viewport so letterbox bars sit on
-     whichever pair of edges is the surplus. */
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: #000;
 }
 
 body.present-mode-artifact .artifact-stage {
-  /* Strict 16:9 box centered in the viewport. The smaller of (full
-     width) and (full height scaled to 16:9 width) wins, so the stage
-     is always as large as possible while preserving aspect ratio. */
-  position: relative;
-  inset: auto;
-  flex: 0 0 auto;
-  width: min(100vw, calc(100vh * 16 / 9));
-  height: min(100vh, calc(100vw * 9 / 16));
-  max-width: 100vw;
-  max-height: 100vh;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
   margin: 0;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: auto;
   border: 0;
   border-radius: 0;
   box-shadow: none;
