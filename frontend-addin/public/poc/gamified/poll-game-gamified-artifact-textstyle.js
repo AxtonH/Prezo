@@ -1751,6 +1751,7 @@ export function buildTextStyleBridgeLines() {
     // Roll back to the pre-drag offset.
     '    applyPositionToNode(dragState.node, dragState.stableId, { dx: dragState.startDx, dy: dragState.startDy })',
     '    exitDragFastMode(dragState.node)',
+    '    hideSnapReferenceMarker()',
     '    dragState = null',
     '  }',
     '  function handlePointerDown(event) {',
@@ -1769,21 +1770,24 @@ export function buildTextStyleBridgeLines() {
     '    var stableId = computeStableTextId(selectedNode)',
     '    if (!stableId) return',
     '    var current = readCurrentOffsetFor(stableId)',
-    // Capture the element\'s natural-flow position + center ONCE at drag start.
-    // Used by snapDeltaToGrid so the snap baseline never drifts mid-drag when
-    // the element\'s rect changes (descendant CSS animations, vote-induced
-    // relayouts, etc.).
-    // We compute in body-relative coords so it aligns with the grid overlay
-    // (appended to <body> at (0,0) of the 1920×1080 ref).
-    // Snap reference: the element\'s CENTER (not its top-left). Content is
-    // typically centered inside its container, so the visible content lines
-    // up with gridlines when we snap by center.
+    // Capture the element\'s natural-flow box AND a kind-specific snap
+    // reference point ONCE at drag start. See getSnapReferenceOffsets for
+    // why the reference is not always the geometric center (e.g. an
+    // option-row is bottom-anchored in the gamified template; snapping its
+    // bottom-center to a gridline aligns the visible content rather than
+    // the row\'s invisible top edge).
+    //
+    // All values are body-relative so they align with the grid overlay
+    // (appended to <body> at (0,0) of the 1920×1080 reference space).
     '    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0, width: 0, height: 0 }',
     '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
     '    var naturalLeft = (startRect.left - bodyRect.left) - current.dx',
     '    var naturalTop = (startRect.top - bodyRect.top) - current.dy',
-    '    var naturalCenterX = naturalLeft + (startRect.width || 0) / 2',
-    '    var naturalCenterY = naturalTop + (startRect.height || 0) / 2',
+    '    var width = startRect.width || 0',
+    '    var height = startRect.height || 0',
+    '    var refOff = getSnapReferenceOffsets(selectedKind, width, height)',
+    '    var naturalRefX = naturalLeft + refOff.x',
+    '    var naturalRefY = naturalTop + refOff.y',
     '    dragState = {',
     '      node: selectedNode,',
     '      stableId: stableId,',
@@ -1793,11 +1797,16 @@ export function buildTextStyleBridgeLines() {
     '      startDy: current.dy,',
     '      naturalLeft: naturalLeft,',
     '      naturalTop: naturalTop,',
-    '      naturalCenterX: naturalCenterX,',
-    '      naturalCenterY: naturalCenterY,',
+    '      naturalWidth: width,',
+    '      naturalHeight: height,',
+    '      naturalRefX: naturalRefX,',
+    '      naturalRefY: naturalRefY,',
+    '      refOffsetX: refOff.x,',
+    '      refOffsetY: refOff.y,',
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
+    '    showSnapReferenceMarker()',
     '    enterDragFastMode(selectedNode)',
     '    try { event.target.setPointerCapture && event.target.setPointerCapture(event.pointerId) } catch (e) {}',
     '    event.preventDefault()',
@@ -1814,9 +1823,8 @@ export function buildTextStyleBridgeLines() {
     '    }',
     '    var dx = dragState.startDx + deltaX',
     '    var dy = dragState.startDy + deltaY',
-    // Snap to the configured grid if enabled. The element\'s top-left is the
-    // reference point — see designer-tools config above. The function is a
-    // no-op when snapToGrid is off.
+    // Snap the kind-specific reference point to the configured grid if
+    // enabled. No-op when snap-to-grid is off.
     '    var snapped = snapDeltaToGrid(dragState.node, dx, dy)',
     '    dx = snapped.dx',
     '    dy = snapped.dy',
@@ -1824,6 +1832,7 @@ export function buildTextStyleBridgeLines() {
     // coalesce the overlay reposition into the next animation frame so we
     // never do more than one rect-read + style-write per painted frame.
     '    applyPositionToNode(dragState.node, dragState.stableId, { dx: dx, dy: dy })',
+    '    refreshSnapReferenceMarker()',
     '    scheduleOverlayRefresh()',
     '  }',
     '  function handlePointerUp(event) {',
@@ -1843,6 +1852,7 @@ export function buildTextStyleBridgeLines() {
     '    var moved = dragState.moved',
     '    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}',
     '    exitDragFastMode(node)',
+    '    hideSnapReferenceMarker()',
     '    dragState = null',
     '    if (!moved) return',
     '    applyPositionToNode(node, stableId, { dx: dx, dy: dy })',
@@ -1989,6 +1999,58 @@ export function buildTextStyleBridgeLines() {
     '    ].join(",")',
     '    gridOverlayEl.style.backgroundPosition = "0 0"',
     '  }',
+    // Small dot rendered on the dragged element at the kind-specific snap
+    // reference point. Eliminates the "where exactly does snap measure?"
+    // ambiguity — the user sees the dot, sees the gridline, lines them up.
+    // Hidden when no drag is active or snap-to-grid is off.
+    '  var snapMarkerEl = null',
+    '  function ensureSnapMarker() {',
+    '    if (snapMarkerEl) return',
+    '    if (!document.body) return',
+    '    snapMarkerEl = document.createElement("div")',
+    '    snapMarkerEl.setAttribute("data-prezo-snap-marker", "true")',
+    '    snapMarkerEl.style.cssText = [',
+    '      "position:absolute",',
+    '      "pointer-events:none",',
+    '      "width:14px",',
+    '      "height:14px",',
+    '      "margin-left:-7px",',
+    '      "margin-top:-7px",',
+    '      "border-radius:50%",',
+    '      "background:rgba(155,89,182,0.95)",',
+    '      "box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(155,89,182,0.6), 0 2px 6px rgba(0,0,0,0.3)",',
+    '      "z-index:2147483647",',
+    '      "display:none"',
+    '    ].join(";")',
+    '    document.body.appendChild(snapMarkerEl)',
+    '  }',
+    '  function showSnapReferenceMarker() {',
+    '    if (!designerConfig.snapToGrid) return',
+    '    ensureSnapMarker()',
+    '    if (!snapMarkerEl) return',
+    '    snapMarkerEl.style.display = "block"',
+    '    refreshSnapReferenceMarker()',
+    '  }',
+    '  function hideSnapReferenceMarker() {',
+    '    if (!snapMarkerEl) return',
+    '    snapMarkerEl.style.display = "none"',
+    '  }',
+    // Update the marker to reflect the dragged element\'s CURRENT visual
+    // position. We read body-relative coords by subtracting the body rect
+    // from the element\'s bounding rect, then add the kind-specific
+    // reference offsets captured at drag start.
+    '  function refreshSnapReferenceMarker() {',
+    '    if (!snapMarkerEl || snapMarkerEl.style.display === "none") return',
+    '    if (!dragState || !dragState.node) return',
+    '    var node = dragState.node',
+    '    var rect = node.getBoundingClientRect && node.getBoundingClientRect()',
+    '    if (!rect) return',
+    '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
+    '    var x = (rect.left - bodyRect.left) + dragState.refOffsetX',
+    '    var y = (rect.top - bodyRect.top) + dragState.refOffsetY',
+    '    snapMarkerEl.style.left = x + "px"',
+    '    snapMarkerEl.style.top = y + "px"',
+    '  }',
     '  function applyDesignerConfig(next) {',
     '    if (!next || typeof next !== "object") return',
     '    designerConfig.rulersVisible = !!next.rulersVisible',
@@ -2002,6 +2064,8 @@ export function buildTextStyleBridgeLines() {
     '    if (topRulerEl) topRulerEl.style.display = designerConfig.rulersVisible ? "block" : "none"',
     '    if (leftRulerEl) leftRulerEl.style.display = designerConfig.rulersVisible ? "block" : "none"',
     '    if (gridOverlayEl) gridOverlayEl.style.display = designerConfig.gridVisible ? "block" : "none"',
+    // If snap was just disabled mid-drag, the marker is now stale.
+    '    if (!designerConfig.snapToGrid) hideSnapReferenceMarker()',
     '  }',
     '  function handleGridConfigMessage(event) {',
     '    if (!event || !event.data || typeof event.data !== "object") return',
@@ -2009,31 +2073,53 @@ export function buildTextStyleBridgeLines() {
     '    if (event.data.instanceId !== INSTANCE_ID && event.data.instanceId !== undefined) return',
     '    applyDesignerConfig(event.data.config)',
     '  }',
-    // Snap a candidate dx/dy so the element\'s CENTER lands on the nearest
-    // gridline within threshold. Snapping by center (rather than top-left)
-    // matches what designers see: most artifact content is centered inside
-    // its container, so the visible content lines up with the gridline.
+    // Per-kind snap reference: where on the element should "land on a
+    // gridline" feel right? Returns body-relative offsets from the
+    // element\'s natural top-left.
     //
-    // The baseline (naturalCenterX/Y) is captured ONCE at drag start.
-    // Re-reading from `getBoundingClientRect()` every frame causes drift,
-    // stutter, and child-animation interference (see prior fix notes).
+    //   option-row       → bottom-center (gamified template anchors visible
+    //                       content like building images at the row bottom)
+    //   poll-question    → top-center (titles read from top)
+    //   poll-footer      → top-center (footer text anchored at top of its box)
+    //   poll-subtitle    → top-center (same as above)
+    //   option-label     → top-center (label text reads from top)
+    //   option-votes / option-percentage / option-rank → geometric center
+    //   everything else  → geometric center (safe default for decorative
+    //                       containers / generic text)
+    '  function getSnapReferenceOffsets(kind, width, height) {',
+    '    var w = Number(width) || 0',
+    '    var h = Number(height) || 0',
+    '    var cx = w / 2',
+    '    var cy = h / 2',
+    '    if (kind === "option-row") return { x: cx, y: h }',
+    '    if (kind === "poll-question") return { x: cx, y: 0 }',
+    '    if (kind === "poll-footer") return { x: cx, y: 0 }',
+    '    if (kind === "poll-subtitle") return { x: cx, y: 0 }',
+    '    if (kind === "option-label") return { x: cx, y: 0 }',
+    '    return { x: cx, y: cy }',
+    '  }',
+    // Snap a candidate dx/dy so the kind-specific reference point lands on
+    // the nearest gridline within threshold. The reference is captured ONCE
+    // at drag start (dragState.naturalRefX / naturalRefY) — re-reading the
+    // element\'s rect every frame causes drift, stutter, and group-drag
+    // jitter as described in the earlier fix notes.
     // Body-relative coords align with the grid overlay\'s 1920×1080 box.
     '  function snapDeltaToGrid(node, dx, dy) {',
     '    if (!designerConfig.snapToGrid || !node) return { dx: dx, dy: dy }',
     '    if (!dragState || dragState.node !== node) return { dx: dx, dy: dy }',
     '    var spacing = designerConfig.gridSpacing',
     '    var threshold = designerConfig.snapThreshold',
-    '    var baseCx = dragState.naturalCenterX',
-    '    var baseCy = dragState.naturalCenterY',
-    '    var projectedCx = baseCx + dx',
-    '    var projectedCy = baseCy + dy',
-    '    var nearestX = Math.round(projectedCx / spacing) * spacing',
-    '    var nearestY = Math.round(projectedCy / spacing) * spacing',
-    '    if (Math.abs(nearestX - projectedCx) <= threshold) {',
-    '      dx = nearestX - baseCx',
+    '    var baseRefX = dragState.naturalRefX',
+    '    var baseRefY = dragState.naturalRefY',
+    '    var projectedRefX = baseRefX + dx',
+    '    var projectedRefY = baseRefY + dy',
+    '    var nearestX = Math.round(projectedRefX / spacing) * spacing',
+    '    var nearestY = Math.round(projectedRefY / spacing) * spacing',
+    '    if (Math.abs(nearestX - projectedRefX) <= threshold) {',
+    '      dx = nearestX - baseRefX',
     '    }',
-    '    if (Math.abs(nearestY - projectedCy) <= threshold) {',
-    '      dy = nearestY - baseCy',
+    '    if (Math.abs(nearestY - projectedRefY) <= threshold) {',
+    '      dy = nearestY - baseRefY',
     '    }',
     '    return { dx: dx, dy: dy }',
     '  }',
