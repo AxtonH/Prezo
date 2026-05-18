@@ -51,7 +51,9 @@ export function createArtifactPositionHandler({ onPositionChange } = {}) {
     }
     pending[stableId] = next
     if (typeof onPositionChange === 'function') {
-      onPositionChange(stableId, next)
+      // Forward the raw message so callers can read additional fields like
+      // priorDx / priorDy that are not part of the override shape itself.
+      onPositionChange(stableId, next, message)
     }
   }
 

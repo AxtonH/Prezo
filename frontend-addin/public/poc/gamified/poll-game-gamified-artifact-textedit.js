@@ -19,7 +19,8 @@ export function createArtifactTextEditHandler({
   getQuestionEl,
   getApiBase,
   getAccessToken,
-  onArtifactCopyEdit
+  onArtifactCopyEdit,
+  onTextChange
 }) {
   /** Pending PATCH payload keyed by poll id. */
   let pendingPatch = null
@@ -38,12 +39,30 @@ export function createArtifactTextEditHandler({
     const field = typeof message.field === 'string' ? message.field : ''
     const text = typeof message.text === 'string' ? message.text : ''
     const optionId = typeof message.optionId === 'string' ? message.optionId : ''
+    const priorText = typeof message.priorText === 'string' ? message.priorText : null
     console.log('[prezo-text-edit] received:', { field, text, optionId })
     if (!field) {
       console.warn('[prezo-text-edit] no field, ignoring')
       return
     }
     lastEditTs = Date.now()
+    // Notify host history before the state mutates. Skip stat fields whose
+    // text is renderer-owned (votes / percentage / rank) — those have no
+    // meaningful undo target.
+    if (
+      typeof onTextChange === 'function' &&
+      priorText !== null &&
+      priorText !== text &&
+      field !== 'option-votes' &&
+      field !== 'option-percentage' &&
+      field !== 'option-rank'
+    ) {
+      try {
+        onTextChange({ field, optionId, text, priorText })
+      } catch (e) {
+        console.warn('[prezo-text-edit] onTextChange threw:', e)
+      }
+    }
     if (field === 'subtitle' || field === 'footer') {
       if (typeof onArtifactCopyEdit === 'function') {
         onArtifactCopyEdit(field, text)

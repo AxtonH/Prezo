@@ -60,6 +60,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
+import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
 import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
@@ -83,6 +84,7 @@ import {
   const ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
   const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
   const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
+  const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -583,7 +585,17 @@ import {
     getQuestionEl: () => el.question,
     getApiBase: () => state.apiBase,
     getAccessToken: () => getLibraryAccessToken(),
-    onArtifactCopyEdit: (field, text, extra) => handleArtifactCopyEdit(field, text, extra)
+    onArtifactCopyEdit: (field, text, extra) => handleArtifactCopyEdit(field, text, extra),
+    onTextChange: ({ field, optionId, text, priorText }) => {
+      artifactHistory.push({
+        kind: 'text-content',
+        targetKey: optionId ? `${field}:${optionId}` : field,
+        before: { field, optionId, text: priorText },
+        after: { field, optionId, text },
+        label: `Edit ${field}`,
+        ts: Date.now()
+      })
+    }
   })
   const artifactSelection = createArtifactSelectionHandler({
     onSelectionChange: (selection) => {
@@ -597,9 +609,33 @@ import {
     }
   })
   const artifactPosition = createArtifactPositionHandler({
-    onPositionChange: (stableId, override) => {
+    onPositionChange: (stableId, override, message) => {
       console.log('[prezo-position-changed]', stableId, override)
+      // Record an undo entry. The bridge sends priorDx/priorDy alongside the
+      // new dx/dy so we can capture both endpoints in a single message.
+      if (message && Number.isFinite(Number(message.priorDx)) && Number.isFinite(Number(message.priorDy))) {
+        artifactHistory.push({
+          kind: 'position',
+          targetKey: stableId,
+          before: {
+            dx: Number(message.priorDx),
+            dy: Number(message.priorDy),
+            role: override.role,
+            optionId: override.optionId,
+            label: override.label
+          },
+          after: { ...override },
+          label: override.label || 'Move element',
+          ts: Date.now()
+        })
+      }
     }
+  })
+  // Undo/redo. Closure resolves apply* helpers at call time so they don't
+  // need to be defined before this constructor runs. Scope: per-artifact —
+  // we clear the stacks when the artifact is rebuilt or swapped.
+  const artifactHistory = createArtifactHistoryHandler({
+    applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
@@ -1433,6 +1469,9 @@ import {
     el.artifactFrame.addEventListener('load', handleArtifactFrameLoad)
     window.addEventListener('resize', artifactBridge.handleViewportResize)
     window.addEventListener('message', handleArtifactFrameMessage)
+    // Cmd/Ctrl+Z / Cmd+Shift+Z / Ctrl+Y for undo/redo. Capture phase so we
+    // run before any host UI element's own keydown handler.
+    document.addEventListener('keydown', handleHistoryKeydown, true)
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerVisibilityToggle.addEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
@@ -2356,7 +2395,8 @@ import {
       message.type === ARTIFACT_TEXT_HTML_MESSAGE_TYPE ||
       message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE ||
       message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE ||
-      message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE
+      message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE ||
+      message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
     }
@@ -2386,6 +2426,16 @@ import {
     }
     if (message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE) {
       artifactPosition.handlePositionChanged(message)
+      return
+    }
+    if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
+      // Shortcut forwarded from the iframe bridge. Same arbitration as the
+      // host-side keydown listener — run undo or redo via artifactHistory.
+      if (message.action === 'redo') {
+        artifactHistory.redo()
+      } else if (message.action === 'undo') {
+        artifactHistory.undo()
+      }
       return
     }
     if (message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE) {
@@ -3833,12 +3883,14 @@ import {
       // Fresh build replaces the artifact entirely — drop any pending
       // position drags that belonged to the prior artifact.
       artifactPosition.clearPendingPositionOverrides()
+      artifactHistory.clear()
     } else {
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = ''
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
+      artifactHistory.clear()
     }
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
@@ -3879,6 +3931,9 @@ import {
       pendingArtifactStyleOverrides = {}
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
+      // AI edits rebuild the DOM — prior undo entries reference nodes that
+      // may no longer exist or whose stable ids have shifted.
+      artifactHistory.clear()
       const nextOverrides = { ...merged }
       pruneStalePollStyleOverridesInStore(nextOverrides, state.currentPoll)
       state.artifact.savedStyleOverrides = nextOverrides
@@ -3911,6 +3966,7 @@ import {
     state.artifact.floatingOpen = false
     pendingArtifactCopyOverrides = {}
     artifactPosition.clearPendingPositionOverrides()
+    artifactHistory.clear()
     clearArtifactEditPromptQueue()
     artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
@@ -5091,7 +5147,23 @@ import {
     if (isArtifactCopyField(field)) return
     const optionId = typeof message.optionId === 'string' ? message.optionId : ''
     const nodeKey = optionId ? `${field}:${optionId}` : field
+    const priorHtml = typeof message.priorHtml === 'string' ? message.priorHtml : null
+    const beforeStored = pendingArtifactStyleOverrides[nodeKey]
     pendingArtifactStyleOverrides[nodeKey] = html
+    // Record an undo entry if the change is real (and we have a prior to
+    // restore). Use the bridge-supplied priorHtml when available, falling
+    // back to whatever we last stored in pendingArtifactStyleOverrides.
+    const before = priorHtml !== null ? priorHtml : (typeof beforeStored === 'string' ? beforeStored : '')
+    if (before !== html) {
+      artifactHistory.push({
+        kind: 'text-html',
+        targetKey: nodeKey,
+        before: { field, optionId, html: before },
+        after: { field, optionId, html },
+        label: `Style ${field}`,
+        ts: Date.now()
+      })
+    }
   }
 
   /**
@@ -5115,6 +5187,114 @@ import {
         pendingArtifactCopyOverrides.textOverrides = {}
       }
       pendingArtifactCopyOverrides.textOverrides[stableId] = text
+    }
+  }
+
+  /**
+   * Apply a history entry in the given direction. For `undo` we apply the
+   * entry's `before` snapshot; for `redo` we apply its `after` snapshot.
+   * Mirrors the original commit paths so the result is indistinguishable
+   * from the user redoing the action themselves.
+   *
+   * @param {{ kind: string, before: any, after: any }} entry
+   * @param {'undo' | 'redo'} direction
+   */
+  function applyArtifactHistoryEntry(entry, direction) {
+    if (!entry || !entry.kind) return
+    const target = direction === 'undo' ? entry.before : entry.after
+    if (!target) return
+    if (entry.kind === 'position') {
+      applyHistoryPositionEntry(target, entry.targetKey)
+      return
+    }
+    if (entry.kind === 'text-content') {
+      applyHistoryTextContentEntry(target)
+      return
+    }
+    if (entry.kind === 'text-html') {
+      applyHistoryTextHtmlEntry(target)
+      return
+    }
+  }
+
+  function applyHistoryPositionEntry(target, stableId) {
+    // Mirror the position-change commit path: stash into pending overrides
+    // and push a fresh position-init message so the iframe re-applies the
+    // transforms.
+    artifactPosition.handlePositionChanged({
+      stableId,
+      dx: target.dx,
+      dy: target.dy,
+      role: target.role,
+      label: target.label,
+      optionId: target.optionId,
+      // Suppress further history recording when we re-emit via the handler.
+      // The position handler doesn't currently re-fire onPositionChange for
+      // history entries (priorDx/priorDy unset so the host filter drops
+      // them) — so this is implicit, but make the intent explicit:
+      priorDx: undefined,
+      priorDy: undefined
+    })
+    pushArtifactPositionOverrides()
+  }
+
+  function applyHistoryTextContentEntry(target) {
+    const field = target.field
+    const optionId = target.optionId || ''
+    const text = typeof target.text === 'string' ? target.text : ''
+    // Copy / generic text — route through the same persistence shape
+    // handleArtifactCopyEdit uses.
+    if (field === 'subtitle' || field === 'footer') {
+      handleArtifactCopyEdit(field, text)
+      pushArtifactPositionOverrides()  // no-op for copy but kept for symmetry
+      return
+    }
+    if (field === 'text') {
+      handleArtifactCopyEdit('text', text, { stableId: optionId })
+      return
+    }
+    // Poll fields: question / option-label — PATCH the poll so the change
+    // broadcasts to audience like a fresh edit. Use the existing textedit
+    // handler's apply* helpers indirectly by re-sending a synthetic
+    // prezo-text-edit message into it (no priorText so we don't loop).
+    artifactTextEdit.handleTextEdit({ field, optionId, text })
+  }
+
+  function applyHistoryTextHtmlEntry(target) {
+    const field = target.field
+    const optionId = target.optionId || ''
+    const html = typeof target.html === 'string' ? target.html : ''
+    const nodeKey = optionId ? `${field}:${optionId}` : field
+    if (html) {
+      pendingArtifactStyleOverrides[nodeKey] = html
+    } else {
+      delete pendingArtifactStyleOverrides[nodeKey]
+    }
+    // Push styled HTML overrides back to the iframe so the rendered DOM
+    // reflects the restored state immediately.
+    pushArtifactStyleOverrides()
+  }
+
+  /**
+   * Keyboard handler installed on the host document. The iframe bridge
+   * installs its own equivalent so undo works whether the user's focus is
+   * inside the artifact or anywhere in the taskpane chrome.
+   */
+  function handleHistoryKeydown(event) {
+    const action = artifactHistory.classifyKeyEvent(event)
+    if (!action) return
+    // Ignore shortcuts while focus is inside a native input/textarea so we
+    // don't fight the browser's built-in undo on form fields.
+    const target = event.target
+    if (target && target.tagName) {
+      const tag = target.tagName.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || target.isContentEditable) return
+    }
+    event.preventDefault()
+    if (action === 'undo') {
+      artifactHistory.undo()
+    } else {
+      artifactHistory.redo()
     }
   }
 
@@ -9369,6 +9549,7 @@ import {
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
     artifactPosition.clearPendingPositionOverrides()
+    artifactHistory.clear()
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
       visualMode: ARTIFACT_VISUAL_MODE
@@ -11093,6 +11274,7 @@ import {
     window.removeEventListener('resize', handleEditorDockViewportResize)
     window.removeEventListener('message', handleArtifactFrameMessage)
     window.removeEventListener('message', handleLibrarySyncMessage)
+    document.removeEventListener('keydown', handleHistoryKeydown, true)
     el.librarySyncStatus.removeEventListener('click', handleLibrarySyncStatusClick)
     artifactBridge.dispose()
     disposeLibrarySyncManager()

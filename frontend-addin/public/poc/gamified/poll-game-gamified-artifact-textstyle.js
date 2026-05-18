@@ -11,6 +11,14 @@ export function buildTextStyleBridgeLines() {
   return [
     // ── Text-style message routing ────────────────────────────────
     '  var _lastKnownOverrides = null',
+    // Snapshots captured at edit-focus time so the host\'s history module can
+    // record the "before" state for undo. Keyed by `${field}:${optionId}`
+    // (or just `${field}` for non-option fields). Reset on blur.
+    '  var preEditTextByKey = {}',
+    '  var preEditHtmlByKey = {}',
+    '  function snapshotKey(field, optionId) {',
+    '    return optionId ? field + ":" + optionId : field',
+    '  }',
     '  window.addEventListener("message", function (event) {',
     '    var _msg = event && event.data',
     '    if (!_msg || typeof _msg !== "object") return',
@@ -56,7 +64,9 @@ export function buildTextStyleBridgeLines() {
     '    var field = node.getAttribute("data-prezo-editable") || "question"',
     '    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""',
     '    var html = node.innerHTML || ""',
-    '    postParentMessage(TEXT_HTML_MESSAGE_TYPE, { field: field, optionId: optionId, html: html })',
+    '    var key = snapshotKey(field, optionId)',
+    '    var priorHtml = Object.prototype.hasOwnProperty.call(preEditHtmlByKey, key) ? preEditHtmlByKey[key] : null',
+    '    postParentMessage(TEXT_HTML_MESSAGE_TYPE, { field: field, optionId: optionId, html: html, priorHtml: priorHtml })',
     '  }',
     '  function hasActiveSelection(host, sel) {',
     '    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false',
@@ -610,6 +620,14 @@ export function buildTextStyleBridgeLines() {
     '    suppressNextRender = true',
     '    var field = node.getAttribute("data-prezo-editable") || "question"',
     '    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""',
+    '    var key = snapshotKey(field, optionId)',
+    '    var currentText = (node.innerText || node.textContent || "").replace(/\\n/g, " ").trim()',
+    '    if (!Object.prototype.hasOwnProperty.call(preEditTextByKey, key)) {',
+    '      preEditTextByKey[key] = currentText',
+    '    }',
+    '    if (!Object.prototype.hasOwnProperty.call(preEditHtmlByKey, key)) {',
+    '      preEditHtmlByKey[key] = node.innerHTML || ""',
+    '    }',
     '    var styleTarget = getDeepestStyledChild(node)',
     '    var computed = window.getComputedStyle(styleTarget)',
     '    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, {',
@@ -627,6 +645,11 @@ export function buildTextStyleBridgeLines() {
     '    sendTextEdit(node)',
     '    sendTextHtml(node)',
     '    var field = node.getAttribute("data-prezo-editable") || "question"',
+    '    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""',
+    // Drop the snapshot for this node so the next focus captures fresh state.
+    '    var key = snapshotKey(field, optionId)',
+    '    delete preEditTextByKey[key]',
+    '    delete preEditHtmlByKey[key]',
     '    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, { field: field, active: false })',
     // Drop text-edit mode so the next click on this node starts in
     // select-only state again (matching the two-stage interaction model).
@@ -665,7 +688,9 @@ export function buildTextStyleBridgeLines() {
     '    var field = node.getAttribute("data-prezo-editable") || "question"',
     '    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""',
     '    var text = (node.innerText || node.textContent || "").replace(/\\n/g, " ").trim()',
-    '    postParentMessage(TEXT_EDIT_MESSAGE_TYPE, { field: field, optionId: optionId, text: text })',
+    '    var key = snapshotKey(field, optionId)',
+    '    var priorText = Object.prototype.hasOwnProperty.call(preEditTextByKey, key) ? preEditTextByKey[key] : null',
+    '    postParentMessage(TEXT_EDIT_MESSAGE_TYPE, { field: field, optionId: optionId, text: text, priorText: priorText })',
     '  }',
     '  function isStatNode(node) {',
     '    return isLikelyVotesNode(node) || isLikelyPercentageNode(node) || isLikelyRankNode(node)',
@@ -1459,6 +1484,27 @@ export function buildTextStyleBridgeLines() {
     '      cancelDragInProgress()',
     '    }',
     '  }',
+    // Cmd/Ctrl+Z (undo) / Cmd+Shift+Z / Ctrl+Y (redo) inside the iframe.
+    // We let the browser handle native undo when the user is actively
+    // typing into a contenteditable; otherwise we forward to the host so
+    // the single artifactHistory module handles both iframe and chrome
+    // shortcuts identically.
+    '  function handleHistoryShortcut(event) {',
+    '    if (!event || event.defaultPrevented) return',
+    '    var mod = event.metaKey || event.ctrlKey',
+    '    if (!mod) return',
+    '    var key = (event.key || "").toLowerCase()',
+    '    if (key !== "z" && key !== "y") return',
+    // Native undo wins inside an active contenteditable so the user can
+    // undo character-by-character while typing. Once they blur, our undo
+    // takes over for the higher-level history.
+    '    if (textEditNode && document.activeElement === textEditNode) return',
+    '    event.preventDefault()',
+    '    var action = (key === "y") ? "redo" : (event.shiftKey ? "redo" : "undo")',
+    '    if (window.parent && window.parent !== window) {',
+    '      window.parent.postMessage({ type: "prezo-history-shortcut", action: action, instanceId: INSTANCE_ID }, "*")',
+    '    }',
+    '  }',
 
     // ── Position overrides + drag-to-move ───────────────────────────
     // Position offsets live in style_overrides under "__prezo_pos:<stableId>"
@@ -1604,7 +1650,7 @@ export function buildTextStyleBridgeLines() {
     '    var dy = Number(ov.dy)',
     '    return { dx: Number.isFinite(dx) ? dx : 0, dy: Number.isFinite(dy) ? dy : 0 }',
     '  }',
-    '  function postCommittedPosition(stableId, node, dx, dy) {',
+    '  function postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy) {',
     '    if (!stableId) return',
     '    var kind = selectedKind || ""',
     '    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""',
@@ -1614,6 +1660,8 @@ export function buildTextStyleBridgeLines() {
     '      stableId: stableId,',
     '      dx: dx,',
     '      dy: dy,',
+    '      priorDx: priorDx,',
+    '      priorDy: priorDy,',
     '      role: kind,',
     '      label: label,',
     '      optionId: optionId',
@@ -1730,8 +1778,10 @@ export function buildTextStyleBridgeLines() {
     '    if (event.pointerId !== dragState.pointerId) return',
     '    var node = dragState.node',
     '    var stableId = dragState.stableId',
-    '    var dx = dragState.startDx + (event.clientX - dragState.startClientX)',
-    '    var dy = dragState.startDy + (event.clientY - dragState.startClientY)',
+    '    var priorDx = dragState.startDx',
+    '    var priorDy = dragState.startDy',
+    '    var dx = priorDx + (event.clientX - dragState.startClientX)',
+    '    var dy = priorDy + (event.clientY - dragState.startClientY)',
     '    var moved = dragState.moved',
     '    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}',
     '    exitDragFastMode(node)',
@@ -1739,7 +1789,7 @@ export function buildTextStyleBridgeLines() {
     '    if (!moved) return',
     '    applyPositionToNode(node, stableId, { dx: dx, dy: dy })',
     '    lastKnownPositionOverrides[stableId] = { dx: dx, dy: dy }',
-    '    postCommittedPosition(stableId, node, dx, dy)',
+    '    postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy)',
     '    refreshSelectionOverlay()',
     '  }',
     '  function handlePositionInitMessage(event) {',
@@ -1759,6 +1809,7 @@ export function buildTextStyleBridgeLines() {
     '    document.addEventListener("contextmenu", handleContextMenu, true)',
     '    document.addEventListener("click", handleGlobalClickForMenu, true)',
     '    document.addEventListener("keydown", handleEscapeForMenu, true)',
+    '    document.addEventListener("keydown", handleHistoryShortcut, true)',
     '    document.addEventListener("pointerdown", handlePointerDown, true)',
     '    document.addEventListener("pointermove", handlePointerMove, true)',
     '    document.addEventListener("pointerup", handlePointerUp, true)',
