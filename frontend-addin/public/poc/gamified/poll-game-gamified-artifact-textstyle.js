@@ -235,10 +235,12 @@ export function buildTextStyleBridgeLines() {
     '    editStyleInjected = true',
     '    var s = document.createElement("style")',
     '    s.textContent = [',
-    '      "[data-prezo-editable] { cursor: text; transition: outline 0.15s, box-shadow 0.15s; border-radius: 2px; }",',
+    // Default cursor: classified nodes are selectable, not text-editable by
+    // default. The text caret is only appropriate once contenteditable is on.
+    '      "[data-prezo-editable] { cursor: default; transition: outline 0.15s, box-shadow 0.15s; border-radius: 2px; }",',
+    '      "[data-prezo-editable][contenteditable=true] { cursor: text; -webkit-user-modify: read-write; }",',
     '      "[data-prezo-editable]:hover { outline: 1.5px dashed rgba(74,124,255,0.5); outline-offset: 2px; }",',
     '      "[data-prezo-editable]:focus { outline: 2px solid rgba(74,124,255,0.85); outline-offset: 2px; box-shadow: 0 0 0 3px rgba(74,124,255,0.18); }",',
-    '      "[data-prezo-editable][contenteditable=true] { -webkit-user-modify: read-write; }",',
     '      "[data-prezo-editable]:empty::before { content: attr(data-prezo-placeholder); opacity: 0.4; pointer-events: none; }"',
     '    ].join("\\n")',
     '    ;(document.head || document.documentElement).appendChild(s)',
@@ -626,6 +628,14 @@ export function buildTextStyleBridgeLines() {
     '    sendTextHtml(node)',
     '    var field = node.getAttribute("data-prezo-editable") || "question"',
     '    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, { field: field, active: false })',
+    // Drop text-edit mode so the next click on this node starts in
+    // select-only state again (matching the two-stage interaction model).
+    // Done synchronously so contenteditable is off before the next click
+    // can hit it.
+    '    if (textEditNode === node) {',
+    '      textEditNode = null',
+    '      try { node.removeAttribute("contenteditable") } catch (e2) {}',
+    '    }',
     '    // Keep activeEditNode alive for 2s so toolbar style commands can still target it',
     '    activeEditNodeClearTimer = setTimeout(function () {',
     '      activeEditNodeClearTimer = null',
@@ -725,7 +735,12 @@ export function buildTextStyleBridgeLines() {
     '    } else {',
     '      node.setAttribute("data-prezo-placeholder", COPY_FIELD_PLACEHOLDERS[classification.field] || "Edit…")',
     '    }',
-    '    node.setAttribute("contenteditable", "true")',
+    // NOTE: we intentionally do NOT set contenteditable="true" here.
+    // The first click on a classified node only SELECTS it (purple outline).
+    // A second click on the already-selected node promotes to text-edit mode
+    // via enterTextEditMode(), which adds contenteditable then. This lets
+    // the user drag on the first click without contenteditable intercepting
+    // the pointermove as a text selection.
     '    node.addEventListener("focus", handleEditFocus)',
     '    node.addEventListener("blur", handleEditBlur)',
     '    node.addEventListener("input", handleEditInput)',
@@ -1155,7 +1170,52 @@ export function buildTextStyleBridgeLines() {
     '    if (fallback) return { node: cur, classification: fallback }',
     '    return null',
     '  }',
+    // Two-stage interaction model for editable text nodes:
+    //   - First click selects the element (purple outline only).
+    //   - Second click on the SAME selected element promotes it to text-edit
+    //     mode (contenteditable=true + focus).
+    //   - Selecting a different element, or clicking empty space, drops edit
+    //     mode so the next first-click on any node starts fresh in select-only
+    //     state.
+    // This is what lets the user drag a text element on the first click
+    // without the browser\'s contenteditable focus stealing the pointermove
+    // as a text selection.
+    '  var textEditNode = null',
+    '  function isEditableTextNode(node) {',
+    '    if (!node || node.nodeType !== 1) return false',
+    '    return node.hasAttribute && node.hasAttribute("data-prezo-editable")',
+    '  }',
+    '  function enterTextEditMode(node) {',
+    '    if (!node || textEditNode === node) return',
+    '    if (!isEditableTextNode(node)) return',
+    '    exitTextEditMode()',
+    '    textEditNode = node',
+    '    node.setAttribute("contenteditable", "true")',
+    '    try { node.focus({ preventScroll: true }) } catch (e) { try { node.focus() } catch (e2) {} }',
+    // Place caret at end of text so the user can immediately type/edit.
+    '    try {',
+    '      var range = document.createRange()',
+    '      range.selectNodeContents(node)',
+    '      range.collapse(false)',
+    '      var sel = window.getSelection && window.getSelection()',
+    '      if (sel) { sel.removeAllRanges(); sel.addRange(range) }',
+    '    } catch (e3) {}',
+    '  }',
+    '  function exitTextEditMode() {',
+    '    if (!textEditNode) return',
+    '    var node = textEditNode',
+    '    textEditNode = null',
+    '    try { node.removeAttribute("contenteditable") } catch (e) {}',
+    '    if (document.activeElement === node) {',
+    '      try { node.blur() } catch (e2) {}',
+    '    }',
+    '  }',
     '  function setSelectedNode(node, classification) {',
+    // Selection moved off the previously-edited node — drop edit mode so a
+    // fresh first-click on the next node is select-only.
+    '    if (textEditNode && textEditNode !== node) {',
+    '      exitTextEditMode()',
+    '    }',
     '    selectedNode = node',
     '    selectedKind = classification ? classification.kind : ""',
     '    ensureSelectionOverlay()',
@@ -1187,6 +1247,10 @@ export function buildTextStyleBridgeLines() {
     // Don\'t hijack clicks the user makes on overlay / menu elements.
     '    if (target === selectionOverlayEl || target === selectionLabelEl) return',
     '    if (target.closest && target.closest("[data-prezo-context-menu]")) return',
+    // If we\'re already in text-edit mode and the click landed inside the
+    // editing node, leave the native contenteditable behaviour alone — the
+    // user is placing the caret / selecting text.
+    '    if (textEditNode && textEditNode.contains && textEditNode.contains(target)) return',
     // Drill mode: if we have a sticky drill scope and the click landed
     // inside it, resolve the click to the deepest qualifying descendant.
     // Otherwise exit drill mode and fall through to normal resolution.
@@ -1194,7 +1258,7 @@ export function buildTextStyleBridgeLines() {
     '      if (drillScopeNode === target || (drillScopeNode.contains && drillScopeNode.contains(target))) {',
     '        var drilled = findDeepestInScope(drillScopeNode, target)',
     '        if (drilled) {',
-    '          setSelectedNode(drilled.node, drilled.classification)',
+    '          maybePromoteSelection(drilled.node, drilled.classification)',
     '          return',
     '        }',
     '      } else {',
@@ -1208,13 +1272,24 @@ export function buildTextStyleBridgeLines() {
     // still pick decorative elements directly.
     '      var fallback = classifyElementFallback(target)',
     '      if (fallback) {',
-    '        setSelectedNode(target, fallback)',
+    '        maybePromoteSelection(target, fallback)',
     '        return',
     '      }',
     '      setSelectedNode(null, null)',
     '      return',
     '    }',
-    '    setSelectedNode(pick.node, pick.classification)',
+    '    maybePromoteSelection(pick.node, pick.classification)',
+    '  }',
+    // Resolve a click: if it lands on the SAME node that\'s already selected
+    // and that node is an editable text element, promote to text-edit mode.
+    // Otherwise just (re)set the selection.
+    '  function maybePromoteSelection(node, classification) {',
+    '    var sameAsCurrent = selectedNode && node === selectedNode',
+    '    if (sameAsCurrent && isEditableTextNode(node)) {',
+    '      enterTextEditMode(node)',
+    '      return',
+    '    }',
+    '    setSelectedNode(node, classification)',
     '  }',
     // ── Context menu ─────────────────────────────────────────────
     '  var contextMenuEl = null',
@@ -1612,9 +1687,9 @@ export function buildTextStyleBridgeLines() {
     '    if (!target) return',
     '    if (target.closest && target.closest("[data-prezo-context-menu]")) return',
     '    if (!selectedNode.contains || !selectedNode.contains(target)) return',
-    // If the user is actively editing text inside this element, leave them be.
-    '    if (target.hasAttribute && target.hasAttribute("contenteditable") && document.activeElement === target) return',
-    '    if (typeof activeEditNode !== "undefined" && activeEditNode && selectedNode.contains(activeEditNode)) return',
+    // Leave the user alone if they\'re in text-edit mode on this node — the
+    // pointerdown is intended to place the caret / select text, not drag.
+    '    if (textEditNode && (textEditNode === target || textEditNode.contains(target))) return',
     '    var stableId = computeStableTextId(selectedNode)',
     '    if (!stableId) return',
     '    var current = readCurrentOffsetFor(stableId)',
