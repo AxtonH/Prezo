@@ -1769,16 +1769,21 @@ export function buildTextStyleBridgeLines() {
     '    var stableId = computeStableTextId(selectedNode)',
     '    if (!stableId) return',
     '    var current = readCurrentOffsetFor(stableId)',
-    // Capture the element\'s natural-flow position ONCE at drag start. Used by
-    // snapDeltaToGrid so the snap baseline never drifts mid-drag when the
-    // element\'s rect changes (descendant CSS animations, vote-induced
+    // Capture the element\'s natural-flow position + center ONCE at drag start.
+    // Used by snapDeltaToGrid so the snap baseline never drifts mid-drag when
+    // the element\'s rect changes (descendant CSS animations, vote-induced
     // relayouts, etc.).
-    // We compute it in body-relative coords so it aligns with the grid
-    // overlay (which is appended to <body> at (0,0) of the 1920×1080 ref).
-    '    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0 }',
+    // We compute in body-relative coords so it aligns with the grid overlay
+    // (appended to <body> at (0,0) of the 1920×1080 ref).
+    // Snap reference: the element\'s CENTER (not its top-left). Content is
+    // typically centered inside its container, so the visible content lines
+    // up with gridlines when we snap by center.
+    '    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0, width: 0, height: 0 }',
     '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
     '    var naturalLeft = (startRect.left - bodyRect.left) - current.dx',
     '    var naturalTop = (startRect.top - bodyRect.top) - current.dy',
+    '    var naturalCenterX = naturalLeft + (startRect.width || 0) / 2',
+    '    var naturalCenterY = naturalTop + (startRect.height || 0) / 2',
     '    dragState = {',
     '      node: selectedNode,',
     '      stableId: stableId,',
@@ -1788,6 +1793,8 @@ export function buildTextStyleBridgeLines() {
     '      startDy: current.dy,',
     '      naturalLeft: naturalLeft,',
     '      naturalTop: naturalTop,',
+    '      naturalCenterX: naturalCenterX,',
+    '      naturalCenterY: naturalCenterY,',
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
@@ -2002,34 +2009,31 @@ export function buildTextStyleBridgeLines() {
     '    if (event.data.instanceId !== INSTANCE_ID && event.data.instanceId !== undefined) return',
     '    applyDesignerConfig(event.data.config)',
     '  }',
-    // Snap a candidate dx/dy so the element\'s top-left lands on the nearest
-    // gridline within threshold. The natural-flow baseline is captured ONCE
-    // at drag start (dragState.naturalLeft / naturalTop) — re-reading it
-    // every move from `getBoundingClientRect()` causes:
-    //   - drift (rect is post-transform; subtracting only saved dx misses
-    //     in-flight drag deltas)
-    //   - stutter (descendant CSS animations change the parent\'s rect each
-    //     frame, so the inferred baseline keeps moving even when nothing is
-    //     dragged)
-    //   - apparent "children snapping inside the group" when the dragged
-    //     element is a parent whose children animate independently.
+    // Snap a candidate dx/dy so the element\'s CENTER lands on the nearest
+    // gridline within threshold. Snapping by center (rather than top-left)
+    // matches what designers see: most artifact content is centered inside
+    // its container, so the visible content lines up with the gridline.
+    //
+    // The baseline (naturalCenterX/Y) is captured ONCE at drag start.
+    // Re-reading from `getBoundingClientRect()` every frame causes drift,
+    // stutter, and child-animation interference (see prior fix notes).
     // Body-relative coords align with the grid overlay\'s 1920×1080 box.
     '  function snapDeltaToGrid(node, dx, dy) {',
     '    if (!designerConfig.snapToGrid || !node) return { dx: dx, dy: dy }',
     '    if (!dragState || dragState.node !== node) return { dx: dx, dy: dy }',
     '    var spacing = designerConfig.gridSpacing',
     '    var threshold = designerConfig.snapThreshold',
-    '    var baseLeft = dragState.naturalLeft',
-    '    var baseTop = dragState.naturalTop',
-    '    var projectedLeft = baseLeft + dx',
-    '    var projectedTop = baseTop + dy',
-    '    var nearestX = Math.round(projectedLeft / spacing) * spacing',
-    '    var nearestY = Math.round(projectedTop / spacing) * spacing',
-    '    if (Math.abs(nearestX - projectedLeft) <= threshold) {',
-    '      dx = nearestX - baseLeft',
+    '    var baseCx = dragState.naturalCenterX',
+    '    var baseCy = dragState.naturalCenterY',
+    '    var projectedCx = baseCx + dx',
+    '    var projectedCy = baseCy + dy',
+    '    var nearestX = Math.round(projectedCx / spacing) * spacing',
+    '    var nearestY = Math.round(projectedCy / spacing) * spacing',
+    '    if (Math.abs(nearestX - projectedCx) <= threshold) {',
+    '      dx = nearestX - baseCx',
     '    }',
-    '    if (Math.abs(nearestY - projectedTop) <= threshold) {',
-    '      dy = nearestY - baseTop',
+    '    if (Math.abs(nearestY - projectedCy) <= threshold) {',
+    '      dy = nearestY - baseCy',
     '    }',
     '    return { dx: dx, dy: dy }',
     '  }',
