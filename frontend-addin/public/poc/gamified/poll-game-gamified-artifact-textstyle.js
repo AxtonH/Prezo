@@ -922,9 +922,11 @@ export function buildTextStyleBridgeLines() {
     '      "box-shadow:0 0 0 1px rgba(155,89,182,0.25), 0 0 12px rgba(155,89,182,0.35)",',
     '      "border-radius:2px",',
     '      "z-index:2147483646",',
-    '      "transition:left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear",',
     '      "display:none"',
     '    ].join(";")',
+    // Set transition as a property so readback during drag-fast mode is stable
+    // across browsers (cssText-set properties don\'t always normalize cleanly).
+    '    selectionOverlayEl.style.transition = "left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear"',
     '    selectionLabelEl = document.createElement("div")',
     '    selectionLabelEl.setAttribute("data-prezo-selection-label", "true")',
     '    selectionLabelEl.style.cssText = [',
@@ -1542,10 +1544,62 @@ export function buildTextStyleBridgeLines() {
     '      optionId: optionId',
     '    })',
     '  }',
+    // Drag-fast mode toggles. While a drag is active we:
+    //   - disable the overlay\'s left/top/width/height transition so it
+    //     snaps 1:1 to the dragged element instead of chasing it 80ms behind.
+    //   - clear the element\'s CSS `transition: transform` (the artifact may
+    //     set one on the row class) so each pointermove step doesn\'t animate
+    //     toward the new offset over 200-400ms.
+    //   - promote the element to its own compositor layer via
+    //     `will-change: transform` so transform writes are GPU-cheap.
+    //   - coalesce overlay reposition into requestAnimationFrame so pointer
+    //     events don\'t synchronously read+write layout on every move.
+    '  var dragOverlayTransitionBaseline = ""',
+    '  var dragNodeTransitionBaseline = ""',
+    '  var dragNodeWillChangeBaseline = ""',
+    '  var overlayRafId = 0',
+    '  function scheduleOverlayRefresh() {',
+    '    if (overlayRafId) return',
+    '    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }',
+    '    overlayRafId = raf(function () {',
+    '      overlayRafId = 0',
+    '      refreshSelectionOverlay()',
+    '    })',
+    '  }',
+    '  function enterDragFastMode(node) {',
+    '    if (selectionOverlayEl) {',
+    '      dragOverlayTransitionBaseline = selectionOverlayEl.style.transition || ""',
+    '      selectionOverlayEl.style.transition = "none"',
+    '    }',
+    '    if (node && node.style) {',
+    '      dragNodeTransitionBaseline = node.style.transition || ""',
+    '      dragNodeWillChangeBaseline = node.style.willChange || ""',
+    '      node.style.transition = "none"',
+    '      node.style.willChange = "transform"',
+    '    }',
+    '  }',
+    '  function exitDragFastMode(node) {',
+    '    if (selectionOverlayEl) {',
+    '      selectionOverlayEl.style.transition = dragOverlayTransitionBaseline',
+    '      dragOverlayTransitionBaseline = ""',
+    '    }',
+    '    if (node && node.style) {',
+    '      node.style.transition = dragNodeTransitionBaseline',
+    '      node.style.willChange = dragNodeWillChangeBaseline',
+    '      dragNodeTransitionBaseline = ""',
+    '      dragNodeWillChangeBaseline = ""',
+    '    }',
+    '    if (overlayRafId) {',
+    '      var caf = (typeof window !== "undefined" && window.cancelAnimationFrame) ? window.cancelAnimationFrame.bind(window) : clearTimeout',
+    '      caf(overlayRafId)',
+    '      overlayRafId = 0',
+    '    }',
+    '  }',
     '  function cancelDragInProgress() {',
     '    if (!dragState) return',
     // Roll back to the pre-drag offset.
     '    applyPositionToNode(dragState.node, dragState.stableId, { dx: dragState.startDx, dy: dragState.startDy })',
+    '    exitDragFastMode(dragState.node)',
     '    dragState = null',
     '  }',
     '  function handlePointerDown(event) {',
@@ -1574,6 +1628,7 @@ export function buildTextStyleBridgeLines() {
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
+    '    enterDragFastMode(selectedNode)',
     '    try { event.target.setPointerCapture && event.target.setPointerCapture(event.pointerId) } catch (e) {}',
     '    event.preventDefault()',
     '  }',
@@ -1589,8 +1644,11 @@ export function buildTextStyleBridgeLines() {
     '    }',
     '    var dx = dragState.startDx + deltaX',
     '    var dy = dragState.startDy + deltaY',
+    // Write the transform immediately (element jumps with cursor 1:1), but
+    // coalesce the overlay reposition into the next animation frame so we
+    // never do more than one rect-read + style-write per painted frame.
     '    applyPositionToNode(dragState.node, dragState.stableId, { dx: dx, dy: dy })',
-    '    refreshSelectionOverlay()',
+    '    scheduleOverlayRefresh()',
     '  }',
     '  function handlePointerUp(event) {',
     '    if (!dragState) return',
@@ -1601,6 +1659,7 @@ export function buildTextStyleBridgeLines() {
     '    var dy = dragState.startDy + (event.clientY - dragState.startClientY)',
     '    var moved = dragState.moved',
     '    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}',
+    '    exitDragFastMode(node)',
     '    dragState = null',
     '    if (!moved) return',
     '    applyPositionToNode(node, stableId, { dx: dx, dy: dy })',
