@@ -13,12 +13,18 @@
 
 const STORAGE_KEY = 'prezo.designerTools.v1'
 
+// Snap threshold is a fraction of the grid spacing rather than an absolute
+// pixel count. At 30% the catch zone covers roughly a third of the gap
+// between gridlines, which feels like a noticeable pull while still leaving
+// room for free placement.  Resolved into px on every getConfig() call.
+const SNAP_THRESHOLD_RATIO = 0.30
+
 const DEFAULT_CONFIG = Object.freeze({
   rulersVisible: true,
   gridVisible: true,
   gridSpacing: 100,
   snapToGrid: true,
-  snapThreshold: 8
+  snapThreshold: Math.round(100 * SNAP_THRESHOLD_RATIO)  // derived for display only; getConfig recomputes
 })
 
 const ALLOWED_SPACINGS = [50, 100, 200]
@@ -39,25 +45,49 @@ function clampSpacing(value) {
 function clampThreshold(value) {
   const n = Number(value)
   if (!Number.isFinite(n) || n < 1) return DEFAULT_CONFIG.snapThreshold
-  return Math.min(50, Math.round(n))
+  // Allow the threshold to grow up to half the grid spacing (200px grid →
+  // up to 100). Beyond that every position would snap to two competing
+  // gridlines, which feels chaotic.
+  return Math.min(100, Math.round(n))
+}
+
+function deriveThresholdFromSpacing(spacing) {
+  const n = Number(spacing)
+  if (!Number.isFinite(n) || n <= 0) return Math.round(100 * SNAP_THRESHOLD_RATIO)
+  return Math.max(4, Math.round(n * SNAP_THRESHOLD_RATIO))
 }
 
 function readStoredConfig() {
+  const fallback = () => {
+    const spacing = DEFAULT_CONFIG.gridSpacing
+    return { ...DEFAULT_CONFIG, snapThreshold: deriveThresholdFromSpacing(spacing) }
+  }
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return { ...DEFAULT_CONFIG }
+    if (typeof window === 'undefined' || !window.localStorage) return fallback()
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...DEFAULT_CONFIG }
+    if (!raw) return fallback()
     const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_CONFIG }
+    if (!parsed || typeof parsed !== 'object') return fallback()
+    const spacing = clampSpacing(parsed.gridSpacing)
+    // Threshold tracks spacing by default; if a user previously stored a
+    // custom value we keep it as long as it's within range. Anything left
+    // over from earlier versions (which stored a hardcoded 8) gets
+    // re-derived because 8px at any spacing feels much too weak.
+    const storedThreshold = clampThreshold(parsed.snapThreshold)
+    const derived = deriveThresholdFromSpacing(spacing)
+    // Heuristic: if the stored threshold is small relative to spacing
+    // (under 15%) we treat it as legacy / unintentional and replace it
+    // with the derived value. Otherwise honour the user's custom setting.
+    const looksLegacy = storedThreshold / spacing < 0.15
     return {
       rulersVisible: typeof parsed.rulersVisible === 'boolean' ? parsed.rulersVisible : DEFAULT_CONFIG.rulersVisible,
       gridVisible: typeof parsed.gridVisible === 'boolean' ? parsed.gridVisible : DEFAULT_CONFIG.gridVisible,
-      gridSpacing: clampSpacing(parsed.gridSpacing),
+      gridSpacing: spacing,
       snapToGrid: typeof parsed.snapToGrid === 'boolean' ? parsed.snapToGrid : DEFAULT_CONFIG.snapToGrid,
-      snapThreshold: clampThreshold(parsed.snapThreshold)
+      snapThreshold: looksLegacy ? derived : storedThreshold
     }
   } catch {
-    return { ...DEFAULT_CONFIG }
+    return fallback()
   }
 }
 
@@ -99,6 +129,11 @@ export function createArtifactGuidesHandler({ onConfigChange } = {}) {
   /**
    * Merge a partial update into the current config. Persists + fires the
    * change callback if anything actually changed.
+   *
+   * When `gridSpacing` changes the snap threshold is automatically rescaled
+   * so the catch zone stays at ~30% of the new spacing. Callers can override
+   * by including `snapThreshold` in the same partial.
+   *
    * @param {Partial<DesignerToolsConfig>} partial
    */
   function setConfig(partial) {
@@ -106,9 +141,20 @@ export function createArtifactGuidesHandler({ onConfigChange } = {}) {
     const next = { ...config }
     if (typeof partial.rulersVisible === 'boolean') next.rulersVisible = partial.rulersVisible
     if (typeof partial.gridVisible === 'boolean') next.gridVisible = partial.gridVisible
-    if (partial.gridSpacing !== undefined) next.gridSpacing = clampSpacing(partial.gridSpacing)
+    let spacingChanged = false
+    if (partial.gridSpacing !== undefined) {
+      const nextSpacing = clampSpacing(partial.gridSpacing)
+      if (nextSpacing !== next.gridSpacing) {
+        next.gridSpacing = nextSpacing
+        spacingChanged = true
+      }
+    }
     if (typeof partial.snapToGrid === 'boolean') next.snapToGrid = partial.snapToGrid
-    if (partial.snapThreshold !== undefined) next.snapThreshold = clampThreshold(partial.snapThreshold)
+    if (partial.snapThreshold !== undefined) {
+      next.snapThreshold = clampThreshold(partial.snapThreshold)
+    } else if (spacingChanged) {
+      next.snapThreshold = deriveThresholdFromSpacing(next.gridSpacing)
+    }
     if (configsEqual(config, next)) return
     config = next
     writeStoredConfig(config)
