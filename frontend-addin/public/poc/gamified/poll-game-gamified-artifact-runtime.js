@@ -13,6 +13,8 @@ const ARTIFACT_TEXT_HTML_MESSAGE_TYPE = 'prezo-text-html'
 const ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
 const ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
 const ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
+const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
+const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -153,6 +155,8 @@ function buildBridgeScript(instanceId = 0) {
     `  var TEXT_FOCUS_MESSAGE_TYPE = '${ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE}'`,
     `  var TEXT_STYLE_INIT_MESSAGE_TYPE = '${ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE}'`,
     `  var ELEMENT_SELECTED_MESSAGE_TYPE = '${ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE}'`,
+    `  var POSITION_CHANGED_MESSAGE_TYPE = '${ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE}'`,
+    `  var POSITION_INIT_MESSAGE_TYPE = '${ARTIFACT_POSITION_INIT_MESSAGE_TYPE}'`,
     `  var INSTANCE_ID = ${safeInstanceId}`,
     '  var defaultState = {',
     '    poll: { id: "", question: "", title: "", prompt: "", status: "", options: [], totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },',

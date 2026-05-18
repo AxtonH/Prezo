@@ -59,6 +59,7 @@ import { createPollGameLibraryStorage } from './poll-game-gamified-library-stora
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
+import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
 import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
@@ -80,6 +81,8 @@ import {
   const ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
   const ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
   const ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
+  const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
+  const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -591,6 +594,11 @@ import {
       } else {
         console.log('[prezo-element-selected] cleared')
       }
+    }
+  })
+  const artifactPosition = createArtifactPositionHandler({
+    onPositionChange: (stableId, override) => {
+      console.log('[prezo-position-changed]', stableId, override)
     }
   })
   let themeLibrary = loadThemeLibrary()
@@ -2347,7 +2355,8 @@ import {
       message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE ||
       message.type === ARTIFACT_TEXT_HTML_MESSAGE_TYPE ||
       message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE ||
-      message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE
+      message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE ||
+      message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
     }
@@ -2373,6 +2382,10 @@ import {
     }
     if (message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE) {
       artifactSelection.handleElementSelected(message)
+      return
+    }
+    if (message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE) {
+      artifactPosition.handlePositionChanged(message)
       return
     }
     if (message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE) {
@@ -2415,6 +2428,7 @@ import {
     state.artifact.pendingRequestKind = ''
     // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
     setTimeout(pushArtifactStyleOverrides, 300)
+    setTimeout(pushArtifactPositionOverrides, 300)
   }
 
   function handleArtifactRenderError(message) {
@@ -2930,14 +2944,22 @@ import {
         ? asText(artifactInput.originalEditRequest)
         : ''
     const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
+    const savedPositionOverrides = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).positionOverrides || {}
+    const aiPositionOverrides = artifactPosition.buildAiPositionContext(
+      artifactPosition.getMergedPositionOverrides(savedPositionOverrides)
+    )
+    // Bake transforms into the HTML the AI sees so the model perceives the
+    // moved layout directly. The runtime DOM keeps overrides off the saved
+    // HTML — this is only done for the model-facing copy.
+    const baseArtifactMarkupForAi = bakePositionOverridesIntoHtml(baseArtifactMarkup, aiPositionOverrides)
 
     return {
       enabled: true,
       lastPrompt: prompt,
       requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
       hasExistingArtifact: Boolean(baseArtifactMarkup),
-      currentArtifactFullHtml: asText(baseArtifactMarkup).trim(),
-      currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkup),
+      currentArtifactFullHtml: asText(baseArtifactMarkupForAi).trim(),
+      currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkupForAi),
       currentArtifactPackage: baseArtifactPackage,
       currentArtifactLiveHooks: buildArtifactLiveHookContext(baseArtifactMarkup),
       failedArtifactHtml: buildArtifactEditContextMarkup(failedArtifactMarkup),
@@ -2975,8 +2997,101 @@ import {
           ...pendingArtifactStyleOverrides
         }
         return Object.keys(merged).length > 0 ? merged : undefined
-      })()
+      })(),
+      /**
+       * Saved + pending element positions, surfaced to the AI so subsequent
+       * edits preserve the user's layout. Each entry is {stableId, dx, dy,
+       * label, role, optionId}. The backend should include these in the
+       * system prompt as a "Do not revert these positions" clause and is
+       * already reflected in currentArtifactFullHtml via inline transforms.
+       */
+      positionOverrides: aiPositionOverrides.length > 0 ? aiPositionOverrides : undefined
     }
+  }
+
+  /**
+   * Inject inline `style="transform: translate(...)"` into the HTML for
+   * elements identified by saved position overrides. Best-effort: matches
+   * are made via the override's role + optionId hints because the saved
+   * HTML doesn't yet carry the runtime data-prezo-pos-id attribute.
+   *
+   * Used to feed the AI a representation of the artifact that REFLECTS the
+   * user's manual position adjustments, so the model doesn't "fix" them
+   * back to the original layout.
+   *
+   * @param {string} html
+   * @param {Array<{stableId: string, dx: number, dy: number, role?: string, optionId?: string, label?: string}>} overrides
+   * @returns {string}
+   */
+  function bakePositionOverridesIntoHtml(html, overrides) {
+    let out = asText(html)
+    if (!out || !Array.isArray(overrides) || overrides.length === 0) return out
+    for (const ov of overrides) {
+      if (!ov || typeof ov !== 'object') continue
+      const dx = Number(ov.dx)
+      const dy = Number(ov.dy)
+      if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue
+      if (dx === 0 && dy === 0) continue
+      const transformPart = `transform: translate(${dx}px, ${dy}px);`
+      out = injectInlineStyleByHint(out, ov, transformPart)
+    }
+    return out
+  }
+
+  /**
+   * Inject an inline style fragment into the first element whose attributes
+   * best match the override's hint. Returns the modified HTML, or the
+   * original if no match was found.
+   */
+  function injectInlineStyleByHint(html, override, stylePart) {
+    const role = asText(override?.role).toLowerCase()
+    const optionId = asText(override?.optionId)
+    const stableId = asText(override?.stableId)
+    const matchers = []
+    if (role === 'option-row' && optionId) {
+      matchers.push(new RegExp(`(<[a-z][^>]*?\\bdata-(?:option|opt|poll-option|lane|choice|answer)-id=\\"${escapeRegExp(optionId)}\\"[^>]*?)>`, 'i'))
+    }
+    if (role === 'poll-question') {
+      matchers.push(/(<[a-z][^>]*?\bid=\"(?:poll-?question|question-?text|pollQ|question)\"[^>]*?)>/i)
+      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?\bpoll-question\b[^\"]*?\"[^>]*?)>/i)
+    }
+    if (role === 'poll-footer') {
+      matchers.push(/(<[a-z][^>]*?\bid=\"(?:total-?votes(?:-?(?:display|text|bar))?|vote-?counter|poll-?footer)\"[^>]*?)>/i)
+      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?(?:total-?votes|vote-?counter|poll-?footer)[^\"]*?\"[^>]*?)>/i)
+    }
+    if (role === 'poll-subtitle') {
+      matchers.push(/(<[a-z][^>]*?\bid=\"(?:poll-?subtitle|subtitle|sub-?title)\"[^>]*?)>/i)
+      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?\bsubtitle\b[^\"]*?\"[^>]*?)>/i)
+    }
+    if (role === 'background') {
+      matchers.push(/(<[a-z][^>]*?\bdata-prezo-background-layer=\"true\"[^>]*?)>/i)
+    }
+    if (role === 'foreground') {
+      matchers.push(/(<[a-z][^>]*?\bdata-prezo-foreground-layer=\"true\"[^>]*?)>/i)
+    }
+    if (stableId) {
+      matchers.push(new RegExp(`(<[a-z][^>]*?\\bdata-prezo-text-id=\\"${escapeRegExp(stableId)}\\"[^>]*?)>`, 'i'))
+    }
+    for (const re of matchers) {
+      const next = html.replace(re, (full, openTag) => `${appendInlineStyleToOpenTag(openTag, stylePart)}>`)
+      if (next !== html) return next
+    }
+    return html
+  }
+
+  function appendInlineStyleToOpenTag(openTag, stylePart) {
+    if (/\bstyle=\"[^\"]*\"/i.test(openTag)) {
+      return openTag.replace(/\bstyle=\"([^\"]*)\"/i, (m, existing) => {
+        const trimmed = (existing || '').trim()
+        const sep = trimmed && !trimmed.endsWith(';') ? '; ' : (trimmed ? ' ' : '')
+        return `style="${trimmed}${sep}${stylePart}"`
+      })
+    }
+    return `${openTag} style="${stylePart}"`
+  }
+
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
   function buildArtifactEditContextMarkup(markup) {
@@ -3715,11 +3830,15 @@ import {
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = 'build'
       pendingArtifactCopyOverrides = {}
+      // Fresh build replaces the artifact entirely — drop any pending
+      // position drags that belonged to the prior artifact.
+      artifactPosition.clearPendingPositionOverrides()
     } else {
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = ''
       pendingArtifactCopyOverrides = {}
+      artifactPosition.clearPendingPositionOverrides()
     }
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
@@ -3746,12 +3865,20 @@ import {
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
+      // Preserve any pending position drags through an AI edit by folding
+      // them into the savedStyleOverrides map alongside text/copy overrides
+      // BEFORE clearing pendings.
+      const pendingCopyWithPositions = {
+        ...pendingArtifactCopyOverrides,
+        positionOverrides: artifactPosition.getPendingPositionOverrides()
+      }
       const merged = mergeCopyIntoStyleOverrides(
         { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
-        pendingArtifactCopyOverrides
+        pendingCopyWithPositions
       )
       pendingArtifactStyleOverrides = {}
       pendingArtifactCopyOverrides = {}
+      artifactPosition.clearPendingPositionOverrides()
       const nextOverrides = { ...merged }
       pruneStalePollStyleOverridesInStore(nextOverrides, state.currentPoll)
       state.artifact.savedStyleOverrides = nextOverrides
@@ -3783,6 +3910,7 @@ import {
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = false
     pendingArtifactCopyOverrides = {}
+    artifactPosition.clearPendingPositionOverrides()
     clearArtifactEditPromptQueue()
     artifactBridge.setFrameHeight(520, { force: true })
     el.artifactFrame.removeAttribute('srcdoc')
@@ -3808,6 +3936,7 @@ import {
     // permanently destroy manually styled HTML (subtitle, footer, stats, etc.).
     // Delay must exceed bridge batch (90ms) + renderer + scan (60ms).
     setTimeout(pushArtifactStyleOverrides, 250)
+    setTimeout(pushArtifactPositionOverrides, 250)
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
@@ -5084,6 +5213,27 @@ import {
     frameWindow.postMessage(
       {
         type: ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        overrides
+      },
+      '*'
+    )
+  }
+
+  /**
+   * Push saved + pending position overrides to the iframe so dragged elements
+   * appear in their saved positions immediately on load. Called after every
+   * confirmed render alongside pushArtifactStyleOverrides.
+   */
+  function pushArtifactPositionOverrides() {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).positionOverrides || {}
+    const overrides = artifactPosition.getMergedPositionOverrides(saved)
+    if (!overrides || Object.keys(overrides).length === 0) return
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_POSITION_INIT_MESSAGE_TYPE,
         instanceId: state.artifact.instanceId,
         overrides
       },
@@ -9201,6 +9351,7 @@ import {
     state.artifact.savedStyleOverrides = artifactRecord.styleOverrides || {}
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
+    artifactPosition.clearPendingPositionOverrides()
     saveArtifactLibrary(artifactLibrary)
     postActiveArtifactToParent('artifact-saved')
     refreshArtifactSelect(name)
@@ -9217,6 +9368,7 @@ import {
     }
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
+    artifactPosition.clearPendingPositionOverrides()
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
       visualMode: ARTIFACT_VISUAL_MODE
@@ -10054,7 +10206,11 @@ import {
     const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
     const existingOverrides = state.artifact.savedStyleOverrides || {}
     const mergedStyle = { ...existingOverrides, ...pendingArtifactStyleOverrides }
-    const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingArtifactCopyOverrides)
+    const pendingCopyWithPositions = {
+      ...pendingArtifactCopyOverrides,
+      positionOverrides: artifactPosition.getPendingPositionOverrides()
+    }
+    const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingCopyWithPositions)
     return sanitizeSavedArtifactRecord({
       html: materializedHtml,
       package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),

@@ -2459,6 +2459,52 @@ def format_style_overrides_for_prompt(overrides: Any) -> str:
     return header + "\n" + "\n".join(lines)
 
 
+POSITION_OVERRIDES_PROMPT_MAX_TOTAL = 2400
+POSITION_OVERRIDES_PROMPT_MAX_KEYS = 30
+
+
+def format_position_overrides_for_prompt(overrides: Any) -> str:
+    """
+    Summarize host-side positionOverrides (per-element {dx, dy} drag offsets)
+    for LLM context. The current artifact HTML sent to the model already has
+    the corresponding `style="transform: translate(...)"` baked in; this
+    summary is a redundant, more legible representation that also instructs
+    the model NOT to revert the offsets.
+    """
+    if not isinstance(overrides, list) or not overrides:
+        return ""
+    lines: list[str] = []
+    total = 0
+    for entry in overrides[:POSITION_OVERRIDES_PROMPT_MAX_KEYS]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            dx = float(entry.get("dx"))
+            dy = float(entry.get("dy"))
+        except (TypeError, ValueError):
+            continue
+        if dx == 0 and dy == 0:
+            continue
+        label = entry.get("label") or entry.get("role") or entry.get("stableId") or "element"
+        option_id = entry.get("optionId")
+        suffix = f" (optionId={option_id})" if option_id else ""
+        line = f"- {label}{suffix}: translate({int(dx)}px, {int(dy)}px)"
+        if total + len(line) > POSITION_OVERRIDES_PROMPT_MAX_TOTAL:
+            break
+        lines.append(line)
+        total += len(line) + 1
+    if not lines:
+        return ""
+    header = (
+        "Runtime user position adjustments (already reflected in the artifact HTML as inline "
+        "`style=\"transform: translate(...)\"` on the corresponding elements). The user dragged "
+        "these elements to these offsets intentionally. PRESERVE the transforms exactly as written "
+        "in the current HTML. Do NOT remove them, do NOT reset them to translate(0, 0), and do NOT "
+        "rewrite the layout so the elements return to their original positions:"
+    )
+    return header + "\n" + "\n".join(lines)
+
+
 def should_attempt_artifact_patch_edit(
     request_mode: str, artifact_context: dict[str, Any], original_edit_request: str
 ) -> bool:
@@ -6536,6 +6582,18 @@ def prepare_artifact_context_for_model(
         artifact_context.pop("styleOverridesSummary", None)
     artifact_context.pop("styleOverrides", None)
     artifact_context.pop("style_overrides", None)
+    raw_positions = artifact_context.get("positionOverrides") or artifact_context.get(
+        "position_overrides"
+    )
+    position_summary = format_position_overrides_for_prompt(raw_positions)
+    if position_summary:
+        artifact_context["positionOverridesSummary"] = trim_artifact_context_text(
+            position_summary, POSITION_OVERRIDES_PROMPT_MAX_TOTAL + 400
+        )
+    else:
+        artifact_context.pop("positionOverridesSummary", None)
+    artifact_context.pop("positionOverrides", None)
+    artifact_context.pop("position_overrides", None)
     # Surface brand fields early in JSON so the model sees them before long HTML.
     bpn = artifact_context.get("brandProfileName")
     if isinstance(bpn, str) and bpn.strip():

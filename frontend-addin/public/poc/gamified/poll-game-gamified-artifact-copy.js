@@ -24,6 +24,11 @@ export const PREZO_COPY_STYLE_KEYS = /** @type {const} */ ({
 // with the "field:optionId" convention used for question/option-label HTML.
 export const PREZO_TEXT_OVERRIDE_PREFIX = '__prezo_copy_text:'
 
+// Position overrides live in the same style-overrides map under a separate
+// prefix. Value is JSON-encoded {dx, dy, label?, role?} so we can carry
+// hints that help re-match the override after an AI rebuild.
+export const PREZO_POSITION_OVERRIDE_PREFIX = '__prezo_pos:'
+
 /** @param {string} field */
 export function isArtifactCopyField(field) {
   return field === 'subtitle' || field === 'footer' || isArtifactTextField(field)
@@ -48,6 +53,63 @@ export function buildArtifactTextOverrideKey(stableId) {
   return `${PREZO_TEXT_OVERRIDE_PREFIX}${stableId}`
 }
 
+/** @param {string} stableId */
+export function buildArtifactPositionOverrideKey(stableId) {
+  return `${PREZO_POSITION_OVERRIDE_PREFIX}${stableId}`
+}
+
+/**
+ * @typedef {Object} ArtifactPositionOverride
+ * @property {number} dx  Translation offset in CSS pixels (px), relative to the
+ *   element's natural layout-flow position.
+ * @property {number} dy
+ * @property {string} [label]  Optional human-readable label snapshot (e.g. "Poll
+ *   Question", "Option Row 1"). Used to re-match after an AI rebuild changes the
+ *   DOM-path hash.
+ * @property {string} [role]  Optional semantic kind snapshot (e.g. "option-row",
+ *   "poll-question"). Used as a fallback re-match key.
+ * @property {string} [optionId]  For option-row positions, the row's data-option-id
+ *   so we can re-attach even if the row's sibling index changed.
+ */
+
+/**
+ * Serialize a position override into the string value stored in style_overrides.
+ * @param {ArtifactPositionOverride} pos
+ * @returns {string}
+ */
+export function serializeArtifactPositionOverride(pos) {
+  if (!pos || typeof pos !== 'object') return ''
+  const dx = Number(pos.dx)
+  const dy = Number(pos.dy)
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return ''
+  const out = { dx, dy }
+  if (typeof pos.label === 'string' && pos.label) out.label = pos.label
+  if (typeof pos.role === 'string' && pos.role) out.role = pos.role
+  if (typeof pos.optionId === 'string' && pos.optionId) out.optionId = pos.optionId
+  return JSON.stringify(out)
+}
+
+/** @param {unknown} raw */
+function parseArtifactPositionOverride(raw) {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const dx = Number(parsed.dx)
+    const dy = Number(parsed.dy)
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null
+    return {
+      dx,
+      dy,
+      label: typeof parsed.label === 'string' ? parsed.label : undefined,
+      role: typeof parsed.role === 'string' ? parsed.role : undefined,
+      optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined
+    }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Strip leading digits (and optional whitespace) from footer text so we
  * store only the human-readable suffix.
@@ -68,11 +130,11 @@ export function normalizeFooterTextToSuffix(raw) {
  * Read copy values out of a merged style-overrides object.
  *
  * @param {Record<string, unknown> | null | undefined} styleOverrides
- * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string> }}
+ * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string>, positionOverrides: Record<string, ArtifactPositionOverride> }}
  */
 export function extractCopyFromStyleOverrides(styleOverrides) {
   if (!styleOverrides || typeof styleOverrides !== 'object') {
-    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {} }
+    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {}, positionOverrides: {} }
   }
 
   const subtitle =
@@ -88,22 +150,32 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
   }
 
   const textOverrides = {}
+  const positionOverrides = {}
   for (const key of Object.keys(styleOverrides)) {
-    if (key.indexOf(PREZO_TEXT_OVERRIDE_PREFIX) !== 0) continue
-    const value = styleOverrides[key]
-    if (typeof value !== 'string') continue
-    const stableId = key.slice(PREZO_TEXT_OVERRIDE_PREFIX.length)
-    if (stableId) textOverrides[stableId] = value
+    if (key.indexOf(PREZO_TEXT_OVERRIDE_PREFIX) === 0) {
+      const value = styleOverrides[key]
+      if (typeof value !== 'string') continue
+      const stableId = key.slice(PREZO_TEXT_OVERRIDE_PREFIX.length)
+      if (stableId) textOverrides[stableId] = value
+      continue
+    }
+    if (key.indexOf(PREZO_POSITION_OVERRIDE_PREFIX) === 0) {
+      const parsed = parseArtifactPositionOverride(styleOverrides[key])
+      if (!parsed) continue
+      const stableId = key.slice(PREZO_POSITION_OVERRIDE_PREFIX.length)
+      if (stableId) positionOverrides[stableId] = parsed
+      continue
+    }
   }
 
-  return { subtitle, footerSuffix, textOverrides }
+  return { subtitle, footerSuffix, textOverrides, positionOverrides }
 }
 
 /**
  * Merge pending copy edits into a style-overrides object (immutably).
  *
  * @param {Record<string, unknown>} styleOverrides
- * @param {{ subtitle?: string, footerSuffix?: string, textOverrides?: Record<string, string> } | null | undefined} pending
+ * @param {{ subtitle?: string, footerSuffix?: string, textOverrides?: Record<string, string>, positionOverrides?: Record<string, ArtifactPositionOverride> } | null | undefined} pending
  * @returns {Record<string, unknown>}
  */
 export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
@@ -120,6 +192,20 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
     for (const [stableId, value] of Object.entries(pending.textOverrides)) {
       if (!stableId || typeof value !== 'string') continue
       next[buildArtifactTextOverrideKey(stableId)] = value
+    }
+  }
+  if (pending && pending.positionOverrides && typeof pending.positionOverrides === 'object') {
+    for (const [stableId, pos] of Object.entries(pending.positionOverrides)) {
+      if (!stableId) continue
+      const key = buildArtifactPositionOverrideKey(stableId)
+      // Allow null/undefined to mean "delete this override" so the host can
+      // clear a position after a reset.
+      if (pos === null || pos === undefined) {
+        delete next[key]
+        continue
+      }
+      const serialized = serializeArtifactPositionOverride(pos)
+      if (serialized) next[key] = serialized
     }
   }
 
@@ -148,6 +234,11 @@ export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
     if (stableId && typeof value === 'string') {
       next[buildArtifactTextOverrideKey(stableId)] = value
     }
+  }
+  for (const [stableId, pos] of Object.entries(copy.positionOverrides || {})) {
+    if (!stableId) continue
+    const serialized = serializeArtifactPositionOverride(pos)
+    if (serialized) next[buildArtifactPositionOverrideKey(stableId)] = serialized
   }
   return next
 }
