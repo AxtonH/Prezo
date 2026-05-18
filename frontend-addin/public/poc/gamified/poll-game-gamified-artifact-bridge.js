@@ -157,6 +157,17 @@ export function createPollGameArtifactBridge({
     }
   }
 
+  // Fixed reference resolution. The iframe is always sized to exactly these
+  // pixel dimensions internally; we then apply a CSS transform: scale() to fit
+  // the stage. This keeps `vh`/`vw`/`clamp()` units inside the artifact stable
+  // across all stage sizes — edit-mode, windowed present mode, and PowerPoint
+  // fullscreen all render the same internal pixel canvas, just scaled.
+  //
+  // Designers see WYSIWYG: a 1920×1080 design renders at scale-down in edit
+  // mode and scale-up in present mode, but the inner layout is byte-identical.
+  const ARTIFACT_REFERENCE_WIDTH = 1920
+  const ARTIFACT_REFERENCE_HEIGHT = 1080
+
   function clearInlineFrameSizing() {
     stageEl.style.height = ''
     frameEl.style.width = ''
@@ -166,8 +177,12 @@ export function createPollGameArtifactBridge({
   }
 
   function setFrameHeight(value, options = {}) {
+    // In present mode the stage is sized by CSS (16:9 letterbox box centred in
+    // the viewport — see `.present-mode-artifact .artifact-stage` rules). The
+    // bridge still re-fits the iframe scale on every call so dimensions track
+    // when the viewport changes / fullscreen toggles.
     if (getIsPresentMode()) {
-      clearInlineFrameSizing()
+      applyFrameFit()
       return
     }
     const force = Boolean(options.force)
@@ -199,33 +214,42 @@ export function createPollGameArtifactBridge({
   }
 
   /**
-   * Size the sandbox iframe to exactly the visible stage (16:9 box).
+   * Fit the iframe inside the visible stage by applying a uniform scale to a
+   * fixed 1920×1080 reference. The iframe's internal viewport is ALWAYS
+   * 1920×1080, regardless of the host stage's pixel size or present-mode
+   * state, so `vh`/`vw`/`clamp()` inside the artifact compute identically in
+   * every context.
    *
-   * We intentionally do NOT drive iframe width/height from the child's
-   * `prezo-artifact-size` measurements or apply CSS `scale()` to "fit" them:
-   * that created a feedback loop (iframe dimensions → child layout / vh → new
-   * measured size → new scale) and visible "breathing" / bent proportions.
-   * Artifacts should fill the stage with % / flex / 100% height instead.
+   * Earlier implementations avoided `transform: scale()` because they tried
+   * to fit measured *child content* size, which created a feedback loop
+   * (iframe dims → child layout → measured size → new scale). Here we scale
+   * a CONSTANT reference, so there's no feedback.
    */
   function applyFrameFit() {
-    if (getIsPresentMode()) {
-      clearInlineFrameSizing()
-      return
-    }
     const stageSize = readStageLayoutSize()
     const stageWidth = stageSize.width
     const stageHeight = stageSize.height
     if (stageWidth <= 0 || stageHeight <= 0) {
       return
     }
-    const w = Math.round(stageWidth)
-    const h = Math.round(stageHeight)
-    frameEl.style.width = `${w}px`
-    frameEl.style.height = `${h}px`
-    frameEl.style.transform = 'none'
+    // The stage is a strict 16:9 box (enforced by CSS in both edit and
+    // present mode), so either dimension yields the same scale factor.
+    // Compute both and use the smaller for safety in case the stage is
+    // briefly off-ratio during a layout transition.
+    const scaleX = stageWidth / ARTIFACT_REFERENCE_WIDTH
+    const scaleY = stageHeight / ARTIFACT_REFERENCE_HEIGHT
+    const scale = Math.min(scaleX, scaleY)
+    if (!Number.isFinite(scale) || scale <= 0) {
+      return
+    }
+    frameEl.style.width = `${ARTIFACT_REFERENCE_WIDTH}px`
+    frameEl.style.height = `${ARTIFACT_REFERENCE_HEIGHT}px`
     frameEl.style.transformOrigin = 'top left'
-    artifactState.reportedContentWidth = w
-    artifactState.reportedContentHeight = h
+    frameEl.style.transform = `scale(${scale})`
+    // Reported content dims reflect the rendered (post-scale) size that the
+    // overlay / pointer code expects.
+    artifactState.reportedContentWidth = Math.round(stageWidth)
+    artifactState.reportedContentHeight = Math.round(stageHeight)
   }
 
   function clearRenderWatchdog() {
