@@ -1630,15 +1630,43 @@ export function buildTextStyleBridgeLines() {
     '    lastKnownPositionOverrides = overrides',
     '    var unmatched = []',
     '    var ids = Object.keys(overrides)',
+    // Suppress any per-element transform transition during the apply pass
+    // so undo / saved-position pushes resolve INSTANTLY rather than
+    // animating over the artifact CSS\'s transition timing. Without this the
+    // selection overlay reads a still-mid-animation rect and ends up where
+    // the element WAS rather than where it now is.
+    '    var suppressed = []',
     '    for (var i = 0; i < ids.length; i++) {',
     '      var stableId = ids[i]',
     '      var ov = overrides[stableId]',
     '      if (!ov) continue',
     '      var node = findNodeForPositionOverride(stableId, ov)',
     '      if (!node) { unmatched.push(stableId); continue }',
+    '      if (node.style) {',
+    '        suppressed.push({ node: node, transition: node.style.transition })',
+    '        node.style.transition = "none"',
+    '      }',
     '      applyPositionToNode(node, stableId, ov)',
     '    }',
+    // Read getBoundingClientRect right away — it forces a synchronous
+    // reflow and returns the post-transform rect now that transitions are
+    // off — so refreshSelectionOverlay sees the correct geometry.
     '    refreshSelectionOverlay()',
+    // Restore transitions on the next animation frame so any subsequent
+    // user-initiated transform changes still animate naturally.
+    '    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }',
+    '    raf(function () {',
+    '      for (var j = 0; j < suppressed.length; j++) {',
+    '        var entry = suppressed[j]',
+    '        if (entry.node && entry.node.style) {',
+    '          entry.node.style.transition = entry.transition',
+    '        }',
+    '      }',
+    // Second overlay refresh on the next frame catches any layout settling
+    // that might have happened between the transition restore and the
+    // initial rect read (defensive: harmless if already correct).
+    '      refreshSelectionOverlay()',
+    '    })',
     '    return unmatched',
     '  }',
     // ── Drag gesture ─────────────────────────────────────────────
