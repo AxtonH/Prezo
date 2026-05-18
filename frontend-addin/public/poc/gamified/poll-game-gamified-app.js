@@ -58,6 +58,7 @@ import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-brid
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
+import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
@@ -78,6 +79,7 @@ import {
   const ARTIFACT_TEXT_HTML_MESSAGE_TYPE = 'prezo-text-html'
   const ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
   const ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
+  const ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
   const ARTIFACT_STAGE_SURFACE_HIDDEN = 'hidden'
@@ -578,7 +580,18 @@ import {
     getQuestionEl: () => el.question,
     getApiBase: () => state.apiBase,
     getAccessToken: () => getLibraryAccessToken(),
-    onArtifactCopyEdit: (field, text) => handleArtifactCopyEdit(field, text)
+    onArtifactCopyEdit: (field, text, extra) => handleArtifactCopyEdit(field, text, extra)
+  })
+  const artifactSelection = createArtifactSelectionHandler({
+    onSelectionChange: (selection) => {
+      // For now we only log; future iterations will drive a host-side
+      // toolbar / move handles from this signal.
+      if (selection) {
+        console.log('[prezo-element-selected]', selection.kind, selection.label, selection)
+      } else {
+        console.log('[prezo-element-selected] cleared')
+      }
+    }
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
@@ -2333,7 +2346,8 @@ import {
       message.type === ARTIFACT_RENDER_ERROR_MESSAGE_TYPE ||
       message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE ||
       message.type === ARTIFACT_TEXT_HTML_MESSAGE_TYPE ||
-      message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE
+      message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE ||
+      message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
     }
@@ -2355,6 +2369,10 @@ import {
     }
     if (message.type === ARTIFACT_TEXT_EDIT_MESSAGE_TYPE) {
       artifactTextEdit.handleTextEdit(message)
+      return
+    }
+    if (message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE) {
+      artifactSelection.handleElementSelected(message)
       return
     }
     if (message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE) {
@@ -3710,6 +3728,7 @@ import {
     state.artifact.html = resolvedMarkup
     state.artifact.package = normalizedPackage
     state.artifact.instanceId += 1
+    artifactSelection.clearSelection()
     state.artifact.frameReady = false
     state.artifact.renderConfirmed = false
     state.artifact.renderErrorCount = 0
@@ -3752,6 +3771,7 @@ import {
     state.artifact.rollbackPackage = null
     state.artifact.pendingSuccessMessage = ''
     state.artifact.instanceId += 1
+    artifactSelection.clearSelection()
     state.artifact.frameReady = false
     state.artifact.pendingRequestKind = ''
     state.artifact.renderConfirmed = false
