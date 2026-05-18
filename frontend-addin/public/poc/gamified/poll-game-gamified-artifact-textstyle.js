@@ -1769,6 +1769,16 @@ export function buildTextStyleBridgeLines() {
     '    var stableId = computeStableTextId(selectedNode)',
     '    if (!stableId) return',
     '    var current = readCurrentOffsetFor(stableId)',
+    // Capture the element\'s natural-flow position ONCE at drag start. Used by
+    // snapDeltaToGrid so the snap baseline never drifts mid-drag when the
+    // element\'s rect changes (descendant CSS animations, vote-induced
+    // relayouts, etc.).
+    // We compute it in body-relative coords so it aligns with the grid
+    // overlay (which is appended to <body> at (0,0) of the 1920×1080 ref).
+    '    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0 }',
+    '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
+    '    var naturalLeft = (startRect.left - bodyRect.left) - current.dx',
+    '    var naturalTop = (startRect.top - bodyRect.top) - current.dy',
     '    dragState = {',
     '      node: selectedNode,',
     '      stableId: stableId,',
@@ -1776,6 +1786,8 @@ export function buildTextStyleBridgeLines() {
     '      startClientY: event.clientY,',
     '      startDx: current.dx,',
     '      startDy: current.dy,',
+    '      naturalLeft: naturalLeft,',
+    '      naturalTop: naturalTop,',
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
@@ -1990,21 +2002,25 @@ export function buildTextStyleBridgeLines() {
     '    if (event.data.instanceId !== INSTANCE_ID && event.data.instanceId !== undefined) return',
     '    applyDesignerConfig(event.data.config)',
     '  }',
-    // Snap a candidate dx so the element\'s top-left lands on the nearest
-    // gridline within threshold. The element\'s natural-flow position is
-    // (currentLeft - currentDx) — we never read it directly because the
-    // bridge tracks dx/dy deltas relative to that baseline.
+    // Snap a candidate dx/dy so the element\'s top-left lands on the nearest
+    // gridline within threshold. The natural-flow baseline is captured ONCE
+    // at drag start (dragState.naturalLeft / naturalTop) — re-reading it
+    // every move from `getBoundingClientRect()` causes:
+    //   - drift (rect is post-transform; subtracting only saved dx misses
+    //     in-flight drag deltas)
+    //   - stutter (descendant CSS animations change the parent\'s rect each
+    //     frame, so the inferred baseline keeps moving even when nothing is
+    //     dragged)
+    //   - apparent "children snapping inside the group" when the dragged
+    //     element is a parent whose children animate independently.
+    // Body-relative coords align with the grid overlay\'s 1920×1080 box.
     '  function snapDeltaToGrid(node, dx, dy) {',
     '    if (!designerConfig.snapToGrid || !node) return { dx: dx, dy: dy }',
-    '    var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null',
-    '    if (!rect) return { dx: dx, dy: dy }',
-    // currentLeft already reflects the current transform; the baseline
-    // (natural flow left) is rect.left minus the offset we last committed
-    // for this stableId. We grab the stableId via the dragState below.
+    '    if (!dragState || dragState.node !== node) return { dx: dx, dy: dy }',
     '    var spacing = designerConfig.gridSpacing',
     '    var threshold = designerConfig.snapThreshold',
-    '    var baseLeft = rect.left - readCurrentDx(node)',
-    '    var baseTop = rect.top - readCurrentDy(node)',
+    '    var baseLeft = dragState.naturalLeft',
+    '    var baseTop = dragState.naturalTop',
     '    var projectedLeft = baseLeft + dx',
     '    var projectedTop = baseTop + dy',
     '    var nearestX = Math.round(projectedLeft / spacing) * spacing',
@@ -2016,20 +2032,6 @@ export function buildTextStyleBridgeLines() {
     '      dy = nearestY - baseTop',
     '    }',
     '    return { dx: dx, dy: dy }',
-    '  }',
-    // Helpers to read the currently-applied offset from a node so the snap
-    // math knows what baseline to project from.
-    '  function readCurrentDx(node) {',
-    '    var stableId = node && node.getAttribute && node.getAttribute("data-prezo-pos-id")',
-    '    if (!stableId) return 0',
-    '    var ov = lastKnownPositionOverrides && lastKnownPositionOverrides[stableId]',
-    '    return (ov && Number.isFinite(Number(ov.dx))) ? Number(ov.dx) : 0',
-    '  }',
-    '  function readCurrentDy(node) {',
-    '    var stableId = node && node.getAttribute && node.getAttribute("data-prezo-pos-id")',
-    '    if (!stableId) return 0',
-    '    var ov = lastKnownPositionOverrides && lastKnownPositionOverrides[stableId]',
-    '    return (ov && Number.isFinite(Number(ov.dy))) ? Number(ov.dy) : 0',
     '  }',
 
     '  function installSelectionListeners() {',
