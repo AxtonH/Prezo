@@ -5613,6 +5613,16 @@ import {
           delete store[key]
           continue
         }
+        // Detect AI moves made via CSS rules in <style> rather than inline
+        // styles. The AI often rewrites a stylesheet rule like
+        // `#poll-question { position: absolute; top: 0; right: 0 }` while
+        // leaving the element's tag/class/inline-style unchanged. Without
+        // this check, signaturesDiffer + parentLayoutChanged both miss it.
+        if (target && stylesheetRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
+          recordDecision('DROP', 'stylesheet rules changed for this element')
+          delete store[key]
+          continue
+        }
         recordDecision('KEEP', 'AI did not move this element')
         // Keep override — bridge will re-apply on render.
         continue
@@ -5726,6 +5736,113 @@ import {
     const re = new RegExp(`\\b${prop}\\s*:\\s*([^;]+)`, 'i')
     const m = styleText.match(re)
     return m ? m[1].trim().toLowerCase() : ''
+  }
+
+  /**
+   * Detect AI-driven position changes that happen via stylesheet rules
+   * inside <style> blocks (rather than inline element attributes).
+   *
+   * The AI often "moves" an element by rewriting its CSS rule, e.g.:
+   *
+   *   #poll-question { position: absolute; top: 20px; right: 20px; }
+   *
+   * The element's own tag/class/inline-style stays identical, so
+   * signaturesDiffer and parentLayoutChanged both miss the change. This
+   * helper extracts all <style> text from both docs, picks out the rules
+   * that target THIS element (by id selector or class selector), and
+   * compares the LAYOUT-relevant declarations between prior and new.
+   *
+   * Heuristic; not a full CSS parser. Tracks the properties that actually
+   * affect rendered position: position, top/left/right/bottom, margin,
+   * transform, display, justify-content, align-items, text-align.
+   */
+  function stylesheetRulesChangedForElement(priorDoc, nextDoc, priorEl, nextEl) {
+    if (!priorEl || !nextEl) return false
+    const selectors = candidateSelectorsForElement(priorEl, nextEl)
+    if (!selectors.length) return false
+    const priorRules = extractLayoutRulesForSelectors(priorDoc, selectors)
+    const nextRules = extractLayoutRulesForSelectors(nextDoc, selectors)
+    return priorRules !== nextRules
+  }
+
+  function candidateSelectorsForElement(priorEl, nextEl) {
+    const out = new Set()
+    const idA = priorEl.id || ''
+    const idB = nextEl.id || ''
+    if (idA) out.add('#' + idA)
+    if (idB) out.add('#' + idB)
+    const classA = (priorEl.getAttribute('class') || '').split(/\s+/).filter(Boolean)
+    const classB = (nextEl.getAttribute('class') || '').split(/\s+/).filter(Boolean)
+    for (const c of classA) out.add('.' + c)
+    for (const c of classB) out.add('.' + c)
+    return Array.from(out)
+  }
+
+  function getAllStyleText(doc) {
+    if (!doc) return ''
+    let combined = ''
+    try {
+      const styleEls = doc.querySelectorAll('style')
+      if (styleEls && styleEls.length) {
+        for (let i = 0; i < styleEls.length; i++) {
+          combined += (styleEls[i].textContent || '') + '\n'
+        }
+      }
+    } catch {}
+    return combined
+  }
+
+  // Layout properties whose value-changes affect rendered position.
+  const LAYOUT_PROP_PATTERN = /(position|top|left|right|bottom|margin(?:-[a-z]+)?|transform|display|justify-content|align-items|align-self|text-align|float|inset)\s*:\s*([^;}]+)/gi
+
+  /**
+   * Extract the layout-relevant declarations from all CSS rules that
+   * mention any of the supplied selectors. Returns a normalised string
+   * for direct equality comparison between prior and new docs.
+   */
+  function extractLayoutRulesForSelectors(doc, selectors) {
+    const text = getAllStyleText(doc)
+    if (!text || !selectors.length) return ''
+    // Strip comments to avoid spurious diffs.
+    const cleaned = text.replace(/\/\*[\s\S]*?\*\//g, '')
+    const collected = []
+    // Walk the stylesheet by braces. For each rule: capture selector list
+    // + body, check if any of our selectors is referenced, then extract
+    // layout props from the body.
+    const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
+    let m
+    while ((m = ruleRegex.exec(cleaned)) !== null) {
+      const selectorText = m[1].trim().toLowerCase()
+      const body = m[2]
+      if (!selectorText) continue
+      let referenced = false
+      for (const sel of selectors) {
+        const needle = sel.toLowerCase()
+        // Match as a whole token to avoid `.poll` matching `.poll-question`.
+        // The selector text contains tokens separated by commas/spaces/combinators.
+        const tokenRe = new RegExp(`(^|[^a-z0-9_-])${escapeRegexp(needle)}([^a-z0-9_-]|$)`, 'i')
+        if (tokenRe.test(selectorText)) { referenced = true; break }
+      }
+      if (!referenced) continue
+      const layoutDecls = []
+      let d
+      const propRe = new RegExp(LAYOUT_PROP_PATTERN.source, 'gi')
+      while ((d = propRe.exec(body)) !== null) {
+        const prop = d[1].toLowerCase().trim()
+        const val = d[2].replace(/\s+/g, ' ').trim().toLowerCase()
+        layoutDecls.push(`${prop}:${val}`)
+      }
+      if (layoutDecls.length) {
+        layoutDecls.sort()
+        collected.push(`${selectorText}{${layoutDecls.join(';')}}`)
+      }
+    }
+    collected.sort()
+    return collected.join('|')
+  }
+
+  function escapeRegexp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
   function locateOptionRowInDoc(doc, optionId) {
