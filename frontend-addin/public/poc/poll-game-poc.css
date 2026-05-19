@@ -714,10 +714,10 @@ body:not(.artifact-mode-active)
   cursor: pointer;
 }
 /* Grid spacing row: label text on the left, dropdown on the right, on
-   the SAME line. We use a 2-column grid so the global `.row select` rule
-   (width: 100%) sizes the select within the right column only — it doesn't
-   take the whole parent width and force the text above it. */
-.designer-spacing-row {
+   the SAME line. Selectors are scoped to .ribbon-group to outrank the
+   broader `.ribbon-group label { display: flex; flex-direction: column }`
+   rule that would otherwise stack the span above the select. */
+.ribbon-group label.designer-spacing-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -726,10 +726,10 @@ body:not(.artifact-mode-active)
   font-size: 13px;
   color: var(--chrome-text);
 }
-.designer-spacing-row > span {
+.ribbon-group label.designer-spacing-row > span {
   white-space: nowrap;
 }
-.designer-spacing-row > select {
+.ribbon-group label.designer-spacing-row > select {
   width: 100%;
   min-width: 90px;
 }
