@@ -5536,19 +5536,35 @@ import {
         const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
         const target = locatePositionTarget(priorDoc, stableId, role, optionId)
         const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId)
+        // Diagnostic logging — remove once override-after-AI is verified
+        // stable. Helps explain why a particular position override was
+        // dropped on the user's machine.
+        const diag = {
+          key, role, optionId,
+          priorFound: !!target,
+          nextFound: !!aiTarget,
+          aiInlineStyle: aiTarget ? (aiTarget.getAttribute('style') || '') : '',
+          priorParentStyle: target && target.parentElement ? (target.parentElement.getAttribute('style') || '') : '',
+          nextParentStyle: aiTarget && aiTarget.parentElement ? (aiTarget.parentElement.getAttribute('style') || '') : '',
+          priorParentId: target && target.parentElement ? (target.parentElement.id || '') : '',
+          nextParentId: aiTarget && aiTarget.parentElement ? (aiTarget.parentElement.id || '') : ''
+        }
         if (!aiTarget) {
-          // AI removed the element entirely; the override has no anchor.
+          console.log('[prezo-position-override] DROP (element gone)', diag)
           delete store[key]
           continue
         }
         if (hasExplicitPositioning(aiTarget)) {
+          console.log('[prezo-position-override] DROP (AI explicit positioning)', diag)
           delete store[key]
           continue
         }
         if (target && parentLayoutChanged(target, aiTarget)) {
+          console.log('[prezo-position-override] DROP (parent layout changed)', diag)
           delete store[key]
           continue
         }
+        console.log('[prezo-position-override] KEEP (AI did not move this element)', diag)
         // Keep override — bridge will re-apply on render.
         continue
       }
@@ -5750,6 +5766,7 @@ import {
     if (!frameWindow) return
     const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).positionOverrides || {}
     const overrides = artifactPosition.getMergedPositionOverrides(saved)
+    console.log('[prezo-position-push]', { count: Object.keys(overrides || {}).length, keys: Object.keys(overrides || {}) })
     if (!overrides || Object.keys(overrides).length === 0) return
     frameWindow.postMessage(
       {
