@@ -336,44 +336,6 @@
         </section>
 
         <section class="ribbon-pane" data-ribbon-pane="look">
-          <article class="ribbon-group designer-tools-group" data-designer-tools-group="true">
-            <h3 class="sidebar-section-title">Designer tools</h3>
-            <div class="sidebar-section-body">
-              <details class="design-collapse designer-tools-collapse">
-                <summary>Rulers &amp; grid</summary>
-                <div class="design-collapse-body">
-                  <p class="note designer-tools-note">
-                    Rulers, grid, and snap aids for laying out artifacts. Hidden automatically in present mode.
-                  </p>
-                  <div class="row designer-toggle-row">
-                    <label class="designer-toggle">
-                      <input id="designer-rulers-toggle" type="checkbox" />
-                      <span>Show rulers</span>
-                    </label>
-                    <label class="designer-toggle">
-                      <input id="designer-grid-toggle" type="checkbox" />
-                      <span>Show grid</span>
-                    </label>
-                    <label class="designer-toggle">
-                      <input id="designer-snap-toggle" type="checkbox" />
-                      <span>Snap to grid</span>
-                    </label>
-                  </div>
-                  <div class="row">
-                    <label class="designer-spacing-row" for="designer-grid-spacing">
-                      <span>Grid spacing</span>
-                      <select id="designer-grid-spacing" aria-label="Grid spacing">
-                        <option value="50">50px</option>
-                        <option value="100">100px</option>
-                        <option value="200">200px</option>
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              </details>
-            </div>
-          </article>
-
           <article class="ribbon-group">
             <h3 class="sidebar-section-title">Background</h3>
             <div class="sidebar-section-body">
@@ -417,6 +379,44 @@
                   <label>Photo<input id="theme-bg-image-opacity" type="range" min="0" max="1" step="0.01" title="Background photo strength" /></label>
                   <label>Tint<input id="theme-overlay-opacity" type="range" min="0" max="1" step="0.01" title="Color overlay strength" /></label>
                   <label>Grid<input id="theme-grid-opacity" type="range" min="0" max="0.5" step="0.01" title="Guide grid visibility (0 = off)" /></label>
+                </div>
+              </details>
+            </div>
+          </article>
+
+          <article class="ribbon-group designer-tools-group" data-designer-tools-group="true">
+            <h3 class="sidebar-section-title">Designer tools</h3>
+            <div class="sidebar-section-body">
+              <details class="design-collapse designer-tools-collapse">
+                <summary>Rulers &amp; grid</summary>
+                <div class="design-collapse-body">
+                  <p class="note designer-tools-note">
+                    Rulers, grid, and snap aids for laying out artifacts. Hidden automatically in present mode.
+                  </p>
+                  <div class="row designer-toggle-row">
+                    <label class="designer-toggle">
+                      <input id="designer-rulers-toggle" type="checkbox" />
+                      <span>Show rulers</span>
+                    </label>
+                    <label class="designer-toggle">
+                      <input id="designer-grid-toggle" type="checkbox" />
+                      <span>Show grid</span>
+                    </label>
+                    <label class="designer-toggle">
+                      <input id="designer-snap-toggle" type="checkbox" />
+                      <span>Snap to grid</span>
+                    </label>
+                  </div>
+                  <div class="row">
+                    <label class="designer-spacing-row" for="designer-grid-spacing">
+                      <span>Grid spacing</span>
+                      <select id="designer-grid-spacing" aria-label="Grid spacing">
+                        <option value="50">50px</option>
+                        <option value="100">100px</option>
+                        <option value="200">200px</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
               </details>
             </div>

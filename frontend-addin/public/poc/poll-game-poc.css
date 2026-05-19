@@ -675,8 +675,14 @@ body:not(.artifact-mode-active)
 
 /* Designer tools (rulers, grid, snap). Compact toggle + spacing controls.
    Lives inside a collapsible details > div.design-collapse-body. */
+.designer-tools-collapse > .design-collapse-body {
+  /* Breathing room between the "Rulers & grid" summary header and the
+     description / controls below. The shared .design-collapse-body has no
+     top padding by default, which makes the note look glued to the chevron. */
+  padding-top: 10px;
+}
 .designer-tools-group .designer-tools-note {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   color: var(--chrome-text-secondary);
 }
 .designer-tools-group .row {
