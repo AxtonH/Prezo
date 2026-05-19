@@ -3993,6 +3993,12 @@ import {
       // may no longer exist or whose stable ids have shifted.
       artifactHistory.clear()
       const nextOverrides = { ...merged }
+      // Drop overrides whose underlying element the AI just changed. This
+      // resolves the conflict where the user manually colors the title red,
+      // then asks the AI for blue — without this, the red override would
+      // re-apply and overwrite the AI's blue.
+      const priorHtmlForDiff = asText(state.artifact.rollbackHtml || state.artifact.lastStableHtml)
+      dropOverridesAiChanged(nextOverrides, priorHtmlForDiff, resolvedMarkup)
       pruneStalePollStyleOverridesInStore(nextOverrides, state.currentPoll)
       state.artifact.savedStyleOverrides = nextOverrides
     }
@@ -5426,6 +5432,242 @@ import {
         delete store[key]
       }
     }
+  }
+
+  /**
+   * Drop overrides whose underlying element the AI just changed.
+   *
+   * Context: the user can manually edit text (color it red), drag elements,
+   * and otherwise produce overrides that live in style_overrides. We
+   * preserve those overrides through AI edits so a drag survives a styling
+   * tweak. But when the AI INTENTIONALLY changes the same thing the
+   * override was about (user asks 'make the title blue' after coloring it
+   * red manually), the override should yield to the AI's new value.
+   *
+   * Detection: for each override key, locate the corresponding element in
+   * both the prior HTML (what the artifact looked like before this AI
+   * edit) and the new HTML (the AI's output). If the element's stable
+   * signature differs between the two, the AI changed it — drop the
+   * override. Conservative on uncertainty: an override we can't locate
+   * in BOTH HTMLs is kept (preserves drags on decorative children, etc).
+   *
+   * Only the question / option-label / option-* / position override kinds
+   * have a reliable locator in arbitrary AI HTML. Copy and generic text
+   * overrides depend on stable DOM-path ids that don't survive AI
+   * restructures — those are pruned elsewhere (pruneStalePollStyleOverridesInStore).
+   *
+   * @param {Record<string, unknown>} store
+   * @param {string} priorHtml
+   * @param {string} newHtml
+   */
+  function dropOverridesAiChanged(store, priorHtml, newHtml) {
+    if (!store || typeof store !== 'object') return
+    const prior = asText(priorHtml)
+    const next = asText(newHtml)
+    if (!prior || !next || prior === next) return
+    let priorDoc, nextDoc
+    try {
+      const parser = new DOMParser()
+      priorDoc = parser.parseFromString(prior, 'text/html')
+      nextDoc = parser.parseFromString(next, 'text/html')
+    } catch {
+      return
+    }
+    if (!priorDoc || !nextDoc) return
+
+    for (const key of Object.keys(store)) {
+      if (key === 'question') {
+        const target = locateQuestionInDoc(priorDoc)
+        const aiTarget = locateQuestionInDoc(nextDoc)
+        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
+          delete store[key]
+        }
+        continue
+      }
+      if (key.startsWith('option-label:')) {
+        const optionId = key.slice('option-label:'.length)
+        const target = locateOptionLabelInDoc(priorDoc, optionId)
+        const aiTarget = locateOptionLabelInDoc(nextDoc, optionId)
+        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
+          delete store[key]
+        }
+        continue
+      }
+      if (
+        key.startsWith('option-votes:') ||
+        key.startsWith('option-percentage:') ||
+        key.startsWith('option-rank:')
+      ) {
+        // Stat fields: the renderer rewrites their text every vote, so the
+        // diff signal we care about is whether the AI changed the
+        // ENCLOSING option row's structure. If the row itself changed,
+        // the stat field's prior styling is no longer meaningful.
+        const colonIdx = key.indexOf(':')
+        const optionId = key.slice(colonIdx + 1)
+        const target = locateOptionRowInDoc(priorDoc, optionId)
+        const aiTarget = locateOptionRowInDoc(nextDoc, optionId)
+        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
+          delete store[key]
+        }
+        continue
+      }
+      if (key.startsWith('__prezo_pos:')) {
+        // Position overrides. Drop when the AI restructured the element's
+        // position context, or added an explicit transform of its own.
+        const stableId = key.slice('__prezo_pos:'.length)
+        const parsed = safeParseJSON(store[key])
+        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
+        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId)
+        if (target && aiTarget) {
+          if (
+            hasExplicitTransform(aiTarget) ||
+            structuralPositionChanged(target, aiTarget)
+          ) {
+            delete store[key]
+          }
+        }
+        continue
+      }
+      // Other keys (subtitle, footer, generic text) — left alone here.
+      // They're handled by pruneStalePollStyleOverridesInStore against the
+      // live poll data, and by the bridge's own re-match fallback.
+    }
+  }
+
+  function safeParseJSON(value) {
+    if (typeof value !== 'string') return null
+    try { return JSON.parse(value) } catch { return null }
+  }
+
+  function locateQuestionInDoc(doc) {
+    if (!doc) return null
+    return (
+      doc.querySelector('[data-prezo-editable="question"]') ||
+      doc.querySelector('#poll-question, #pollQuestion, #question, #poll-title, #pollTitle') ||
+      doc.querySelector('.poll-question, .poll-q, .poll-title, .poll-heading, .poll-headline')
+    )
+  }
+
+  function locateOptionRowInDoc(doc, optionId) {
+    if (!doc || !optionId) return null
+    return (
+      doc.querySelector(`[data-option-id="${cssAttrEscape(optionId)}"]`) ||
+      doc.querySelector(`[data-prezo-option-id="${cssAttrEscape(optionId)}"]`) ||
+      doc.querySelector(`[data-opt-id="${cssAttrEscape(optionId)}"]`) ||
+      doc.querySelector(`[data-poll-option-id="${cssAttrEscape(optionId)}"]`) ||
+      doc.querySelector(`[data-lane-id="${cssAttrEscape(optionId)}"]`)
+    )
+  }
+
+  function locateOptionLabelInDoc(doc, optionId) {
+    const row = locateOptionRowInDoc(doc, optionId)
+    if (!row) return null
+    return (
+      row.querySelector('[data-prezo-editable="option-label"]') ||
+      row.querySelector('.option-label, .opt-label, .lane-label, .bar-label, .choice-label, .answer-label, .label')
+    )
+  }
+
+  function locatePositionTarget(doc, stableId, role, optionId) {
+    if (!doc) return null
+    if (stableId) {
+      const direct = doc.querySelector(`[data-prezo-pos-id="${cssAttrEscape(stableId)}"]`) ||
+        doc.querySelector(`[data-prezo-text-id="${cssAttrEscape(stableId)}"]`)
+      if (direct) return direct
+    }
+    if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
+    if (role === 'poll-question') return locateQuestionInDoc(doc)
+    if (role === 'poll-footer') {
+      return (
+        doc.querySelector('[data-prezo-editable="footer"]') ||
+        doc.querySelector('#total-votes-text, #total-votes-display, #total-votes, #totalVotes, #vote-counter, #pollFooter') ||
+        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total')
+      )
+    }
+    if (role === 'poll-subtitle') {
+      return (
+        doc.querySelector('[data-prezo-editable="subtitle"]') ||
+        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle') ||
+        doc.querySelector('.poll-subtitle, .subtitle, .sub-title')
+      )
+    }
+    if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
+    if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
+    return null
+  }
+
+  function cssAttrEscape(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  }
+
+  /**
+   * Compute a signature for an element capturing the visual presentation
+   * the user would care about: inline style, classes, tag, and a normalised
+   * text fingerprint. Two elements with identical signatures are treated
+   * as "the AI didn't change this" for override-pruning purposes.
+   */
+  function signatureFor(el) {
+    if (!el) return ''
+    const tag = (el.tagName || '').toLowerCase()
+    const style = (el.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
+    const cls = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
+    const id = el.id || ''
+    // Text fingerprint: strip whitespace; cap length so a long content
+    // change registers but minor whitespace tweaks don't.
+    const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+    return `${tag}|${id}|${cls}|${style}|${text}`
+  }
+
+  function signaturesDiffer(a, b) {
+    return signatureFor(a) !== signatureFor(b)
+  }
+
+  function hasExplicitTransform(el) {
+    if (!el) return false
+    const style = el.getAttribute('style') || ''
+    return /\btransform\s*:/i.test(style)
+  }
+
+  /**
+   * For position overrides: the AI "moved" the element if its parent
+   * changed, its sibling index changed, its inline style changed, its
+   * class list changed, or its parent's layout class changed. The
+   * last two cover the common "AI changes flex layout to reposition
+   * children" case where the element itself doesn't move in the DOM
+   * but its rendered position shifts.
+   */
+  function structuralPositionChanged(prior, next) {
+    if (!prior || !next) return false
+    if (parentSignatureDiffers(prior, next)) return true
+    const priorIdx = prior.parentElement
+      ? Array.prototype.indexOf.call(prior.parentElement.children, prior)
+      : -1
+    const nextIdx = next.parentElement
+      ? Array.prototype.indexOf.call(next.parentElement.children, next)
+      : -1
+    if (priorIdx !== nextIdx) return true
+    const priorStyle = (prior.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
+    const nextStyle = (next.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
+    if (priorStyle !== nextStyle) return true
+    const priorClass = (prior.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
+    const nextClass = (next.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
+    return priorClass !== nextClass
+  }
+
+  function parentSignatureDiffers(prior, next) {
+    const pa = prior.parentElement
+    const na = next.parentElement
+    if (!pa || !na) return !pa !== !na
+    if (pa.tagName !== na.tagName) return true
+    if (pa.id !== na.id) return true
+    const paClass = (pa.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
+    const naClass = (na.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
+    if (paClass !== naClass) return true
+    const paStyle = (pa.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
+    const naStyle = (na.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
+    return paStyle !== naStyle
   }
 
   /**
