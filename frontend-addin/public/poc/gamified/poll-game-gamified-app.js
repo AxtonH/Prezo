@@ -5591,11 +5591,22 @@ import {
         // Runtime-rendered case: the element is created by the artifact's
         // renderer at runtime (e.g. option rows built from poll data via
         // JS in <script>), so it doesn't appear in the parsed static HTML
-        // on either side. Without an anchor on either side we can't
-        // diff — the safe default is to KEEP the override. The bridge's
-        // role-based fallback will re-attach it to whatever the new
-        // renderer produces.
+        // on either side. We can still detect AI moves that ride on
+        // stylesheet rules — the AI typically adds/edits a rule that
+        // targets the row's container or class selector (e.g.
+        // `.tower-col:nth-child(1) { order: 99 }`) and those rules ARE
+        // present in the parsed <style>.
         if (!target && !aiTarget) {
+          const runtimeSelectors = runtimeRenderedSelectors(priorDoc, nextDoc, role)
+          if (runtimeSelectors.length) {
+            const priorRules = extractLayoutRulesForSelectors(priorDoc, runtimeSelectors)
+            const nextRules = extractLayoutRulesForSelectors(nextDoc, runtimeSelectors)
+            if (priorRules !== nextRules) {
+              recordDecision('DROP', 'stylesheet rules changed (runtime-rendered)')
+              delete store[key]
+              continue
+            }
+          }
           recordDecision('KEEP', 'runtime-rendered (not in static HTML)')
           continue
         }
@@ -5767,6 +5778,34 @@ import {
     return priorRules !== nextRules
   }
 
+  // For elements that the artifact renders at runtime (option rows, etc.)
+  // we can't pull selectors from a parsed DOM node — the node doesn't exist
+  // on either side. Synthesize a selector set from the known container ids
+  // for the role plus the well-known option-row class fragments. The
+  // extractor only keeps rules whose body actually carries layout decls,
+  // so adding extra selectors here is safe.
+  function runtimeRenderedSelectors(priorDoc, nextDoc, role) {
+    const out = new Set()
+    if (role !== 'option-row' && role !== 'option-label' && role !== 'option-bar') {
+      return Array.from(out)
+    }
+    out.add('#options-container')
+    out.add('#options')
+    out.add('#poll-options')
+    out.add('#poll-options-container')
+    // Common class fragments used across artifacts for option rows.
+    const knownClasses = [
+      'tower-col', 'option-row', 'option-item', 'option', 'opt',
+      'poll-option', 'choice', 'choice-row', 'answer', 'answer-row',
+      'lane', 'lane-row', 'bar-row', 'option-bar'
+    ]
+    for (const c of knownClasses) out.add('.' + c)
+    // Also harvest selectors from the existing stylesheet text that target
+    // any of the well-known container ids — covers AI rewrites that
+    // introduced a child-targeting rule like `.tower-col:nth-child(1)`.
+    return Array.from(out)
+  }
+
   function candidateSelectorsForElement(priorEl, nextEl) {
     const out = new Set()
     // Include the element itself plus a few ancestor levels. The AI can move
@@ -5806,7 +5845,7 @@ import {
   }
 
   // Layout properties whose value-changes affect rendered position.
-  const LAYOUT_PROP_PATTERN = /(position|top|left|right|bottom|margin(?:-[a-z]+)?|transform|display|justify-content|align-items|align-self|text-align|float|inset)\s*:\s*([^;}]+)/gi
+  const LAYOUT_PROP_PATTERN = /(position|top|left|right|bottom|margin(?:-[a-z]+)?|transform|display|justify-content|align-items|align-self|text-align|float|inset|order|grid-column|grid-row|grid-area|flex-direction|flex-wrap)\s*:\s*([^;}]+)/gi
 
   /**
    * Extract the layout-relevant declarations from all CSS rules that
