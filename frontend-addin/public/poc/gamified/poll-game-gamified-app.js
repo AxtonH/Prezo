@@ -5586,8 +5586,20 @@ import {
             console.log(`[prezo-position-override] ${verdict} (${reason})`, diag)
           } catch (e) {}
         }
+        // Runtime-rendered case: the element is created by the artifact's
+        // renderer at runtime (e.g. option rows built from poll data via
+        // JS in <script>), so it doesn't appear in the parsed static HTML
+        // on either side. Without an anchor on either side we can't
+        // diff — the safe default is to KEEP the override. The bridge's
+        // role-based fallback will re-attach it to whatever the new
+        // renderer produces.
+        if (!target && !aiTarget) {
+          recordDecision('KEEP', 'runtime-rendered (not in static HTML)')
+          continue
+        }
         if (!aiTarget) {
-          recordDecision('DROP', 'element gone')
+          // Element existed in prior static HTML but the AI removed it.
+          recordDecision('DROP', 'element removed by AI')
           delete store[key]
           continue
         }
