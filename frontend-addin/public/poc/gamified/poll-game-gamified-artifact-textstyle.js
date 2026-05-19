@@ -2073,30 +2073,16 @@ export function buildTextStyleBridgeLines() {
     '    if (event.data.instanceId !== INSTANCE_ID && event.data.instanceId !== undefined) return',
     '    applyDesignerConfig(event.data.config)',
     '  }',
-    // Per-kind snap reference: where on the element should "land on a
-    // gridline" feel right? Returns body-relative offsets from the
-    // element\'s natural top-left.
-    //
-    //   option-row       → bottom-center (gamified template anchors visible
-    //                       content like building images at the row bottom)
-    //   poll-question    → top-center (titles read from top)
-    //   poll-footer      → top-center (footer text anchored at top of its box)
-    //   poll-subtitle    → top-center (same as above)
-    //   option-label     → top-center (label text reads from top)
-    //   option-votes / option-percentage / option-rank → geometric center
-    //   everything else  → geometric center (safe default for decorative
-    //                       containers / generic text)
+    // Snap reference offset from the element\'s natural top-left. Every
+    // kind uses the geometric center, so the snap dot always sits in the
+    // middle of the dragged element\'s bounding box. Consistent and
+    // predictable — the visible dot is always the snap target.
+    // `kind` is kept as a parameter so future per-kind tweaks (if we
+    // need them) drop in here without touching the call sites.
     '  function getSnapReferenceOffsets(kind, width, height) {',
     '    var w = Number(width) || 0',
     '    var h = Number(height) || 0',
-    '    var cx = w / 2',
-    '    var cy = h / 2',
-    '    if (kind === "option-row") return { x: cx, y: h }',
-    '    if (kind === "poll-question") return { x: cx, y: 0 }',
-    '    if (kind === "poll-footer") return { x: cx, y: 0 }',
-    '    if (kind === "poll-subtitle") return { x: cx, y: 0 }',
-    '    if (kind === "option-label") return { x: cx, y: 0 }',
-    '    return { x: cx, y: cy }',
+    '    return { x: w / 2, y: h / 2 }',
     '  }',
     // Snap a candidate dx/dy so the kind-specific reference point lands on
     // the nearest gridline within threshold. The reference is captured ONCE
