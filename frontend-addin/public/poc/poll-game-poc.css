@@ -723,11 +723,17 @@ body:not(.artifact-mode-active)
   align-items: center;
   gap: 10px;
   width: 100%;
-  font-size: 13px;
+  /* Match the font of the .designer-toggle row above so the label reads
+     as part of the same control cluster. */
+  font-size: 12px;
+  font-weight: 400;
   color: var(--chrome-text);
 }
 .ribbon-group label.designer-spacing-row > span {
   white-space: nowrap;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--chrome-text);
 }
 .ribbon-group label.designer-spacing-row > select {
   width: 100%;
