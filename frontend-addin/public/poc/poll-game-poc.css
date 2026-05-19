@@ -673,7 +673,8 @@ body:not(.artifact-mode-active)
   display: none;
 }
 
-/* Designer tools (rulers, grid, snap). Compact toggle + spacing controls. */
+/* Designer tools (rulers, grid, snap). Compact toggle + spacing controls.
+   Lives inside a collapsible details > div.design-collapse-body. */
 .designer-tools-group .designer-tools-note {
   margin: 0 0 10px;
   color: var(--chrome-text-secondary);
@@ -683,15 +684,22 @@ body:not(.artifact-mode-active)
   align-items: center;
   margin-bottom: 6px;
 }
+/* Three toggles on one row, wrapping only when the panel is too narrow. */
+.designer-toggle-row {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
 .designer-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   color: var(--chrome-text);
   -webkit-user-select: none;
   user-select: none;
   cursor: pointer;
+  white-space: nowrap;
 }
 .designer-toggle input[type="checkbox"] {
   width: 14px;
