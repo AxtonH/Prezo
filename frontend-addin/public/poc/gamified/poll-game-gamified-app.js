@@ -3923,6 +3923,19 @@ import {
     }
     artifactBridge.clearRenderWatchdog()
     const requestKind = asText(options.requestKind).toLowerCase()
+    // Diagnostic: stash which path applyArtifactMarkup is on so we can
+    // tell from console whether AI edits are routing through 'edit'
+    // (which preserves overrides) or 'build' (which wipes them).
+    try {
+      window.__prezoDebug = window.__prezoDebug || {}
+      window.__prezoDebug.lastApply = {
+        ts: Date.now(),
+        requestKind,
+        hadPendingPositions: Object.keys(artifactPosition.getPendingPositionOverrides() || {}).length,
+        savedKeysBefore: Object.keys(state.artifact.savedStyleOverrides || {})
+      }
+      console.log('[prezo-debug] applyArtifactMarkup', window.__prezoDebug.lastApply)
+    } catch (e) {}
     if (requestKind === 'edit') {
       state.artifact.rollbackHtml = normalizeArtifactMarkup(
         state.artifact.lastStableHtml || state.artifact.html
