@@ -723,17 +723,21 @@ body:not(.artifact-mode-active)
   align-items: center;
   gap: 10px;
   width: 100%;
-  /* Match the font of the .designer-toggle row above so the label reads
-     as part of the same control cluster. */
-  font-size: 12px;
+  /* Match what the .designer-toggle labels above ACTUALLY render at after
+     the cascade. The broader `.ribbon-group label` rule (font-size: 11px,
+     color: var(--chrome-text-secondary)) wins against `.designer-toggle`
+     because of specificity, so the toggles appear in 11px muted grey.
+     We mirror those same values here so the spacing row reads as one
+     cluster with the toggles. */
+  font-size: 11px;
   font-weight: 400;
-  color: var(--chrome-text);
+  color: var(--chrome-text-secondary);
 }
 .ribbon-group label.designer-spacing-row > span {
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 400;
-  color: var(--chrome-text);
+  color: var(--chrome-text-secondary);
 }
 .ribbon-group label.designer-spacing-row > select {
   width: 100%;
