@@ -713,16 +713,24 @@ body:not(.artifact-mode-active)
   accent-color: rgba(155, 89, 182, 0.95);
   cursor: pointer;
 }
+/* Grid spacing row: label text on the left, dropdown on the right, on
+   the SAME line. We use a 2-column grid so the global `.row select` rule
+   (width: 100%) sizes the select within the right column only — it doesn't
+   take the whole parent width and force the text above it. */
 .designer-spacing-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   width: 100%;
   font-size: 13px;
   color: var(--chrome-text);
 }
-.designer-spacing-row select {
-  margin-left: auto;
+.designer-spacing-row > span {
+  white-space: nowrap;
+}
+.designer-spacing-row > select {
+  width: 100%;
   min-width: 90px;
 }
 
