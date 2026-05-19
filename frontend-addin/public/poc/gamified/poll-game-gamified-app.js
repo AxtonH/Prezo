@@ -4022,7 +4022,9 @@ import {
           savedKeys: Object.keys(nextOverrides),
           savedFull: JSON.parse(JSON.stringify(nextOverrides)),
           priorHtmlLen: (priorHtmlForDiff || '').length,
-          newHtmlLen: (resolvedMarkup || '').length
+          newHtmlLen: (resolvedMarkup || '').length,
+          priorHtml: priorHtmlForDiff || '',
+          newHtml: resolvedMarkup || ''
         }
         console.log('[prezo-debug] saved after AI edit:', window.__prezoDebug.lastAiEdit)
       } catch (e) { console.warn('[prezo-debug] failed', e) }
