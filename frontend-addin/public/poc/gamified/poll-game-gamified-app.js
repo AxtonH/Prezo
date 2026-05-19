@@ -5512,32 +5512,55 @@ import {
         continue
       }
       if (key.startsWith('__prezo_pos:')) {
-        // Position overrides are ALWAYS dropped on a successful AI edit.
+        // Position overrides need careful handling because AI edits can
+        // affect different elements than the user dragged:
+        //   - User drags element A, asks AI to change A's position → AI
+        //     moves A. We need to DROP A's override so the bridge doesn't
+        //     re-apply the old drag on top of the AI's new position.
+        //   - User drags element A, asks AI to change B → AI rewrites the
+        //     whole artifact and may strip A's inline transform as a
+        //     side-effect. We need to KEEP A's override so the bridge
+        //     re-applies the drag on render. A's position is preserved.
         //
-        // Rationale: buildArtifactContext bakes the user's drag into the
-        // HTML it sends to the AI via bakePositionOverridesIntoHtml (inline
-        // `style="transform: translate(...)"` on the moved element). So the
-        // AI's returned HTML ALREADY reflects the user's drag — either it
-        // kept the baked transform (meaning "user position preserved") or
-        // it replaced it (meaning "AI repositioned intentionally"). Either
-        // outcome is what the user expects.
-        //
-        // Re-applying the saved override on top of the AI's HTML produces
-        // double-application: the AI's new natural position PLUS the user's
-        // old delta, which yields the "title halfway to the corner instead
-        // of in it" bug. Dropping unconditionally is correct as long as
-        // bakePositionOverridesIntoHtml stays in the prompt pipeline.
-        //
-        // (Style/text overrides keep the HTML-diff logic below because they
-        // are NOT baked into the prompt HTML — only sent as a summary —
-        // so the AI's returned HTML doesn't carry them through.)
-        delete store[key]
+        // Detection: drop ONLY when the AI explicitly took control of
+        // THIS element's position. Signals:
+        //   - element has its own inline `transform:` in the AI's HTML
+        //   - element has its own inline absolute/fixed positioning
+        //   - element's parent layout changed meaningfully (parent class,
+        //     parent inline style, sibling index)
+        // Otherwise keep the override — the AI didn't move this element,
+        // it just rewrote unrelated parts of the artifact.
+        const stableId = key.slice('__prezo_pos:'.length)
+        const parsed = safeParseJSON(store[key])
+        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
+        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId)
+        if (!aiTarget) {
+          // AI removed the element entirely; the override has no anchor.
+          delete store[key]
+          continue
+        }
+        if (hasExplicitPositioning(aiTarget)) {
+          delete store[key]
+          continue
+        }
+        if (target && parentLayoutChanged(target, aiTarget)) {
+          delete store[key]
+          continue
+        }
+        // Keep override — bridge will re-apply on render.
         continue
       }
       // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
     }
+  }
+
+  function safeParseJSON(value) {
+    if (typeof value !== 'string') return null
+    try { return JSON.parse(value) } catch { return null }
   }
 
   function locateQuestionInDoc(doc) {
@@ -5547,6 +5570,97 @@ import {
       doc.querySelector('#poll-question, #pollQuestion, #question, #poll-title, #pollTitle') ||
       doc.querySelector('.poll-question, .poll-q, .poll-title, .poll-heading, .poll-headline')
     )
+  }
+
+  function locatePositionTarget(doc, stableId, role, optionId) {
+    if (!doc) return null
+    if (stableId) {
+      const direct = doc.querySelector(`[data-prezo-pos-id="${cssAttrEscape(stableId)}"]`) ||
+        doc.querySelector(`[data-prezo-text-id="${cssAttrEscape(stableId)}"]`)
+      if (direct) return direct
+    }
+    if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
+    if (role === 'poll-question') return locateQuestionInDoc(doc)
+    if (role === 'poll-footer') {
+      return (
+        doc.querySelector('[data-prezo-editable="footer"]') ||
+        doc.querySelector('#total-votes-text, #total-votes-display, #total-votes, #totalVotes, #vote-counter, #pollFooter') ||
+        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total')
+      )
+    }
+    if (role === 'poll-subtitle') {
+      return (
+        doc.querySelector('[data-prezo-editable="subtitle"]') ||
+        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle') ||
+        doc.querySelector('.poll-subtitle, .subtitle, .sub-title')
+      )
+    }
+    if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
+    if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
+    return null
+  }
+
+  /**
+   * The AI took explicit control of THIS element's position. Signals are
+   * limited to inline style attributes because that's the only thing we
+   * can read from a parsed HTML string (computed styles need a live DOM).
+   *
+   *   transform: translate(...)
+   *   position: absolute|fixed (with top/left/right/bottom)
+   *   margin: <something> auto or auto on horizontal sides
+   *
+   * Returns true if any of these positioning intents appear inline on
+   * the element. Stylesheet-driven moves are NOT detected here — those
+   * are caught by parentLayoutChanged.
+   */
+  function hasExplicitPositioning(el) {
+    if (!el) return false
+    const style = (el.getAttribute('style') || '').toLowerCase()
+    if (!style) return false
+    if (/\btransform\s*:[^;]*\btranslate/i.test(style)) return true
+    if (/\bposition\s*:\s*(absolute|fixed)/i.test(style)) {
+      // With absolute/fixed we'd expect top/left/right/bottom alongside.
+      if (/\b(top|left|right|bottom)\s*:/i.test(style)) return true
+    }
+    return false
+  }
+
+  /**
+   * The AI changed the element's PARENT in a way that affects rendered
+   * position. We look at:
+   *   - the parent itself swapped to a different element (id changed)
+   *   - the parent gained or lost layout-affecting inline style (display,
+   *     justify-content, align-items, flex-direction, text-align)
+   *
+   * We deliberately do NOT trip on arbitrary parent class changes — the
+   * AI often renames classes during rewrites without actually changing
+   * layout, and we don't want to drop overrides on those.
+   */
+  function parentLayoutChanged(prior, next) {
+    if (!prior || !next) return false
+    const pa = prior.parentElement
+    const na = next.parentElement
+    if (!pa && !na) return false
+    if (!pa || !na) return true
+    if (pa.id !== na.id) return true
+    const paStyle = (pa.getAttribute('style') || '').toLowerCase()
+    const naStyle = (na.getAttribute('style') || '').toLowerCase()
+    const LAYOUT_PROPS = /(display|justify-content|align-items|align-content|flex-direction|flex-wrap|text-align|grid-template|gap|column-gap|row-gap)\s*:/g
+    const paLayout = (paStyle.match(LAYOUT_PROPS) || []).sort().join('|')
+    const naLayout = (naStyle.match(LAYOUT_PROPS) || []).sort().join('|')
+    if (paLayout !== naLayout) return true
+    // Compare the actual layout property VALUES, not just presence.
+    for (const prop of ['display', 'justify-content', 'align-items', 'align-content', 'flex-direction', 'text-align']) {
+      if (extractInlineProp(paStyle, prop) !== extractInlineProp(naStyle, prop)) return true
+    }
+    return false
+  }
+
+  function extractInlineProp(styleText, prop) {
+    if (!styleText) return ''
+    const re = new RegExp(`\\b${prop}\\s*:\\s*([^;]+)`, 'i')
+    const m = styleText.match(re)
+    return m ? m[1].trim().toLowerCase() : ''
   }
 
   function locateOptionRowInDoc(doc, optionId) {
