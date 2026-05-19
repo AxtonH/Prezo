@@ -5512,33 +5512,32 @@ import {
         continue
       }
       if (key.startsWith('__prezo_pos:')) {
-        // Position overrides. Drop when the AI restructured the element's
-        // position context, or added an explicit transform of its own.
-        const stableId = key.slice('__prezo_pos:'.length)
-        const parsed = safeParseJSON(store[key])
-        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
-        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId)
-        if (target && aiTarget) {
-          if (
-            hasExplicitTransform(aiTarget) ||
-            structuralPositionChanged(target, aiTarget)
-          ) {
-            delete store[key]
-          }
-        }
+        // Position overrides are ALWAYS dropped on a successful AI edit.
+        //
+        // Rationale: buildArtifactContext bakes the user's drag into the
+        // HTML it sends to the AI via bakePositionOverridesIntoHtml (inline
+        // `style="transform: translate(...)"` on the moved element). So the
+        // AI's returned HTML ALREADY reflects the user's drag — either it
+        // kept the baked transform (meaning "user position preserved") or
+        // it replaced it (meaning "AI repositioned intentionally"). Either
+        // outcome is what the user expects.
+        //
+        // Re-applying the saved override on top of the AI's HTML produces
+        // double-application: the AI's new natural position PLUS the user's
+        // old delta, which yields the "title halfway to the corner instead
+        // of in it" bug. Dropping unconditionally is correct as long as
+        // bakePositionOverridesIntoHtml stays in the prompt pipeline.
+        //
+        // (Style/text overrides keep the HTML-diff logic below because they
+        // are NOT baked into the prompt HTML — only sent as a summary —
+        // so the AI's returned HTML doesn't carry them through.)
+        delete store[key]
         continue
       }
       // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
     }
-  }
-
-  function safeParseJSON(value) {
-    if (typeof value !== 'string') return null
-    try { return JSON.parse(value) } catch { return null }
   }
 
   function locateQuestionInDoc(doc) {
@@ -5570,34 +5569,6 @@ import {
     )
   }
 
-  function locatePositionTarget(doc, stableId, role, optionId) {
-    if (!doc) return null
-    if (stableId) {
-      const direct = doc.querySelector(`[data-prezo-pos-id="${cssAttrEscape(stableId)}"]`) ||
-        doc.querySelector(`[data-prezo-text-id="${cssAttrEscape(stableId)}"]`)
-      if (direct) return direct
-    }
-    if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
-    if (role === 'poll-question') return locateQuestionInDoc(doc)
-    if (role === 'poll-footer') {
-      return (
-        doc.querySelector('[data-prezo-editable="footer"]') ||
-        doc.querySelector('#total-votes-text, #total-votes-display, #total-votes, #totalVotes, #vote-counter, #pollFooter') ||
-        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total')
-      )
-    }
-    if (role === 'poll-subtitle') {
-      return (
-        doc.querySelector('[data-prezo-editable="subtitle"]') ||
-        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle') ||
-        doc.querySelector('.poll-subtitle, .subtitle, .sub-title')
-      )
-    }
-    if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
-    if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
-    return null
-  }
-
   function cssAttrEscape(value) {
     return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   }
@@ -5622,52 +5593,6 @@ import {
 
   function signaturesDiffer(a, b) {
     return signatureFor(a) !== signatureFor(b)
-  }
-
-  function hasExplicitTransform(el) {
-    if (!el) return false
-    const style = el.getAttribute('style') || ''
-    return /\btransform\s*:/i.test(style)
-  }
-
-  /**
-   * For position overrides: the AI "moved" the element if its parent
-   * changed, its sibling index changed, its inline style changed, its
-   * class list changed, or its parent's layout class changed. The
-   * last two cover the common "AI changes flex layout to reposition
-   * children" case where the element itself doesn't move in the DOM
-   * but its rendered position shifts.
-   */
-  function structuralPositionChanged(prior, next) {
-    if (!prior || !next) return false
-    if (parentSignatureDiffers(prior, next)) return true
-    const priorIdx = prior.parentElement
-      ? Array.prototype.indexOf.call(prior.parentElement.children, prior)
-      : -1
-    const nextIdx = next.parentElement
-      ? Array.prototype.indexOf.call(next.parentElement.children, next)
-      : -1
-    if (priorIdx !== nextIdx) return true
-    const priorStyle = (prior.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
-    const nextStyle = (next.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
-    if (priorStyle !== nextStyle) return true
-    const priorClass = (prior.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
-    const nextClass = (next.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
-    return priorClass !== nextClass
-  }
-
-  function parentSignatureDiffers(prior, next) {
-    const pa = prior.parentElement
-    const na = next.parentElement
-    if (!pa || !na) return !pa !== !na
-    if (pa.tagName !== na.tagName) return true
-    if (pa.id !== na.id) return true
-    const paClass = (pa.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
-    const naClass = (na.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
-    if (paClass !== naClass) return true
-    const paStyle = (pa.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
-    const naStyle = (na.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
-    return paStyle !== naStyle
   }
 
   /**
