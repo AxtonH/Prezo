@@ -5769,15 +5769,26 @@ import {
 
   function candidateSelectorsForElement(priorEl, nextEl) {
     const out = new Set()
-    const idA = priorEl.id || ''
-    const idB = nextEl.id || ''
-    if (idA) out.add('#' + idA)
-    if (idB) out.add('#' + idB)
-    const classA = (priorEl.getAttribute('class') || '').split(/\s+/).filter(Boolean)
-    const classB = (nextEl.getAttribute('class') || '').split(/\s+/).filter(Boolean)
-    for (const c of classA) out.add('.' + c)
-    for (const c of classB) out.add('.' + c)
+    // Include the element itself plus a few ancestor levels. The AI can move
+    // an element by changing the container's text-align / align-items /
+    // justify-content rather than the element's own rule; without ancestor
+    // coverage those moves slip past the override-drop check.
+    collectSelectorsFromChain(priorEl, out, 4)
+    collectSelectorsFromChain(nextEl, out, 4)
     return Array.from(out)
+  }
+
+  function collectSelectorsFromChain(el, out, maxDepth) {
+    let cur = el
+    let depth = 0
+    while (cur && cur.nodeType === 1 && depth <= maxDepth) {
+      const id = cur.id || ''
+      if (id) out.add('#' + id)
+      const classes = (cur.getAttribute && (cur.getAttribute('class') || '')).split(/\s+/).filter(Boolean)
+      for (const c of classes) out.add('.' + c)
+      cur = cur.parentElement
+      depth += 1
+    }
   }
 
   function getAllStyleText(doc) {
