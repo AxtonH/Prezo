@@ -4001,6 +4001,18 @@ import {
       dropOverridesAiChanged(nextOverrides, priorHtmlForDiff, resolvedMarkup)
       pruneStalePollStyleOverridesInStore(nextOverrides, state.currentPoll)
       state.artifact.savedStyleOverrides = nextOverrides
+      // Diagnostic: expose state for inspection. Remove after debugging.
+      try {
+        window.__prezoDebug = window.__prezoDebug || {}
+        window.__prezoDebug.lastAiEdit = {
+          ts: Date.now(),
+          savedKeys: Object.keys(nextOverrides),
+          savedFull: JSON.parse(JSON.stringify(nextOverrides)),
+          priorHtmlLen: (priorHtmlForDiff || '').length,
+          newHtmlLen: (resolvedMarkup || '').length
+        }
+        console.log('[prezo-debug] saved after AI edit:', window.__prezoDebug.lastAiEdit)
+      } catch (e) { console.warn('[prezo-debug] failed', e) }
     }
     return true
   }
@@ -5549,22 +5561,34 @@ import {
           priorParentId: target && target.parentElement ? (target.parentElement.id || '') : '',
           nextParentId: aiTarget && aiTarget.parentElement ? (aiTarget.parentElement.id || '') : ''
         }
+        // Diagnostic: stash every decision into window.__prezoDebug for
+        // inspection. Remove once the override-after-AI behavior is stable.
+        const recordDecision = (verdict, reason) => {
+          try {
+            window.__prezoDebug = window.__prezoDebug || {}
+            window.__prezoDebug.overrideDecisions = window.__prezoDebug.overrideDecisions || []
+            window.__prezoDebug.overrideDecisions.push({
+              ts: Date.now(), verdict, reason, ...diag
+            })
+            console.log(`[prezo-position-override] ${verdict} (${reason})`, diag)
+          } catch (e) {}
+        }
         if (!aiTarget) {
-          console.log('[prezo-position-override] DROP (element gone)', diag)
+          recordDecision('DROP', 'element gone')
           delete store[key]
           continue
         }
         if (hasExplicitPositioning(aiTarget)) {
-          console.log('[prezo-position-override] DROP (AI explicit positioning)', diag)
+          recordDecision('DROP', 'AI explicit positioning')
           delete store[key]
           continue
         }
         if (target && parentLayoutChanged(target, aiTarget)) {
-          console.log('[prezo-position-override] DROP (parent layout changed)', diag)
+          recordDecision('DROP', 'parent layout changed')
           delete store[key]
           continue
         }
-        console.log('[prezo-position-override] KEEP (AI did not move this element)', diag)
+        recordDecision('KEEP', 'AI did not move this element')
         // Keep override — bridge will re-apply on render.
         continue
       }
