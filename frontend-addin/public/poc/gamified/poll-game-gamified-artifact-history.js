@@ -30,9 +30,9 @@
 
 /**
  * @typedef {Object} HistoryEntry
- * @property {'position' | 'text-content' | 'text-html'} kind
+ * @property {'position' | 'size' | 'text-content' | 'text-html'} kind
  * @property {string} targetKey  Unique key for the target so we know when
- *   to coalesce. Position: stableId. Text: `${field}:${optionId}`.
+ *   to coalesce. Position: stableId. Size: stableId. Text: `${field}:${optionId}`.
  * @property {*} before  Pre-action snapshot (depends on kind).
  * @property {*} after   Post-action snapshot (depends on kind).
  * @property {string} [label]  Human-readable description for telemetry / UI.

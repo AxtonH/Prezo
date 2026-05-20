@@ -29,6 +29,11 @@ export const PREZO_TEXT_OVERRIDE_PREFIX = '__prezo_copy_text:'
 // hints that help re-match the override after an AI rebuild.
 export const PREZO_POSITION_OVERRIDE_PREFIX = '__prezo_pos:'
 
+// Size overrides — value is JSON-encoded {sx, sy, label?, role?, optionId?, anchor?}.
+// Stored as scale factors (1.0 = natural size) so the override stays
+// meaningful even when the AI rebuild changes the element's base dimensions.
+export const PREZO_SIZE_OVERRIDE_PREFIX = '__prezo_size:'
+
 /** @param {string} field */
 export function isArtifactCopyField(field) {
   return field === 'subtitle' || field === 'footer' || isArtifactTextField(field)
@@ -56,6 +61,11 @@ export function buildArtifactTextOverrideKey(stableId) {
 /** @param {string} stableId */
 export function buildArtifactPositionOverrideKey(stableId) {
   return `${PREZO_POSITION_OVERRIDE_PREFIX}${stableId}`
+}
+
+/** @param {string} stableId */
+export function buildArtifactSizeOverrideKey(stableId) {
+  return `${PREZO_SIZE_OVERRIDE_PREFIX}${stableId}`
 }
 
 /**
@@ -88,6 +98,58 @@ export function serializeArtifactPositionOverride(pos) {
   if (typeof pos.optionId === 'string' && pos.optionId) out.optionId = pos.optionId
   if (typeof pos.anchor === 'string' && pos.anchor) out.anchor = pos.anchor
   return JSON.stringify(out)
+}
+
+/**
+ * @typedef {Object} ArtifactSizeOverride
+ * @property {number} sx
+ * @property {number} sy
+ * @property {string} [label]
+ * @property {string} [role]
+ * @property {string} [optionId]
+ * @property {string} [anchor]
+ */
+
+/**
+ * Serialize a size override into the string value stored in style_overrides.
+ * @param {ArtifactSizeOverride} size
+ * @returns {string}
+ */
+export function serializeArtifactSizeOverride(size) {
+  if (!size || typeof size !== 'object') return ''
+  const sx = Number(size.sx)
+  const sy = Number(size.sy)
+  if (!Number.isFinite(sx) || !Number.isFinite(sy)) return ''
+  if (sx <= 0 || sy <= 0) return ''
+  const out = { sx, sy }
+  if (typeof size.label === 'string' && size.label) out.label = size.label
+  if (typeof size.role === 'string' && size.role) out.role = size.role
+  if (typeof size.optionId === 'string' && size.optionId) out.optionId = size.optionId
+  if (typeof size.anchor === 'string' && size.anchor) out.anchor = size.anchor
+  return JSON.stringify(out)
+}
+
+/** @param {unknown} raw */
+function parseArtifactSizeOverride(raw) {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const sx = Number(parsed.sx)
+    const sy = Number(parsed.sy)
+    if (!Number.isFinite(sx) || !Number.isFinite(sy)) return null
+    if (sx <= 0 || sy <= 0) return null
+    return {
+      sx,
+      sy,
+      label: typeof parsed.label === 'string' ? parsed.label : undefined,
+      role: typeof parsed.role === 'string' ? parsed.role : undefined,
+      optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined,
+      anchor: typeof parsed.anchor === 'string' && parsed.anchor ? parsed.anchor : undefined
+    }
+  } catch {
+    return null
+  }
 }
 
 /** @param {unknown} raw */
@@ -132,11 +194,11 @@ export function normalizeFooterTextToSuffix(raw) {
  * Read copy values out of a merged style-overrides object.
  *
  * @param {Record<string, unknown> | null | undefined} styleOverrides
- * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string>, positionOverrides: Record<string, ArtifactPositionOverride> }}
+ * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string>, positionOverrides: Record<string, ArtifactPositionOverride>, sizeOverrides: Record<string, ArtifactSizeOverride> }}
  */
 export function extractCopyFromStyleOverrides(styleOverrides) {
   if (!styleOverrides || typeof styleOverrides !== 'object') {
-    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {}, positionOverrides: {} }
+    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {}, positionOverrides: {}, sizeOverrides: {} }
   }
 
   const subtitle =
@@ -153,6 +215,7 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
 
   const textOverrides = {}
   const positionOverrides = {}
+  const sizeOverrides = {}
   for (const key of Object.keys(styleOverrides)) {
     if (key.indexOf(PREZO_TEXT_OVERRIDE_PREFIX) === 0) {
       const value = styleOverrides[key]
@@ -168,9 +231,16 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
       if (stableId) positionOverrides[stableId] = parsed
       continue
     }
+    if (key.indexOf(PREZO_SIZE_OVERRIDE_PREFIX) === 0) {
+      const parsed = parseArtifactSizeOverride(styleOverrides[key])
+      if (!parsed) continue
+      const stableId = key.slice(PREZO_SIZE_OVERRIDE_PREFIX.length)
+      if (stableId) sizeOverrides[stableId] = parsed
+      continue
+    }
   }
 
-  return { subtitle, footerSuffix, textOverrides, positionOverrides }
+  return { subtitle, footerSuffix, textOverrides, positionOverrides, sizeOverrides }
 }
 
 /**
@@ -210,6 +280,18 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
       if (serialized) next[key] = serialized
     }
   }
+  if (pending && pending.sizeOverrides && typeof pending.sizeOverrides === 'object') {
+    for (const [stableId, size] of Object.entries(pending.sizeOverrides)) {
+      if (!stableId) continue
+      const key = buildArtifactSizeOverrideKey(stableId)
+      if (size === null || size === undefined) {
+        delete next[key]
+        continue
+      }
+      const serialized = serializeArtifactSizeOverride(size)
+      if (serialized) next[key] = serialized
+    }
+  }
 
   return next
 }
@@ -241,6 +323,11 @@ export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
     if (!stableId) continue
     const serialized = serializeArtifactPositionOverride(pos)
     if (serialized) next[buildArtifactPositionOverrideKey(stableId)] = serialized
+  }
+  for (const [stableId, size] of Object.entries(copy.sizeOverrides || {})) {
+    if (!stableId) continue
+    const serialized = serializeArtifactSizeOverride(size)
+    if (serialized) next[buildArtifactSizeOverrideKey(stableId)] = serialized
   }
   return next
 }

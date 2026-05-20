@@ -60,6 +60,7 @@ import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-s
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
+import { createArtifactSizeHandler } from './poll-game-gamified-artifact-size.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
 import {
   createArtifactGuidesHandler,
@@ -87,7 +88,9 @@ import {
   const ARTIFACT_TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
   const ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
   const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
+  const ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE = 'prezo-size-changed'
   const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
+  const ARTIFACT_SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
   const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
   const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
@@ -635,6 +638,28 @@ import {
           },
           after: { ...override },
           label: override.label || 'Move element',
+          ts: Date.now()
+        })
+      }
+    }
+  })
+  const artifactSize = createArtifactSizeHandler({
+    onSizeChange: (stableId, override, message) => {
+      console.log('[prezo-size-changed]', stableId, override)
+      if (message && Number.isFinite(Number(message.priorSx)) && Number.isFinite(Number(message.priorSy))) {
+        artifactHistory.push({
+          kind: 'size',
+          targetKey: stableId,
+          before: {
+            sx: Number(message.priorSx),
+            sy: Number(message.priorSy),
+            role: override.role,
+            optionId: override.optionId,
+            label: override.label,
+            anchor: override.anchor
+          },
+          after: { ...override },
+          label: override.label || 'Resize element',
           ts: Date.now()
         })
       }
@@ -2485,6 +2510,10 @@ import {
       artifactPosition.handlePositionChanged(message)
       return
     }
+    if (message.type === ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE) {
+      artifactSize.handleSizeChanged(message)
+      return
+    }
     if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
       // Shortcut forwarded from the iframe bridge. Same arbitration as the
       // host-side keydown listener — run undo or redo via artifactHistory.
@@ -2536,6 +2565,7 @@ import {
     // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
     setTimeout(pushArtifactStyleOverrides, 300)
     setTimeout(pushArtifactPositionOverrides, 300)
+    setTimeout(pushArtifactSizeOverrides, 300)
     setTimeout(pushArtifactGridConfig, 300)
   }
 
@@ -3052,9 +3082,14 @@ import {
         ? asText(artifactInput.originalEditRequest)
         : ''
     const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
-    const savedPositionOverrides = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).positionOverrides || {}
+    const savedOverridesView = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {})
+    const savedPositionOverrides = savedOverridesView.positionOverrides || {}
+    const savedSizeOverrides = savedOverridesView.sizeOverrides || {}
     const aiPositionOverrides = artifactPosition.buildAiPositionContext(
       artifactPosition.getMergedPositionOverrides(savedPositionOverrides)
+    )
+    const aiSizeOverrides = artifactSize.buildAiSizeContext(
+      artifactSize.getMergedSizeOverrides(savedSizeOverrides)
     )
     // Bake transforms into the HTML the AI sees so the model perceives the
     // moved layout directly. The runtime DOM keeps overrides off the saved
@@ -3113,7 +3148,14 @@ import {
        * system prompt as a "Do not revert these positions" clause and is
        * already reflected in currentArtifactFullHtml via inline transforms.
        */
-      positionOverrides: aiPositionOverrides.length > 0 ? aiPositionOverrides : undefined
+      positionOverrides: aiPositionOverrides.length > 0 ? aiPositionOverrides : undefined,
+      /**
+       * Saved + pending element sizes (scale factors). Each entry is
+       * {stableId, sx, sy, label?, role?, optionId?}. The backend should
+       * preserve these unless the user prompt explicitly asks to resize
+       * the affected element.
+       */
+      sizeOverrides: aiSizeOverrides.length > 0 ? aiSizeOverrides : undefined
     }
   }
 
@@ -3952,8 +3994,9 @@ import {
       state.artifact.pendingRequestKind = 'build'
       pendingArtifactCopyOverrides = {}
       // Fresh build replaces the artifact entirely — drop any pending
-      // position drags that belonged to the prior artifact.
+      // position/size drags that belonged to the prior artifact.
       artifactPosition.clearPendingPositionOverrides()
+      artifactSize.clearPendingSizeOverrides()
       artifactHistory.clear()
     } else {
       state.artifact.rollbackHtml = ''
@@ -3961,6 +4004,7 @@ import {
       state.artifact.pendingRequestKind = ''
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
+      artifactSize.clearPendingSizeOverrides()
       artifactHistory.clear()
     }
     state.artifact.pendingSuccessMessage = ''
@@ -3988,12 +4032,13 @@ import {
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
-      // Preserve any pending position drags through an AI edit by folding
-      // them into the savedStyleOverrides map alongside text/copy overrides
-      // BEFORE clearing pendings.
+      // Preserve any pending position/size drags through an AI edit by
+      // folding them into the savedStyleOverrides map alongside text/copy
+      // overrides BEFORE clearing pendings.
       const pendingCopyWithPositions = {
         ...pendingArtifactCopyOverrides,
-        positionOverrides: artifactPosition.getPendingPositionOverrides()
+        positionOverrides: artifactPosition.getPendingPositionOverrides(),
+        sizeOverrides: artifactSize.getPendingSizeOverrides()
       }
       const merged = mergeCopyIntoStyleOverrides(
         { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
@@ -4002,6 +4047,7 @@ import {
       pendingArtifactStyleOverrides = {}
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
+      artifactSize.clearPendingSizeOverrides()
       // AI edits rebuild the DOM — prior undo entries reference nodes that
       // may no longer exist or whose stable ids have shifted.
       artifactHistory.clear()
@@ -4057,6 +4103,7 @@ import {
     state.artifact.floatingOpen = false
     pendingArtifactCopyOverrides = {}
     artifactPosition.clearPendingPositionOverrides()
+    artifactSize.clearPendingSizeOverrides()
     artifactHistory.clear()
     clearArtifactEditPromptQueue()
     artifactBridge.setFrameHeight(520, { force: true })
@@ -4084,6 +4131,7 @@ import {
     // Delay must exceed bridge batch (90ms) + renderer + scan (60ms).
     setTimeout(pushArtifactStyleOverrides, 250)
     setTimeout(pushArtifactPositionOverrides, 250)
+    setTimeout(pushArtifactSizeOverrides, 250)
     setTimeout(pushArtifactGridConfig, 250)
   }
 
@@ -5299,6 +5347,10 @@ import {
       applyHistoryPositionEntry(target, entry.targetKey)
       return
     }
+    if (entry.kind === 'size') {
+      applyHistorySizeEntry(target, entry.targetKey)
+      return
+    }
     if (entry.kind === 'text-content') {
       applyHistoryTextContentEntry(target)
       return
@@ -5328,6 +5380,21 @@ import {
       priorDy: undefined
     })
     pushArtifactPositionOverrides()
+  }
+
+  function applyHistorySizeEntry(target, stableId) {
+    artifactSize.handleSizeChanged({
+      stableId,
+      sx: target.sx,
+      sy: target.sy,
+      role: target.role,
+      label: target.label,
+      optionId: target.optionId,
+      anchor: target.anchor,
+      priorSx: undefined,
+      priorSy: undefined
+    })
+    pushArtifactSizeOverrides()
   }
 
   function applyHistoryTextContentEntry(target) {
@@ -5642,6 +5709,69 @@ import {
         // Keep override — bridge will re-apply on render.
         continue
       }
+      if (key.startsWith('__prezo_size:')) {
+        // Symmetric to the position branch above. Drop only when the AI
+        // explicitly took control of THIS element's size (inline width/
+        // height/transform:scale, or a stylesheet rule that touches any
+        // of the size-affecting properties on this element's selectors).
+        // Otherwise keep — the user's manual resize survives an AI edit
+        // that targeted a different element.
+        const stableId = key.slice('__prezo_size:'.length)
+        const parsed = safeParseJSON(store[key])
+        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
+        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
+        const label = parsed && typeof parsed.label === 'string' ? parsed.label : ''
+        const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label, anchor)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label, anchor)
+        const recordSizeDecision = (verdict, reason) => {
+          try {
+            window.__prezoDebug = window.__prezoDebug || {}
+            window.__prezoDebug.overrideDecisions = window.__prezoDebug.overrideDecisions || []
+            window.__prezoDebug.overrideDecisions.push({
+              ts: Date.now(), verdict, reason, key, role, optionId,
+              priorFound: !!target, nextFound: !!aiTarget,
+              aiInlineStyle: aiTarget ? (aiTarget.getAttribute('style') || '') : ''
+            })
+            console.log(`[prezo-size-override] ${verdict} (${reason})`, { key, role })
+          } catch (e) {}
+        }
+        if (!target && !aiTarget) {
+          // Runtime-rendered or otherwise untraceable in static HTML.
+          // Without a target to diff, the safe default is KEEP so user
+          // intent survives. The bridge's re-match fallback (label,
+          // anchor) handles re-attaching at render time.
+          const runtimeSelectors = runtimeRenderedSelectors(priorDoc, nextDoc, role)
+          if (runtimeSelectors.length) {
+            const priorRules = extractSizeRulesForSelectors(priorDoc, runtimeSelectors)
+            const nextRules = extractSizeRulesForSelectors(nextDoc, runtimeSelectors)
+            if (priorRules !== nextRules) {
+              recordSizeDecision('DROP', 'stylesheet size rules changed (runtime-rendered)')
+              delete store[key]
+              continue
+            }
+          }
+          recordSizeDecision('KEEP', 'runtime-rendered (not in static HTML)')
+          continue
+        }
+        if (!aiTarget) {
+          recordSizeDecision('DROP', 'element removed by AI')
+          delete store[key]
+          continue
+        }
+        if (hasExplicitSizing(aiTarget)) {
+          recordSizeDecision('DROP', 'AI explicit sizing')
+          delete store[key]
+          continue
+        }
+        if (target && stylesheetSizeRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
+          recordSizeDecision('DROP', 'stylesheet size rules changed for this element')
+          delete store[key]
+          continue
+        }
+        recordSizeDecision('KEEP', 'AI did not resize this element')
+        continue
+      }
       // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
@@ -5927,20 +6057,30 @@ import {
   // Layout properties whose value-changes affect rendered position.
   const LAYOUT_PROP_PATTERN = /(position|top|left|right|bottom|margin(?:-[a-z]+)?|transform|display|justify-content|align-items|align-self|text-align|float|inset|order|grid-column|grid-row|grid-area|flex-direction|flex-wrap)\s*:\s*([^;}]+)/gi
 
+  // Size properties whose value-changes affect rendered dimensions. Used by
+  // the size-override AI-edit reconciliation path: when these change for
+  // the resized element, the manual scale override is dropped so the AI's
+  // intent wins; otherwise the override is kept.
+  const SIZE_PROP_PATTERN = /(width|height|min-width|min-height|max-width|max-height|transform|scale|flex|flex-basis|flex-grow|flex-shrink|font-size|aspect-ratio|zoom)\s*:\s*([^;}]+)/gi
+
   /**
    * Extract the layout-relevant declarations from all CSS rules that
    * mention any of the supplied selectors. Returns a normalised string
    * for direct equality comparison between prior and new docs.
    */
   function extractLayoutRulesForSelectors(doc, selectors) {
+    return extractCssDeclsForSelectors(doc, selectors, LAYOUT_PROP_PATTERN)
+  }
+
+  function extractSizeRulesForSelectors(doc, selectors) {
+    return extractCssDeclsForSelectors(doc, selectors, SIZE_PROP_PATTERN)
+  }
+
+  function extractCssDeclsForSelectors(doc, selectors, propPattern) {
     const text = getAllStyleText(doc)
     if (!text || !selectors.length) return ''
-    // Strip comments to avoid spurious diffs.
     const cleaned = text.replace(/\/\*[\s\S]*?\*\//g, '')
     const collected = []
-    // Walk the stylesheet by braces. For each rule: capture selector list
-    // + body, check if any of our selectors is referenced, then extract
-    // layout props from the body.
     const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
     let m
     while ((m = ruleRegex.exec(cleaned)) !== null) {
@@ -5950,27 +6090,43 @@ import {
       let referenced = false
       for (const sel of selectors) {
         const needle = sel.toLowerCase()
-        // Match as a whole token to avoid `.poll` matching `.poll-question`.
-        // The selector text contains tokens separated by commas/spaces/combinators.
         const tokenRe = new RegExp(`(^|[^a-z0-9_-])${escapeRegexp(needle)}([^a-z0-9_-]|$)`, 'i')
         if (tokenRe.test(selectorText)) { referenced = true; break }
       }
       if (!referenced) continue
-      const layoutDecls = []
+      const decls = []
       let d
-      const propRe = new RegExp(LAYOUT_PROP_PATTERN.source, 'gi')
+      const propRe = new RegExp(propPattern.source, 'gi')
       while ((d = propRe.exec(body)) !== null) {
         const prop = d[1].toLowerCase().trim()
         const val = d[2].replace(/\s+/g, ' ').trim().toLowerCase()
-        layoutDecls.push(`${prop}:${val}`)
+        decls.push(`${prop}:${val}`)
       }
-      if (layoutDecls.length) {
-        layoutDecls.sort()
-        collected.push(`${selectorText}{${layoutDecls.join(';')}}`)
+      if (decls.length) {
+        decls.sort()
+        collected.push(`${selectorText}{${decls.join(';')}}`)
       }
     }
     collected.sort()
     return collected.join('|')
+  }
+
+  function stylesheetSizeRulesChangedForElement(priorDoc, nextDoc, priorEl, nextEl) {
+    if (!priorEl || !nextEl) return false
+    const selectors = candidateSelectorsForElement(priorEl, nextEl)
+    if (!selectors.length) return false
+    return extractSizeRulesForSelectors(priorDoc, selectors) !== extractSizeRulesForSelectors(nextDoc, selectors)
+  }
+
+  // Same shape as `hasExplicitPositioning` but for size: did the AI emit
+  // an inline width/height/transform-scale on this element?
+  function hasExplicitSizing(el) {
+    if (!el) return false
+    const style = (el.getAttribute('style') || '').toLowerCase()
+    if (!style) return false
+    if (/\btransform\s*:[^;]*\bscale\b/i.test(style)) return true
+    if (/\b(?:width|height|min-width|min-height|max-width|max-height|font-size)\s*:\s*[^;]+/i.test(style)) return true
+    return false
   }
 
   function escapeRegexp(value) {
@@ -6080,6 +6236,29 @@ import {
     frameWindow.postMessage(
       {
         type: ARTIFACT_POSITION_INIT_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        overrides
+      },
+      '*'
+    )
+  }
+
+  /**
+   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
+   * pending size overrides into the iframe so resized elements appear at
+   * their scaled dimensions immediately on load. Called from the same
+   * lifecycle points as the position push.
+   */
+  function pushArtifactSizeOverrides() {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).sizeOverrides || {}
+    const overrides = artifactSize.getMergedSizeOverrides(saved)
+    console.log('[prezo-size-push]', { count: Object.keys(overrides || {}).length, keys: Object.keys(overrides || {}) })
+    if (!overrides || Object.keys(overrides).length === 0) return
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_SIZE_INIT_MESSAGE_TYPE,
         instanceId: state.artifact.instanceId,
         overrides
       },
@@ -10220,6 +10399,7 @@ import {
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
     artifactPosition.clearPendingPositionOverrides()
+    artifactSize.clearPendingSizeOverrides()
     saveArtifactLibrary(artifactLibrary)
     postActiveArtifactToParent('artifact-saved')
     refreshArtifactSelect(name)
@@ -10237,6 +10417,7 @@ import {
     pendingArtifactStyleOverrides = {}
     pendingArtifactCopyOverrides = {}
     artifactPosition.clearPendingPositionOverrides()
+    artifactSize.clearPendingSizeOverrides()
     artifactHistory.clear()
     const nextTheme = sanitizeTheme({
       ...(artifactRecord.themeSnapshot || currentTheme),
@@ -11077,7 +11258,8 @@ import {
     const mergedStyle = { ...existingOverrides, ...pendingArtifactStyleOverrides }
     const pendingCopyWithPositions = {
       ...pendingArtifactCopyOverrides,
-      positionOverrides: artifactPosition.getPendingPositionOverrides()
+      positionOverrides: artifactPosition.getPendingPositionOverrides(),
+      sizeOverrides: artifactSize.getPendingSizeOverrides()
     }
     const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingCopyWithPositions)
     return sanitizeSavedArtifactRecord({

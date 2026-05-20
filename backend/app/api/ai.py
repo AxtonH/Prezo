@@ -2463,6 +2463,50 @@ POSITION_OVERRIDES_PROMPT_MAX_TOTAL = 2400
 POSITION_OVERRIDES_PROMPT_MAX_KEYS = 30
 
 
+def format_size_overrides_for_prompt(overrides: Any) -> str:
+    """
+    Summarize host-side sizeOverrides (per-element {sx, sy} scale factors)
+    for LLM context. The user manually resized these elements via the 8-handle
+    selection overlay; the override is applied as inline `transform: scale(...)`
+    at render time, so the model usually does not see it in the static HTML
+    we send. Tell the model what was resized so it does not undo the change.
+    """
+    if not isinstance(overrides, list) or not overrides:
+        return ""
+    lines: list[str] = []
+    total = 0
+    for entry in overrides[:POSITION_OVERRIDES_PROMPT_MAX_KEYS]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            sx = float(entry.get("sx"))
+            sy = float(entry.get("sy"))
+        except (TypeError, ValueError):
+            continue
+        if sx == 1 and sy == 1:
+            continue
+        label = entry.get("label") or entry.get("role") or entry.get("stableId") or "element"
+        option_id = entry.get("optionId")
+        suffix = f" (optionId={option_id})" if option_id else ""
+        line = f"- {label}{suffix}: scale({sx:.3f}, {sy:.3f})"
+        if total + len(line) > POSITION_OVERRIDES_PROMPT_MAX_TOTAL:
+            break
+        lines.append(line)
+        total += len(line) + 1
+    if not lines:
+        return ""
+    header = (
+        "Runtime user size adjustments. The user manually resized these elements via "
+        "the 8-handle selection overlay; the host re-applies these scale factors at "
+        "render time as inline `transform: scale(...)`. PRESERVE the user's resized "
+        "dimensions: do NOT emit conflicting width/height/transform:scale CSS for "
+        "these elements unless the user's prompt explicitly asks to resize them. If "
+        "the prompt explicitly resizes the affected element, do emit your new size "
+        "and the host will detect the conflict and drop the manual override:"
+    )
+    return header + "\n" + "\n".join(lines)
+
+
 def format_position_overrides_for_prompt(overrides: Any) -> str:
     """
     Summarize host-side positionOverrides (per-element {dx, dy} drag offsets)
@@ -6594,6 +6638,18 @@ def prepare_artifact_context_for_model(
         artifact_context.pop("positionOverridesSummary", None)
     artifact_context.pop("positionOverrides", None)
     artifact_context.pop("position_overrides", None)
+    raw_sizes = artifact_context.get("sizeOverrides") or artifact_context.get(
+        "size_overrides"
+    )
+    size_summary = format_size_overrides_for_prompt(raw_sizes)
+    if size_summary:
+        artifact_context["sizeOverridesSummary"] = trim_artifact_context_text(
+            size_summary, POSITION_OVERRIDES_PROMPT_MAX_TOTAL + 400
+        )
+    else:
+        artifact_context.pop("sizeOverridesSummary", None)
+    artifact_context.pop("sizeOverrides", None)
+    artifact_context.pop("size_overrides", None)
     # Surface brand fields early in JSON so the model sees them before long HTML.
     bpn = artifact_context.get("brandProfileName")
     if isinstance(bpn, str) and bpn.strip():
