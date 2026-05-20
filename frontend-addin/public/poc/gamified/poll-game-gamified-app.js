@@ -5653,11 +5653,54 @@ import {
 
   function locateQuestionInDoc(doc) {
     if (!doc) return null
-    return (
+    // 1) The bridge-tagged attribute (only present at runtime, but cheap to try).
+    // 2) Common ids/classes the AI tends to emit.
+    // 3) Attribute-pattern fallback for ids/classes that contain "question"
+    //    or "title" but don't match the hardcoded list (e.g. #question-text,
+    //    #question-area, .pollQuestionWrap). Excludes #total-votes so a
+    //    "total" id doesn't fall in here.
+    const direct =
       doc.querySelector(attrEqI('data-prezo-editable', 'question')) ||
-      doc.querySelector('#poll-question, #pollQuestion, #question, #poll-title, #pollTitle') ||
+      doc.querySelector(
+        '#poll-question, #pollQuestion, #question, #poll-title, #pollTitle, ' +
+        '#question-text, #questionText, #question-area, #questionArea, ' +
+        '#poll-heading, #poll-headline, #pollHeading, #pollHeadline'
+      ) ||
       doc.querySelector('.poll-question, .poll-q, .poll-title, .poll-heading, .poll-headline')
-    )
+    if (direct) return direct
+    return findByIdOrClassPattern(doc, /(^|[-_])(question|q\-text|q\-area|title|heading|headline)([-_]|$)/i, {
+      excludeIdPattern: /total|vote/i,
+      excludeClassPattern: /total|vote/i
+    })
+  }
+
+  // Walk every element in `doc` and return the first whose id or any class
+  // matches `pattern`. Skips elements whose id/class also matches an exclude
+  // pattern (so #total-votes doesn't get picked up by a "title" search).
+  function findByIdOrClassPattern(doc, pattern, options = {}) {
+    if (!doc || !doc.body) return null
+    const all = doc.body.querySelectorAll('*')
+    const excludeId = options.excludeIdPattern || null
+    const excludeClass = options.excludeClassPattern || null
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i]
+      const id = (el.id || '')
+      if (id && pattern.test(id)) {
+        if (excludeId && excludeId.test(id)) continue
+        return el
+      }
+      const cls = (el.getAttribute('class') || '')
+      if (cls) {
+        const tokens = cls.split(/\s+/)
+        for (const token of tokens) {
+          if (!token) continue
+          if (!pattern.test(token)) continue
+          if (excludeClass && excludeClass.test(token)) { continue }
+          return el
+        }
+      }
+    }
+    return null
   }
 
   function locatePositionTarget(doc, stableId, role, optionId) {
@@ -5670,18 +5713,24 @@ import {
     if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
     if (role === 'poll-question') return locateQuestionInDoc(doc)
     if (role === 'poll-footer') {
-      return (
+      const footerDirect =
         doc.querySelector(attrEqI('data-prezo-editable', 'footer')) ||
-        doc.querySelector('#total-votes-text, #total-votes-display, #total-votes, #totalVotes, #vote-counter, #pollFooter') ||
-        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total')
-      )
+        doc.querySelector(
+          '#total-votes-text, #total-votes-display, #total-votes, #totalVotes, ' +
+          '#vote-counter, #pollFooter, #poll-footer, #footer, #vote-count, ' +
+          '#total-vote-count, #pollTotal, #poll-total'
+        ) ||
+        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total, .vote-count, .poll-vote-count')
+      if (footerDirect) return footerDirect
+      return findByIdOrClassPattern(doc, /(^|[-_])(footer|total[-_]?vote|vote[-_]?count|vote[-_]?counter)([-_]|$)/i)
     }
     if (role === 'poll-subtitle') {
-      return (
+      const subtitleDirect =
         doc.querySelector(attrEqI('data-prezo-editable', 'subtitle')) ||
-        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle') ||
-        doc.querySelector('.poll-subtitle, .subtitle, .sub-title')
-      )
+        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle, #poll-sub, #pollSub') ||
+        doc.querySelector('.poll-subtitle, .subtitle, .sub-title, .poll-sub, .eyebrow')
+      if (subtitleDirect) return subtitleDirect
+      return findByIdOrClassPattern(doc, /(^|[-_])(subtitle|sub[-_]?title|eyebrow)([-_]|$)/i)
     }
     if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
     if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
