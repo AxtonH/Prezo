@@ -86,6 +86,7 @@ export function serializeArtifactPositionOverride(pos) {
   if (typeof pos.label === 'string' && pos.label) out.label = pos.label
   if (typeof pos.role === 'string' && pos.role) out.role = pos.role
   if (typeof pos.optionId === 'string' && pos.optionId) out.optionId = pos.optionId
+  if (typeof pos.anchor === 'string' && pos.anchor) out.anchor = pos.anchor
   return JSON.stringify(out)
 }
 
@@ -103,7 +104,8 @@ function parseArtifactPositionOverride(raw) {
       dy,
       label: typeof parsed.label === 'string' ? parsed.label : undefined,
       role: typeof parsed.role === 'string' ? parsed.role : undefined,
-      optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined
+      optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined,
+      anchor: typeof parsed.anchor === 'string' && parsed.anchor ? parsed.anchor : undefined
     }
   } catch {
     return null

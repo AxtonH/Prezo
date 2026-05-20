@@ -47,7 +47,8 @@ export function createArtifactPositionHandler({ onPositionChange } = {}) {
       dy,
       label: typeof message.label === 'string' ? message.label : undefined,
       role: typeof message.role === 'string' ? message.role : undefined,
-      optionId: typeof message.optionId === 'string' ? message.optionId : undefined
+      optionId: typeof message.optionId === 'string' ? message.optionId : undefined,
+      anchor: typeof message.anchor === 'string' && message.anchor ? message.anchor : undefined
     }
     pending[stableId] = next
     if (typeof onPositionChange === 'function') {

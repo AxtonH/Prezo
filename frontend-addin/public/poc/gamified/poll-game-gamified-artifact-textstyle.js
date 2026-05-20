@@ -1615,11 +1615,21 @@ export function buildTextStyleBridgeLines() {
     '        if (fglayer) return fglayer',
     '      }',
     // Generic-element rescue: when role is "element" (arbitrary selectable
-    // with no semantic role), buildElementLabel saved a CSS selector of the
-    // form "tag#id" / "tag.class" / "tag". Try it as-is. Picks the first
-    // match; good enough for unique tags+id, and for class-based labels the
-    // first match is the same node the user dragged on a stable artifact.
+    // with no semantic role), the saved label is a CSS selector of the form
+    // "tag#id" / "tag.class" / "tag". Try the anchor-scoped match first so
+    // multiple sibling `.dallah-img` resolve to the originally-dragged one;
+    // then fall back to the bare label for overrides saved before anchor
+    // was captured.
     '      if (override.role === "element" && typeof override.label === "string" && override.label) {',
+    '        if (typeof override.anchor === "string" && override.anchor) {',
+    '          try {',
+    '            var anchorEl = document.body.querySelector(override.anchor)',
+    '            if (anchorEl) {',
+    '              var scoped = anchorEl.querySelector(override.label)',
+    '              if (scoped) return scoped',
+    '            }',
+    '          } catch (eAnchor) {}',
+    '        }',
     '        try {',
     '          var labelMatch = document.body.querySelector(override.label)',
     '          if (labelMatch) return labelMatch',
@@ -1693,12 +1703,34 @@ export function buildTextStyleBridgeLines() {
     '    var dy = Number(ov.dy)',
     '    return { dx: Number.isFinite(dx) ? dx : 0, dy: Number.isFinite(dy) ? dy : 0 }',
     '  }',
+    // For `role: "element"` (arbitrary selectable like an `img` inside an
+    // option row), capture the nearest ancestor whose selector is likely
+    // unique within the artifact. On re-attach we query `<anchor> <label>`
+    // so a label like `img.dallah-img` resolves to the same dallah even when
+    // the AI rebuild emits several elements matching the bare label.
+    '  function buildElementAnchorSelector(node) {',
+    '    if (!node || node.nodeType !== 1) return ""',
+    '    var cur = node.parentElement',
+    '    var depth = 0',
+    '    while (cur && cur.nodeType === 1 && depth < 6) {',
+    '      if (cur.id) return "#" + cur.id',
+    '      var ds = cur.dataset || {}',
+    '      if (ds.optionId) return "[data-option-id=\\"" + String(ds.optionId).replace(/\\"/g, "\\\\\\"") + "\\" i]"',
+    '      if (ds.prezoOptionId) return "[data-prezo-option-id=\\"" + String(ds.prezoOptionId).replace(/\\"/g, "\\\\\\"") + "\\" i]"',
+    '      if (ds.prezoSceneRoot) return "[data-prezo-scene-root]"',
+    '      if (ds.prezoForegroundLayer) return "[data-prezo-foreground-layer]"',
+    '      cur = cur.parentElement',
+    '      depth += 1',
+    '    }',
+    '    return ""',
+    '  }',
     '  function postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy) {',
     '    if (!stableId) return',
     '    var kind = selectedKind || ""',
     '    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""',
     '    var label = ""',
     '    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent',
+    '    var anchorSelector = (kind === "element") ? buildElementAnchorSelector(node) : ""',
     '    postParentMessage(POSITION_CHANGED_MESSAGE_TYPE, {',
     '      stableId: stableId,',
     '      dx: dx,',
@@ -1707,7 +1739,8 @@ export function buildTextStyleBridgeLines() {
     '      priorDy: priorDy,',
     '      role: kind,',
     '      label: label,',
-    '      optionId: optionId',
+    '      optionId: optionId,',
+    '      anchor: anchorSelector',
     '    })',
     '  }',
     // Drag-fast mode toggles. While a drag is active we:

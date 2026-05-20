@@ -5562,8 +5562,9 @@ import {
         const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
         const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
         const label = parsed && typeof parsed.label === 'string' ? parsed.label : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label)
+        const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label, anchor)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label, anchor)
         // Diagnostic logging — remove once override-after-AI is verified
         // stable. Helps explain why a particular position override was
         // dropped on the user's machine.
@@ -5704,7 +5705,7 @@ import {
     return null
   }
 
-  function locatePositionTarget(doc, stableId, role, optionId, label) {
+  function locatePositionTarget(doc, stableId, role, optionId, label, anchor) {
     if (!doc) return null
     if (stableId) {
       const direct = doc.querySelector(attrEqI('data-prezo-pos-id', stableId)) ||
@@ -5741,15 +5742,25 @@ import {
     // can decide DROP vs KEEP via stylesheetRulesChangedForElement instead of
     // falling through to the "runtime-rendered (KEEP)" default.
     if (role === 'element') {
-      return locateLabelSelectorInDoc(doc, label)
+      return locateLabelSelectorInDoc(doc, label, anchor)
     }
     return null
   }
 
-  function locateLabelSelectorInDoc(doc, label) {
+  function locateLabelSelectorInDoc(doc, label, anchor) {
     if (!doc || !doc.body) return null
     const selector = typeof label === 'string' ? label.trim() : ''
     if (!selector) return null
+    const anchorSel = typeof anchor === 'string' ? anchor.trim() : ''
+    if (anchorSel) {
+      try {
+        const anchorEl = doc.body.querySelector(anchorSel)
+        if (anchorEl) {
+          const scoped = anchorEl.querySelector(selector)
+          if (scoped) return scoped
+        }
+      } catch {}
+    }
     try {
       return doc.body.querySelector(selector)
     } catch {
