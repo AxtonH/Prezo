@@ -832,7 +832,9 @@ export function buildTextStyleBridgeLines() {
     '        if (typeof savedText !== "string") continue',
     '        // Look up by attribute. Skip nodes that already match (avoids',
     '        // clobbering an in-progress edit when the user is typing).',
-    '        var attrSelector = "[data-prezo-text-id=\\"" + stableId.replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\"]"',
+    // Case-insensitive `i` flag so an AI rebuild that re-cases the stableId
+    // (e.g. lowercases data attribute values) still matches the saved override.
+    '        var attrSelector = "[data-prezo-text-id=\\"" + stableId.replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\" i]"',
     '        var targets',
     '        try { targets = document.body.querySelectorAll(attrSelector) } catch (e) { continue }',
     '        for (var tj = 0; tj < targets.length; tj++) {',
@@ -1566,13 +1568,15 @@ export function buildTextStyleBridgeLines() {
     '  function findNodeForPositionOverride(stableId, override) {',
     '    if (!document.body) return null',
     '    try {',
-    '      var attrSelector = "[data-prezo-pos-id=\\"" + String(stableId).replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\"]"',
+    // Case-insensitive `i` flag so an AI rebuild that re-cases the stableId
+    // still matches the saved override.
+    '      var attrSelector = "[data-prezo-pos-id=\\"" + String(stableId).replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\" i]"',
     '      var direct = document.body.querySelector(attrSelector)',
     '      if (direct) return direct',
     '    } catch (e) {}',
-    // Fallback 1: a text-id node with the same stable id.
+    // Fallback 1: a text-id node with the same stable id (also case-insensitive).
     '    try {',
-    '      var textIdSel = "[data-prezo-text-id=\\"" + String(stableId).replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\"]"',
+    '      var textIdSel = "[data-prezo-text-id=\\"" + String(stableId).replace(/\\\\/g, "\\\\\\\\").replace(/\\"/g, "\\\\\\"") + "\\" i]"',
     '      var textNode = document.body.querySelector(textIdSel)',
     '      if (textNode) return textNode',
     '    } catch (e2) {}',

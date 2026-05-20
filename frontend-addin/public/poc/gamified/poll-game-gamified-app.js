@@ -5654,7 +5654,7 @@ import {
   function locateQuestionInDoc(doc) {
     if (!doc) return null
     return (
-      doc.querySelector('[data-prezo-editable="question"]') ||
+      doc.querySelector(attrEqI('data-prezo-editable', 'question')) ||
       doc.querySelector('#poll-question, #pollQuestion, #question, #poll-title, #pollTitle') ||
       doc.querySelector('.poll-question, .poll-q, .poll-title, .poll-heading, .poll-headline')
     )
@@ -5663,22 +5663,22 @@ import {
   function locatePositionTarget(doc, stableId, role, optionId) {
     if (!doc) return null
     if (stableId) {
-      const direct = doc.querySelector(`[data-prezo-pos-id="${cssAttrEscape(stableId)}"]`) ||
-        doc.querySelector(`[data-prezo-text-id="${cssAttrEscape(stableId)}"]`)
+      const direct = doc.querySelector(attrEqI('data-prezo-pos-id', stableId)) ||
+        doc.querySelector(attrEqI('data-prezo-text-id', stableId))
       if (direct) return direct
     }
     if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
     if (role === 'poll-question') return locateQuestionInDoc(doc)
     if (role === 'poll-footer') {
       return (
-        doc.querySelector('[data-prezo-editable="footer"]') ||
+        doc.querySelector(attrEqI('data-prezo-editable', 'footer')) ||
         doc.querySelector('#total-votes-text, #total-votes-display, #total-votes, #totalVotes, #vote-counter, #pollFooter') ||
         doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total')
       )
     }
     if (role === 'poll-subtitle') {
       return (
-        doc.querySelector('[data-prezo-editable="subtitle"]') ||
+        doc.querySelector(attrEqI('data-prezo-editable', 'subtitle')) ||
         doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle') ||
         doc.querySelector('.poll-subtitle, .subtitle, .sub-title')
       )
@@ -5900,11 +5900,11 @@ import {
   function locateOptionRowInDoc(doc, optionId) {
     if (!doc || !optionId) return null
     return (
-      doc.querySelector(`[data-option-id="${cssAttrEscape(optionId)}"]`) ||
-      doc.querySelector(`[data-prezo-option-id="${cssAttrEscape(optionId)}"]`) ||
-      doc.querySelector(`[data-opt-id="${cssAttrEscape(optionId)}"]`) ||
-      doc.querySelector(`[data-poll-option-id="${cssAttrEscape(optionId)}"]`) ||
-      doc.querySelector(`[data-lane-id="${cssAttrEscape(optionId)}"]`)
+      doc.querySelector(attrEqI('data-option-id', optionId)) ||
+      doc.querySelector(attrEqI('data-prezo-option-id', optionId)) ||
+      doc.querySelector(attrEqI('data-opt-id', optionId)) ||
+      doc.querySelector(attrEqI('data-poll-option-id', optionId)) ||
+      doc.querySelector(attrEqI('data-lane-id', optionId))
     )
   }
 
@@ -5912,13 +5912,24 @@ import {
     const row = locateOptionRowInDoc(doc, optionId)
     if (!row) return null
     return (
-      row.querySelector('[data-prezo-editable="option-label"]') ||
+      row.querySelector(attrEqI('data-prezo-editable', 'option-label')) ||
       row.querySelector('.option-label, .opt-label, .lane-label, .bar-label, .choice-label, .answer-label, .label')
     )
   }
 
   function cssAttrEscape(value) {
     return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  }
+
+  // Case-insensitive attribute-value matcher. The AI rebuild may re-emit
+  // attribute values with different casing than the manual-edit pipeline
+  // recorded (e.g. a stableId or option id round-tripped through a JSON
+  // serializer or rewritten by the model). Without the `i` flag the
+  // querySelector silently misses and the caller falls into "element not
+  // found" branches — see the override-not-cleared bug where the user moved
+  // the title, the AI moved it too, but the override re-applied on top.
+  function attrEqI(name, value) {
+    return `[${name}="${cssAttrEscape(value)}" i]`
   }
 
   /**
