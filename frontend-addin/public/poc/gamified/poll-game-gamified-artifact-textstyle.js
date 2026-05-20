@@ -1999,6 +1999,11 @@ export function buildTextStyleBridgeLines() {
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
+    // Disable transform transitions on the node + overlay so the scale
+    // tracks the cursor 1:1 instead of animating behind it 80-300ms.
+    // Same trick the position drag uses (enterDragFastMode); reusing it
+    // here gives both gestures the same instant feel.
+    '    enterDragFastMode(selectedNode)',
     '    try { handleEl.setPointerCapture && handleEl.setPointerCapture(event.pointerId) } catch (e) {}',
     '    event.preventDefault()',
     '    event.stopPropagation()',
@@ -2063,6 +2068,7 @@ export function buildTextStyleBridgeLines() {
     '    var next = computeResizeScale(resizeState, deltaX, deltaY, event.shiftKey)',
     '    var moved = resizeState.moved',
     '    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}',
+    '    exitDragFastMode(node)',
     '    resizeState = null',
     '    if (!moved) return',
     '    applySizeToNode(node, stableId, { sx: next.sx, sy: next.sy })',
@@ -2072,6 +2078,7 @@ export function buildTextStyleBridgeLines() {
     '  function cancelResizeInProgress() {',
     '    if (!resizeState) return',
     '    applySizeToNode(resizeState.node, resizeState.stableId, { sx: resizeState.startSx, sy: resizeState.startSy })',
+    '    exitDragFastMode(resizeState.node)',
     '    resizeState = null',
     '  }',
     '  function postCommittedSize(stableId, node, sx, sy, priorSx, priorSy) {',
