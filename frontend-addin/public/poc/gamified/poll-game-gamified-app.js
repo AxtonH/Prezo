@@ -5561,8 +5561,9 @@ import {
         const parsed = safeParseJSON(store[key])
         const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
         const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId)
+        const label = parsed && typeof parsed.label === 'string' ? parsed.label : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label)
         // Diagnostic logging — remove once override-after-AI is verified
         // stable. Helps explain why a particular position override was
         // dropped on the user's machine.
@@ -5703,7 +5704,7 @@ import {
     return null
   }
 
-  function locatePositionTarget(doc, stableId, role, optionId) {
+  function locatePositionTarget(doc, stableId, role, optionId, label) {
     if (!doc) return null
     if (stableId) {
       const direct = doc.querySelector(attrEqI('data-prezo-pos-id', stableId)) ||
@@ -5734,7 +5735,26 @@ import {
     }
     if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
     if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
+    // Generic-element rescue: the in-iframe bridge saves a CSS-selector-shaped
+    // label ("tag#id" / "tag.class" / "tag") for arbitrary selectables. Use
+    // it as the locator on both sides of the diff so dropOverridesAiChanged
+    // can decide DROP vs KEEP via stylesheetRulesChangedForElement instead of
+    // falling through to the "runtime-rendered (KEEP)" default.
+    if (role === 'element') {
+      return locateLabelSelectorInDoc(doc, label)
+    }
     return null
+  }
+
+  function locateLabelSelectorInDoc(doc, label) {
+    if (!doc || !doc.body) return null
+    const selector = typeof label === 'string' ? label.trim() : ''
+    if (!selector) return null
+    try {
+      return doc.body.querySelector(selector)
+    } catch {
+      return null
+    }
   }
 
   /**

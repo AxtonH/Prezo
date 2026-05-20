@@ -1614,6 +1614,17 @@ export function buildTextStyleBridgeLines() {
     '        var fglayer = document.body.querySelector("[data-prezo-foreground-layer]")',
     '        if (fglayer) return fglayer',
     '      }',
+    // Generic-element rescue: when role is "element" (arbitrary selectable
+    // with no semantic role), buildElementLabel saved a CSS selector of the
+    // form "tag#id" / "tag.class" / "tag". Try it as-is. Picks the first
+    // match; good enough for unique tags+id, and for class-based labels the
+    // first match is the same node the user dragged on a stable artifact.
+    '      if (override.role === "element" && typeof override.label === "string" && override.label) {',
+    '        try {',
+    '          var labelMatch = document.body.querySelector(override.label)',
+    '          if (labelMatch) return labelMatch',
+    '        } catch (eLabel) {}',
+    '      }',
     '    }',
     '    return null',
     '  }',
