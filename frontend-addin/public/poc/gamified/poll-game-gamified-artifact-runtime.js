@@ -49,7 +49,10 @@ export function buildArtifactSrcDoc(rawMarkup, options = {}) {
   const instanceId = Number.isFinite(Number(options?.instanceId))
     ? Math.max(0, Math.trunc(Number(options.instanceId)))
     : 0
-  return injectBridgeScript(baseDocument, { instanceId })
+  // Optional pre-built hide stylesheet for deleted elements. Baked into <head>
+  // so they never paint visible on load — no flash, no masked wait.
+  const hiddenCss = typeof options?.hiddenCss === 'string' ? options.hiddenCss : ''
+  return injectBridgeScript(baseDocument, { instanceId, hiddenCss })
 }
 
 function unwrapMarkdownFence(value) {
@@ -124,9 +127,27 @@ function wrapArtifactSnippet(snippet) {
 }
 
 function injectBridgeScript(htmlDocument, options = {}) {
-  const source = asText(htmlDocument)
+  let source = asText(htmlDocument)
   if (!source) {
     return ''
+  }
+
+  // Bake the hide stylesheet for deleted elements into <head> (before <body>
+  // parses) so the renderer's first paint already excludes them. The iframe's
+  // runtime rebuilds an identical rule once it boots; this just covers the gap
+  // before that, eliminating the load-time delete flicker without masking.
+  const hiddenCss = typeof options.hiddenCss === 'string' ? options.hiddenCss : ''
+  if (hiddenCss) {
+    const styleTag = `<style data-prezo-hidden-style="bake">\n${hiddenCss}\n</style>`
+    if (/<\/head>/i.test(source)) {
+      source = source.replace(/<\/head>/i, `${styleTag}\n</head>`)
+    } else if (/<head\b[^>]*>/i.test(source)) {
+      source = source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${styleTag}`)
+    } else if (/<body\b[^>]*>/i.test(source)) {
+      source = source.replace(/<body\b[^>]*>/i, (match) => `${styleTag}\n${match}`)
+    } else {
+      source = `${styleTag}\n${source}`
+    }
   }
 
   const bridgeTag = `<script>${buildBridgeScript(options.instanceId)}<\/script>`

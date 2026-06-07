@@ -73,7 +73,8 @@ import {
   extractCopyFromStyleOverrides,
   mergeCopyIntoStyleOverrides,
   isArtifactTextField,
-  getArtifactTextFieldId
+  getArtifactTextFieldId,
+  buildArtifactHiddenCss
 } from './poll-game-gamified-artifact-copy.js'
 
 ;(() => {
@@ -2679,14 +2680,10 @@ import {
     setTimeout(pushArtifactSizeOverrides, 160)
     setTimeout(pushArtifactHiddenOverrides, 160)
     setTimeout(pushArtifactGridConfig, 160)
-    // Reveal timing: a deleted element is fully visible until its hide lands,
-    // so revealing on a blind timer can flash it. When hidden overrides exist,
-    // wait for the iframe's prezo-hidden-applied ack (handled above) to reveal;
-    // the mask's own safety timeout still guarantees an eventual reveal. With
-    // no deletes, position/size shifts are subtle, so the fast timer is fine.
-    if (!artifactHasHiddenOverrides()) {
-      setTimeout(revealArtifactFrame, 190)
-    }
+    // Deleted elements are baked into the srcdoc (never paint visible), so the
+    // reveal no longer needs to wait on the hide. Position/size/text overrides
+    // apply fast once pushed, so reveal one frame after the push for all cases.
+    setTimeout(revealArtifactFrame, 190)
   }
 
   function handleArtifactRenderError(message) {
@@ -4200,7 +4197,20 @@ import {
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
-    const srcDoc = buildArtifactSrcDoc(resolvedMarkup, { instanceId: state.artifact.instanceId })
+    // Bake the deleted-element hide stylesheet into the srcdoc so deleted
+    // elements never paint visible on load — eliminates the flicker at the
+    // source, no masking/wait needed. Built from saved + pending hidden
+    // overrides (pending wins), matching what pushArtifactHiddenOverrides sends.
+    const bakedHiddenCss = buildArtifactHiddenCss(
+      mergeCopyIntoStyleOverrides(
+        { ...(state.artifact.savedStyleOverrides || {}) },
+        { hiddenOverrides: artifactDelete.getPendingHiddenOverrides() }
+      )
+    )
+    const srcDoc = buildArtifactSrcDoc(resolvedMarkup, {
+      instanceId: state.artifact.instanceId,
+      hiddenCss: bakedHiddenCss
+    })
     if (!srcDoc) {
       return false
     }
@@ -6519,24 +6529,6 @@ import {
   }
 
   /**
-   * True when the artifact has any hidden (delete) overrides — saved or pending.
-   * Used to gate the frame reveal: with deletes, we reveal on the iframe's
-   * applied-ack rather than a blind timer, because a not-yet-hidden deleted
-   * element would flash if revealed too early.
-   */
-  function artifactHasHiddenOverrides() {
-    const savedHidden = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).hiddenOverrides || {}
-    for (const k of Object.keys(savedHidden)) {
-      if (savedHidden[k] && savedHidden[k].hidden) return true
-    }
-    const pendingHidden = artifactDelete.getPendingHiddenOverrides() || {}
-    for (const k of Object.keys(pendingHidden)) {
-      if (pendingHidden[k] && pendingHidden[k].hidden) return true
-    }
-    return false
-  }
-
-  /**
    * Hide the frame ahead of the override push so the un-edited paint is never
    * shown. No-op (and immediate reveal) when there's nothing to apply.
    * `maxMaskMs` is the safety ceiling — the frame always reveals by then even
@@ -6548,23 +6540,16 @@ import {
       artifactRevealTimerId = 0
     }
     if (!el.artifactFrame) return
-    const hasOverrides = artifactHasOverridesToApply()
-    const hasHidden = artifactHasHiddenOverrides()
-    if (!hasOverrides) {
+    if (!artifactHasOverridesToApply()) {
       revealArtifactFrame()
       return
     }
     el.artifactFrame.classList.add('artifact-frame--overrides-pending')
-    // Safety ceiling for the reveal. For deletes we reveal on the iframe's
-    // prezo-hidden-applied ack, which only arrives after render-ok — and
-    // render-ok is gated on poll-snapshot availability + the artifact's own
-    // render time (~1-2s, capped by the 5s edit watchdog). A short ceiling
-    // would lift the mask BEFORE the hide lands, flashing the deleted element
-    // (the bug we saw). So the hidden case gets a generous 6s backstop; the
-    // ack normally reveals far sooner. Non-delete edits apply fast and revert
-    // to a short ceiling.
-    const maxMaskMs = hasHidden ? 6000 : 700
-    artifactRevealTimerId = setTimeout(revealArtifactFrame, maxMaskMs)
+    // Deleted elements are now baked into the srcdoc as a hide stylesheet, so
+    // they never paint visible; the mask no longer has to wait for the hide to
+    // land. A short safety ceiling is enough for position/size/text overrides,
+    // which apply fast once pushed.
+    artifactRevealTimerId = setTimeout(revealArtifactFrame, 700)
   }
 
   /**

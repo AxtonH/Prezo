@@ -427,3 +427,71 @@ export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
   }
   return next
 }
+
+/**
+ * Escape a value for use inside a double-quoted CSS attribute selector.
+ * @param {unknown} value
+ */
+function cssAttrEscape(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+/**
+ * CSS selectors that should match a hidden (deleted) element across renderer
+ * rebuilds, given a stableId and its override metadata.
+ *
+ * IMPORTANT: this MUST stay in lockstep with the iframe bridge's
+ * `hiddenSelectorsFor` in poll-game-gamified-artifact-textstyle.js. The host
+ * uses this to bake a hide stylesheet into the artifact srcdoc so deleted
+ * elements never paint visible on load; the iframe rebuilds the same rule at
+ * runtime. If you change one, change both.
+ *
+ * @param {string} stableId
+ * @param {{ hidden?: boolean, role?: string, optionId?: string, cssLabel?: string, anchor?: string }} ov
+ * @returns {string[]}
+ */
+export function buildArtifactHiddenSelectors(stableId, ov) {
+  const sels = []
+  sels.push(`[data-prezo-deleted="${cssAttrEscape(stableId)}"]`)
+  sels.push(`[data-prezo-pos-id="${cssAttrEscape(stableId)}"]`)
+  const role = ov && ov.role
+  if ((role === 'option-row' || role === 'options-container') && ov && ov.optionId) {
+    const oe = cssAttrEscape(ov.optionId)
+    sels.push(`[data-option-id="${oe}"]`)
+    sels.push(`[data-prezo-option-id="${oe}"]`)
+    sels.push(`[data-opt-id="${oe}"]`)
+    sels.push(`[data-poll-option-id="${oe}"]`)
+    sels.push(`[data-lane-id="${oe}"]`)
+    sels.push(`[data-choice-id="${oe}"]`)
+    sels.push(`[data-answer-id="${oe}"]`)
+    return sels
+  }
+  const cssLabel = ov && typeof ov.cssLabel === 'string' && ov.cssLabel ? ov.cssLabel : ''
+  const anchor = ov && typeof ov.anchor === 'string' && ov.anchor ? ov.anchor : ''
+  if (cssLabel) {
+    if (anchor) sels.push(`${anchor} ${cssLabel}`)
+    sels.push(cssLabel)
+  } else if (anchor) {
+    sels.push(anchor)
+  }
+  return sels
+}
+
+/**
+ * Build the complete hide stylesheet text from a style-overrides map, for
+ * baking into the artifact srcdoc so deleted elements never paint on load.
+ * Returns '' when there are no hidden overrides.
+ *
+ * @param {Record<string, unknown> | null | undefined} styleOverrides
+ * @returns {string}
+ */
+export function buildArtifactHiddenCss(styleOverrides) {
+  const hiddenOverrides = extractCopyFromStyleOverrides(styleOverrides || {}).hiddenOverrides || {}
+  const allSelectors = []
+  for (const [stableId, ov] of Object.entries(hiddenOverrides)) {
+    if (!stableId || !ov || !ov.hidden) continue
+    for (const sel of buildArtifactHiddenSelectors(stableId, ov)) allSelectors.push(sel)
+  }
+  if (!allSelectors.length) return ''
+  return `${allSelectors.join(',\n')} { visibility: hidden !important; pointer-events: none !important; }`
+}

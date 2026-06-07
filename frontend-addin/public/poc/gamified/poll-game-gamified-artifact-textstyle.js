@@ -2192,6 +2192,13 @@ export function buildTextStyleBridgeLines() {
     '  var hiddenStyleEl = null',
     '  function ensureHiddenStyleEl() {',
     '    if (hiddenStyleEl && hiddenStyleEl.parentNode) return hiddenStyleEl',
+    // Adopt the host-baked <style data-prezo-hidden-style="bake"> if present so
+    // the runtime OWNS the single hide stylesheet — otherwise the baked rules
+    // would linger with stale content after an un-delete and re-hide a
+    // restored element. Falls back to creating our own.
+    '    var existing = null',
+    '    try { existing = (document.head || document.documentElement).querySelector("style[data-prezo-hidden-style]") } catch (e) {}',
+    '    if (existing) { hiddenStyleEl = existing; hiddenStyleEl.setAttribute("data-prezo-hidden-style", "true"); return hiddenStyleEl }',
     '    hiddenStyleEl = document.createElement("style")',
     '    hiddenStyleEl.setAttribute("data-prezo-hidden-style", "true")',
     '    ;(document.head || document.documentElement).appendChild(hiddenStyleEl)',
