@@ -445,6 +445,7 @@ POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION = "\n".join(
         '- { "type":"insert_html", "target": string, "position": "beforeend"|"afterbegin"|"beforebegin"|"afterend", "html": string }  — inserts HTML snippet relative to the first element matching "target" (a simple CSS selector: tag, #id, .class, or [attr]). No <script> tags or on* attributes allowed. Use this to add new visual elements (clouds, stars, decorations, SVG shapes, etc.). IMPORTANT: insert_html only operates on the static index.html file. Poll option elements (cards, rows, bars, labels) are created dynamically by renderer.js at runtime and do NOT exist in index.html. Do not use insert_html with selectors that target JS-generated option elements (e.g. .option-row, .card-header, .option-col, .bar-fill) — those selectors will not be found. To add per-option markup, you must output a full artifact rewrite that modifies the renderer JS where option nodes are built.',
         '- { "type":"replace_text", "file": "renderer.js"|"styles.css"|"index.html", "old": string, "new": string }  — performs a literal text replacement in the specified file. Replaces the first occurrence of "old" with "new". Use this for changes that cannot be expressed as CSS property edits, such as modifying JavaScript values (color hex codes, numeric constants, text strings, array entries) in renderer.js, or changing inline SVG attributes. The "old" value must be an EXACT substring found in the file. Keep replacements minimal and surgical — change only the specific value, not large blocks of code.',
         "Rules:",
+        "- ATTACHED IMAGES: When the prompt's attached-image preamble lists exact public image URL(s), the user has supplied a real image. You MAY embed such a URL when the request asks to USE/ADD/PLACE/SET the image (e.g. set background-image: url(<exact-url>) via set_css_property on the background/backdrop layer, or insert an <img src=\"<exact-url>\"> via insert_html). Use the URL verbatim. This overrides the general 'do not use background-image / external URLs' guidance below, which applies only when NO attached image URL was provided. If the request only asks to MATCH or take inspiration from the attached image, do not embed it — adjust colors/composition to match instead.",
         "- You CAN create new visual elements using insert_html + insert_css_rule. Build shapes from simple HTML/CSS (divs with border-radius, box-shadow, gradients) or inline SVGs. Do NOT require external image URLs for simple shapes.",
         "- Prefer 1-12 edits for focused requests. If the request needs richer styling, emit the edits needed to satisfy the request while staying concise.",
         "- Preserve unrelated HTML, CSS, JavaScript, SVG, ids, classes, data attributes, and live poll wiring exactly.",
@@ -844,6 +845,31 @@ async def fetch_attached_images_as_reference_parts(
     return out
 
 
+def build_attached_image_preamble(attached_image_urls: list[str]) -> str:
+    """Shared preamble telling the model how to use attached images.
+
+    Used on initial build, edit (patch + full generation), and repair so the
+    embed-vs-style-reference behavior is identical across providers.
+    """
+    lines = [
+        "The user attached one or more image(s). Analyze them for visual style, layout density, "
+        "color mood, typography weight, and overall composition.",
+        "Decide how to use each image from the user's prompt wording: if the prompt asks to USE, ADD, "
+        "PLACE, INSERT, or set the image (e.g. 'use as background'), embed it as an asset in the artifact; "
+        "if the prompt asks to MATCH, mimic, or take inspiration from it (e.g. 'in the style of'), use it "
+        "as a style reference only and do not embed it. When ambiguous, prefer style reference.",
+    ]
+    if attached_image_urls:
+        lines.append(
+            "When you embed an attached image, use one of these exact public URLs verbatim "
+            "(do not modify them): " + "; ".join(attached_image_urls) + "."
+        )
+    lines.append(
+        "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image."
+    )
+    return "\n".join(lines)
+
+
 async def request_anthropic_text(
     *,
     api_key: str,
@@ -970,9 +996,24 @@ async def request_gemini_text(
     response_mime_type: str | None = None,
     response_json_schema: dict[str, Any] | None = None,
     thinking_budget: int | None = None,
+    vision_images: list[tuple[str, str]] | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_gemini_base_url()
     endpoint = build_gemini_generate_content_endpoint(base_url, model)
+    # Gemini vision parts: inlineData with base64 image, placed before the text part
+    # so the model can SEE attached images (style-matching) in addition to the prompt.
+    user_parts: list[dict[str, Any]] = []
+    if vision_images:
+        for media_type, b64_data in vision_images:
+            user_parts.append(
+                {
+                    "inlineData": {
+                        "mimeType": media_type,
+                        "data": b64_data,
+                    }
+                }
+            )
+    user_parts.append({"text": prompt_text})
     body = {
         "systemInstruction": {
             "parts": [
@@ -984,11 +1025,7 @@ async def request_gemini_text(
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {
-                        "text": prompt_text,
-                    }
-                ],
+                "parts": user_parts,
             }
         ],
         "generationConfig": {
@@ -1363,24 +1400,9 @@ async def create_poll_game_artifact_build(
             indent=2,
         )
         if ref_parts or attached_image_urls:
-            preamble_lines = [
-                "The user attached one or more image(s). Analyze them for visual style, layout density, "
-                "color mood, typography weight, and overall composition.",
-                "Decide how to use each image from the user's prompt wording: if the prompt asks to USE, ADD, "
-                "PLACE, INSERT, or set the image (e.g. 'use as background'), embed it as an asset in the artifact; "
-                "if the prompt asks to MATCH, mimic, or take inspiration from it (e.g. 'in the style of'), use it "
-                "as a style reference only and do not embed it. When ambiguous, prefer style reference.",
-            ]
-            if attached_image_urls:
-                preamble_lines.append(
-                    "When you embed an attached image, use one of these exact public URLs verbatim (do not modify them): "
-                    + "; ".join(attached_image_urls)
-                    + "."
-                )
-            preamble_lines.append(
-                "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image."
+            prompt_text = (
+                build_attached_image_preamble(attached_image_urls) + "\n\n" + prompt_text
             )
-            prompt_text = "\n".join(preamble_lines) + "\n\n" + prompt_text
         request_text, stop_reason = await request_anthropic_text(
             api_key=build_api_key,
             model=model,
@@ -1421,19 +1443,36 @@ async def create_poll_game_artifact_build(
                 reserve_seconds=resolve_artifact_followup_reserve_seconds(request_mode),
             ),
         )
+        # Edit/repair attached images: fetch as Gemini vision (so 'match the style'
+        # works) and add the embed-vs-reference preamble, mirroring the build path.
+        edit_attached_image_urls = extract_artifact_attached_image_urls(artifact_context)
+        edit_vision_parts: list[tuple[str, str]] = []
+        if edit_attached_image_urls:
+            edit_vision_parts = await fetch_attached_images_as_reference_parts(
+                edit_attached_image_urls,
+                max_items=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
+            )
+        gemini_prompt_text = json.dumps(
+            {"prompt": payload.prompt, "context": model_context},
+            indent=2,
+        )
+        if edit_attached_image_urls:
+            gemini_prompt_text = (
+                build_attached_image_preamble(edit_attached_image_urls)
+                + "\n\n"
+                + gemini_prompt_text
+            )
         request_text, stop_reason = await request_gemini_text(
             api_key=build_api_key,
             model=model,
             system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
-            prompt_text=json.dumps(
-                {"prompt": payload.prompt, "context": model_context},
-                indent=2,
-            ),
+            prompt_text=gemini_prompt_text,
             temperature=temperature,
             max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
             timeout_seconds=timeout_seconds,
             request_stage=request_stage,
             remaining_budget_seconds=remaining_budget_seconds,
+            vision_images=edit_vision_parts or None,
         )
         generation_provider_name = "Gemini"
 
@@ -1594,7 +1633,15 @@ async def attempt_artifact_patch_edit(
     remaining_budget_seconds: float | None = None,
     use_anthropic_patch_planner: bool = False,
 ) -> tuple[str, dict[str, Any] | None, str, list[str], str]:
-    if artifact_edit_request_requires_external_asset_url(original_edit_request):
+    artifact_context = context.get("artifact") if isinstance(context, dict) else None
+    attached_image_urls = extract_artifact_attached_image_urls(
+        artifact_context if isinstance(artifact_context, dict) else {}
+    )
+    # Only bail for "needs an image URL" when the user did NOT attach one. With an
+    # attached image present, the planner can embed that exact URL instead.
+    if not attached_image_urls and artifact_edit_request_requires_external_asset_url(
+        original_edit_request
+    ):
         return (
             "",
             current_package,
@@ -1607,6 +1654,17 @@ async def attempt_artifact_patch_edit(
         context=context,
         current_html=current_html,
     )
+    # Surface attached images to the patch planner: the exact URL(s) to embed (text)
+    # plus the image bytes as vision so it can match style. Mirrors the build path.
+    patch_vision_parts: list[tuple[str, str]] = []
+    if attached_image_urls:
+        patch_prompt = (
+            build_attached_image_preamble(attached_image_urls) + "\n\n" + patch_prompt
+        )
+        patch_vision_parts = await fetch_attached_images_as_reference_parts(
+            attached_image_urls,
+            max_items=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
+        )
     if use_anthropic_patch_planner:
         text, _stop_reason = await request_anthropic_text(
             api_key=api_key,
@@ -1618,6 +1676,7 @@ async def attempt_artifact_patch_edit(
             timeout_seconds=timeout_seconds,
             request_stage="artifact patch edit",
             remaining_budget_seconds=remaining_budget_seconds,
+            reference_images=patch_vision_parts or None,
         )
     else:
         try:
@@ -1634,6 +1693,7 @@ async def attempt_artifact_patch_edit(
                 response_mime_type="application/json",
                 response_json_schema=POLL_GAME_ARTIFACT_PATCH_JSON_SCHEMA,
                 thinking_budget=0,
+                vision_images=patch_vision_parts or None,
             )
         except HTTPException as exc:
             if not is_gemini_schema_state_overflow_error_detail(exc.detail):
@@ -1650,6 +1710,7 @@ async def attempt_artifact_patch_edit(
                 remaining_budget_seconds=remaining_budget_seconds,
                 response_mime_type="application/json",
                 thinking_budget=0,
+                vision_images=patch_vision_parts or None,
             )
     raw_plan = normalize_artifact_patch_plan_payload(text)
     plan = rewrite_artifact_patch_plan_for_current_html(

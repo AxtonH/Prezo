@@ -1814,8 +1814,11 @@ import {
 
   function syncArtifactTypeReferenceRow() {
     const currentStep = getArtifactConversationStep()
-    const show = Boolean(currentStep?.key === 'artifactType')
-    if (show) {
+    // Show the attach-image affordance during the artifact-type creation step AND
+    // in edit mode (an artifact already exists), so users can attach an image to an edit.
+    const inEditMode = Boolean(state.artifact.html) && isArtifactConversationComplete()
+    const show = Boolean(currentStep?.key === 'artifactType') || inEditMode
+    if (show && !inEditMode) {
       setEditorShellExpanded(true)
     }
     const refInteractDisabled = !show || state.artifact.busy
@@ -2911,11 +2914,18 @@ import {
       )
       return
     }
+    // One image per edit submission: bind the currently-attached image URL to this
+    // queued edit, then clear it so the next edit starts fresh.
+    const attachedImageUrl = asText(state.artifact.buildReferenceImageUrl).trim() || null
     state.artifact.editQueueSeq += 1
     state.artifact.editPromptQueue.push({
       id: state.artifact.editQueueSeq,
-      prompt: normalizedRequest
+      prompt: normalizedRequest,
+      attachedImageUrl
     })
+    if (attachedImageUrl) {
+      clearArtifactBuildReferenceUi()
+    }
     appendArtifactEditMessage('user', normalizedRequest)
     el.artifactPromptInput.value = ''
     renderArtifactPromptQueue()
@@ -2923,7 +2933,7 @@ import {
     void processArtifactEditPromptQueue()
   }
 
-  async function runQueuedArtifactEdit(normalizedRequest) {
+  async function runQueuedArtifactEdit(normalizedRequest, attachedImageUrl = null) {
     const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
     state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
     state.artifact.autoRepairInFlight = false
@@ -2936,7 +2946,8 @@ import {
     await submitArtifactPrompt(prompt, {
       conversationAnswers: state.artifact.lastAnswers,
       requestKind: 'edit',
-      originalEditRequest: resolvedRequest || normalizedRequest
+      originalEditRequest: resolvedRequest || normalizedRequest,
+      buildReferenceImageUrl: asText(attachedImageUrl).trim() || null
     })
   }
 
@@ -2954,7 +2965,7 @@ import {
     renderArtifactPromptQueue()
     syncArtifactComposerBusyState()
     try {
-      await runQueuedArtifactEdit(next.prompt)
+      await runQueuedArtifactEdit(next.prompt, next.attachedImageUrl || null)
     } finally {
       state.artifact.editQueueActivePrompt = ''
       renderArtifactPromptQueue()
@@ -3022,7 +3033,7 @@ import {
           }
         : null
     const buildReferenceImageUrl =
-      requestKind === 'build' ? asText(options.buildReferenceImageUrl).trim() : ''
+      asText(options.buildReferenceImageUrl).trim()
     const conversationAnswers =
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
