@@ -73,6 +73,10 @@ ARTIFACT_CONTEXT_COMBINED_CHAR_LIMIT = 32000
 ARTIFACT_LIVE_HOOK_CONTEXT_CHAR_LIMIT = 12000
 ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
+# User-attached image URLs (Phase 1 upload endpoint) the model may embed or use as a
+# style reference. Capped to keep the prompt small and avoid context truncation.
+ARTIFACT_ATTACHED_IMAGE_URL_LIMIT = 4
+ARTIFACT_ATTACHED_IMAGE_URL_CHAR_LIMIT = 2048
 # After brand injection, designGuidelines should stay a short executive summary + small user slice.
 ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT = 1400
 # Stored plain-text brand brief from BrandProfile.prompt_brand_guidelines (separate from designGuidelines).
@@ -379,6 +383,11 @@ POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION = "\n".join(
         "- Brand lock-in: when brandProfileName is present, palette, typography, logo placement, and voice from the brand package outrank decorative novelty. Do not substitute generic purple/teal gradients, stock fonts, or placeholder logos for specified hex colors, families, and logo URLs.",
         "- When context.artifact.brandEnforcement is 'strict', treat deviation from promptBrandGuidelines or brandFacts as a defect unless the user prompt explicitly overrides them or the brand package is technically impossible for HTML/CSS in the sandbox.",
         "- If brandFacts specifies a logo URL, include that logo in the artifact (placement per guidelines) unless the brand text explicitly says not to show it.",
+        "- If context.artifact.attachedImageUrls is present (an array of public image URLs the user attached), decide how to use each based on the user's prompt wording.",
+        "- Embed an attached image as an asset in the artifact (e.g. background-image: url(...), an <img src=\"...\"> element, or a CSS/SVG fill) when the user's language asks to USE or APPLY the image: phrases like 'use this image', 'use this photo', 'add this image', 'place this', 'insert this', 'as the background', 'use as background', 'put this in'. Use the exact attachedImageUrls string verbatim; do not modify, re-encode, shorten, or proxy it.",
+        "- Treat an attached image as a STYLE REFERENCE ONLY (do not embed its URL) when the user's language is about matching its look: phrases like 'match this', 'like this', 'in the style of', 'inspired by', 'similar to', 'same vibe as'. In that case mirror its palette, composition, mood, and typography without showing the image itself.",
+        "- When the user's intent is ambiguous, prefer style reference over embedding unless the prompt clearly asks to show or place the image.",
+        "- Preserve any external asset URL already embedded in the current artifact (in background-image, src attributes, or inline styles), including attachedImageUrls baked in earlier, byte-for-byte unless the user explicitly asks to remove or replace it. This applies in edit and repair mode.",
         "- Prioritize user prompt intent over default templates.",
         "- Assume base poll chrome can be replaced by your artifact scene composition.",
         "- Express creative layout and motion in HTML, CSS, and JavaScript; when a brand package is present, it takes priority over generic creative defaults.",
@@ -1273,13 +1282,26 @@ async def create_poll_game_artifact_build(
             {"prompt": payload.prompt, "context": model_context},
             indent=2,
         )
-        if ref_parts:
-            prompt_text = (
-                "The user attached one or more reference image(s). Prioritize the visual style, layout density, "
-                "color mood, typography weight, and overall composition of these images when generating the artifact. "
-                "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image.\n\n"
-                + prompt_text
+        attached_image_urls = extract_artifact_attached_image_urls(artifact_context)
+        if ref_parts or attached_image_urls:
+            preamble_lines = [
+                "The user attached one or more image(s). Analyze them for visual style, layout density, "
+                "color mood, typography weight, and overall composition.",
+                "Decide how to use each image from the user's prompt wording: if the prompt asks to USE, ADD, "
+                "PLACE, INSERT, or set the image (e.g. 'use as background'), embed it as an asset in the artifact; "
+                "if the prompt asks to MATCH, mimic, or take inspiration from it (e.g. 'in the style of'), use it "
+                "as a style reference only and do not embed it. When ambiguous, prefer style reference.",
+            ]
+            if attached_image_urls:
+                preamble_lines.append(
+                    "When you embed an attached image, use one of these exact public URLs verbatim (do not modify them): "
+                    + "; ".join(attached_image_urls)
+                    + "."
+                )
+            preamble_lines.append(
+                "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image."
             )
+            prompt_text = "\n".join(preamble_lines) + "\n\n" + prompt_text
         request_text, stop_reason = await request_anthropic_text(
             api_key=build_api_key,
             model=model,
@@ -2203,6 +2225,39 @@ def extract_artifact_original_edit_request(
     value = artifact_context.get("originalEditRequest")
     request = value.strip() if isinstance(value, str) and value.strip() else (fallback_prompt or "").strip()
     return resolve_artifact_edit_request_feedback(artifact_context, request)
+
+
+def extract_artifact_attached_image_urls(artifact_context: dict[str, Any]) -> list[str]:
+    """Validated, de-duplicated http(s) image URLs the user attached for this build.
+
+    Defends against malformed client input: only keeps http/https strings within the
+    length cap, dedupes while preserving order, and limits the count so the prompt
+    stays small and the URLs survive context compression.
+    """
+    if not isinstance(artifact_context, dict):
+        return []
+    raw = artifact_context.get("attachedImageUrls")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        url = item.strip()
+        if not url or len(url) > ARTIFACT_ATTACHED_IMAGE_URL_CHAR_LIMIT:
+            continue
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= ARTIFACT_ATTACHED_IMAGE_URL_LIMIT:
+            break
+    return urls
 
 
 def is_artifact_feedback_followup_request(request_text: str) -> bool:
@@ -6616,6 +6671,11 @@ def prepare_artifact_context_for_model(
     bf = artifact_context.get("brandFacts")
     if bf is not None:
         artifact_context["brandFacts"] = compact_brand_facts_for_prompt(bf)
+    attached_image_urls = extract_artifact_attached_image_urls(artifact_context)
+    if attached_image_urls:
+        artifact_context["attachedImageUrls"] = attached_image_urls
+    else:
+        artifact_context.pop("attachedImageUrls", None)
     raw_style = artifact_context.get("styleOverrides") or artifact_context.get("style_overrides")
     summary = format_style_overrides_for_prompt(raw_style)
     if summary:
@@ -6650,17 +6710,20 @@ def prepare_artifact_context_for_model(
         artifact_context.pop("sizeOverridesSummary", None)
     artifact_context.pop("sizeOverrides", None)
     artifact_context.pop("size_overrides", None)
-    # Surface brand fields early in JSON so the model sees them before long HTML.
+    # Surface brand fields and attached image URLs early in JSON so the model sees
+    # them before long HTML.
     bpn = artifact_context.get("brandProfileName")
-    if isinstance(bpn, str) and bpn.strip():
-        brand_first = (
+    has_brand = isinstance(bpn, str) and bool(bpn.strip())
+    if has_brand or attached_image_urls:
+        first_keys = (
             "brandEnforcement",
             "brandProfileName",
             "promptBrandGuidelines",
             "brandFacts",
+            "attachedImageUrls",
         )
         ordered_artifact: dict[str, Any] = {}
-        for key in brand_first:
+        for key in first_keys:
             if key in artifact_context:
                 ordered_artifact[key] = artifact_context[key]
         for key, value in artifact_context.items():
