@@ -780,6 +780,70 @@ def normalize_anthropic_reference_images(
     return out
 
 
+def _normalize_fetched_image_media_type(content_type: str | None) -> str | None:
+    """Map an HTTP Content-Type to an Anthropic-supported vision media type, or None."""
+    mt = (content_type or "").strip().lower().split(";")[0]
+    if mt == "image/jpg":
+        mt = "image/jpeg"
+    return mt if mt in ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES else None
+
+
+async def fetch_attached_images_as_reference_parts(
+    urls: list[str],
+    *,
+    max_items: int,
+    timeout_seconds: float = 15.0,
+) -> list[tuple[str, str]]:
+    """Best-effort: download attached image URLs and return (media_type, base64) vision parts.
+
+    Lets the model actually *see* an attached image for style-matching even when the
+    client only sent a URL (e.g. on edit/repair, where base64 is not resent). Failures
+    (network, non-image, oversized, unsupported type) are skipped with a log rather than
+    raised, so a bad URL degrades to no-vision instead of failing the whole build.
+    """
+    if not urls or max_items <= 0:
+        return []
+    out: list[tuple[str, str]] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout_seconds, connect=8.0),
+            follow_redirects=True,
+        ) as client:
+            for url in urls[:max_items]:
+                try:
+                    response = await client.get(url)
+                except Exception as exc:
+                    logger.warning("Attached image fetch failed (network) %s: %s", url, exc)
+                    continue
+                if response.status_code != 200:
+                    logger.warning(
+                        "Attached image fetch HTTP %s for %s", response.status_code, url
+                    )
+                    continue
+                media_type = _normalize_fetched_image_media_type(
+                    response.headers.get("content-type")
+                )
+                if media_type is None:
+                    logger.warning(
+                        "Attached image %s has unsupported content-type %r; skipping vision",
+                        url,
+                        response.headers.get("content-type"),
+                    )
+                    continue
+                raw = response.content
+                if not raw or len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
+                    logger.warning(
+                        "Attached image %s is empty or exceeds %d bytes; skipping vision",
+                        url,
+                        ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES,
+                    )
+                    continue
+                out.append((media_type, base64.b64encode(raw).decode("ascii")))
+    except Exception as exc:  # defensive: never let vision-fetch break a build
+        logger.warning("Attached image fetch pass aborted: %s", exc)
+    return out
+
+
 async def request_anthropic_text(
     *,
     api_key: str,
@@ -1278,11 +1342,22 @@ async def create_poll_game_artifact_build(
         ref_parts: list[tuple[str, str]] = []
         if payload.reference_images:
             ref_parts = normalize_anthropic_reference_images(list(payload.reference_images))
+        attached_image_urls = extract_artifact_attached_image_urls(artifact_context)
+        # Let the model SEE attached images (for style-matching), not just read their
+        # URL text. Fetch vision for the URLs only up to the remaining image budget so
+        # client-sent reference_images still take priority.
+        vision_budget = ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS - len(ref_parts)
+        if attached_image_urls and vision_budget > 0:
+            fetched_parts = await fetch_attached_images_as_reference_parts(
+                attached_image_urls,
+                max_items=vision_budget,
+            )
+            if fetched_parts:
+                ref_parts = ref_parts + fetched_parts
         prompt_text = json.dumps(
             {"prompt": payload.prompt, "context": model_context},
             indent=2,
         )
-        attached_image_urls = extract_artifact_attached_image_urls(artifact_context)
         if ref_parts or attached_image_urls:
             preamble_lines = [
                 "The user attached one or more image(s). Analyze them for visual style, layout density, "
