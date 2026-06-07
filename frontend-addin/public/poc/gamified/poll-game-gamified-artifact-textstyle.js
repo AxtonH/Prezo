@@ -2152,32 +2152,48 @@ export function buildTextStyleBridgeLines() {
     // hints, same data-prezo-pos-id attribute) so a single DOM walk resolves
     // all three override kinds.',
     '  var lastKnownHiddenOverrides = {}',
-    // Remember each hidden node\'s prior inline display so an un-delete (undo)
-    // restores exactly what was there rather than forcing an empty string.
-    '  var hiddenDisplayBaselines = {}',
+    // Remember each hidden node\'s prior inline visibility + pointer-events so
+    // an un-delete (undo) restores exactly what was there rather than forcing
+    // an empty string.
+    '  var hiddenStyleBaselines = {}',
     '  function findNodeForHiddenOverride(stableId, override) {',
     '    return findNodeForPositionOverride(stableId, override)',
     '  }',
+    // Hide via visibility:hidden (NOT display:none) so the element keeps its
+    // layout box and siblings don\'t reflow into the gap — PowerPoint-style
+    // delete where nothing else moves. pointer-events:none stops the now-
+    // invisible element from intercepting clicks meant for what\'s behind it.
     '  function applyHiddenToNode(node, stableId, override) {',
     '    if (!node || !stableId) return',
     '    var hidden = !!(override && override.hidden)',
     '    node.setAttribute("data-prezo-pos-id", stableId)',
     '    if (!lastKnownHiddenOverrides) lastKnownHiddenOverrides = {}',
     '    if (hidden) {',
-    '      if (!Object.prototype.hasOwnProperty.call(hiddenDisplayBaselines, stableId)) {',
-    '        hiddenDisplayBaselines[stableId] = (node.style && node.style.display) || ""',
+    '      if (!Object.prototype.hasOwnProperty.call(hiddenStyleBaselines, stableId)) {',
+    '        hiddenStyleBaselines[stableId] = {',
+    '          visibility: (node.style && node.style.visibility) || "",',
+    '          pointerEvents: (node.style && node.style.pointerEvents) || ""',
+    '        }',
     '      }',
     '      lastKnownHiddenOverrides[stableId] = { hidden: true, label: override && override.label, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }',
-    '      if (node.style) node.style.display = "none"',
+    '      if (node.style) {',
+    '        node.style.visibility = "hidden"',
+    '        node.style.pointerEvents = "none"',
+    '      }',
     '    } else {',
     '      delete lastKnownHiddenOverrides[stableId]',
     '      if (node.style) {',
-    '        var baseline = Object.prototype.hasOwnProperty.call(hiddenDisplayBaselines, stableId) ? hiddenDisplayBaselines[stableId] : ""',
-    '        node.style.display = baseline',
+    '        var baseline = Object.prototype.hasOwnProperty.call(hiddenStyleBaselines, stableId) ? hiddenStyleBaselines[stableId] : { visibility: "", pointerEvents: "" }',
+    '        node.style.visibility = baseline.visibility',
+    '        node.style.pointerEvents = baseline.pointerEvents',
     '      }',
-    '      delete hiddenDisplayBaselines[stableId]',
+    '      delete hiddenStyleBaselines[stableId]',
     '    }',
     '  }',
+    // Apply BOTH hide (hidden:true) and un-hide (hidden:false) entries. The
+    // un-hide branch is what makes undo work: applyHistoryHiddenEntry pushes a
+    // {hidden:false} override, which must reach applyHiddenToNode to restore
+    // visibility. Only entries with a non-boolean `hidden` are skipped.
     '  function applyHiddenOverrides(overrides) {',
     '    if (!overrides || typeof overrides !== "object") return []',
     '    if (!document.body) return []',
@@ -2187,9 +2203,9 @@ export function buildTextStyleBridgeLines() {
     '    for (var i = 0; i < ids.length; i++) {',
     '      var stableId = ids[i]',
     '      var ov = overrides[stableId]',
-    '      if (!ov || !ov.hidden) continue',
+    '      if (!ov || typeof ov.hidden !== "boolean") continue',
     '      var node = findNodeForHiddenOverride(stableId, ov)',
-    '      if (!node) { unmatched.push(stableId); continue }',
+    '      if (!node) { if (ov.hidden) unmatched.push(stableId); continue }',
     '      applyHiddenToNode(node, stableId, ov)',
     '    }',
     '    refreshSelectionOverlay()',
