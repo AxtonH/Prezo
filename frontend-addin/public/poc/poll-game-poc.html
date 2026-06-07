@@ -683,17 +683,7 @@
                 aria-label="Upload reference image for brand guidelines"
               />
             </div>
-            <div class="artifact-prompt-bar artifact-prompt-bar--with-shell-toggle">
-              <button
-                id="artifact-editor-shell-toggle"
-                class="editor-shell-toggle"
-                type="button"
-                aria-expanded="false"
-                aria-controls="artifact-composer"
-                title="Show history and activity"
-              >
-                ▲
-              </button>
+            <div class="artifact-prompt-bar">
               <div class="composer-input-field artifact-prompt-bar-field">
                 <textarea
                   id="artifact-prompt-input"
@@ -704,15 +694,21 @@
                   aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
                 ></textarea>
                 <div class="artifact-prompt-bar-footer">
+                  <button
+                    id="artifact-editor-shell-toggle"
+                    class="editor-shell-toggle"
+                    type="button"
+                    aria-expanded="false"
+                    aria-controls="artifact-composer"
+                    title="Show history and activity"
+                  >
+                    ▲
+                  </button>
                   <p
                     id="artifact-brand-reference-status"
                     class="artifact-brand-reference-status"
                     aria-live="polite"
                   ></p>
-                  <p class="composer-enter-hint artifact-prompt-hint">
-                    <span class="composer-enter-kbd" title="Enter">↵</span>
-                    Press Enter to send · Shift+Enter new line
-                  </p>
                   <div id="artifact-type-reference-inline" class="artifact-type-reference-inline hidden">
                     <div id="artifact-type-reference-preview" class="artifact-type-reference-preview-inline hidden">
                       <img id="artifact-type-reference-preview-img" alt="Reference preview" />

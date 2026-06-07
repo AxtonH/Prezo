@@ -579,30 +579,15 @@ body.editor-panel-resizing {
   display: none !important;
 }
 
-/* Footer hint hidden in dock: keeps prompt bar height identical collapsed vs expanded. */
-#ai-chat-shell .ai-prompt-bar-footer,
+/* Classic-polls AI bar: footer hint hidden in dock (keeps its prompt bar compact). */
+#ai-chat-shell .ai-prompt-bar-footer {
+  display: none !important;
+}
+
+/* Artifact editor: the footer holds the show/less toggle (left) and the attach-image
+   paperclip (right), so it stays visible in the floating dock. */
 #ai-chat-shell .artifact-prompt-bar-footer {
-  display: none !important;
-}
-
-/* Exception: when the attach-image row is active (creation step or edit mode), keep the
-   artifact footer visible in the floating dock so the paperclip is reachable. Only the
-   reference row shows; the Enter hint and brand-reference status stay hidden to preserve
-   the dock's compact prompt-bar height. */
-#ai-chat-shell
-  .artifact-prompt-bar-footer:has(
-    > .artifact-type-reference-inline:not(.hidden)
-  ) {
   display: flex !important;
-}
-
-#ai-chat-shell
-  .artifact-prompt-bar-footer:has(> .artifact-type-reference-inline:not(.hidden))
-  > .composer-enter-hint,
-#ai-chat-shell
-  .artifact-prompt-bar-footer:has(> .artifact-type-reference-inline:not(.hidden))
-  > #artifact-brand-reference-status {
-  display: none !important;
 }
 
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-composer-header,
@@ -2582,7 +2567,8 @@ h1 {
   box-shadow: none;
 }
 
-.editor-shell-toggle {
+/* Classic-polls AI bar keeps the left-rail shell toggle. */
+.ai-prompt-bar--with-shell-toggle .editor-shell-toggle {
   flex: 0 0 40px;
   margin: 0;
   padding: 0;
@@ -2598,22 +2584,44 @@ h1 {
   transition: background 120ms ease, color 120ms ease;
 }
 
-.editor-shell-toggle:hover {
+.ai-prompt-bar--with-shell-toggle .editor-shell-toggle:hover {
   background: var(--chrome-hover);
   color: var(--chrome-text);
 }
 
-.ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
-.artifact-prompt-bar--with-shell-toggle .artifact-prompt-bar-field .artifact-prompt-input {
+/* Artifact editor: shell toggle sits inside the footer on the left, as a compact
+   button matching the attach paperclip. margin-right:auto pushes the paperclip right. */
+.artifact-prompt-bar-footer > .editor-shell-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin: 0 auto 0 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chrome-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.artifact-prompt-bar-footer > .editor-shell-toggle:hover {
+  color: var(--chrome-text);
+  background: var(--chrome-hover);
+}
+
+.ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input {
   border-radius: 0 12px 0 0;
 }
 
-/* Floating dock: footer hidden — textarea is always the full rounded block on the right. */
-#ai-chat-shell .ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input,
-#ai-chat-shell
-  .artifact-prompt-bar--with-shell-toggle
-  .artifact-prompt-bar-field
-  .artifact-prompt-input {
+/* Floating dock: classic AI bar textarea is the full rounded block on the right. */
+#ai-chat-shell .ai-prompt-bar--with-shell-toggle .ai-prompt-bar-field .ai-chat-input {
   border-radius: 0 12px 12px 0;
 }
 
