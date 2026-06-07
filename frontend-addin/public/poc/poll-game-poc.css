@@ -585,6 +585,26 @@ body.editor-panel-resizing {
   display: none !important;
 }
 
+/* Exception: when the attach-image row is active (creation step or edit mode), keep the
+   artifact footer visible in the floating dock so the paperclip is reachable. Only the
+   reference row shows; the Enter hint and brand-reference status stay hidden to preserve
+   the dock's compact prompt-bar height. */
+#ai-chat-shell
+  .artifact-prompt-bar-footer:has(
+    > .artifact-type-reference-inline:not(.hidden)
+  ) {
+  display: flex !important;
+}
+
+#ai-chat-shell
+  .artifact-prompt-bar-footer:has(> .artifact-type-reference-inline:not(.hidden))
+  > .composer-enter-hint,
+#ai-chat-shell
+  .artifact-prompt-bar-footer:has(> .artifact-type-reference-inline:not(.hidden))
+  > #artifact-brand-reference-status {
+  display: none !important;
+}
+
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-composer-header,
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating #artifact-prompt-queue,
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-chat-log,
