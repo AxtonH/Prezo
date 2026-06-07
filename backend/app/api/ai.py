@@ -873,9 +873,11 @@ async def request_anthropic_text(
                 }
             )
     content.append({"type": "text", "text": prompt_text})
+    resolved_model = (
+        normalize_anthropic_model_name(model) or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL
+    )
     body = {
-        "model": normalize_anthropic_model_name(model)
-        or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL,
+        "model": resolved_model,
         "system": system_instruction,
         "messages": [
             {
@@ -883,9 +885,11 @@ async def request_anthropic_text(
                 "content": content,
             }
         ],
-        "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    # Opus 4.7/4.8 reject temperature (400). Only send it on models that accept it.
+    if anthropic_model_accepts_sampling_params(resolved_model):
+        body["temperature"] = temperature
 
     try:
         async with httpx.AsyncClient(
@@ -2213,6 +2217,21 @@ def extract_anthropic_stop_reason(payload: Any) -> str:
 
 def normalize_anthropic_model_name(value: str | None) -> str:
     return (value or "").strip()
+
+
+# Anthropic models from Opus 4.7 onward removed sampling params (temperature,
+# top_p, top_k) and the enabled/budget_tokens thinking mode — sending any of them
+# returns a 400. Older Claude models (Opus 4.6 and earlier, all Sonnet/Haiku 4.x)
+# still accept temperature. This gate only applies to the Anthropic call; the
+# Gemini path is unaffected.
+ANTHROPIC_MODELS_WITHOUT_SAMPLING_PARAMS = ("opus-4-8", "opus-4-7")
+
+
+def anthropic_model_accepts_sampling_params(model: str) -> bool:
+    normalized = (model or "").strip().lower()
+    return not any(
+        marker in normalized for marker in ANTHROPIC_MODELS_WITHOUT_SAMPLING_PARAMS
+    )
 
 
 def resolve_anthropic_base_url() -> str:
