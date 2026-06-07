@@ -925,7 +925,6 @@ export function buildTextStyleBridgeLines() {
     '    }',
     '    // Snapshot styled nodes BEFORE the renderer potentially destroys them',
     '    var snap = snapshotEditableNodes()',
-    '    try { console.log("[prezo-flicker-diag] IFRAME invokeRenderHook (render)", { t: Math.round(performance.now()), hiddenCount: lastKnownHiddenOverrides ? Object.keys(lastKnownHiddenOverrides).length : 0 }) } catch (eD) {}',
     '    _originalInvokeRenderHook(payload)',
     '    // Synchronously restore styled nodes BEFORE the browser paints',
     '    applyArtifactCopyFromMeta(payload)',
@@ -2349,22 +2348,7 @@ export function buildTextStyleBridgeLines() {
     '    if (event.data.instanceId !== INSTANCE_ID) return',
     '    var ov = event.data.overrides',
     '    if (!ov || typeof ov !== "object") return',
-    // [prezo-flicker-diag] TEMP
-    '    try { console.log("[prezo-flicker-diag] IFRAME hidden-init received", { t: Math.round(performance.now()), overrides: ov }) } catch (eD) {}',
     '    applyHiddenOverrides(ov)',
-    // [prezo-flicker-diag] TEMP: report whether each hidden override now
-    // resolves to a node and that node\'s computed visibility post-apply.
-    '    try {',
-    '      var rpt = []',
-    '      var hk = Object.keys(ov)',
-    '      for (var hi = 0; hi < hk.length; hi++) {',
-    '        var hov = ov[hk[hi]]',
-    '        if (!hov || !hov.hidden) continue',
-    '        var n = findNodeForHiddenOverride(hk[hi], hov)',
-    '        rpt.push({ stableId: hk[hi], cssLabel: hov.cssLabel, anchor: hov.anchor, optionId: hov.optionId, foundNode: !!n, tag: n ? n.tagName : null, computedVisibility: n ? window.getComputedStyle(n).visibility : null })',
-    '      }',
-    '      console.log("[prezo-flicker-diag] IFRAME hidden applied", { t: Math.round(performance.now()), report: rpt })',
-    '    } catch (eD2) {}',
     // Acknowledge AFTER the browser has had a frame to apply the hide CSS, so
     // the host only reveals the (masked) frame once deleted elements are
     // actually invisible — this is what kills the load-time delete flicker,
@@ -2372,7 +2356,6 @@ export function buildTextStyleBridgeLines() {
     '    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }',
     '    raf(function () {',
     '      raf(function () {',
-    '        try { console.log("[prezo-flicker-diag] IFRAME posting hidden-applied ack", { t: Math.round(performance.now()) }) } catch (eD) {}',
     '        postParentMessage(HIDDEN_APPLIED_MESSAGE_TYPE, {})',
     '      })',
     '    })',

@@ -2587,7 +2587,6 @@ import {
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
-      try { console.log('[prezo-flicker-diag] HOST render-ok received', { t: Math.round(performance.now()) }) } catch (e) {}
       confirmArtifactRenderSuccess(message.renderHealth)
       return
     }
@@ -2619,7 +2618,6 @@ import {
       // The iframe finished applying hidden (delete) overrides and the browser
       // has had a frame to paint them. Safe to reveal the masked frame now —
       // deleted elements are invisible, so there's no load flicker.
-      try { console.log('[prezo-flicker-diag] HOST hidden-applied ack received', { t: Math.round(performance.now()) }) } catch (e) {}
       revealArtifactFrame()
       return
     }
@@ -4212,8 +4210,6 @@ import {
     // confirmArtifactRenderSuccess after the override push (with a safety
     // timeout inside the mask helper).
     maskArtifactFrameForOverrides()
-    // [prezo-flicker-diag] TEMP
-    try { console.log('[prezo-flicker-diag] HOST srcdoc set', { t: Math.round(performance.now()), masked: el.artifactFrame.classList.contains('artifact-frame--overrides-pending'), opacity: getComputedStyle(el.artifactFrame).opacity }) } catch (e) {}
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
@@ -6486,7 +6482,6 @@ import {
     if (!frameWindow) return
     const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).hiddenOverrides || {}
     const overrides = artifactDelete.getMergedHiddenOverrides(saved)
-    try { console.log('[prezo-flicker-diag] HOST pushArtifactHiddenOverrides', { t: Math.round(performance.now()), count: Object.keys(overrides || {}).length, overrides }) } catch (e) {}
     if (!overrides || Object.keys(overrides).length === 0) return
     frameWindow.postMessage(
       {
@@ -6547,7 +6542,7 @@ import {
    * `maxMaskMs` is the safety ceiling — the frame always reveals by then even
    * if the reveal call is somehow missed.
    */
-  function maskArtifactFrameForOverrides(maxMaskMs = 700) {
+  function maskArtifactFrameForOverrides() {
     if (artifactRevealTimerId) {
       clearTimeout(artifactRevealTimerId)
       artifactRevealTimerId = 0
@@ -6555,24 +6550,21 @@ import {
     if (!el.artifactFrame) return
     const hasOverrides = artifactHasOverridesToApply()
     const hasHidden = artifactHasHiddenOverrides()
-    // [prezo-flicker-diag] TEMP
-    try {
-      console.log('[prezo-flicker-diag] HOST mask called', {
-        t: Math.round(performance.now()),
-        hasOverrides,
-        hasHidden,
-        savedKeys: Object.keys(state.artifact.savedStyleOverrides || {})
-      })
-    } catch (e) {}
     if (!hasOverrides) {
       revealArtifactFrame()
       return
     }
     el.artifactFrame.classList.add('artifact-frame--overrides-pending')
-    artifactRevealTimerId = setTimeout(() => {
-      try { console.log('[prezo-flicker-diag] HOST reveal via SAFETY TIMEOUT', { t: Math.round(performance.now()) }) } catch (e) {}
-      revealArtifactFrame()
-    }, maxMaskMs)
+    // Safety ceiling for the reveal. For deletes we reveal on the iframe's
+    // prezo-hidden-applied ack, which only arrives after render-ok — and
+    // render-ok is gated on poll-snapshot availability + the artifact's own
+    // render time (~1-2s, capped by the 5s edit watchdog). A short ceiling
+    // would lift the mask BEFORE the hide lands, flashing the deleted element
+    // (the bug we saw). So the hidden case gets a generous 6s backstop; the
+    // ack normally reveals far sooner. Non-delete edits apply fast and revert
+    // to a short ceiling.
+    const maxMaskMs = hasHidden ? 6000 : 700
+    artifactRevealTimerId = setTimeout(revealArtifactFrame, maxMaskMs)
   }
 
   /**
@@ -6586,11 +6578,6 @@ import {
       artifactRevealTimerId = 0
     }
     if (!el.artifactFrame) return
-    // [prezo-flicker-diag] TEMP
-    try {
-      const wasMasked = el.artifactFrame.classList.contains('artifact-frame--overrides-pending')
-      console.log('[prezo-flicker-diag] HOST reveal', { t: Math.round(performance.now()), wasMasked })
-    } catch (e) {}
     el.artifactFrame.classList.remove('artifact-frame--overrides-pending')
   }
 
