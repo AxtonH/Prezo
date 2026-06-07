@@ -2159,10 +2159,74 @@ export function buildTextStyleBridgeLines() {
     '  function findNodeForHiddenOverride(stableId, override) {',
     '    return findNodeForPositionOverride(stableId, override)',
     '  }',
+    // A deleted element is hidden by a CSS RULE (not just an inline style),
+    // because the AI-generated renderer can recreate option rows / elements
+    // from scratch on every vote update — wiping any inline style or marker we
+    // set on the old node. A stylesheet rule keyed on identity the renderer
+    // PRESERVES (its data-option-id, or our persistent data-prezo-deleted /
+    // data-prezo-pos-id marker, or the saved anchor selector) re-hides the
+    // fresh element before it ever paints, so there is no flash. The inline
+    // style + marker attribute below are a belt-and-suspenders fast path for
+    // the node we have in hand right now.
+    '  var hiddenStyleEl = null',
+    '  function ensureHiddenStyleEl() {',
+    '    if (hiddenStyleEl && hiddenStyleEl.parentNode) return hiddenStyleEl',
+    '    hiddenStyleEl = document.createElement("style")',
+    '    hiddenStyleEl.setAttribute("data-prezo-hidden-style", "true")',
+    '    ;(document.head || document.documentElement).appendChild(hiddenStyleEl)',
+    '    return hiddenStyleEl',
+    '  }',
+    // Escape a value for use inside a CSS attribute selector\'s double quotes.
+    '  function cssAttrEscape(value) {',
+    '    return String(value).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, "\\\\\\"")',
+    '  }',
+    // Build the set of CSS selectors that should match a hidden override\'s
+    // element across renderer rebuilds. Order from most-stable to least.
+    '  function hiddenSelectorsFor(stableId, ov) {',
+    '    var sels = []',
+    // Our persistent markers (survive if the node itself survives).
+    '    sels.push("[data-prezo-deleted=\\"" + cssAttrEscape(stableId) + "\\"]")',
+    '    sels.push("[data-prezo-pos-id=\\"" + cssAttrEscape(stableId) + "\\"]")',
+    // Option rows: the renderer keeps data-option-id (poll data), so this
+    // matches the freshly-rebuilt row even though our markers were wiped.
+    '    if (ov && ov.optionId) {',
+    '      var oe = cssAttrEscape(ov.optionId)',
+    '      sels.push("[data-option-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-prezo-option-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-opt-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-poll-option-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-lane-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-choice-id=\\"" + oe + "\\"]")',
+    '      sels.push("[data-answer-id=\\"" + oe + "\\"]")',
+    '    }',
+    // role:"element" overrides carry a saved CSS selector (e.g. img.foo).
+    '    if (ov && ov.role === "element" && typeof ov.label === "string" && ov.label) {',
+    '      sels.push(ov.label)',
+    '    }',
+    '    return sels',
+    '  }',
+    // Regenerate the whole hidden stylesheet from lastKnownHiddenOverrides.
+    // Cheap (few entries) and idempotent — called after every hide/unhide.
+    '  function rebuildHiddenStyleRules() {',
+    '    var ids = lastKnownHiddenOverrides ? Object.keys(lastKnownHiddenOverrides) : []',
+    '    if (!ids.length) {',
+    '      if (hiddenStyleEl) hiddenStyleEl.textContent = ""',
+    '      return',
+    '    }',
+    '    var allSelectors = []',
+    '    for (var i = 0; i < ids.length; i++) {',
+    '      var ov = lastKnownHiddenOverrides[ids[i]]',
+    '      if (!ov || !ov.hidden) continue',
+    '      var sels = hiddenSelectorsFor(ids[i], ov)',
+    '      for (var s = 0; s < sels.length; s++) allSelectors.push(sels[s])',
+    '    }',
+    '    var el = ensureHiddenStyleEl()',
+    '    if (!allSelectors.length) { el.textContent = ""; return }',
+    '    el.textContent = allSelectors.join(",\\n") + " { visibility: hidden !important; pointer-events: none !important; }"',
+    '  }',
     // Hide via visibility:hidden (NOT display:none) so the element keeps its
     // layout box and siblings don\'t reflow into the gap — PowerPoint-style
-    // delete where nothing else moves. pointer-events:none stops the now-
-    // invisible element from intercepting clicks meant for what\'s behind it.
+    // delete where nothing else moves.
     '  function applyHiddenToNode(node, stableId, override) {',
     '    if (!node || !stableId) return',
     '    var hidden = !!(override && override.hidden)',
@@ -2176,12 +2240,16 @@ export function buildTextStyleBridgeLines() {
     '        }',
     '      }',
     '      lastKnownHiddenOverrides[stableId] = { hidden: true, label: override && override.label, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }',
+    // Persistent marker so the CSS rule can re-match this exact node if it
+    // survives, and an inline style so the node in hand hides immediately.
+    '      node.setAttribute("data-prezo-deleted", stableId)',
     '      if (node.style) {',
     '        node.style.visibility = "hidden"',
     '        node.style.pointerEvents = "none"',
     '      }',
     '    } else {',
     '      delete lastKnownHiddenOverrides[stableId]',
+    '      try { node.removeAttribute("data-prezo-deleted") } catch (e) {}',
     '      if (node.style) {',
     '        var baseline = Object.prototype.hasOwnProperty.call(hiddenStyleBaselines, stableId) ? hiddenStyleBaselines[stableId] : { visibility: "", pointerEvents: "" }',
     '        node.style.visibility = baseline.visibility',
@@ -2189,25 +2257,45 @@ export function buildTextStyleBridgeLines() {
     '      }',
     '      delete hiddenStyleBaselines[stableId]',
     '    }',
+    '    rebuildHiddenStyleRules()',
     '  }',
     // Apply BOTH hide (hidden:true) and un-hide (hidden:false) entries. The
     // un-hide branch is what makes undo work: applyHistoryHiddenEntry pushes a
     // {hidden:false} override, which must reach applyHiddenToNode to restore
     // visibility. Only entries with a non-boolean `hidden` are skipped.
+    //
+    // The hidden override SET is authoritative and is mirrored into the CSS
+    // stylesheet regardless of whether a matching node exists right now. This
+    // is the key to a flash-free delete: when the renderer recreates a deleted
+    // option row mid-load, findNodeForHiddenOverride may miss it on this pass,
+    // but the CSS rule (keyed on data-option-id etc.) still hides the fresh row
+    // before paint. A previous version reset lastKnownHiddenOverrides to {} and
+    // only re-added matched nodes, which dropped the rule on a miss and let the
+    // row reappear — that was the flash.
     '  function applyHiddenOverrides(overrides) {',
     '    if (!overrides || typeof overrides !== "object") return []',
     '    if (!document.body) return []',
-    '    lastKnownHiddenOverrides = {}',
+    '    var nextKnown = {}',
     '    var unmatched = []',
     '    var ids = Object.keys(overrides)',
     '    for (var i = 0; i < ids.length; i++) {',
     '      var stableId = ids[i]',
     '      var ov = overrides[stableId]',
     '      if (!ov || typeof ov.hidden !== "boolean") continue',
+    // Keep every still-hidden entry in the authoritative set even if its node
+    // isn\'t present this pass — the CSS rule must persist across rebuilds.
+    '      if (ov.hidden) {',
+    '        nextKnown[stableId] = { hidden: true, label: ov.label, role: ov.role, optionId: ov.optionId, anchor: ov.anchor }',
+    '      }',
     '      var node = findNodeForHiddenOverride(stableId, ov)',
     '      if (!node) { if (ov.hidden) unmatched.push(stableId); continue }',
+    // applyHiddenToNode rewrites lastKnownHiddenOverrides[stableId]/baseline and
+    // toggles the inline fast-path; the CSS rebuild it triggers is harmless and
+    // gets superseded by the authoritative rebuild below.
     '      applyHiddenToNode(node, stableId, ov)',
     '    }',
+    '    lastKnownHiddenOverrides = nextKnown',
+    '    rebuildHiddenStyleRules()',
     '    refreshSelectionOverlay()',
     '    return unmatched',
     '  }',
@@ -2221,10 +2309,10 @@ export function buildTextStyleBridgeLines() {
     '  }',
     // ── Delete (hide) the current selection ──────────────────────
     // Triggered from the context-menu "Delete" item and the Delete/Backspace
-    // keyboard shortcut. Non-destructive: sets display:none, posts the
-    // committed hidden override to the host (which persists + records undo),
-    // then clears the selection so the overlay doesn\'t linger over a
-    // now-invisible element.',
+    // keyboard shortcut. Non-destructive: hides the element (visibility:hidden
+    // via a persistent CSS rule + inline fast path), posts the committed hidden
+    // override to the host (which persists + records undo), then clears the
+    // selection so the overlay doesn\'t linger over a now-invisible element.',
     '  function isDeletableSelection(node, kind) {',
     // Same scope as move/resize: everything selectable except the scene root.
     '    if (!node || !kind) return false',
