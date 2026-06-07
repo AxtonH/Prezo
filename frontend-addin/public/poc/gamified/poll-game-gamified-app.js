@@ -61,6 +61,7 @@ import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-tex
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
 import { createArtifactSizeHandler } from './poll-game-gamified-artifact-size.js'
+import { createArtifactDeleteHandler } from './poll-game-gamified-artifact-delete.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
 import {
   createArtifactGuidesHandler,
@@ -91,6 +92,8 @@ import {
   const ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE = 'prezo-size-changed'
   const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
   const ARTIFACT_SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
+  const ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
+  const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
   const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
   const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
@@ -665,6 +668,31 @@ import {
           ts: Date.now()
         })
       }
+    }
+  })
+  const artifactDelete = createArtifactDeleteHandler({
+    onDelete: (stableId, override, message) => {
+      console.log('[prezo-element-deleted]', stableId, override)
+      // Record an undo entry only for genuine user deletes from the iframe,
+      // which always carry an explicit priorHidden flag. The history re-apply
+      // path (applyHistoryHiddenEntry) omits priorHidden so re-emitting an
+      // undo/redo doesn't push a fresh entry — mirrors the position/size
+      // handlers' priorDx/priorSx guard.
+      if (!message || typeof message.priorHidden !== 'boolean') return
+      artifactHistory.push({
+        kind: 'hidden',
+        targetKey: stableId,
+        before: {
+          hidden: message.priorHidden === true,
+          role: override.role,
+          optionId: override.optionId,
+          label: override.label,
+          anchor: override.anchor
+        },
+        after: { ...override },
+        label: override.label ? `Delete ${override.label}` : 'Delete element',
+        ts: Date.now()
+      })
     }
   })
   // Undo/redo. Closure resolves apply* helpers at call time so they don't
@@ -2542,6 +2570,8 @@ import {
       message.type === ARTIFACT_TEXT_FOCUS_MESSAGE_TYPE ||
       message.type === ARTIFACT_ELEMENT_SELECTED_MESSAGE_TYPE ||
       message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE ||
+      message.type === ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE ||
+      message.type === ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE ||
       message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
@@ -2576,6 +2606,10 @@ import {
     }
     if (message.type === ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE) {
       artifactSize.handleSizeChanged(message)
+      return
+    }
+    if (message.type === ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE) {
+      artifactDelete.handleElementDeleted(message)
       return
     }
     if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
@@ -2630,6 +2664,7 @@ import {
     setTimeout(pushArtifactStyleOverrides, 300)
     setTimeout(pushArtifactPositionOverrides, 300)
     setTimeout(pushArtifactSizeOverrides, 300)
+    setTimeout(pushArtifactHiddenOverrides, 300)
     setTimeout(pushArtifactGridConfig, 300)
   }
 
@@ -4154,7 +4189,8 @@ import {
       const pendingCopyWithPositions = {
         ...pendingArtifactCopyOverrides,
         positionOverrides: artifactPosition.getPendingPositionOverrides(),
-        sizeOverrides: artifactSize.getPendingSizeOverrides()
+        sizeOverrides: artifactSize.getPendingSizeOverrides(),
+        hiddenOverrides: artifactDelete.getPendingHiddenOverrides()
       }
       const merged = mergeCopyIntoStyleOverrides(
         { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
@@ -4164,6 +4200,7 @@ import {
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
+      artifactDelete.clearPendingHiddenOverrides()
       // AI edits rebuild the DOM — prior undo entries reference nodes that
       // may no longer exist or whose stable ids have shifted.
       artifactHistory.clear()
@@ -4248,6 +4285,7 @@ import {
     setTimeout(pushArtifactStyleOverrides, 250)
     setTimeout(pushArtifactPositionOverrides, 250)
     setTimeout(pushArtifactSizeOverrides, 250)
+    setTimeout(pushArtifactHiddenOverrides, 250)
     setTimeout(pushArtifactGridConfig, 250)
   }
 
@@ -5467,6 +5505,10 @@ import {
       applyHistorySizeEntry(target, entry.targetKey)
       return
     }
+    if (entry.kind === 'hidden') {
+      applyHistoryHiddenEntry(target, entry.targetKey)
+      return
+    }
     if (entry.kind === 'text-content') {
       applyHistoryTextContentEntry(target)
       return
@@ -5511,6 +5553,22 @@ import {
       priorSy: undefined
     })
     pushArtifactSizeOverrides()
+  }
+
+  function applyHistoryHiddenEntry(target, stableId) {
+    // Mirror the delete commit path: route the target visibility back through
+    // the delete handler (priorHidden omitted so onDelete doesn't record a new
+    // undo entry), then push a fresh hidden-init so the iframe shows/hides the
+    // element. target.hidden === false on undo (restore), true on redo.
+    artifactDelete.handleElementDeleted({
+      stableId,
+      hidden: target.hidden === true,
+      role: target.role,
+      label: target.label,
+      optionId: target.optionId,
+      anchor: target.anchor
+    })
+    pushArtifactHiddenOverrides()
   }
 
   function applyHistoryTextContentEntry(target) {
@@ -6375,6 +6433,29 @@ import {
     frameWindow.postMessage(
       {
         type: ARTIFACT_SIZE_INIT_MESSAGE_TYPE,
+        instanceId: state.artifact.instanceId,
+        overrides
+      },
+      '*'
+    )
+  }
+
+  /**
+   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
+   * pending hidden (delete) overrides into the iframe so deleted elements
+   * stay hidden immediately on load. Called from the same lifecycle points
+   * as the position/size pushes.
+   */
+  function pushArtifactHiddenOverrides() {
+    const frameWindow = el.artifactFrame.contentWindow
+    if (!frameWindow) return
+    const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).hiddenOverrides || {}
+    const overrides = artifactDelete.getMergedHiddenOverrides(saved)
+    console.log('[prezo-hidden-push]', { count: Object.keys(overrides || {}).length, keys: Object.keys(overrides || {}) })
+    if (!overrides || Object.keys(overrides).length === 0) return
+    frameWindow.postMessage(
+      {
+        type: ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE,
         instanceId: state.artifact.instanceId,
         overrides
       },
@@ -11375,7 +11456,8 @@ import {
     const pendingCopyWithPositions = {
       ...pendingArtifactCopyOverrides,
       positionOverrides: artifactPosition.getPendingPositionOverrides(),
-      sizeOverrides: artifactSize.getPendingSizeOverrides()
+      sizeOverrides: artifactSize.getPendingSizeOverrides(),
+      hiddenOverrides: artifactDelete.getPendingHiddenOverrides()
     }
     const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingCopyWithPositions)
     return sanitizeSavedArtifactRecord({

@@ -17,6 +17,8 @@ const ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
 const ARTIFACT_POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
 const ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE = 'prezo-size-changed'
 const ARTIFACT_SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
+const ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
+const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
 const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
 
 export function normalizeArtifactMarkup(rawValue) {
@@ -162,6 +164,8 @@ function buildBridgeScript(instanceId = 0) {
     `  var POSITION_INIT_MESSAGE_TYPE = '${ARTIFACT_POSITION_INIT_MESSAGE_TYPE}'`,
     `  var SIZE_CHANGED_MESSAGE_TYPE = '${ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE}'`,
     `  var SIZE_INIT_MESSAGE_TYPE = '${ARTIFACT_SIZE_INIT_MESSAGE_TYPE}'`,
+    `  var ELEMENT_DELETED_MESSAGE_TYPE = '${ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE}'`,
+    `  var HIDDEN_INIT_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE}'`,
     `  var GRID_CONFIG_MESSAGE_TYPE = '${ARTIFACT_GRID_CONFIG_MESSAGE_TYPE}'`,
     `  var INSTANCE_ID = ${safeInstanceId}`,
     '  var defaultState = {',

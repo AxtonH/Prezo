@@ -34,6 +34,14 @@ export const PREZO_POSITION_OVERRIDE_PREFIX = '__prezo_pos:'
 // meaningful even when the AI rebuild changes the element's base dimensions.
 export const PREZO_SIZE_OVERRIDE_PREFIX = '__prezo_size:'
 
+// Hidden (delete) overrides — value is JSON-encoded {hidden, label?, role?,
+// optionId?, anchor?}. A "delete" in the manual editor is non-destructive: the
+// element stays in the artifact HTML but renders display:none. Stored as an
+// override (not a mutation) so it re-applies on render, persists to the
+// library, and is undo-able exactly like position/size. The identity hints
+// (role/optionId/label/anchor) let the override re-match after an AI rebuild.
+export const PREZO_HIDDEN_OVERRIDE_PREFIX = '__prezo_hidden:'
+
 /** @param {string} field */
 export function isArtifactCopyField(field) {
   return field === 'subtitle' || field === 'footer' || isArtifactTextField(field)
@@ -66,6 +74,11 @@ export function buildArtifactPositionOverrideKey(stableId) {
 /** @param {string} stableId */
 export function buildArtifactSizeOverrideKey(stableId) {
   return `${PREZO_SIZE_OVERRIDE_PREFIX}${stableId}`
+}
+
+/** @param {string} stableId */
+export function buildArtifactHiddenOverrideKey(stableId) {
+  return `${PREZO_HIDDEN_OVERRIDE_PREFIX}${stableId}`
 }
 
 /**
@@ -127,6 +140,52 @@ export function serializeArtifactSizeOverride(size) {
   if (typeof size.optionId === 'string' && size.optionId) out.optionId = size.optionId
   if (typeof size.anchor === 'string' && size.anchor) out.anchor = size.anchor
   return JSON.stringify(out)
+}
+
+/**
+ * @typedef {Object} ArtifactHiddenOverride
+ * @property {boolean} hidden  Whether the element is hidden (deleted).
+ * @property {string} [label]
+ * @property {string} [role]
+ * @property {string} [optionId]
+ * @property {string} [anchor]
+ */
+
+/**
+ * Serialize a hidden override into the string value stored in style_overrides.
+ * Returns '' for a non-hidden (hidden:false) override so the merge layer treats
+ * an "un-delete" as a key removal rather than a stored {hidden:false}.
+ * @param {ArtifactHiddenOverride} hidden
+ * @returns {string}
+ */
+export function serializeArtifactHiddenOverride(hidden) {
+  if (!hidden || typeof hidden !== 'object') return ''
+  if (hidden.hidden !== true) return ''
+  const out = { hidden: true }
+  if (typeof hidden.label === 'string' && hidden.label) out.label = hidden.label
+  if (typeof hidden.role === 'string' && hidden.role) out.role = hidden.role
+  if (typeof hidden.optionId === 'string' && hidden.optionId) out.optionId = hidden.optionId
+  if (typeof hidden.anchor === 'string' && hidden.anchor) out.anchor = hidden.anchor
+  return JSON.stringify(out)
+}
+
+/** @param {unknown} raw */
+function parseArtifactHiddenOverride(raw) {
+  if (typeof raw !== 'string' || !raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (parsed.hidden !== true) return null
+    return {
+      hidden: true,
+      label: typeof parsed.label === 'string' ? parsed.label : undefined,
+      role: typeof parsed.role === 'string' ? parsed.role : undefined,
+      optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined,
+      anchor: typeof parsed.anchor === 'string' && parsed.anchor ? parsed.anchor : undefined
+    }
+  } catch {
+    return null
+  }
 }
 
 /** @param {unknown} raw */
@@ -194,11 +253,11 @@ export function normalizeFooterTextToSuffix(raw) {
  * Read copy values out of a merged style-overrides object.
  *
  * @param {Record<string, unknown> | null | undefined} styleOverrides
- * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string>, positionOverrides: Record<string, ArtifactPositionOverride>, sizeOverrides: Record<string, ArtifactSizeOverride> }}
+ * @returns {{ subtitle: string | undefined, footerSuffix: string | undefined, textOverrides: Record<string, string>, positionOverrides: Record<string, ArtifactPositionOverride>, sizeOverrides: Record<string, ArtifactSizeOverride>, hiddenOverrides: Record<string, ArtifactHiddenOverride> }}
  */
 export function extractCopyFromStyleOverrides(styleOverrides) {
   if (!styleOverrides || typeof styleOverrides !== 'object') {
-    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {}, positionOverrides: {}, sizeOverrides: {} }
+    return { subtitle: undefined, footerSuffix: undefined, textOverrides: {}, positionOverrides: {}, sizeOverrides: {}, hiddenOverrides: {} }
   }
 
   const subtitle =
@@ -216,6 +275,7 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
   const textOverrides = {}
   const positionOverrides = {}
   const sizeOverrides = {}
+  const hiddenOverrides = {}
   for (const key of Object.keys(styleOverrides)) {
     if (key.indexOf(PREZO_TEXT_OVERRIDE_PREFIX) === 0) {
       const value = styleOverrides[key]
@@ -231,6 +291,16 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
       if (stableId) positionOverrides[stableId] = parsed
       continue
     }
+    if (key.indexOf(PREZO_HIDDEN_OVERRIDE_PREFIX) === 0) {
+      // Checked before the size prefix because "__prezo_hidden:" and
+      // "__prezo_size:" are distinct, but keep an explicit branch so a future
+      // prefix rename can't accidentally let a hidden key fall through.
+      const parsed = parseArtifactHiddenOverride(styleOverrides[key])
+      if (!parsed) continue
+      const stableId = key.slice(PREZO_HIDDEN_OVERRIDE_PREFIX.length)
+      if (stableId) hiddenOverrides[stableId] = parsed
+      continue
+    }
     if (key.indexOf(PREZO_SIZE_OVERRIDE_PREFIX) === 0) {
       const parsed = parseArtifactSizeOverride(styleOverrides[key])
       if (!parsed) continue
@@ -240,14 +310,14 @@ export function extractCopyFromStyleOverrides(styleOverrides) {
     }
   }
 
-  return { subtitle, footerSuffix, textOverrides, positionOverrides, sizeOverrides }
+  return { subtitle, footerSuffix, textOverrides, positionOverrides, sizeOverrides, hiddenOverrides }
 }
 
 /**
  * Merge pending copy edits into a style-overrides object (immutably).
  *
  * @param {Record<string, unknown>} styleOverrides
- * @param {{ subtitle?: string, footerSuffix?: string, textOverrides?: Record<string, string>, positionOverrides?: Record<string, ArtifactPositionOverride> } | null | undefined} pending
+ * @param {{ subtitle?: string, footerSuffix?: string, textOverrides?: Record<string, string>, positionOverrides?: Record<string, ArtifactPositionOverride>, sizeOverrides?: Record<string, ArtifactSizeOverride>, hiddenOverrides?: Record<string, ArtifactHiddenOverride> } | null | undefined} pending
  * @returns {Record<string, unknown>}
  */
 export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
@@ -292,6 +362,25 @@ export function mergeCopyIntoStyleOverrides(styleOverrides, pending) {
       if (serialized) next[key] = serialized
     }
   }
+  if (pending && pending.hiddenOverrides && typeof pending.hiddenOverrides === 'object') {
+    for (const [stableId, hidden] of Object.entries(pending.hiddenOverrides)) {
+      if (!stableId) continue
+      const key = buildArtifactHiddenOverrideKey(stableId)
+      // null/undefined OR hidden:false means "un-delete" → remove the key.
+      // serializeArtifactHiddenOverride returns '' for a non-hidden override,
+      // so a restored element drops out of the saved overrides entirely.
+      if (hidden === null || hidden === undefined) {
+        delete next[key]
+        continue
+      }
+      const serialized = serializeArtifactHiddenOverride(hidden)
+      if (serialized) {
+        next[key] = serialized
+      } else {
+        delete next[key]
+      }
+    }
+  }
 
   return next
 }
@@ -328,6 +417,11 @@ export function rebuildStyleOverridesKeepingCopyOnly(styleOverrides) {
     if (!stableId) continue
     const serialized = serializeArtifactSizeOverride(size)
     if (serialized) next[buildArtifactSizeOverrideKey(stableId)] = serialized
+  }
+  for (const [stableId, hidden] of Object.entries(copy.hiddenOverrides || {})) {
+    if (!stableId) continue
+    const serialized = serializeArtifactHiddenOverride(hidden)
+    if (serialized) next[buildArtifactHiddenOverrideKey(stableId)] = serialized
   }
   return next
 }
