@@ -2587,6 +2587,7 @@ import {
       return
     }
     if (message.type === ARTIFACT_RENDER_OK_MESSAGE_TYPE) {
+      try { console.log('[prezo-flicker-diag] HOST render-ok received', { t: Math.round(performance.now()) }) } catch (e) {}
       confirmArtifactRenderSuccess(message.renderHealth)
       return
     }
@@ -2618,6 +2619,7 @@ import {
       // The iframe finished applying hidden (delete) overrides and the browser
       // has had a frame to paint them. Safe to reveal the masked frame now —
       // deleted elements are invisible, so there's no load flicker.
+      try { console.log('[prezo-flicker-diag] HOST hidden-applied ack received', { t: Math.round(performance.now()) }) } catch (e) {}
       revealArtifactFrame()
       return
     }
@@ -4210,6 +4212,8 @@ import {
     // confirmArtifactRenderSuccess after the override push (with a safety
     // timeout inside the mask helper).
     maskArtifactFrameForOverrides()
+    // [prezo-flicker-diag] TEMP
+    try { console.log('[prezo-flicker-diag] HOST srcdoc set', { t: Math.round(performance.now()), masked: el.artifactFrame.classList.contains('artifact-frame--overrides-pending'), opacity: getComputedStyle(el.artifactFrame).opacity }) } catch (e) {}
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
@@ -6482,7 +6486,7 @@ import {
     if (!frameWindow) return
     const saved = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).hiddenOverrides || {}
     const overrides = artifactDelete.getMergedHiddenOverrides(saved)
-    console.log('[prezo-hidden-push]', { count: Object.keys(overrides || {}).length, keys: Object.keys(overrides || {}) })
+    try { console.log('[prezo-flicker-diag] HOST pushArtifactHiddenOverrides', { t: Math.round(performance.now()), count: Object.keys(overrides || {}).length, overrides }) } catch (e) {}
     if (!overrides || Object.keys(overrides).length === 0) return
     frameWindow.postMessage(
       {
@@ -6549,12 +6553,26 @@ import {
       artifactRevealTimerId = 0
     }
     if (!el.artifactFrame) return
-    if (!artifactHasOverridesToApply()) {
+    const hasOverrides = artifactHasOverridesToApply()
+    const hasHidden = artifactHasHiddenOverrides()
+    // [prezo-flicker-diag] TEMP
+    try {
+      console.log('[prezo-flicker-diag] HOST mask called', {
+        t: Math.round(performance.now()),
+        hasOverrides,
+        hasHidden,
+        savedKeys: Object.keys(state.artifact.savedStyleOverrides || {})
+      })
+    } catch (e) {}
+    if (!hasOverrides) {
       revealArtifactFrame()
       return
     }
     el.artifactFrame.classList.add('artifact-frame--overrides-pending')
-    artifactRevealTimerId = setTimeout(revealArtifactFrame, maxMaskMs)
+    artifactRevealTimerId = setTimeout(() => {
+      try { console.log('[prezo-flicker-diag] HOST reveal via SAFETY TIMEOUT', { t: Math.round(performance.now()) }) } catch (e) {}
+      revealArtifactFrame()
+    }, maxMaskMs)
   }
 
   /**
@@ -6568,6 +6586,11 @@ import {
       artifactRevealTimerId = 0
     }
     if (!el.artifactFrame) return
+    // [prezo-flicker-diag] TEMP
+    try {
+      const wasMasked = el.artifactFrame.classList.contains('artifact-frame--overrides-pending')
+      console.log('[prezo-flicker-diag] HOST reveal', { t: Math.round(performance.now()), wasMasked })
+    } catch (e) {}
     el.artifactFrame.classList.remove('artifact-frame--overrides-pending')
   }
 
