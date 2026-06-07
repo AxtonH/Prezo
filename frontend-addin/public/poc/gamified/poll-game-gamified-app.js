@@ -240,7 +240,9 @@ import {
       conversationStepIndex: 0,
       conversationAnswers: createEmptyArtifactAnswers(),
       /** Optional { media_type, data } for initial Anthropic build (first wizard step). */
-      buildReferenceImage: null
+      buildReferenceImage: null,
+      /** Public URL of the uploaded reference image (hosted via artifact-images endpoint). */
+      buildReferenceImageUrl: null
     },
     ai: {
       open: false,
@@ -1746,6 +1748,7 @@ import {
 
   function clearArtifactBuildReferenceUi() {
     state.artifact.buildReferenceImage = null
+    state.artifact.buildReferenceImageUrl = null
     if (buildReferencePreviewObjectUrl) {
       URL.revokeObjectURL(buildReferencePreviewObjectUrl)
       buildReferencePreviewObjectUrl = null
@@ -1822,6 +1825,37 @@ import {
     el.artifactTypeReferencePaperclip.disabled = refInteractDisabled
   }
 
+  async function uploadArtifactBuildReferenceImage(file) {
+    // Turn the attached file into a hosted public URL so the AI can embed it in the
+    // artifact (or fetch it for style-matching). Best-effort: on failure we keep the
+    // base64 reference so the build still works, just without an embeddable URL.
+    const base = asText(state.apiBase)
+    if (!base) {
+      return null
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetchWithTimeout(
+      `${base}/library/poll-game/artifact-images/upload`,
+      {
+        method: 'POST',
+        headers: { ...libraryAuthHeaders() },
+        body: formData
+      },
+      60000
+    )
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message = asText(payload?.detail) || `Upload failed (${response.status})`
+      throw new Error(message)
+    }
+    const url = asText(payload?.image_url) || asText(payload?.url)
+    if (!url) {
+      throw new Error('Upload did not return an image URL.')
+    }
+    return url
+  }
+
   function setArtifactBuildReferenceFromFile(file) {
     if (!file || !/^image\//i.test(file.type)) {
       el.artifactTypeReferenceStatus.textContent = 'Choose a PNG, JPEG, GIF, or WebP image.'
@@ -1840,13 +1874,30 @@ import {
           return
         }
         state.artifact.buildReferenceImage = payload
+        state.artifact.buildReferenceImageUrl = null
         if (buildReferencePreviewObjectUrl) {
           URL.revokeObjectURL(buildReferencePreviewObjectUrl)
         }
         buildReferencePreviewObjectUrl = URL.createObjectURL(file)
         el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
         el.artifactTypeReferencePreview.classList.remove('hidden')
-        el.artifactTypeReferenceStatus.textContent = ''
+        el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
+        // Upload in the background to obtain a hosted URL the AI can embed.
+        try {
+          const url = await uploadArtifactBuildReferenceImage(file)
+          // Guard against a newer attachment replacing this one mid-upload.
+          if (state.artifact.buildReferenceImage === payload) {
+            state.artifact.buildReferenceImageUrl = url
+            el.artifactTypeReferenceStatus.textContent = ''
+          }
+        } catch (uploadError) {
+          if (state.artifact.buildReferenceImage === payload) {
+            // Non-fatal: the build still runs from the image the model sees.
+            state.artifact.buildReferenceImageUrl = null
+            el.artifactTypeReferenceStatus.textContent =
+              'Image attached (style reference only; could not host it for embedding).'
+          }
+        }
       } catch {
         el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
       }
@@ -2791,7 +2842,12 @@ import {
             data: state.artifact.buildReferenceImage.data
           }
         : null
-    await submitArtifactPrompt(prompt, { conversationAnswers, buildReferenceImage: buildRef })
+    const buildRefUrl = asText(state.artifact.buildReferenceImageUrl).trim() || null
+    await submitArtifactPrompt(prompt, {
+      conversationAnswers,
+      buildReferenceImage: buildRef,
+      buildReferenceImageUrl: buildRefUrl
+    })
   }
 
   function clearArtifactEditPromptQueue() {
@@ -2965,6 +3021,8 @@ import {
             data: asText(options.buildReferenceImage.data)
           }
         : null
+    const buildReferenceImageUrl =
+      requestKind === 'build' ? asText(options.buildReferenceImageUrl).trim() : ''
     const conversationAnswers =
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
@@ -2994,7 +3052,8 @@ import {
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context, {
-        referenceImages: buildReferenceSnapshot ? [buildReferenceSnapshot] : null
+        referenceImages: buildReferenceSnapshot ? [buildReferenceSnapshot] : null,
+        attachedImageUrls: buildReferenceImageUrl ? [buildReferenceImageUrl] : null
       })
       const applied = applyArtifactMarkup(buildResult.html, {
         requestKind,
@@ -3886,6 +3945,21 @@ import {
         media_type: asText(item?.media_type) || 'image/png',
         data: asText(item?.data)
       }))
+    }
+    // Hosted reference image URLs ride inside context.artifact (where the backend reads
+    // them) so the AI can embed them or fetch them for style-matching.
+    const attachedImageUrls = options.attachedImageUrls
+    if (Array.isArray(attachedImageUrls) && attachedImageUrls.length > 0) {
+      const urls = attachedImageUrls
+        .map((item) => asText(item).trim())
+        .filter((item) => item.startsWith('http://') || item.startsWith('https://'))
+        .slice(0, 4)
+      if (urls.length > 0 && body.context && typeof body.context === 'object') {
+        if (!body.context.artifact || typeof body.context.artifact !== 'object') {
+          body.context.artifact = {}
+        }
+        body.context.artifact.attachedImageUrls = urls
+      }
     }
     const response = await fetchWithTimeout(endpoint, {
       method: 'POST',
