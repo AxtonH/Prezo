@@ -2648,11 +2648,15 @@ export function buildTextStyleBridgeLines() {
     '    window.addEventListener("message", handleHiddenInitMessage)',
     '    window.addEventListener("message", handleGridConfigMessage)',
     '  }',
-    '  setTimeout(installSelectionListeners, 220)',
-    '  document.addEventListener("DOMContentLoaded", function () { setTimeout(installSelectionListeners, 220) })',
+    '  setTimeout(installSelectionListeners, 140)',
+    '  document.addEventListener("DOMContentLoaded", function () { setTimeout(installSelectionListeners, 140) })',
 
-    // Initial scan + copy application after first render + DOMContentLoaded
-    '  setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 200)',
-    '  document.addEventListener("DOMContentLoaded", function () { setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 200) })',
+    // Initial scan + copy application after first render + DOMContentLoaded.
+    // Runs at 120ms so the DOM is tagged (data-prezo-editable / data-prezo-text-id)
+    // before the host pushes overrides at 160ms — the host push delay was
+    // tightened to shrink the masked load window. Overrides also re-apply on
+    // every subsequent render, so a missed first pass self-heals.
+    '  setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 120)',
+    '  document.addEventListener("DOMContentLoaded", function () { setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 120) })',
   ]
 }

@@ -2914,6 +2914,23 @@ h1 {
   background: transparent;
   transform-origin: top left;
   z-index: 1;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+}
+
+/*
+ * Mask the brief window between an artifact loading and its manual edits
+ * (position/size/hidden/text-style overrides) landing, so the user never sees
+ * the un-edited version "snap" into the edited one. The frame is hidden the
+ * instant we inject an artifact that HAS saved edits, then revealed (fade-in)
+ * once the host has pushed the override messages. A safety timeout always
+ * clears this state, so an artifact with no edits (or a missed reveal) is
+ * never left invisible. opacity:0 (not display/visibility) keeps the frame's
+ * layout box and the bridge handshake running underneath the mask.
+ */
+.artifact-frame.artifact-frame--overrides-pending {
+  opacity: 0;
+  transition: none;
 }
 
 .artifact-stage-placeholder {

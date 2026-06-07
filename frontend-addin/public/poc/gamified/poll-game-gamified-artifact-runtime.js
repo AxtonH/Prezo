@@ -1739,9 +1739,12 @@ function buildBridgeScript(instanceId = 0) {
     '      consecutiveRenderFailureCount = 0',
     '      if (!hasReportedRenderSuccess) {',
     '        hasReportedRenderSuccess = true',
+    // 60ms (was 120ms): the render-ok ping gates the host override push, so a
+    // shorter delay shrinks the masked load window. The health snapshot is
+    // synchronous, so 60ms is ample for the render to settle.
     '        setTimeout(function () {',
     '          postParentMessage(RENDER_OK_MESSAGE_TYPE, { renderHealth: collectRenderHealth() })',
-    '        }, 120)',
+    '        }, 60)',
     '      }',
     '      pendingRenderPayload = null',
     '      renderRetryCount = 0',

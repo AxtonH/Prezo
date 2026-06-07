@@ -2660,15 +2660,24 @@ import {
     state.artifact.activeEditRequest = ''
     state.artifact.pendingSuccessMessage = ''
     state.artifact.pendingRequestKind = ''
-    // Push persisted style overrides after scanAndEnableEditing has run (bridge uses 200ms delay)
-    setTimeout(pushArtifactStyleOverrides, 300)
-    setTimeout(pushArtifactPositionOverrides, 300)
-    setTimeout(pushArtifactSizeOverrides, 300)
-    setTimeout(pushArtifactHiddenOverrides, 300)
-    setTimeout(pushArtifactGridConfig, 300)
+    // Push persisted style overrides after scanAndEnableEditing has run. The
+    // bridge scans at 150ms (see runtime.js), so 160ms clears the scan with a
+    // small margin while keeping the masked window short. The frame is masked
+    // until just after this push so the user never sees the un-edited paint;
+    // revealed one frame later (190ms) once the iframe has applied them.
+    setTimeout(pushArtifactStyleOverrides, 160)
+    setTimeout(pushArtifactPositionOverrides, 160)
+    setTimeout(pushArtifactSizeOverrides, 160)
+    setTimeout(pushArtifactHiddenOverrides, 160)
+    setTimeout(pushArtifactGridConfig, 160)
+    setTimeout(revealArtifactFrame, 190)
   }
 
   function handleArtifactRenderError(message) {
+    // A failed render won't push overrides, so drop the load mask immediately
+    // rather than waiting on its safety timeout — the user should see whatever
+    // rendered (or the error state) without delay.
+    revealArtifactFrame()
     state.artifact.renderErrorCount = Math.max(
       state.artifact.renderErrorCount + 1,
       toInt(message?.failureCount)
@@ -4180,6 +4189,11 @@ import {
       return false
     }
     artifactBridge.setFrameHeight(520, { force: true })
+    // Hide the frame before it paints if this artifact has manual edits, so the
+    // un-edited version is never shown before the overrides land. Revealed in
+    // confirmArtifactRenderSuccess after the override push (with a safety
+    // timeout inside the mask helper).
+    maskArtifactFrameForOverrides()
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
@@ -4282,11 +4296,11 @@ import {
     // Re-push style overrides after each render so the renderer doesn't
     // permanently destroy manually styled HTML (subtitle, footer, stats, etc.).
     // Delay must exceed bridge batch (90ms) + renderer + scan (60ms).
-    setTimeout(pushArtifactStyleOverrides, 250)
-    setTimeout(pushArtifactPositionOverrides, 250)
-    setTimeout(pushArtifactSizeOverrides, 250)
-    setTimeout(pushArtifactHiddenOverrides, 250)
-    setTimeout(pushArtifactGridConfig, 250)
+    setTimeout(pushArtifactStyleOverrides, 160)
+    setTimeout(pushArtifactPositionOverrides, 160)
+    setTimeout(pushArtifactSizeOverrides, 160)
+    setTimeout(pushArtifactHiddenOverrides, 160)
+    setTimeout(pushArtifactGridConfig, 160)
   }
 
   function buildArtifactPollPayload(poll, totalVotes) {
@@ -6461,6 +6475,65 @@ import {
       },
       '*'
     )
+  }
+
+  // ── Override-load masking (anti-snap) ────────────────────────────────
+  // The override push messages land ~250-300ms after the artifact first
+  // paints, so without masking the user sees the un-edited artifact "snap"
+  // into the edited one. We hide the frame the moment we inject an artifact
+  // that HAS saved edits, then reveal (fade-in) once the override push has
+  // fired. A hard fallback timer always clears the mask so we can never strand
+  // the frame invisible.
+  let artifactRevealTimerId = 0
+
+  /**
+   * True when the artifact carries manual edits worth masking for — any
+   * position / size / hidden / text-style / copy override. A clean artifact
+   * has nothing to snap, so we don't mask it (no needless blank frame).
+   */
+  function artifactHasOverridesToApply() {
+    const saved = state.artifact.savedStyleOverrides || {}
+    if (Object.keys(saved).length > 0) return true
+    if (Object.keys(pendingArtifactStyleOverrides || {}).length > 0) return true
+    if (Object.keys(pendingArtifactCopyOverrides || {}).length > 0) return true
+    if (Object.keys(artifactPosition.getPendingPositionOverrides() || {}).length > 0) return true
+    if (Object.keys(artifactSize.getPendingSizeOverrides() || {}).length > 0) return true
+    if (Object.keys(artifactDelete.getPendingHiddenOverrides() || {}).length > 0) return true
+    return false
+  }
+
+  /**
+   * Hide the frame ahead of the override push so the un-edited paint is never
+   * shown. No-op (and immediate reveal) when there's nothing to apply.
+   * `maxMaskMs` is the safety ceiling — the frame always reveals by then even
+   * if the reveal call is somehow missed.
+   */
+  function maskArtifactFrameForOverrides(maxMaskMs = 700) {
+    if (artifactRevealTimerId) {
+      clearTimeout(artifactRevealTimerId)
+      artifactRevealTimerId = 0
+    }
+    if (!el.artifactFrame) return
+    if (!artifactHasOverridesToApply()) {
+      revealArtifactFrame()
+      return
+    }
+    el.artifactFrame.classList.add('artifact-frame--overrides-pending')
+    artifactRevealTimerId = setTimeout(revealArtifactFrame, maxMaskMs)
+  }
+
+  /**
+   * Reveal the (now override-applied) frame. Deferred one extra frame after the
+   * push so the iframe has applied the overrides synchronously before the
+   * fade-in begins. Idempotent.
+   */
+  function revealArtifactFrame() {
+    if (artifactRevealTimerId) {
+      clearTimeout(artifactRevealTimerId)
+      artifactRevealTimerId = 0
+    }
+    if (!el.artifactFrame) return
+    el.artifactFrame.classList.remove('artifact-frame--overrides-pending')
   }
 
   /**
