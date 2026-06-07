@@ -479,6 +479,15 @@ body.editor-panel-resizing {
   user-select: none;
 }
 
+/* While resizing the editor panel, the panel grows up over the artifact iframe.
+   Iframes swallow pointer events, so without this the drag freezes ("gets stuck")
+   the moment the cursor passes over the artifact. Let pointer events pass through
+   to the document so the window-level pointermove keeps firing. */
+body.editor-panel-resizing .artifact-frame,
+body.editor-panel-resizing iframe {
+  pointer-events: none !important;
+}
+
 #ai-chat-shell.ai-chat-shell--viewport-fixed .ai-chat-header {
   flex: 0 0 auto;
   padding-bottom: 0;

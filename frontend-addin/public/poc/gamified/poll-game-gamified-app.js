@@ -3598,7 +3598,7 @@ import {
   /* ------------------------------------------------------------------
      Editor panel drag-to-resize
      ------------------------------------------------------------------ */
-  const panelResize = { active: false, startY: 0, startH: 0, panel: null }
+  const panelResize = { active: false, startY: 0, startH: 0, panel: null, handle: null, pointerId: null }
   const PANEL_MIN_HEIGHT = 120
   const PANEL_MAX_HEIGHT_VH = 0.7
 
@@ -3616,6 +3616,14 @@ import {
     panelResize.startY = event.clientY
     panelResize.startH = panel.getBoundingClientRect().height
     panelResize.panel = panel
+    panelResize.handle = handle
+    panelResize.pointerId = event.pointerId
+    // Capture the pointer on the handle so pointermove/up keep firing even when the
+    // growing panel covers the artifact iframe (iframes otherwise swallow events,
+    // freezing the drag).
+    if (typeof handle.setPointerCapture === 'function' && event.pointerId != null) {
+      try { handle.setPointerCapture(event.pointerId) } catch {}
+    }
     document.body.classList.add('editor-panel-resizing')
     window.addEventListener('pointermove', handlePanelResizePointerMove)
     window.addEventListener('pointerup', handlePanelResizePointerUp)
@@ -3636,6 +3644,15 @@ import {
     if (!panelResize.active) return
     panelResize.active = false
     panelResize.panel = null
+    if (
+      panelResize.handle &&
+      panelResize.pointerId != null &&
+      typeof panelResize.handle.releasePointerCapture === 'function'
+    ) {
+      try { panelResize.handle.releasePointerCapture(panelResize.pointerId) } catch {}
+    }
+    panelResize.handle = null
+    panelResize.pointerId = null
     document.body.classList.remove('editor-panel-resizing')
     window.removeEventListener('pointermove', handlePanelResizePointerMove)
     window.removeEventListener('pointerup', handlePanelResizePointerUp)
