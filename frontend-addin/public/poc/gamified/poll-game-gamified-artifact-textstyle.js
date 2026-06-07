@@ -2266,6 +2266,28 @@ export function buildTextStyleBridgeLines() {
     '    var el = ensureHiddenStyleEl()',
     '    if (!allSelectors.length) { el.textContent = ""; return }',
     '    el.textContent = allSelectors.join(",\\n") + " { visibility: hidden !important; pointer-events: none !important; }"',
+    // [prezo-delete-diag] TEMP: report the rule we just wrote and, for each
+    // selector, whether it currently matches a node and that node\'s computed
+    // visibility. The key signal: if a still-hidden override has NO selector
+    // matching a visible node, the building is unhittable (the flicker cause).
+    // Remove once the flicker cause is confirmed.
+    '    try {',
+    '      var diag = []',
+    '      var anyMatchVisible = false',
+    '      for (var di = 0; di < allSelectors.length; di++) {',
+    '        var sel = allSelectors[di]',
+    '        var matched = null',
+    '        try { matched = document.body ? document.body.querySelector(sel) : null } catch (eSel) { diag.push({ selector: sel, error: "invalid-selector" }); continue }',
+    '        var vis = matched ? window.getComputedStyle(matched).visibility : null',
+    '        if (matched && vis !== "hidden") anyMatchVisible = true',
+    '        diag.push({ selector: sel, matches: !!matched, computedVisibility: vis, tag: matched ? matched.tagName : null })',
+    '      }',
+    '      if (anyMatchVisible) {',
+    '        console.warn("[prezo-delete-diag] DELETED ELEMENT STILL VISIBLE — selector matched a node whose computedVisibility is not hidden", { selectors: diag, css: el.textContent })',
+    '      } else {',
+    '        console.log("[prezo-delete-diag] rebuildHiddenStyleRules", { ruleCount: ids.length, selectors: diag })',
+    '      }',
+    '    } catch (eDiag) {}',
     '  }',
     // Hide via visibility:hidden (NOT display:none) so the element keeps its
     // layout box and siblings don\'t reflow into the gap — PowerPoint-style
@@ -2414,6 +2436,20 @@ export function buildTextStyleBridgeLines() {
     // leave a focused contenteditable hanging on a hidden element.
     '    if (textEditNode === node) { try { exitTextEditMode() } catch (e) {} }',
     '    var meta = buildHiddenOverrideMeta(node, selectedKind)',
+    // [prezo-delete-diag] TEMP: report exactly what we captured for the deleted
+    // node — tag, classes, computed identity, and the meta we will re-hide by.
+    // Compare this to what the renderer recreates. Remove once confirmed.
+    '    try {',
+    '      console.log("[prezo-delete-diag] deleteSelectedElement", {',
+    '        stableId: stableId,',
+    '        tag: node.tagName,',
+    '        id: node.id || "",',
+    '        className: (node.getAttribute && node.getAttribute("class")) || "",',
+    '        parentTag: node.parentElement ? node.parentElement.tagName : null,',
+    '        parentClass: node.parentElement && node.parentElement.getAttribute ? (node.parentElement.getAttribute("class") || "") : "",',
+    '        meta: meta',
+    '      })',
+    '    } catch (eDiag) {}',
     '    applyHiddenToNode(node, stableId, { hidden: true, role: meta.role, optionId: meta.optionId, label: meta.label, cssLabel: meta.cssLabel, anchor: meta.anchor })',
     '    postCommittedHidden(stableId, node)',
     // Clear selection — the overlay would otherwise float over empty space.
