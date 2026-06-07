@@ -1571,6 +1571,19 @@ import {
     document.addEventListener('paste', handleArtifactBuildReferencePaste, true)
   }
 
+  function syncArtifactComposerModeLabel() {
+    // The panel is a step-by-step "wizard" while creating (the 2-question flow) and
+    // an "editor" once an artifact exists. A single static label caused mistaken
+    // identity between the two modes, so reflect the mode in the kicker + labels.
+    const editing = Boolean(state.artifact.html) && isArtifactConversationComplete()
+    const label = editing ? 'Artifact editor' : 'Artifact wizard'
+    const kicker = document.getElementById('artifact-composer-kicker')
+    if (kicker) {
+      kicker.textContent = label
+    }
+    el.artifactComposer.setAttribute('aria-label', label)
+  }
+
   function syncArtifactComposerVisibility() {
     const isArtifactMode = currentTheme.visualMode === ARTIFACT_VISUAL_MODE
     const shouldFloatComposer = isArtifactMode && Boolean(state.artifact.html)
@@ -1595,11 +1608,7 @@ import {
     if (!shouldFloatComposer) {
       el.artifactComposer.classList.remove('artifact-composer--panel-hidden')
     }
-    const artifactComposerKicker = document.getElementById('artifact-composer-kicker')
-    if (artifactComposerKicker) {
-      artifactComposerKicker.textContent = 'Artifact editor'
-    }
-    el.artifactComposer.setAttribute('aria-label', 'Artifact editor')
+    syncArtifactComposerModeLabel()
     if (shouldFloatComposer) {
       syncArtifactComposerPanelVisibilityToggleUi()
       syncEditorShellExpandedDom()
@@ -2151,6 +2160,7 @@ import {
         ? ARTIFACT_EDIT_PLACEHOLDER
         : ARTIFACT_DEFAULT_PLACEHOLDER
     renderArtifactConversation()
+    syncArtifactComposerModeLabel()
     syncArtifactComposerBusyState()
     syncArtifactBrandProfileRow()
     if (state.artifact.busy) {
@@ -2278,7 +2288,7 @@ import {
 
   function setArtifactStagePlaceholder(text, type = 'pending') {
     el.artifactStagePlaceholder.textContent =
-      asText(text) || 'Artifact editor is ready. Answer the questions to generate your artifact.'
+      asText(text) || 'Artifact wizard is ready. Answer the questions to generate your artifact.'
     el.artifactStagePlaceholder.classList.remove(
       'status-success',
       'status-error',
@@ -3565,7 +3575,11 @@ import {
 
   function syncArtifactComposerPanelVisibilityToggleUi() {
     const hidden = el.artifactComposer.classList.contains('artifact-composer--panel-hidden')
-    const label = hidden ? 'Show Artifact editor panel' : 'Hide Artifact editor panel'
+    const modeLabel =
+      Boolean(state.artifact.html) && isArtifactConversationComplete()
+        ? 'Artifact editor'
+        : 'Artifact wizard'
+    const label = `${hidden ? 'Show' : 'Hide'} ${modeLabel} panel`
     el.artifactComposerVisibilityToggle.setAttribute('aria-expanded', hidden ? 'false' : 'true')
     el.artifactComposerVisibilityToggle.setAttribute('aria-label', label)
     el.artifactComposerVisibilityToggle.setAttribute('title', label)
@@ -10478,7 +10492,7 @@ import {
     resetArtifactConversation({ preserveInput: false })
     hideArtifactStage()
     showArtifactStagePlaceholder(
-      'Artifact editor is ready. Answer the questions to generate your artifact.',
+      'Artifact wizard is ready. Answer the questions to generate your artifact.',
       'pending'
     )
     el.artifactName.value = ''

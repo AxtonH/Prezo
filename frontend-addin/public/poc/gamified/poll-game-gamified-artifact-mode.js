@@ -7,7 +7,7 @@ export const ARTIFACT_EDIT_PLACEHOLDER =
   'Example: make the title 20% smaller and keep the rest of the scene unchanged.'
 
 export const ARTIFACT_WAITING_STATUS =
-  'Artifact editor is ready. Answer the first question to begin.'
+  'Artifact wizard is ready. Answer the first question to begin.'
 export const ARTIFACT_EDIT_READY_STATUS =
   'Edit mode is active. Ask for targeted changes, or say "redesign it" for a broader rework.'
 
