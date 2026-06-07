@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import ai, brand_extract, brand_fonts, brand_logos, embed_instances, library, polls, qna_prompts, questions, sessions
+from .api import ai, artifact_images, brand_extract, brand_fonts, brand_logos, embed_instances, library, polls, qna_prompts, questions, sessions
 from .config import settings
 from .deps import manager, store
 from .models import SessionActivity, SessionSnapshot
@@ -41,6 +41,7 @@ app.include_router(library.router)
 app.include_router(brand_extract.router)
 app.include_router(brand_fonts.router)
 app.include_router(brand_logos.router)
+app.include_router(artifact_images.router)
 app.include_router(embed_instances.router)
 
 

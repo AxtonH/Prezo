@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     supabase_brand_fonts_bucket: str = "brand-fonts"
     # Storage bucket for brand logo images (PNG, SVG, etc.). Public read for <img src>.
     supabase_brand_logos_bucket: str = "brand-logos"
+    # Storage bucket for AI artifact reference images (user-attached). Public read so the
+    # hosted URL can be baked into artifact HTML (<img src>, background-image: url(...)).
+    supabase_artifact_images_bucket: str = "artifact-images"
     library_sync_secret: str | None = None
     library_sync_ttl_seconds: int = 604800
     anthropic_api_key: str | None = None
