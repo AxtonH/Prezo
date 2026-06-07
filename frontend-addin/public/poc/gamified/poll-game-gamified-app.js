@@ -687,6 +687,7 @@ import {
           role: override.role,
           optionId: override.optionId,
           label: override.label,
+          cssLabel: override.cssLabel,
           anchor: override.anchor
         },
         after: { ...override },
@@ -5579,6 +5580,7 @@ import {
       hidden: target.hidden === true,
       role: target.role,
       label: target.label,
+      cssLabel: target.cssLabel,
       optionId: target.optionId,
       anchor: target.anchor
     })

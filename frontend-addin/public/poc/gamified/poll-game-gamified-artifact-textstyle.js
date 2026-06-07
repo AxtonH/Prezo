@@ -1199,6 +1199,27 @@ export function buildTextStyleBridgeLines() {
     '    var stable = computeStableTextId(node)',
     '    return stable || ""',
     '  }',
+    // CSS-selector form of an element (tag#id / tag.class / tag), safely
+    // escaped, for use in the delete re-hide stylesheet. Distinct from
+    // buildElementLabel, whose output is for human display and isn\'t escaped.
+    '  function cssIdentEscape(value) {',
+    '    if (typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") {',
+    '      try { return CSS.escape(String(value)) } catch (e) {}',
+    '    }',
+    // Conservative fallback: backslash-escape anything that isn\'t a safe ident
+    // char so the selector stays valid even without CSS.escape.
+    '    return String(value).replace(/[^a-zA-Z0-9_-]/g, function (ch) { return "\\\\" + ch })',
+    '  }',
+    '  function buildElementCssLabel(node) {',
+    '    if (!node || node.nodeType !== 1) return ""',
+    '    var tag = (node.tagName || "").toLowerCase()',
+    '    if (!tag) return ""',
+    '    if (node.id) return tag + "#" + cssIdentEscape(node.id)',
+    '    var raw = node.getAttribute ? (node.getAttribute("class") || "") : ""',
+    '    var firstClass = raw.split(/\\s+/).filter(function (c) { return c.length > 0 })[0]',
+    '    if (firstClass) return tag + "." + cssIdentEscape(firstClass)',
+    '    return tag',
+    '  }',
     // Selectable elements are broader than editable ones: images, SVGs and
     // decorative wrappers are valid selection targets even though we never
     // want them to be contenteditable.
@@ -2181,15 +2202,27 @@ export function buildTextStyleBridgeLines() {
     '    return String(value).replace(/\\\\/g, "\\\\\\\\").replace(/"/g, "\\\\\\"")',
     '  }',
     // Build the set of CSS selectors that should match a hidden override\'s
-    // element across renderer rebuilds. Order from most-stable to least.
+    // element across renderer rebuilds. The renderer recreates option visuals
+    // via innerHTML on every vote tick, wiping our inline style + markers — so
+    // these selectors, keyed on identity the renderer PRESERVES, are what
+    // re-hide the rebuilt element before it paints.
+    //
+    // Scope matters: only an actual option-ROW delete should hide the whole row
+    // by data-option-id. A vote-VISUAL (building/bar) deleted inside a row must
+    // be hidden by a scoped "<anchor> <cssLabel>" selector (e.g.
+    // [data-option-id="opt-1"] svg.building) so we don\'t nuke the label + count
+    // alongside it.
     '  function hiddenSelectorsFor(stableId, ov) {',
     '    var sels = []',
-    // Our persistent markers (survive if the node itself survives).
+    // Our persistent markers (survive only if the node itself survives a
+    // rebuild — true for static decorative elements, false for re-innerHTML\'d
+    // visuals; cheap to include either way).
     '    sels.push("[data-prezo-deleted=\\"" + cssAttrEscape(stableId) + "\\"]")',
     '    sels.push("[data-prezo-pos-id=\\"" + cssAttrEscape(stableId) + "\\"]")',
-    // Option rows: the renderer keeps data-option-id (poll data), so this
-    // matches the freshly-rebuilt row even though our markers were wiped.
-    '    if (ov && ov.optionId) {',
+    '    var role = ov && ov.role',
+    // The deleted thing IS an option row / container → hide the whole row by
+    // the option id the renderer preserves.
+    '    if ((role === "option-row" || role === "options-container") && ov && ov.optionId) {',
     '      var oe = cssAttrEscape(ov.optionId)',
     '      sels.push("[data-option-id=\\"" + oe + "\\"]")',
     '      sels.push("[data-prezo-option-id=\\"" + oe + "\\"]")',
@@ -2198,10 +2231,20 @@ export function buildTextStyleBridgeLines() {
     '      sels.push("[data-lane-id=\\"" + oe + "\\"]")',
     '      sels.push("[data-choice-id=\\"" + oe + "\\"]")',
     '      sels.push("[data-answer-id=\\"" + oe + "\\"]")',
+    '      return sels',
     '    }',
-    // role:"element" overrides carry a saved CSS selector (e.g. img.foo).
-    '    if (ov && ov.role === "element" && typeof ov.label === "string" && ov.label) {',
-    '      sels.push(ov.label)',
+    // Anything else (vote-visual, decorative element, generic text, a stat
+    // field): hide by the scoped anchor + CSS label so siblings in the same row
+    // survive. cssLabel is a real selector (tag / tag.class / tag#id) built at
+    // delete time; anchor is a uniquely-identifying ancestor selector.
+    '    var cssLabel = (ov && typeof ov.cssLabel === "string" && ov.cssLabel) ? ov.cssLabel : ""',
+    '    var anchor = (ov && typeof ov.anchor === "string" && ov.anchor) ? ov.anchor : ""',
+    '    if (cssLabel) {',
+    '      if (anchor) sels.push(anchor + " " + cssLabel)',
+    '      sels.push(cssLabel)',
+    '    } else if (anchor) {',
+    // No label but we have an anchor — last resort, hide the anchor subtree.
+    '      sels.push(anchor)',
     '    }',
     '    return sels',
     '  }',
@@ -2239,7 +2282,7 @@ export function buildTextStyleBridgeLines() {
     '          pointerEvents: (node.style && node.style.pointerEvents) || ""',
     '        }',
     '      }',
-    '      lastKnownHiddenOverrides[stableId] = { hidden: true, label: override && override.label, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }',
+    '      lastKnownHiddenOverrides[stableId] = { hidden: true, label: override && override.label, cssLabel: override && override.cssLabel, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }',
     // Persistent marker so the CSS rule can re-match this exact node if it
     // survives, and an inline style so the node in hand hides immediately.
     '      node.setAttribute("data-prezo-deleted", stableId)',
@@ -2285,7 +2328,7 @@ export function buildTextStyleBridgeLines() {
     // Keep every still-hidden entry in the authoritative set even if its node
     // isn\'t present this pass — the CSS rule must persist across rebuilds.
     '      if (ov.hidden) {',
-    '        nextKnown[stableId] = { hidden: true, label: ov.label, role: ov.role, optionId: ov.optionId, anchor: ov.anchor }',
+    '        nextKnown[stableId] = { hidden: true, label: ov.label, cssLabel: ov.cssLabel, role: ov.role, optionId: ov.optionId, anchor: ov.anchor }',
     '      }',
     '      var node = findNodeForHiddenOverride(stableId, ov)',
     '      if (!node) { if (ov.hidden) unmatched.push(stableId); continue }',
@@ -2321,20 +2364,45 @@ export function buildTextStyleBridgeLines() {
     '  }',
     '  function postCommittedHidden(stableId, node) {',
     '    if (!stableId) return',
-    '    var kind = selectedKind || ""',
-    '    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""',
-    '    var label = ""',
-    '    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent',
-    '    var anchorSelector = (kind === "element") ? buildElementAnchorSelector(node) : ""',
+    '    var meta = buildHiddenOverrideMeta(node, selectedKind)',
     '    postParentMessage(ELEMENT_DELETED_MESSAGE_TYPE, {',
     '      stableId: stableId,',
     '      hidden: true,',
     '      priorHidden: false,',
-    '      role: kind,',
-    '      label: label,',
-    '      optionId: optionId,',
-    '      anchor: anchorSelector',
+    '      role: meta.role,',
+    '      label: meta.label,',
+    '      cssLabel: meta.cssLabel,',
+    '      optionId: meta.optionId,',
+    '      anchor: meta.anchor',
     '    })',
+    '  }',
+    // Assemble the identity hints a hidden override needs to survive a renderer
+    // rebuild: the human label (display), a CSS-selector label (re-hide rule),
+    // the owning option id, and an anchor ancestor selector. Computed for every
+    // delete kind, not just kind:"element", because a vote-visual classified as
+    // option-votes also needs anchor+cssLabel scoping so we don\'t hide its row.
+    '  function buildHiddenOverrideMeta(node, kind) {',
+    '    var role = kind || ""',
+    '    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""',
+    '    if (!optionId && node) {',
+    '      var rowId = getOptionIdFromRow(node)',
+    '      if (rowId) optionId = rowId',
+    '    }',
+    '    var label = ""',
+    '    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent',
+    '    var cssLabel = buildElementCssLabel(node)',
+    // Scope to the option row when the node lives in one (so the re-hide rule
+    // is "[data-option-id=...] tag.class"); otherwise to its nearest unique
+    // ancestor. Never scope an actual row/container to itself.
+    '    var anchor = ""',
+    '    if (role !== "option-row" && role !== "options-container") {',
+    '      if (optionId) {',
+    '        anchor = "[data-option-id=\\"" + cssAttrEscape(optionId) + "\\"]"',
+    '      } else {',
+    '        anchor = buildElementAnchorSelector(node)',
+    '      }',
+    '    }',
+    '    return { role: role, optionId: optionId, label: label, cssLabel: cssLabel, anchor: anchor }',
     '  }',
     '  function deleteSelectedElement() {',
     '    if (!selectedNode) return',
@@ -2345,7 +2413,8 @@ export function buildTextStyleBridgeLines() {
     // If the user is mid-edit on this node, drop edit mode first so we don\'t
     // leave a focused contenteditable hanging on a hidden element.
     '    if (textEditNode === node) { try { exitTextEditMode() } catch (e) {} }',
-    '    applyHiddenToNode(node, stableId, { hidden: true, role: selectedKind, optionId: (node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || "" })',
+    '    var meta = buildHiddenOverrideMeta(node, selectedKind)',
+    '    applyHiddenToNode(node, stableId, { hidden: true, role: meta.role, optionId: meta.optionId, label: meta.label, cssLabel: meta.cssLabel, anchor: meta.anchor })',
     '    postCommittedHidden(stableId, node)',
     // Clear selection — the overlay would otherwise float over empty space.
     '    setSelectedNode(null, null)',

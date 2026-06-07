@@ -39,6 +39,7 @@ export function createArtifactDeleteHandler({ onDelete } = {}) {
     const next = {
       hidden,
       label: typeof message.label === 'string' ? message.label : undefined,
+      cssLabel: typeof message.cssLabel === 'string' && message.cssLabel ? message.cssLabel : undefined,
       role: typeof message.role === 'string' ? message.role : undefined,
       optionId: typeof message.optionId === 'string' ? message.optionId : undefined,
       anchor: typeof message.anchor === 'string' && message.anchor ? message.anchor : undefined

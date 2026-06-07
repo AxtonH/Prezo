@@ -163,6 +163,7 @@ export function serializeArtifactHiddenOverride(hidden) {
   if (hidden.hidden !== true) return ''
   const out = { hidden: true }
   if (typeof hidden.label === 'string' && hidden.label) out.label = hidden.label
+  if (typeof hidden.cssLabel === 'string' && hidden.cssLabel) out.cssLabel = hidden.cssLabel
   if (typeof hidden.role === 'string' && hidden.role) out.role = hidden.role
   if (typeof hidden.optionId === 'string' && hidden.optionId) out.optionId = hidden.optionId
   if (typeof hidden.anchor === 'string' && hidden.anchor) out.anchor = hidden.anchor
@@ -179,6 +180,7 @@ function parseArtifactHiddenOverride(raw) {
     return {
       hidden: true,
       label: typeof parsed.label === 'string' ? parsed.label : undefined,
+      cssLabel: typeof parsed.cssLabel === 'string' && parsed.cssLabel ? parsed.cssLabel : undefined,
       role: typeof parsed.role === 'string' ? parsed.role : undefined,
       optionId: typeof parsed.optionId === 'string' ? parsed.optionId : undefined,
       anchor: typeof parsed.anchor === 'string' && parsed.anchor ? parsed.anchor : undefined
