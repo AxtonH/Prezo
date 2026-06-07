@@ -412,7 +412,7 @@ import {
     barRadius: 999,
     questionSize: 62,
     labelSize: 24,
-    visualMode: 'classic',
+    visualMode: ARTIFACT_VISUAL_MODE,
     artifactLayout: ARTIFACT_LAYOUT_HORIZONTAL,
     logoUrl: '',
     logoWidth: 140,
