@@ -94,6 +94,7 @@ import {
   const ARTIFACT_SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
   const ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
   const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
+  const ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
   const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
   const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
@@ -2613,6 +2614,13 @@ import {
       artifactDelete.handleElementDeleted(message)
       return
     }
+    if (message.type === ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE) {
+      // The iframe finished applying hidden (delete) overrides and the browser
+      // has had a frame to paint them. Safe to reveal the masked frame now —
+      // deleted elements are invisible, so there's no load flicker.
+      revealArtifactFrame()
+      return
+    }
     if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
       // Shortcut forwarded from the iframe bridge. Same arbitration as the
       // host-side keydown listener — run undo or redo via artifactHistory.
@@ -2671,7 +2679,14 @@ import {
     setTimeout(pushArtifactSizeOverrides, 160)
     setTimeout(pushArtifactHiddenOverrides, 160)
     setTimeout(pushArtifactGridConfig, 160)
-    setTimeout(revealArtifactFrame, 190)
+    // Reveal timing: a deleted element is fully visible until its hide lands,
+    // so revealing on a blind timer can flash it. When hidden overrides exist,
+    // wait for the iframe's prezo-hidden-applied ack (handled above) to reveal;
+    // the mask's own safety timeout still guarantees an eventual reveal. With
+    // no deletes, position/size shifts are subtle, so the fast timer is fine.
+    if (!artifactHasHiddenOverrides()) {
+      setTimeout(revealArtifactFrame, 190)
+    }
   }
 
   function handleArtifactRenderError(message) {
@@ -6501,6 +6516,24 @@ import {
     if (Object.keys(artifactPosition.getPendingPositionOverrides() || {}).length > 0) return true
     if (Object.keys(artifactSize.getPendingSizeOverrides() || {}).length > 0) return true
     if (Object.keys(artifactDelete.getPendingHiddenOverrides() || {}).length > 0) return true
+    return false
+  }
+
+  /**
+   * True when the artifact has any hidden (delete) overrides — saved or pending.
+   * Used to gate the frame reveal: with deletes, we reveal on the iframe's
+   * applied-ack rather than a blind timer, because a not-yet-hidden deleted
+   * element would flash if revealed too early.
+   */
+  function artifactHasHiddenOverrides() {
+    const savedHidden = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {}).hiddenOverrides || {}
+    for (const k of Object.keys(savedHidden)) {
+      if (savedHidden[k] && savedHidden[k].hidden) return true
+    }
+    const pendingHidden = artifactDelete.getPendingHiddenOverrides() || {}
+    for (const k of Object.keys(pendingHidden)) {
+      if (pendingHidden[k] && pendingHidden[k].hidden) return true
+    }
     return false
   }
 
