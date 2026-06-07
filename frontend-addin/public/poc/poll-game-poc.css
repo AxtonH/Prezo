@@ -614,8 +614,19 @@ body:not(.artifact-mode-active)
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  max-height: min(18vh, 140px);
+  /* Collapsed dock now contains the prompt form (taller — footer holds the
+     toggle + paperclip) plus the visibility pill below it. Size to content with
+     a generous ceiling so the pill is never pushed past the panel edge. */
+  max-height: none;
   padding: 10px 12px 10px;
+}
+
+/* Keep the collapsed prompt form compact (single block + footer); the textarea's
+   own max-height (220px) bounds it, so the dock fits content without clipping. */
+#ai-chat-shell.ai-chat-shell--viewport-fixed:not(.editor-shell--expanded)
+  .artifact-composer.is-floating:not(.hidden)
+  .artifact-prompt-form {
+  flex: 0 0 auto;
 }
 
 /* Prompt field: full width of dock panel; fixed height; only messages/queue/log grow when expanded. */
