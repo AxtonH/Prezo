@@ -54,6 +54,17 @@ import {
   resolveArtifactHtmlFromPackage,
   sanitizeArtifactPackage
 } from './poll-game-gamified-artifact-package.js'
+import {
+  clearComposer,
+  composerIsEmpty,
+  createInlineImageChip,
+  insertChipAtCaret,
+  refreshComposerPlaceholder,
+  removeChipNode,
+  serializeComposer,
+  setChipState,
+  setComposerText
+} from './poll-game-gamified-inline-attachments.js'
 import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
@@ -158,7 +169,10 @@ import {
 
   /** True while POST /brand-profiles/extract runs for the artifact reference image control. */
   let artifactBrandReferenceBusy = false
-  let buildReferencePreviewObjectUrl = null
+  /** Per-chip object URLs (for preview thumbnails), keyed by attachment id, so each can
+      be revoked when its chip is removed or the composer is cleared. */
+  const attachmentObjectUrls = new Map()
+  const MAX_INLINE_ATTACHMENTS = 6
 
   const parsePollSelector = (raw) => {
     const value = asText(raw)
@@ -244,10 +258,16 @@ import {
       loaderTime: 0,
       conversationStepIndex: 0,
       conversationAnswers: createEmptyArtifactAnswers(),
-      /** Optional { media_type, data } for initial Anthropic build (first wizard step). */
-      buildReferenceImage: null,
-      /** Public URL of the uploaded reference image (hosted via artifact-images endpoint). */
-      buildReferenceImageUrl: null
+      /**
+       * Inline image attachments, keyed by chip id. Each entry:
+       *   { id, filename, mediaType, data, url, status }
+       * where data is the base64 (Anthropic vision on build), url is the hosted public
+       * URL (embed + edit/repair vision), and status is 'uploading' | 'ready' | 'error'.
+       * The chip lives inline in #artifact-prompt-input; this Map is the data mirror.
+       */
+      attachments: new Map(),
+      /** Monotonic id source for attachment chips. */
+      attachmentSeq: 0
     },
     ai: {
       open: false,
@@ -1591,6 +1611,7 @@ import {
     el.artifactComposerVisibilityToggle.addEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
+    el.artifactPromptInput.addEventListener('input', handleArtifactPromptInputInput)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
     el.artifactBrandReferenceInput.addEventListener('change', handleArtifactBrandReferenceInputChange)
     el.artifactTypeReferencePaperclip.addEventListener('click', handleArtifactTypeReferencePaperclipClick)
@@ -1734,7 +1755,7 @@ import {
       canEditArtifact && state.artifact.editPromptQueue.length >= 12
     const conversationBlocked = !canEditArtifact && state.artifact.busy
 
-    el.artifactPromptInput.disabled = Boolean(queueFull || conversationBlocked)
+    setComposerDisabled(Boolean(queueFull || conversationBlocked))
     el.artifactBrandProfileSelect.disabled = Boolean(state.artifact.busy || artifactBrandReferenceBusy)
     el.artifactBrandReferenceInput.disabled = Boolean(
       state.artifact.busy || artifactBrandReferenceBusy || queueFull || conversationBlocked
@@ -1760,7 +1781,7 @@ import {
     }
     clearArtifactEditPromptQueue()
     if (!options.preserveInput) {
-      el.artifactPromptInput.value = ''
+      clearComposer(el.artifactPromptInput)
     }
     el.artifactBrandProfileSelect.value = ''
     clearArtifactReferenceFileUi()
@@ -1786,17 +1807,71 @@ import {
     el.artifactBrandReferenceStatus.textContent = ''
   }
 
+  function revokeAttachmentObjectUrl(id) {
+    const objectUrl = attachmentObjectUrls.get(id)
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl)
+      attachmentObjectUrls.delete(id)
+    }
+  }
+
+  /** A contenteditable div has no native .disabled; emulate it with contenteditable +
+      a class so the CSS can dim it and the user can't type. */
+  function setComposerDisabled(disabled) {
+    const editor = el.artifactPromptInput
+    editor.setAttribute('contenteditable', disabled ? 'false' : 'true')
+    editor.classList.toggle('is-disabled', Boolean(disabled))
+    editor.setAttribute('aria-disabled', disabled ? 'true' : 'false')
+  }
+
+  /** Remove a single inline attachment (its chip + state + preview object URL). */
+  function removeArtifactAttachment(id) {
+    const key = String(id)
+    removeChipNode(el.artifactPromptInput, key)
+    state.artifact.attachments.delete(key)
+    revokeAttachmentObjectUrl(key)
+    refreshComposerPlaceholder(el.artifactPromptInput)
+    syncArtifactComposerBusyState()
+  }
+
+  /** Clear every inline attachment (state + chips + preview object URLs + status text). */
   function clearArtifactBuildReferenceUi() {
-    state.artifact.buildReferenceImage = null
-    state.artifact.buildReferenceImageUrl = null
-    if (buildReferencePreviewObjectUrl) {
-      URL.revokeObjectURL(buildReferencePreviewObjectUrl)
-      buildReferencePreviewObjectUrl = null
+    state.artifact.attachments.clear()
+    for (const id of Array.from(attachmentObjectUrls.keys())) {
+      revokeAttachmentObjectUrl(id)
     }
     el.artifactTypeReferenceInput.value = ''
     el.artifactTypeReferencePreview.classList.add('hidden')
     el.artifactTypeReferencePreviewImg.removeAttribute('src')
     el.artifactTypeReferenceStatus.textContent = ''
+  }
+
+  /** Ordered, deduped hosted URLs of ready attachments (for the attachedImageUrls channel). */
+  function collectReadyAttachmentUrls() {
+    const urls = []
+    const seen = new Set()
+    for (const entry of state.artifact.attachments.values()) {
+      const url = asText(entry?.url).trim()
+      if (!url || seen.has(url)) {
+        continue
+      }
+      seen.add(url)
+      urls.push(url)
+    }
+    return urls
+  }
+
+  /** Ordered base64 reference payloads of ready attachments (Anthropic vision on build). */
+  function collectReferenceImagePayloads() {
+    const payloads = []
+    for (const entry of state.artifact.attachments.values()) {
+      const data = asText(entry?.data)
+      const mediaType = asText(entry?.mediaType)
+      if (data && mediaType) {
+        payloads.push({ media_type: mediaType, data })
+      }
+    }
+    return payloads
   }
 
   function normalizeArtifactReferenceMediaType(mt) {
@@ -1908,41 +1983,72 @@ import {
       el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 4MB).'
       return
     }
+    if (state.artifact.attachments.size >= MAX_INLINE_ATTACHMENTS) {
+      el.artifactTypeReferenceStatus.textContent = `You can attach up to ${MAX_INLINE_ATTACHMENTS} images.`
+      return
+    }
+
+    // Register the attachment and drop a chip at the caret immediately so the user sees
+    // it land where they were typing; the upload + base64 read happen in the background.
+    state.artifact.attachmentSeq += 1
+    const id = String(state.artifact.attachmentSeq)
+    const filename = asText(file.name) || 'image'
+    state.artifact.attachments.set(id, {
+      id,
+      filename,
+      mediaType: '',
+      data: '',
+      url: '',
+      status: 'uploading'
+    })
+
+    const objectUrl = URL.createObjectURL(file)
+    attachmentObjectUrls.set(id, objectUrl)
+
+    const chip = createInlineImageChip(
+      { id, filename, status: 'uploading' },
+      removeArtifactAttachment
+    )
+    insertChipAtCaret(el.artifactPromptInput, chip)
+    refreshComposerPlaceholder(el.artifactPromptInput)
+    el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
+    el.artifactTypeReferenceInput.value = ''
+    syncArtifactComposerBusyState()
+
     void (async () => {
+      // Base64 (Anthropic vision on initial build). Non-fatal if it can't be read.
       try {
-        const dataUrl = await readFileAsDataUrl(file)
-        const payload = dataUrlToReferencePayload(dataUrl)
-        if (!payload) {
-          el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
-          return
-        }
-        state.artifact.buildReferenceImage = payload
-        state.artifact.buildReferenceImageUrl = null
-        if (buildReferencePreviewObjectUrl) {
-          URL.revokeObjectURL(buildReferencePreviewObjectUrl)
-        }
-        buildReferencePreviewObjectUrl = URL.createObjectURL(file)
-        el.artifactTypeReferencePreviewImg.src = buildReferencePreviewObjectUrl
-        el.artifactTypeReferencePreview.classList.remove('hidden')
-        el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
-        // Upload in the background to obtain a hosted URL the AI can embed.
-        try {
-          const url = await uploadArtifactBuildReferenceImage(file)
-          // Guard against a newer attachment replacing this one mid-upload.
-          if (state.artifact.buildReferenceImage === payload) {
-            state.artifact.buildReferenceImageUrl = url
-            el.artifactTypeReferenceStatus.textContent = ''
-          }
-        } catch (uploadError) {
-          if (state.artifact.buildReferenceImage === payload) {
-            // Non-fatal: the build still runs from the image the model sees.
-            state.artifact.buildReferenceImageUrl = null
-            el.artifactTypeReferenceStatus.textContent =
-              'Image attached (style reference only; could not host it for embedding).'
-          }
+        const payload = dataUrlToReferencePayload(await readFileAsDataUrl(file))
+        const entry = state.artifact.attachments.get(id)
+        if (entry && payload) {
+          entry.mediaType = payload.media_type
+          entry.data = payload.data
         }
       } catch {
-        el.artifactTypeReferenceStatus.textContent = 'Could not read that image.'
+        /* vision base64 is best-effort; the hosted URL still drives embedding */
+      }
+
+      // Upload in the background to obtain a hosted URL the AI can embed inline.
+      try {
+        const url = await uploadArtifactBuildReferenceImage(file)
+        const entry = state.artifact.attachments.get(id)
+        // Guard against the chip being removed mid-upload (entry gone => abandon).
+        if (entry) {
+          entry.url = url
+          entry.status = 'ready'
+          setChipState(el.artifactPromptInput, id, { status: 'ready', url })
+          el.artifactTypeReferenceStatus.textContent = ''
+        }
+      } catch (uploadError) {
+        const entry = state.artifact.attachments.get(id)
+        if (entry) {
+          entry.status = 'error'
+          setChipState(el.artifactPromptInput, id, { status: 'error', url: '' })
+          el.artifactTypeReferenceStatus.textContent =
+            'Could not host that image for embedding — remove it and try again.'
+        }
+      } finally {
+        syncArtifactComposerBusyState()
       }
     })()
   }
@@ -2007,7 +2113,10 @@ import {
     if (!active || !el.artifactComposer.contains(active)) {
       return
     }
-    if (getArtifactConversationStep()?.key !== 'artifactType') {
+    // Allow pasting an image on any step where the attach affordance is shown (the
+    // artifactType build step or edit mode), mirroring syncArtifactTypeReferenceRow.
+    const inEditMode = Boolean(state.artifact.html) && isArtifactConversationComplete()
+    if (getArtifactConversationStep()?.key !== 'artifactType' && !inEditMode) {
       return
     }
     if (state.artifact.busy) {
@@ -2185,11 +2294,15 @@ import {
   function syncArtifactConversationUi() {
     const currentStep = getArtifactConversationStep()
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
-    el.artifactPromptInput.placeholder = currentStep
-      ? currentStep.placeholder
-      : canEditArtifact
-        ? ARTIFACT_EDIT_PLACEHOLDER
-        : ARTIFACT_DEFAULT_PLACEHOLDER
+    el.artifactPromptInput.setAttribute(
+      'data-placeholder',
+      currentStep
+        ? currentStep.placeholder
+        : canEditArtifact
+          ? ARTIFACT_EDIT_PLACEHOLDER
+          : ARTIFACT_DEFAULT_PLACEHOLDER
+    )
+    refreshComposerPlaceholder(el.artifactPromptInput)
     renderArtifactConversation()
     syncArtifactComposerModeLabel()
     syncArtifactComposerBusyState()
@@ -2502,7 +2615,21 @@ import {
         state.artifact.conversationAnswers.brandProfileName = sel
       }
     }
-    const answer = asText(el.artifactPromptInput.value).trim()
+    // Serialize the composer: inline image chips become `[attached image: <url>]`
+    // markers at their exact position, so the answer text reads like the user's prompt
+    // with each image sitting next to the element it describes. The attachments list
+    // carries the hosted URLs for the attachedImageUrls / reference_images channels.
+    const submission = serializeComposer(el.artifactPromptInput)
+    const answer = asText(submission.text).trim()
+    const attachmentUrls = submission.attachments.map((a) => a.url).filter(Boolean)
+    // Block submit while any chip is still uploading (its marker would be missing).
+    const hasPendingUpload = Array.from(state.artifact.attachments.values()).some(
+      (entry) => entry.status === 'uploading'
+    )
+    if (hasPendingUpload) {
+      el.artifactTypeReferenceStatus.textContent = 'Wait for attached images to finish uploading…'
+      return
+    }
     const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
     const refGuidelines = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
     if (currentStep?.key === 'designGuidelines') {
@@ -2518,13 +2645,13 @@ import {
       return
     }
     if (Boolean(state.artifact.html) && isArtifactConversationComplete()) {
-      void enqueueArtifactEditPrompt(answer)
+      void enqueueArtifactEditPrompt(answer, attachmentUrls)
       return
     }
     if (isArtifactConversationComplete()) {
       resetArtifactConversation({ preserveInput: true })
     }
-    void submitArtifactConversationAnswer(answer)
+    void submitArtifactConversationAnswer(answer, attachmentUrls)
   }
 
   function appendArtifactEditMessage(tone, text) {
@@ -2892,8 +3019,11 @@ import {
     if (!currentStep) {
       return
     }
+    // The answer text already carries any inline `[attached image: <url>]` markers, so
+    // it flows verbatim into buildArtifactConversationPrompt. Attachments accumulate in
+    // state.artifact.attachments across wizard steps and are read at build submit below.
     state.artifact.conversationAnswers[currentStep.key] = answer
-    el.artifactPromptInput.value = ''
+    clearComposer(el.artifactPromptInput)
     state.artifact.conversationStepIndex += 1
     syncArtifactConversationUi()
 
@@ -2903,20 +3033,10 @@ import {
 
     const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
     const prompt = buildArtifactConversationPrompt(conversationAnswers)
-    const buildRef =
-      state.artifact.buildReferenceImage &&
-      state.artifact.buildReferenceImage.data &&
-      state.artifact.buildReferenceImage.media_type
-        ? {
-            media_type: state.artifact.buildReferenceImage.media_type,
-            data: state.artifact.buildReferenceImage.data
-          }
-        : null
-    const buildRefUrl = asText(state.artifact.buildReferenceImageUrl).trim() || null
     await submitArtifactPrompt(prompt, {
       conversationAnswers,
-      buildReferenceImage: buildRef,
-      buildReferenceImageUrl: buildRefUrl
+      referenceImages: collectReferenceImagePayloads(),
+      attachedImageUrls: collectReadyAttachmentUrls()
     })
   }
 
@@ -2957,11 +3077,17 @@ import {
     setEditorShellExpanded(true)
   }
 
-  async function enqueueArtifactEditPrompt(raw) {
+  async function enqueueArtifactEditPrompt(raw, attachmentUrls = []) {
     const normalizedRequest = asText(raw).trim()
     if (!normalizedRequest) {
       return
     }
+    // Hosted URLs of the images attached inline to this edit. The request text already
+    // carries the `[attached image: <url>]` markers; this list rides in attachedImageUrls
+    // so the backend can re-fetch them as vision for style-matching on the edit.
+    const editAttachmentUrls = (Array.isArray(attachmentUrls) ? attachmentUrls : [])
+      .map((url) => asText(url).trim())
+      .filter(Boolean)
     if (isArtifactQuestionRequest(normalizedRequest)) {
       const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
       state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
@@ -2969,7 +3095,8 @@ import {
       state.artifact.repairAttemptCount = 0
       state.artifact.lastRuntimeError = ''
       appendArtifactEditMessage('user', normalizedRequest)
-      el.artifactPromptInput.value = ''
+      clearComposer(el.artifactPromptInput)
+      clearArtifactBuildReferenceUi()
       state.artifact.activeEditRequest = ''
       await submitArtifactQuestionRequest(normalizedRequest)
       return
@@ -2981,26 +3108,23 @@ import {
       )
       return
     }
-    // One image per edit submission: bind the currently-attached image URL to this
-    // queued edit, then clear it so the next edit starts fresh.
-    const attachedImageUrl = asText(state.artifact.buildReferenceImageUrl).trim() || null
     state.artifact.editQueueSeq += 1
     state.artifact.editPromptQueue.push({
       id: state.artifact.editQueueSeq,
       prompt: normalizedRequest,
-      attachedImageUrl
+      attachedImageUrls: editAttachmentUrls
     })
-    if (attachedImageUrl) {
-      clearArtifactBuildReferenceUi()
-    }
+    // Each submission consumes its attachments; clear chips + state so the next edit
+    // starts fresh.
+    clearArtifactBuildReferenceUi()
     appendArtifactEditMessage('user', normalizedRequest)
-    el.artifactPromptInput.value = ''
+    clearComposer(el.artifactPromptInput)
     renderArtifactPromptQueue()
     syncArtifactComposerBusyState()
     void processArtifactEditPromptQueue()
   }
 
-  async function runQueuedArtifactEdit(normalizedRequest, attachedImageUrl = null) {
+  async function runQueuedArtifactEdit(normalizedRequest, attachedImageUrls = []) {
     const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
     state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
     state.artifact.autoRepairInFlight = false
@@ -3014,7 +3138,7 @@ import {
       conversationAnswers: state.artifact.lastAnswers,
       requestKind: 'edit',
       originalEditRequest: resolvedRequest || normalizedRequest,
-      buildReferenceImageUrl: asText(attachedImageUrl).trim() || null
+      attachedImageUrls: Array.isArray(attachedImageUrls) ? attachedImageUrls : []
     })
   }
 
@@ -3032,7 +3156,7 @@ import {
     renderArtifactPromptQueue()
     syncArtifactComposerBusyState()
     try {
-      await runQueuedArtifactEdit(next.prompt, next.attachedImageUrl || null)
+      await runQueuedArtifactEdit(next.prompt, next.attachedImageUrls || [])
     } finally {
       state.artifact.editQueueActivePrompt = ''
       renderArtifactPromptQueue()
@@ -3088,19 +3212,20 @@ import {
     }
 
     const requestKind = options.requestKind === 'edit' ? 'edit' : 'build'
-    const buildReferenceSnapshot =
-      requestKind === 'build' &&
-      options.buildReferenceImage &&
-      typeof options.buildReferenceImage === 'object' &&
-      asText(options.buildReferenceImage.data) &&
-      asText(options.buildReferenceImage.media_type)
-        ? {
-            media_type: asText(options.buildReferenceImage.media_type),
-            data: asText(options.buildReferenceImage.data)
-          }
+    // Base64 vision payloads are only useful on the initial Anthropic build; edits send
+    // hosted URLs only (the backend re-fetches them as Gemini vision).
+    const referenceImages =
+      requestKind === 'build' && Array.isArray(options.referenceImages)
+        ? options.referenceImages
+            .map((item) => ({
+              media_type: asText(item?.media_type),
+              data: asText(item?.data)
+            }))
+            .filter((item) => item.media_type && item.data)
         : null
-    const buildReferenceImageUrl =
-      asText(options.buildReferenceImageUrl).trim()
+    const attachedImageUrls = Array.isArray(options.attachedImageUrls)
+      ? options.attachedImageUrls.map((url) => asText(url).trim()).filter(Boolean)
+      : []
     const conversationAnswers =
       options.conversationAnswers && typeof options.conversationAnswers === 'object'
         ? options.conversationAnswers
@@ -3130,8 +3255,8 @@ import {
       )
       const aiPrompt = buildArtifactAiPrompt(prompt, context.artifact)
       const buildResult = await requestAiArtifactBuild(aiPrompt, context, {
-        referenceImages: buildReferenceSnapshot ? [buildReferenceSnapshot] : null,
-        attachedImageUrls: buildReferenceImageUrl ? [buildReferenceImageUrl] : null
+        referenceImages: referenceImages && referenceImages.length > 0 ? referenceImages : null,
+        attachedImageUrls: attachedImageUrls.length > 0 ? attachedImageUrls : null
       })
       const applied = applyArtifactMarkup(buildResult.html, {
         requestKind,
@@ -3767,6 +3892,24 @@ import {
     el.artifactPromptForm.requestSubmit()
   }
 
+  function handleArtifactPromptInputInput() {
+    // Reconcile attachment state with the DOM: a chip the user deleted with Backspace
+    // (rather than its × button) leaves an orphaned Map entry — drop it and revoke its
+    // preview object URL so collectReadyAttachmentUrls stays in sync.
+    const presentIds = new Set(
+      Array.from(el.artifactPromptInput.querySelectorAll('.artifact-image-chip')).map(
+        (chip) => chip.dataset.attachmentId
+      )
+    )
+    for (const id of Array.from(state.artifact.attachments.keys())) {
+      if (!presentIds.has(id)) {
+        state.artifact.attachments.delete(id)
+        revokeAttachmentObjectUrl(id)
+      }
+    }
+    refreshComposerPlaceholder(el.artifactPromptInput)
+  }
+
   /** FAB is unused in viewport-fixed dock; when hidden, do not expose aria-expanded on a non-disclosure control. */
   function syncAiChatFabAccessibility() {
     const shellViewportDock = el.aiChatShell.classList.contains(
@@ -4038,9 +4181,11 @@ import {
     if (brandProfileName) {
       body.brand_profile_name = brandProfileName
     }
+    // Keep these caps in lockstep with the backend (ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS /
+    // ARTIFACT_ATTACHED_IMAGE_URL_LIMIT in backend/app/api/ai.py).
     const refImages = options.referenceImages
     if (Array.isArray(refImages) && refImages.length > 0) {
-      body.reference_images = refImages.slice(0, 2).map((item) => ({
+      body.reference_images = refImages.slice(0, MAX_INLINE_ATTACHMENTS).map((item) => ({
         media_type: asText(item?.media_type) || 'image/png',
         data: asText(item?.data)
       }))
@@ -4052,7 +4197,7 @@ import {
       const urls = attachedImageUrls
         .map((item) => asText(item).trim())
         .filter((item) => item.startsWith('http://') || item.startsWith('https://'))
-        .slice(0, 4)
+        .slice(0, MAX_INLINE_ATTACHMENTS)
       if (urls.length > 0 && body.context && typeof body.context === 'object') {
         if (!body.context.artifact || typeof body.context.artifact !== 'object') {
           body.context.artifact = {}
@@ -12440,6 +12585,7 @@ import {
     document.removeEventListener('paste', handleArtifactBuildReferencePaste, true)
     el.artifactBrandReferenceInput.removeEventListener('change', handleArtifactBrandReferenceInputChange)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
+    el.artifactPromptInput.removeEventListener('input', handleArtifactPromptInputInput)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
     window.removeEventListener('resize', artifactBridge.handleViewportResize)
     window.removeEventListener('resize', handleEditorDockViewportResize)

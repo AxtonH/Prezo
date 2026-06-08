@@ -2763,5 +2763,82 @@ class TestGeminiThinkingBudget(unittest.TestCase):
         )
 
 
+# A real 1x1 PNG, base64-encoded — passes ArtifactReferenceImagePayload validation
+# (min_length 20, decodes, under the raw-byte cap) so we can exercise the count cap.
+ONE_BY_ONE_PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC"
+)
+
+
+class TestInlineImageAttachmentCaps(unittest.TestCase):
+    """Inline image chips let a user attach several images per prompt (one per scene
+    element). These guard the cap bump from 2/4 to 6/6 so a regression to the old caps
+    is caught at the validator level (no full endpoint mocking needed)."""
+
+    def test_reference_image_cap_allows_six(self) -> None:
+        items = [
+            ai_api.ArtifactReferenceImagePayload(media_type="image/png", data=ONE_BY_ONE_PNG_B64)
+            for _ in range(6)
+        ]
+        parts = ai_api.normalize_anthropic_reference_images(items)
+        self.assertEqual(len(parts), 6)
+
+    def test_reference_image_cap_truncates_above_six(self) -> None:
+        items = [
+            ai_api.ArtifactReferenceImagePayload(media_type="image/png", data=ONE_BY_ONE_PNG_B64)
+            for _ in range(9)
+        ]
+        parts = ai_api.normalize_anthropic_reference_images(items)
+        self.assertEqual(len(parts), ai_api.ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS)
+        self.assertEqual(len(parts), 6)
+
+    def test_attached_image_url_cap_allows_six(self) -> None:
+        urls = [f"https://example.com/img-{i}.png" for i in range(6)]
+        kept = ai_api.extract_artifact_attached_image_urls({"attachedImageUrls": urls})
+        self.assertEqual(len(kept), 6)
+        self.assertEqual(kept, urls)
+
+    def test_attached_image_url_cap_truncates_above_six(self) -> None:
+        urls = [f"https://example.com/img-{i}.png" for i in range(10)]
+        kept = ai_api.extract_artifact_attached_image_urls({"attachedImageUrls": urls})
+        self.assertEqual(len(kept), ai_api.ARTIFACT_ATTACHED_IMAGE_URL_LIMIT)
+        self.assertEqual(len(kept), 6)
+
+
+class TestInlineImageBuildEndpoint(unittest.IsolatedAsyncioTestCase):
+    """The initial build must forward more than the old cap of 2 reference images to
+    the Anthropic call, so the model can SEE every attached scene element."""
+
+    def setUp(self) -> None:
+        self.original_anthropic_key = ai_api.settings.anthropic_api_key
+        ai_api.settings.anthropic_api_key = "test-anthropic-key"
+
+    def tearDown(self) -> None:
+        ai_api.settings.anthropic_api_key = self.original_anthropic_key
+
+    async def test_initial_build_forwards_six_reference_images(self) -> None:
+        anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
+        gemini_mock = AsyncMock()
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Use these images for each scene element.",
+            context={"artifact": {"requestMode": "build"}},
+            reference_images=[
+                ai_api.ArtifactReferenceImagePayload(
+                    media_type="image/png", data=ONE_BY_ONE_PNG_B64
+                )
+                for _ in range(6)
+            ],
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_count, 1)
+        forwarded = anthropic_mock.await_args.kwargs["reference_images"]
+        self.assertIsNotNone(forwarded)
+        self.assertEqual(len(forwarded), 6)
+
+
 if __name__ == "__main__":
     unittest.main()

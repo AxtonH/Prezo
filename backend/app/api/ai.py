@@ -75,7 +75,9 @@ ARTIFACT_RECENT_EDIT_REQUEST_LIMIT = 4
 ARTIFACT_RECENT_EDIT_REQUEST_CHAR_LIMIT = 280
 # User-attached image URLs (Phase 1 upload endpoint) the model may embed or use as a
 # style reference. Capped to keep the prompt small and avoid context truncation.
-ARTIFACT_ATTACHED_IMAGE_URL_LIMIT = 4
+# Inline attachments (a chip per element of the scene) routinely use several at once,
+# so this matches ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS (the vision cap) below.
+ARTIFACT_ATTACHED_IMAGE_URL_LIMIT = 6
 ARTIFACT_ATTACHED_IMAGE_URL_CHAR_LIMIT = 2048
 # After brand injection, designGuidelines should stay a short executive summary + small user slice.
 ARTIFACT_DESIGN_GUIDELINES_CHAR_LIMIT = 1400
@@ -614,7 +616,13 @@ class PollGameEditPlanResponse(BaseModel):
 
 
 ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 4 * 1024 * 1024
-ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS = 2
+# Max images the model can SEE (base64 vision) per request. Inline image chips let a
+# user attach one image per scene element (finajeen, dalleh, background, ...), so this
+# is sized for multi-element prompts. The single constant flows to every enforcement
+# site: the Pydantic reference_images gate, the Anthropic normalize slice, the build
+# vision budget, and the edit/patch URL-fetch max_items. Kept under provider per-request
+# inline-data ceilings (Gemini ~20MB total is the tightest) with the 4MB per-image cap above.
+ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS = 6
 ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg", "image/gif", "image/webp"}
 )

@@ -685,14 +685,15 @@
             </div>
             <div class="artifact-prompt-bar">
               <div class="composer-input-field artifact-prompt-bar-field">
-                <textarea
+                <div
                   id="artifact-prompt-input"
                   class="artifact-prompt-input"
-                  placeholder="Describe how you'd like to change this visualization… (e.g. colors, layout, labels)"
-                  rows="3"
-                  maxlength="2000"
-                  aria-label="Describe artifact editor request. Press Enter to send, Shift+Enter for a new line."
-                ></textarea>
+                  contenteditable="true"
+                  role="textbox"
+                  aria-multiline="true"
+                  data-placeholder="Describe how you'd like to change this visualization… (e.g. colors, layout, labels). Attach images inline to point at a specific element."
+                  aria-label="Describe artifact editor request. Attach images with the paperclip to place them inline. Press Enter to send, Shift+Enter for a new line."
+                ></div>
                 <div class="artifact-prompt-bar-footer">
                   <button
                     id="artifact-editor-shell-toggle"
