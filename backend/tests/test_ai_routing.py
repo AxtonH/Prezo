@@ -2804,6 +2804,45 @@ class TestInlineImageAttachmentCaps(unittest.TestCase):
         self.assertEqual(len(kept), ai_api.ARTIFACT_ATTACHED_IMAGE_URL_LIMIT)
         self.assertEqual(len(kept), 6)
 
+    @staticmethod
+    def _payload_of_decoded_size(num_bytes: int) -> "ai_api.ArtifactReferenceImagePayload":
+        import base64
+
+        data = base64.b64encode(b"\x00" * num_bytes).decode("ascii")
+        return ai_api.ArtifactReferenceImagePayload(media_type="image/png", data=data)
+
+    def test_image_at_vision_threshold_is_sent_as_vision(self) -> None:
+        item = self._payload_of_decoded_size(ai_api.ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES)
+        parts = ai_api.normalize_anthropic_reference_images([item])
+        self.assertEqual(len(parts), 1)
+
+    def test_image_over_vision_threshold_is_skipped_not_rejected(self) -> None:
+        # Embed-only: larger than the vision cap but under the 10MB hard cap. It must be
+        # dropped from base64 vision (so the request stays small) rather than 400'd — the
+        # hosted URL still carries it for embedding.
+        big = self._payload_of_decoded_size(
+            ai_api.ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES + 1024
+        )
+        small = self._payload_of_decoded_size(1024)
+        parts = ai_api.normalize_anthropic_reference_images([big, small])
+        self.assertEqual(len(parts), 1)  # only the small one survives as vision
+
+    def test_image_over_hard_cap_is_rejected(self) -> None:
+        from app.api.ai import HTTPException
+
+        too_big = self._payload_of_decoded_size(
+            ai_api.ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES + 1024
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            ai_api.normalize_anthropic_reference_images([too_big])
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_ten_mb_image_is_accepted_under_hard_cap(self) -> None:
+        # A full 10MB image must pass the hard cap (it just won't be sent as vision).
+        item = self._payload_of_decoded_size(ai_api.ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES)
+        parts = ai_api.normalize_anthropic_reference_images([item])
+        self.assertEqual(len(parts), 0)  # over vision cap -> embed-only, no exception
+
 
 class TestInlineImageBuildEndpoint(unittest.IsolatedAsyncioTestCase):
     """The initial build must forward more than the old cap of 2 reference images to

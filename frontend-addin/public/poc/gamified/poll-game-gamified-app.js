@@ -116,7 +116,13 @@ import {
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
-  const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 4 * 1024 * 1024
+  // Hard cap on an attached image; matches the backend upload + reference ceilings.
+  const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 10 * 1024 * 1024
+  // Images at or under this size are also sent as base64 vision (the model SEES them).
+  // Larger ones still embed via their hosted URL but skip base64, keeping the request
+  // under provider inline-data limits (mirrors ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES
+  // in backend/app/api/ai.py).
+  const ARTIFACT_BUILD_REFERENCE_VISION_MAX_BYTES = 5 * 1024 * 1024
   const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
@@ -1980,7 +1986,7 @@ import {
       return
     }
     if (file.size > ARTIFACT_BUILD_REFERENCE_MAX_BYTES) {
-      el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 4MB).'
+      el.artifactTypeReferenceStatus.textContent = 'Image is too large (max 10MB).'
       return
     }
     if (state.artifact.attachments.size >= MAX_INLINE_ATTACHMENTS) {
@@ -2016,16 +2022,20 @@ import {
     syncArtifactComposerBusyState()
 
     void (async () => {
-      // Base64 (Anthropic vision on initial build). Non-fatal if it can't be read.
-      try {
-        const payload = dataUrlToReferencePayload(await readFileAsDataUrl(file))
-        const entry = state.artifact.attachments.get(id)
-        if (entry && payload) {
-          entry.mediaType = payload.media_type
-          entry.data = payload.data
+      // Base64 (Anthropic vision on initial build). Only for images small enough to send
+      // as vision — larger ones embed via their hosted URL only, so we skip the base64
+      // read to keep the request under provider inline-data limits. Non-fatal either way.
+      if (file.size <= ARTIFACT_BUILD_REFERENCE_VISION_MAX_BYTES) {
+        try {
+          const payload = dataUrlToReferencePayload(await readFileAsDataUrl(file))
+          const entry = state.artifact.attachments.get(id)
+          if (entry && payload) {
+            entry.mediaType = payload.media_type
+            entry.data = payload.data
+          }
+        } catch {
+          /* vision base64 is best-effort; the hosted URL still drives embedding */
         }
-      } catch {
-        /* vision base64 is best-effort; the hosted URL still drives embedding */
       }
 
       // Upload in the background to obtain a hosted URL the AI can embed inline.

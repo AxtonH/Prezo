@@ -615,13 +615,19 @@ class PollGameEditPlanResponse(BaseModel):
     model: str
 
 
-ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 4 * 1024 * 1024
+# Hard ceiling on a single reference image (decoded bytes). Matches the upload endpoint
+# (MAX_ARTIFACT_IMAGE_BYTES) so anything that uploaded can also be referenced/embedded.
+ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES = 10 * 1024 * 1024
+# Images at or under this size are also sent as base64 VISION so the model can see them.
+# Larger images (up to the 10MB hard cap) still embed via their hosted URL, but are NOT
+# sent as base64 — this keeps a multi-image request under provider per-request inline-data
+# ceilings (Gemini ~20MB total is the tightest) instead of failing the whole build.
+ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES = 5 * 1024 * 1024
 # Max images the model can SEE (base64 vision) per request. Inline image chips let a
 # user attach one image per scene element (finajeen, dalleh, background, ...), so this
 # is sized for multi-element prompts. The single constant flows to every enforcement
 # site: the Pydantic reference_images gate, the Anthropic normalize slice, the build
-# vision budget, and the edit/patch URL-fetch max_items. Kept under provider per-request
-# inline-data ceilings (Gemini ~20MB total is the tightest) with the 4MB per-image cap above.
+# vision budget, and the edit/patch URL-fetch max_items.
 ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS = 6
 ANTHROPIC_REFERENCE_IMAGE_MEDIA_TYPES: frozenset[str] = frozenset(
     {"image/png", "image/jpeg", "image/gif", "image/webp"}
@@ -632,7 +638,9 @@ class ArtifactReferenceImagePayload(BaseModel):
     """Base64 image data for initial artifact build (Anthropic vision)."""
 
     media_type: str = Field(default="image/png", max_length=48)
-    data: str = Field(..., min_length=20, max_length=8_000_000)
+    # Base64 chars for up to a 10MB image (~1.34x). The normalize step then enforces the
+    # decoded-byte caps (hard 10MB reject, >5MB skipped for vision but still embeddable).
+    data: str = Field(..., min_length=20, max_length=14_000_000)
 
 
 class PollGameArtifactBuildRequest(BaseModel):
@@ -771,8 +779,17 @@ def normalize_anthropic_reference_images(
         if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Each reference image must be at most 4MB after decoding.",
+                detail="Each reference image must be at most 10MB after decoding.",
             )
+        if len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES:
+            # Too big to send as base64 vision; it still embeds via its hosted URL, so
+            # skip it here rather than bloating the request past provider limits.
+            logger.info(
+                "Skipping base64 vision for a %d-byte reference image (> %d vision cap); URL embed still applies.",
+                len(raw),
+                ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES,
+            )
+            continue
         mt = str(it.media_type).strip().lower()
         if mt in {"image/jpg"}:
             mt = "image/jpeg"
@@ -840,11 +857,14 @@ async def fetch_attached_images_as_reference_parts(
                     )
                     continue
                 raw = response.content
-                if not raw or len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES:
+                # Use the vision threshold, not the hard embed cap: a large image still
+                # embeds via its URL, but is skipped here to keep the request under
+                # provider inline-data limits.
+                if not raw or len(raw) > ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES:
                     logger.warning(
-                        "Attached image %s is empty or exceeds %d bytes; skipping vision",
+                        "Attached image %s is empty or exceeds %d vision bytes; skipping vision (URL embed still applies)",
                         url,
-                        ARTIFACT_REFERENCE_IMAGE_MAX_RAW_BYTES,
+                        ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES,
                     )
                     continue
                 out.append((media_type, base64.b64encode(raw).decode("ascii")))
