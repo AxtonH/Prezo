@@ -15,7 +15,7 @@ export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
   {
     key: 'artifactType',
     question: 'What kind of artifact would you like?',
-    placeholder: 'Example: 1920s, cinematic, black and white poll'
+    placeholder: 'Chat with the wizard here…'
   },
   {
     key: 'designGuidelines',

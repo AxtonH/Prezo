@@ -23,6 +23,18 @@ ARTIFACT_INTAKE_BRAND_NAME_LIMIT = 30
 
 INTAKE_NO_BRAND_TOKENS = {"", "none", "no brand", "no-brand", "nobrand", "null"}
 
+# The model labels each question so the frontend can show topic-specific UI
+# (e.g. the brand profile dropdown only while the brand question is active).
+ARTIFACT_INTAKE_QUESTION_TOPICS = ("brand", "style", "content", "audience", "other")
+
+
+def normalize_intake_question_topic(value: Any) -> str:
+    if isinstance(value, str):
+        topic = value.strip().lower()
+        if topic in ARTIFACT_INTAKE_QUESTION_TOPICS:
+            return topic
+    return "other"
+
 
 def normalize_intake_brand_profile_names(names: Any) -> list[str]:
     if not isinstance(names, (list, tuple)):
@@ -112,7 +124,9 @@ def build_artifact_intake_system_instruction(
         brand_block,
         "",
         "Output format — reply with ONLY one JSON object, no prose, no markdown fences:",
-        '- To ask a question: {"action": "ask", "question": "..."}',
+        '- To ask a question: {"action": "ask", "question": "...", "topic": "..."}',
+        '  where "topic" is one of "brand" (the question is about choosing a saved',
+        '  brand profile), "style", "content", "audience", or "other".',
         '- When ready to build: {"action": "ready", "brief": {',
         '    "artifactType": "short description of the scene/style the user wants (required)",',
         '    "designGuidelines": "consolidated visual guidance: colors, typography, mood, layout hints",',
@@ -251,6 +265,7 @@ def normalize_artifact_intake_reply(
         return {
             "action": "ready",
             "question": None,
+            "topic": None,
             "brief": normalize_intake_brief(
                 brief_value,
                 messages=messages,
@@ -259,15 +274,23 @@ def normalize_artifact_intake_reply(
             ),
         }
 
+    def ask_reply(question: str, topic_value: Any) -> dict[str, Any]:
+        return {
+            "action": "ask",
+            "question": question,
+            "topic": normalize_intake_question_topic(topic_value),
+            "brief": None,
+        }
+
     if isinstance(parsed, dict):
         action = parsed.get("action")
         question = _clean_text(parsed.get("question"), ARTIFACT_INTAKE_QUESTION_CHAR_LIMIT)
         if action == "ask" and question and not force_ready:
-            return {"action": "ask", "question": question, "brief": None}
+            return ask_reply(question, parsed.get("topic"))
         if action == "ready" or force_ready:
             return ready_reply(parsed.get("brief"))
         if question:
-            return {"action": "ask", "question": question, "brief": None}
+            return ask_reply(question, parsed.get("topic"))
         return ready_reply(None)
 
     if force_ready:
@@ -277,5 +300,5 @@ def normalize_artifact_intake_reply(
     if plain:
         # The model answered in prose; treat a question-shaped reply as the
         # question rather than failing the turn.
-        return {"action": "ask", "question": plain, "brief": None}
+        return ask_reply(plain, None)
     return ready_reply(None)

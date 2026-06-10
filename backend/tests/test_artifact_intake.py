@@ -100,6 +100,36 @@ class IntakeHelpersTest(unittest.TestCase):
         )
         self.assertEqual(reply["action"], "ask")
         self.assertEqual(reply["question"], "Which brand should I use?")
+        # No topic supplied -> defaults to "other".
+        self.assertEqual(reply["topic"], "other")
+
+    def test_normalize_reply_ask_carries_brand_topic(self) -> None:
+        reply = artifact_intake.normalize_artifact_intake_reply(
+            json.dumps(
+                {
+                    "action": "ask",
+                    "question": "Which brand profile should I apply?",
+                    "topic": "Brand",
+                }
+            ),
+            force_ready=False,
+            messages=[{"role": "user", "text": "retro poll"}],
+            brand_profile_names=["Prezlab Core"],
+            selected_brand_profile_name="",
+        )
+        self.assertEqual(reply["topic"], "brand")
+
+    def test_normalize_reply_invalid_topic_becomes_other(self) -> None:
+        reply = artifact_intake.normalize_artifact_intake_reply(
+            json.dumps(
+                {"action": "ask", "question": "What mood?", "topic": "weather"}
+            ),
+            force_ready=False,
+            messages=[{"role": "user", "text": "retro poll"}],
+            brand_profile_names=[],
+            selected_brand_profile_name="",
+        )
+        self.assertEqual(reply["topic"], "other")
 
     def test_normalize_reply_rejects_hallucinated_brand(self) -> None:
         reply = artifact_intake.normalize_artifact_intake_reply(
