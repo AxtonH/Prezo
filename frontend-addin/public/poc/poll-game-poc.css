@@ -2462,13 +2462,17 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .artifact-intake-chip.branded {
+  .artifact-intake-chip.branded,
+  .artifact-intake-build-now {
     animation: none;
   }
 }
 
-/* "Just build it": a lightning-bolt icon button next to the paperclip in
-   the prompt bar footer, sized and toned to match it. */
+/* "Just build it": a lightning-bolt icon button left of the paperclip in
+   the prompt bar footer, sized and toned to match it. On each appearance
+   (display flips from none, which restarts the animation) it enters
+   tinted purple with a soft ring that expands and dissolves, then
+   settles to the resting gray. */
 .artifact-intake-build-now {
   display: flex;
   align-items: center;
@@ -2483,6 +2487,31 @@ h1 {
   border-radius: 6px;
   transition: color 0.12s ease, background 0.12s ease;
   flex-shrink: 0;
+  animation: artifact-bolt-appear 0.9s ease-out;
+}
+
+@keyframes artifact-bolt-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0);
+    color: var(--chrome-accent);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.05);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25);
+    color: var(--chrome-accent);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(124, 58, 237, 0);
+    color: var(--chrome-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(124, 58, 237, 0);
+    color: var(--chrome-text-secondary);
+  }
 }
 
 .artifact-intake-build-now.hidden {
