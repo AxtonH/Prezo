@@ -63,7 +63,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setError(null)
     setInfo(null)
     if (!email || !password) {
-      setError('Enter your email and password to sign up')
+      setError('Enter your email and a password to create your account.')
       return
     }
     // The button is type="button", so the browser's type="email" constraint
@@ -79,9 +79,11 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoadingAction('sign-up')
     try {
       await signUp(email, password)
-      setInfo('Check your email to confirm your account before signing in.')
+      setInfo(
+        `Almost there: we sent a confirmation link to ${email.trim()}. Open it, then come back and sign in.`
+      )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to sign up')
+      setError(err instanceof Error ? err.message : 'Unable to create your account')
     } finally {
       setLoadingAction(null)
     }
@@ -90,8 +92,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const form = (
     <form className="login-form" onSubmit={handleSubmit}>
       <div className="login-form-header">
-        <h2>Welcome Back</h2>
-        <p className="muted">Sign in to access your workspace</p>
+        <h2>Sign in to Prezo</h2>
+        <p className="muted">Host live polls and Q&A from your PowerPoint workspace</p>
       </div>
 
       <div className="field">
@@ -99,7 +101,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <input
           id="login-email"
           type="email"
-          placeholder="Enter your email"
+          placeholder="name@company.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
@@ -113,13 +115,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <input
           id="login-password"
           type="password"
-          placeholder="Enter your password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
+          aria-describedby="login-password-hint"
           minLength={6}
           required
         />
+        <span id="login-password-hint" className="muted field-hint">
+          At least 6 characters
+        </span>
       </div>
 
       {/* Always-mounted live regions so inserted messages are announced. */}
@@ -139,12 +144,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {loadingAction === 'sign-in' ? (
           <>
             <span className="login-btn-spinner" aria-hidden="true" />
-            Signing in...
+            Signing in…
           </>
         ) : (
-          'Sign In'
+          'Sign in'
         )}
       </button>
+
+      <p className="muted login-signup-hint">New to Prezo? Use the same fields to create an account.</p>
 
       <button
         type="button"
@@ -156,10 +163,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {loadingAction === 'sign-up' ? (
           <>
             <span className="login-btn-spinner" aria-hidden="true" />
-            Sending...
+            Creating account…
           </>
         ) : (
-          'Sign Up'
+          'Create account'
         )}
       </button>
 
@@ -175,7 +182,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Join as Guest
+            Join as guest
           </a>
 
           <div className="login-footer">
@@ -189,7 +196,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <path d="M8 5v3l2 1" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
             <span className="muted">
-              Guests can join live sessions but cannot host.
+              Guests can join and vote in live sessions. Hosting needs an account.
             </span>
           </div>
         </>
@@ -208,7 +215,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 textClassName="font-bold text-[22px] text-white tracking-tight"
               />
             </div>
-            <div className="login-brand-tag">Live Presentation Platform</div>
+            <div className="login-brand-tag">Live Interaction for PowerPoint</div>
           </div>
         </div>
 
@@ -216,9 +223,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           form
         ) : (
           <>
-            <h1 className="login-headline">Transform Your Presentations with Action</h1>
+            <h1 className="login-headline">Turn Presentations into Conversations</h1>
             <p className="login-desc">
-              Add fully editable, interactive elements while maintaining a seamless presentation experience
+              Run live polls, Q&A, and AI-generated interactive visuals from inside PowerPoint.
+              No app switching, no broken flow.
             </p>
 
             <div className="login-features">
@@ -231,23 +239,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   </svg>
                 </div>
                 <div>
-                  <div className="feature-title">Strategic Analysis</div>
-                  <div className="feature-desc">Deep narrative and flow analysis</div>
-                </div>
-              </div>
-
-              <div className="feature-card">
-                <div className="feature-icon">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                    <path
-                      d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z"
-                      fill="#60a5fa"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <div className="feature-title">Fully Integrated</div>
-                  <div className="feature-desc">Bring your PowerPoint to life</div>
+                  <div className="feature-title">Live Polls &amp; Q&amp;A</div>
+                  <div className="feature-desc">Capture audience input in real time, right on your slides</div>
                 </div>
               </div>
 
@@ -264,8 +257,23 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   </svg>
                 </div>
                 <div>
-                  <div className="feature-title">Quality Assurance</div>
-                  <div className="feature-desc">Precision comparison tools</div>
+                  <div className="feature-title">Native to PowerPoint</div>
+                  <div className="feature-desc">Insert and edit interactive elements without leaving your deck</div>
+                </div>
+              </div>
+
+              <div className="feature-card">
+                <div className="feature-icon">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path
+                      d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z"
+                      fill="#60a5fa"
+                    />
+                  </svg>
+                </div>
+                <div>
+                  <div className="feature-title">AI-Generated Visuals</div>
+                  <div className="feature-desc">Turn poll results into polished, presentation-ready artifacts</div>
                 </div>
               </div>
             </div>

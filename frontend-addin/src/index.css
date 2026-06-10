@@ -1245,6 +1245,16 @@ body.login-view #root {
   overflow-wrap: anywhere;
 }
 
+.login-form .field-hint {
+  font-size: 12px;
+}
+
+.login-signup-hint {
+  text-align: center;
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+
 .login-form .muted {
   overflow-wrap: anywhere;
 }
