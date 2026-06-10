@@ -2426,23 +2426,35 @@ h1 {
   border-color: var(--chrome-text-muted);
 }
 
-/* Brand chips wear the brand's own color, pulled from the profile's saved
-   brand facts; text flips dark/light by luminance. Profiles without a
-   usable color keep the default accent chip style. */
+/* Brand chips wear a gradient of the brand's top identity colors, pulled
+   from the profile's saved brand facts. Text tone follows the gradient's
+   average luminance, with a soft halo so it survives the stops that
+   disagree with the average (e.g. a white tail on a dark gradient).
+   Profiles without usable colors keep the default accent chip style. */
 .artifact-intake-chip.branded {
-  background: var(--chip-brand);
-  border-color: var(--chip-brand);
-  color: var(--chip-brand-text, #ffffff);
+  background: var(--chip-brand-bg);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #ffffff;
+  text-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.5),
+    0 0 1px rgba(15, 23, 42, 0.6);
+}
+
+.artifact-intake-chip.branded.branded-light {
+  color: #0f172a;
+  text-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.65),
+    0 0 1px rgba(255, 255, 255, 0.75);
 }
 
 .artifact-intake-chip.branded:hover {
-  background: var(--chip-brand);
-  border-color: var(--chip-brand);
-  filter: brightness(0.92);
+  background: var(--chip-brand-bg);
+  border-color: rgba(15, 23, 42, 0.25);
+  filter: brightness(0.94);
 }
 
 .artifact-intake-chip.branded:focus-visible {
-  border-color: var(--chip-brand);
+  border-color: rgba(15, 23, 42, 0.25);
   box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.3);
 }
 

@@ -2186,9 +2186,10 @@ import {
   }
 
   let artifactBrandProfilesFetchPromise = null
-  // name → representative hex from the profile's saved brand facts, used to
-  // tint that brand's quick-reply chip. Empty/missing → default chip style.
-  const artifactBrandChipColorByName = new Map()
+  // name → up to 3 top-ranked hexes from the profile's saved brand facts,
+  // used to paint that brand's quick-reply chip as a gradient of its
+  // identity colors. Empty/missing → default chip style.
+  const artifactBrandChipColorsByName = new Map()
 
   function hexLuminance(hex) {
     const clean = sanitizeHex(hex, '').replace('#', '')
@@ -2202,7 +2203,7 @@ import {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
   }
 
-  function pickArtifactBrandChipColor(row) {
+  function pickArtifactBrandChipColors(row) {
     const candidates = []
     const facts = row?.brand_facts
     if (Array.isArray(facts?.colors)) {
@@ -2223,18 +2224,23 @@ import {
         }
       }
     }
-    // First color that reads as a chip fill on the light chrome: skip the
-    // backend's grey "no hex found" placeholder and near-white swatches.
+    // Top three distinct colors in rank order; only the backend's grey
+    // "no hex found" placeholder is skipped (white is a legitimate brand
+    // color and belongs in the gradient).
+    const colors = []
+    const seen = new Set()
     for (const hex of candidates) {
-      if (hex.toLowerCase() === '#cccccc' || hex.toLowerCase() === '#ccc') {
+      const key = hex.toLowerCase()
+      if (key === '#cccccc' || key === '#ccc' || seen.has(key)) {
         continue
       }
-      const luminance = hexLuminance(hex)
-      if (luminance != null && luminance <= 0.88) {
-        return hex
+      seen.add(key)
+      colors.push(hex)
+      if (colors.length >= 3) {
+        break
       }
     }
-    return ''
+    return colors
   }
 
   async function handleArtifactBrandReferenceInputChange(event) {
@@ -2318,7 +2324,7 @@ import {
         referenceOption.value = ARTIFACT_BRAND_REFERENCE_VALUE
         referenceOption.textContent = 'Upload a reference image…'
         select.appendChild(referenceOption)
-        artifactBrandChipColorByName.clear()
+        artifactBrandChipColorsByName.clear()
         for (const row of payload) {
           const name = asText(row?.name).trim()
           if (!name) {
@@ -2328,7 +2334,7 @@ import {
           option.value = name
           option.textContent = name
           select.appendChild(option)
-          artifactBrandChipColorByName.set(name, pickArtifactBrandChipColor(row))
+          artifactBrandChipColorsByName.set(name, pickArtifactBrandChipColors(row))
         }
       } catch {
         artifactBrandProfilesFetchPromise = null
@@ -2440,17 +2446,23 @@ import {
   function createArtifactBrandChipsRow() {
     const row = document.createElement('div')
     row.className = 'artifact-intake-chips'
-    const addChip = (label, secondary, onClick, brandColor = '') => {
+    const addChip = (label, secondary, onClick, brandColors = []) => {
       const chip = document.createElement('button')
       chip.type = 'button'
       chip.className = secondary ? 'artifact-intake-chip secondary' : 'artifact-intake-chip'
-      if (brandColor) {
+      if (brandColors.length) {
         chip.classList.add('branded')
-        chip.style.setProperty('--chip-brand', brandColor)
-        chip.style.setProperty(
-          '--chip-brand-text',
-          hexLuminance(brandColor) > 0.6 ? '#0f172a' : '#ffffff'
-        )
+        const fill =
+          brandColors.length === 1
+            ? brandColors[0]
+            : `linear-gradient(120deg, ${brandColors.join(', ')})`
+        chip.style.setProperty('--chip-brand-bg', fill)
+        // Text tone follows the gradient's average luminance; the CSS halo
+        // keeps it readable where individual stops disagree with the average.
+        const average =
+          brandColors.reduce((sum, hex) => sum + (hexLuminance(hex) ?? 0.5), 0) /
+          brandColors.length
+        chip.classList.toggle('branded-light', average > 0.6)
       }
       chip.textContent = label
       chip.addEventListener('click', onClick)
@@ -2461,7 +2473,7 @@ import {
         name,
         false,
         () => handleArtifactIntakeBrandChipClick(name),
-        artifactBrandChipColorByName.get(name) || ''
+        artifactBrandChipColorsByName.get(name) || []
       )
     }
     addChip('No brand', true, () => handleArtifactIntakeBrandChipClick(''))
