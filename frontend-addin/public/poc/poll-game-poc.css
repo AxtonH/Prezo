@@ -2415,6 +2415,38 @@ h1 {
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
 }
 
+.artifact-intake-build-now-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.artifact-intake-build-now-row.hidden {
+  display: none;
+}
+
+.artifact-intake-build-now {
+  border: 1px solid var(--chrome-input-border);
+  background: var(--chrome-input-bg);
+  color: var(--chrome-text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+}
+
+.artifact-intake-build-now:hover {
+  border-color: var(--chrome-input-focus);
+}
+
+.artifact-intake-build-now:focus-visible {
+  outline: none;
+  border-color: var(--chrome-input-focus);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
 .artifact-brand-reference-status {
   margin: 0;
   font-size: 11px;

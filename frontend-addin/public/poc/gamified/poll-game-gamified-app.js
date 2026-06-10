@@ -116,6 +116,8 @@ import {
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
   const ARTIFACT_BUILD_TIMEOUT_MS = 300000
+  // One intake turn is a short Haiku call (a question or a small JSON brief).
+  const ARTIFACT_INTAKE_TIMEOUT_MS = 45000
   // Hard cap on an attached image; matches the backend upload + reference ceilings.
   const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 10 * 1024 * 1024
   // Images at or under this size are also sent as base64 vision (the model SEES them).
@@ -265,6 +267,18 @@ import {
       conversationStepIndex: 0,
       conversationAnswers: createEmptyArtifactAnswers(),
       /**
+       * Conversational intake: the chat with the intake model that replaced the
+       * fixed two-question wizard. `messages` is the transcript ({role, text}),
+       * `done` flips when the model returns its creative brief (or the user hits
+       * "Just build it"), after which the classic build flow takes over through
+       * conversationAnswers. Re-seeded in resetArtifactConversation.
+       */
+      intake: {
+        messages: [],
+        busy: false,
+        done: false
+      },
+      /**
        * Inline image attachments, keyed by chip id. Each entry:
        *   { id, filename, mediaType, data, url, status }
        * where data is the base64 (Anthropic vision on build), url is the hosted public
@@ -371,6 +385,8 @@ import {
     artifactTypeReferenceStatus: must('artifact-type-reference-status'),
     artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
+    artifactIntakeBuildNowRow: must('artifact-intake-build-now-row'),
+    artifactIntakeBuildNow: must('artifact-intake-build-now'),
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
     artifactPromptInput: must('artifact-prompt-input'),
@@ -1616,6 +1632,7 @@ import {
     el.artifactComposerFab.addEventListener('click', handleArtifactComposerFabClick)
     el.artifactComposerVisibilityToggle.addEventListener('click', handleArtifactComposerVisibilityToggleClick)
     el.artifactPromptForm.addEventListener('submit', handleArtifactPromptFormSubmit)
+    el.artifactIntakeBuildNow.addEventListener('click', handleArtifactIntakeBuildNowClick)
     el.artifactPromptInput.addEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactPromptInput.addEventListener('input', handleArtifactPromptInputInput)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
@@ -1782,6 +1799,13 @@ import {
   function resetArtifactConversation(options = {}) {
     state.artifact.conversationStepIndex = 0
     state.artifact.conversationAnswers = createEmptyArtifactAnswers()
+    state.artifact.intake = {
+      messages: [
+        { role: 'assistant', text: ARTIFACT_CONVERSATION_STEPS[0].question }
+      ],
+      busy: false,
+      done: false
+    }
     if (options.clearEditHistory !== false) {
       state.artifact.editHistory = []
     }
@@ -2317,6 +2341,7 @@ import {
     syncArtifactComposerModeLabel()
     syncArtifactComposerBusyState()
     syncArtifactBrandProfileRow()
+    syncArtifactIntakeBuildNowRow()
     if (state.artifact.busy) {
       return
     }
@@ -2325,25 +2350,19 @@ import {
     }
   }
 
-  function formatDesignGuidelinesConversationDisplay(answers) {
-    const text = asText(answers?.designGuidelines).trim()
-    const brand = asText(answers?.brandProfileName).trim()
-    const ref = asText(answers?.referenceImageGuidelines).trim()
-    const parts = []
-    if (brand) {
-      parts.push(`Saved brand: ${brand}`)
-    }
-    if (ref) {
-      parts.push(`Reference image guidelines:\n${ref}`)
-    }
-    if (text) {
-      parts.push(text)
-    }
-    return parts.join('\n')
+  function syncArtifactIntakeBuildNowRow() {
+    const intake = state.artifact.intake
+    const hasUserMessage = intake.messages.some((message) => message.role === 'user')
+    const show =
+      !isArtifactConversationComplete() &&
+      hasUserMessage &&
+      !intake.busy &&
+      !state.artifact.busy
+    el.artifactIntakeBuildNowRow.classList.toggle('hidden', !show)
+    el.artifactIntakeBuildNowRow.setAttribute('aria-hidden', show ? 'false' : 'true')
   }
 
   function renderArtifactConversation() {
-    const currentStepIndex = state.artifact.conversationStepIndex
     const canEditArtifact = Boolean(state.artifact.html) && isArtifactConversationComplete()
     const fragment = document.createDocumentFragment()
     if (canEditArtifact) {
@@ -2360,24 +2379,17 @@ import {
         )
       }
     } else {
-      for (let index = 0; index < ARTIFACT_CONVERSATION_STEPS.length; index += 1) {
-        const step = ARTIFACT_CONVERSATION_STEPS[index]
-        const displayAnswer =
-          step.key === 'designGuidelines'
-            ? formatDesignGuidelinesConversationDisplay(state.artifact.conversationAnswers)
-            : asText(state.artifact.conversationAnswers?.[step.key]).trim()
-        if (index > currentStepIndex && !displayAnswer) {
-          break
-        }
-        if (index < currentStepIndex || index === currentStepIndex) {
-          fragment.appendChild(createArtifactChatMessage(step.question, 'assistant'))
-        }
-        if (displayAnswer) {
-          fragment.appendChild(createArtifactChatMessage(displayAnswer, 'user'))
-        }
-        if (index === currentStepIndex && !displayAnswer) {
-          break
-        }
+      const intake = state.artifact.intake
+      for (const message of intake.messages) {
+        fragment.appendChild(
+          createArtifactChatMessage(
+            message.text,
+            message.role === 'user' ? 'user' : 'assistant'
+          )
+        )
+      }
+      if (intake.busy) {
+        fragment.appendChild(createArtifactChatMessage('Thinking…', 'assistant'))
       }
     }
     const editHistory = Array.isArray(state.artifact.editHistory) ? state.artifact.editHistory : []
@@ -2401,12 +2413,41 @@ import {
     return node
   }
 
-  function getArtifactConversationStep(index = state.artifact.conversationStepIndex) {
-    return ARTIFACT_CONVERSATION_STEPS[index] || null
+  function getArtifactConversationStep() {
+    if (isArtifactConversationComplete()) {
+      return null
+    }
+    const intake = state.artifact.intake
+    const userTurns = intake.messages.filter((message) => message.role === 'user').length
+    let lastQuestion = ''
+    for (let index = intake.messages.length - 1; index >= 0; index -= 1) {
+      if (intake.messages[index].role === 'assistant') {
+        lastQuestion = asText(intake.messages[index].text)
+        break
+      }
+    }
+    // The key mirrors the legacy fixed steps so key-driven UI keeps working
+    // unchanged: the first question behaves like 'artifactType' (inline image
+    // paperclip available), every later question behaves like
+    // 'designGuidelines' (brand profile row shown).
+    return {
+      key: userTurns === 0 ? 'artifactType' : 'designGuidelines',
+      question: lastQuestion || ARTIFACT_CONVERSATION_STEPS[0].question,
+      placeholder:
+        userTurns === 0
+          ? ARTIFACT_CONVERSATION_STEPS[0].placeholder
+          : ARTIFACT_DEFAULT_PLACEHOLDER
+    }
   }
 
   function isArtifactConversationComplete() {
-    return state.artifact.conversationStepIndex >= ARTIFACT_CONVERSATION_STEPS.length
+    // intake.done is the conversational path; the step-index clause keeps the
+    // legacy direct assignments working (e.g. loading a saved artifact marks
+    // the conversation complete by setting the index past the steps).
+    return (
+      Boolean(state.artifact.intake?.done) ||
+      state.artifact.conversationStepIndex >= ARTIFACT_CONVERSATION_STEPS.length
+    )
   }
 
   function cloneArtifactConversationAnswers(answers) {
@@ -3025,21 +3066,110 @@ import {
   }
 
   async function submitArtifactConversationAnswer(answer) {
-    const currentStep = getArtifactConversationStep()
-    if (!currentStep) {
+    const intake = state.artifact.intake
+    if (intake.busy || isArtifactConversationComplete()) {
       return
     }
-    // The answer text already carries any inline `[attached image: <url>]` markers, so
-    // it flows verbatim into buildArtifactConversationPrompt. Attachments accumulate in
-    // state.artifact.attachments across wizard steps and are read at build submit below.
-    state.artifact.conversationAnswers[currentStep.key] = answer
+    // An empty submit is allowed when the user answered by picking from the
+    // brand dropdown (the legacy designGuidelines validation lets it through);
+    // surface that choice as their answer so the transcript stays coherent.
+    let text = asText(answer).trim()
+    if (!text) {
+      const brand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+      text = brand && brand !== ARTIFACT_BRAND_REFERENCE_VALUE
+        ? `Use the "${brand}" brand profile.`
+        : 'No preference — use your judgment.'
+    }
+    // The answer text already carries any inline `[attached image: <url>]` markers.
+    // Attachments accumulate in state.artifact.attachments across intake turns and
+    // are read at build submit in applyArtifactIntakeBrief below.
+    intake.messages.push({ role: 'user', text })
     clearComposer(el.artifactPromptInput)
-    state.artifact.conversationStepIndex += 1
-    syncArtifactConversationUi()
+    await runArtifactIntakeTurn({ forceReady: false })
+  }
 
-    if (!isArtifactConversationComplete()) {
+  async function runArtifactIntakeTurn({ forceReady }) {
+    const intake = state.artifact.intake
+    intake.busy = true
+    syncArtifactConversationUi()
+    // Make sure the saved brand profile names are in the dropdown before the
+    // call — they ride along so the intake model can offer them to the user.
+    try {
+      await ensureArtifactBrandProfilesLoaded()
+    } catch {}
+    let reply = null
+    try {
+      reply = await requestAiArtifactIntake(intake.messages, { forceReady })
+    } catch (error) {
+      intake.busy = false
+      const detail = asText(error?.message).trim()
+      intake.messages.push({
+        role: 'assistant',
+        text: detail
+          ? `I hit a problem (${detail}). Send your answer again, or press "Just build it".`
+          : 'I hit a problem. Send your answer again, or press "Just build it".'
+      })
+      syncArtifactConversationUi()
       return
     }
+    intake.busy = false
+    if (reply.action === 'ask' && reply.question) {
+      intake.messages.push({ role: 'assistant', text: reply.question })
+      syncArtifactConversationUi()
+      return
+    }
+    await applyArtifactIntakeBrief(reply.brief || {})
+  }
+
+  /** Map the intake model's creative brief onto the legacy conversationAnswers
+   *  shape and hand off to the unchanged build flow. */
+  async function applyArtifactIntakeBrief(brief) {
+    const intake = state.artifact.intake
+    const answers = state.artifact.conversationAnswers
+    const artifactType = asText(brief?.artifactType).trim()
+    if (artifactType) {
+      answers.artifactType = artifactType
+    } else if (!asText(answers.artifactType).trim()) {
+      const firstUser = intake.messages.find((message) => message.role === 'user')
+      answers.artifactType = asText(firstUser?.text).trim() || 'poll artifact'
+    }
+
+    const guidelineParts = []
+    const designGuidelines = asText(brief?.designGuidelines).trim()
+    if (designGuidelines) {
+      guidelineParts.push(designGuidelines)
+    }
+    const audience = asText(brief?.audience).trim()
+    if (audience) {
+      guidelineParts.push(`Audience: ${audience}`)
+    }
+    const mustHaves = Array.isArray(brief?.mustHaves)
+      ? brief.mustHaves.map((item) => asText(item).trim()).filter(Boolean)
+      : []
+    if (mustHaves.length) {
+      guidelineParts.push(`Must include: ${mustHaves.join('; ')}`)
+    }
+    const avoid = Array.isArray(brief?.avoid)
+      ? brief.avoid.map((item) => asText(item).trim()).filter(Boolean)
+      : []
+    if (avoid.length) {
+      guidelineParts.push(`Avoid: ${avoid.join('; ')}`)
+    }
+    if (guidelineParts.length) {
+      answers.designGuidelines = guidelineParts.join('\n')
+    }
+
+    // The backend already validated the brief's brand name against the saved
+    // profiles and gave an explicit dropdown selection precedence, so a
+    // non-empty value here is safe to adopt; an empty one keeps the dropdown's.
+    const briefBrand = asText(brief?.brandProfileName).trim()
+    if (briefBrand) {
+      answers.brandProfileName = briefBrand
+    }
+
+    intake.done = true
+    state.artifact.conversationStepIndex = ARTIFACT_CONVERSATION_STEPS.length
+    syncArtifactConversationUi()
 
     const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
     const prompt = buildArtifactConversationPrompt(conversationAnswers)
@@ -3048,6 +3178,30 @@ import {
       referenceImages: collectReferenceImagePayloads(),
       attachedImageUrls: collectReadyAttachmentUrls()
     })
+  }
+
+  function handleArtifactIntakeBuildNowClick() {
+    const intake = state.artifact.intake
+    if (intake.busy || state.artifact.busy || isArtifactConversationComplete()) {
+      return
+    }
+    const submission = serializeComposer(el.artifactPromptInput)
+    const answer = asText(submission.text).trim()
+    if (answer) {
+      intake.messages.push({ role: 'user', text: answer })
+      clearComposer(el.artifactPromptInput)
+    }
+    if (!intake.messages.some((message) => message.role === 'user')) {
+      appendArtifactEditMessage('assistant', 'Tell me what kind of artifact you want first.')
+      return
+    }
+    void runArtifactIntakeTurn({ forceReady: true })
+  }
+
+  function collectArtifactBrandProfileNames() {
+    return Array.from(el.artifactBrandProfileSelect.options)
+      .map((option) => asText(option.value).trim())
+      .filter((value) => value && value !== ARTIFACT_BRAND_REFERENCE_VALUE)
   }
 
   function clearArtifactEditPromptQueue() {
@@ -4243,6 +4397,59 @@ import {
       assistantMessage: asText(payload?.assistantMessage),
       model: asText(payload?.model),
       debugPatchPlan: asText(payload?.debugPatchPlan)
+    }
+  }
+
+  async function requestAiArtifactIntake(messages, options = {}) {
+    const endpoint = `${state.apiBase}/ai/poll-game-artifact-intake`
+    const body = {
+      messages: messages.map((message) => ({
+        role: message.role === 'user' ? 'user' : 'assistant',
+        text: asText(message.text).slice(0, 2000)
+      })),
+      force_ready: Boolean(options.forceReady)
+    }
+    const poll = state.currentPoll
+    if (poll) {
+      body.context = {
+        poll: {
+          question: asText(poll.question),
+          options: Array.isArray(poll.options)
+            ? poll.options.map((option) => asText(option?.label)).filter(Boolean)
+            : []
+        }
+      }
+    }
+    const brandNames = collectArtifactBrandProfileNames()
+    if (brandNames.length) {
+      body.brand_profile_names = brandNames
+    }
+    const selectedBrand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+    if (selectedBrand && selectedBrand !== ARTIFACT_BRAND_REFERENCE_VALUE) {
+      body.selected_brand_profile_name = selectedBrand
+    }
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...libraryAuthHeaders()
+        },
+        body: JSON.stringify(body)
+      },
+      ARTIFACT_INTAKE_TIMEOUT_MS
+    )
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message = extractApiErrorMessage(payload, response.status)
+      throw new Error(message)
+    }
+    const action = asText(payload?.action).trim().toLowerCase()
+    return {
+      action: action === 'ask' ? 'ask' : 'ready',
+      question: asText(payload?.question).trim(),
+      brief: payload?.brief && typeof payload.brief === 'object' ? payload.brief : null
     }
   }
 

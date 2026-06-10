@@ -20,7 +20,9 @@ from .config import settings
 logger = logging.getLogger("prezo.ai")
 
 
-DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-sonnet-4-6"
+DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-opus-4-8"
+
+DEFAULT_ANTHROPIC_INTAKE_MODEL = "claude-haiku-4-5"
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 
@@ -39,6 +41,9 @@ DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL = "gemini-2.5-flash-lite"
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
 ANTHROPIC_ARTIFACT_MAX_TOKENS = 16000
+
+# Intake replies are a single short question or a small JSON brief.
+ANTHROPIC_INTAKE_MAX_TOKENS = 1200
 
 GEMINI_ARTIFACT_MAX_TOKENS = 16000
 
@@ -440,6 +445,13 @@ def resolve_anthropic_artifact_build_model() -> str:
     return (
         normalize_anthropic_model_name(settings.anthropic_artifact_build_model)
         or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL
+    )
+
+
+def resolve_anthropic_intake_model() -> str:
+    return (
+        normalize_anthropic_model_name(getattr(settings, "anthropic_intake_model", None))
+        or DEFAULT_ANTHROPIC_INTAKE_MODEL
     )
 
 def normalize_gemini_model_name(value: str | None) -> str:

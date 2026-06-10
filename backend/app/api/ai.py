@@ -33,9 +33,11 @@ from ..ai_prompts import (  # noqa: F401  (re-exported for tests/backcompat)
 from ..ai_providers import (  # noqa: F401  (re-exported for tests/backcompat)
     ANTHROPIC_API_BASE,
     ANTHROPIC_ARTIFACT_MAX_TOKENS,
+    ANTHROPIC_INTAKE_MAX_TOKENS,
     ANTHROPIC_MODELS_WITHOUT_SAMPLING_PARAMS,
     ANTHROPIC_VERSION,
     DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL,
+    DEFAULT_ANTHROPIC_INTAKE_MODEL,
     DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL,
     DEFAULT_GEMINI_ARTIFACT_EDIT_MODEL,
     DEFAULT_GEMINI_ARTIFACT_REPAIR_MODEL,
@@ -65,6 +67,7 @@ from ..ai_providers import (  # noqa: F401  (re-exported for tests/backcompat)
     request_anthropic_text,
     request_gemini_text,
     resolve_anthropic_artifact_build_model,
+    resolve_anthropic_intake_model,
     resolve_anthropic_base_url,
     resolve_gemini_artifact_answer_model,
     resolve_gemini_artifact_edit_model,
@@ -177,6 +180,14 @@ from ..artifact_selectors import (  # noqa: F401  (re-exported for tests/backcom
 from ..artifact_package import (
     build_segmented_artifact_package,
     materialize_artifact_html_from_package,
+)
+from ..artifact_intake import (
+    ARTIFACT_INTAKE_MAX_QUESTIONS,
+    build_artifact_intake_prompt,
+    build_artifact_intake_system_instruction,
+    match_brand_profile_name,
+    normalize_artifact_intake_reply,
+    normalize_intake_brand_profile_names,
 )
 from ..artifact_patch import (
     apply_artifact_patch_plan_to_package,
@@ -324,6 +335,26 @@ class PollGameEditPlanRequest(BaseModel):
 
 class PollGameEditPlanResponse(BaseModel):
     text: str
+    model: str
+
+
+class PollGameArtifactIntakeMessage(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class PollGameArtifactIntakeRequest(BaseModel):
+    messages: list[PollGameArtifactIntakeMessage] = Field(min_length=1, max_length=24)
+    context: dict[str, Any] | None = None
+    brand_profile_names: list[str] | None = Field(default=None, max_length=60)
+    selected_brand_profile_name: str | None = Field(default=None, max_length=200)
+    force_ready: bool = False
+
+
+class PollGameArtifactIntakeResponse(BaseModel):
+    action: str
+    question: str | None = None
+    brief: dict[str, Any] | None = None
     model: str
 
 
@@ -564,6 +595,69 @@ def build_attached_image_preamble(attached_image_urls: list[str]) -> str:
         "If instructions conflict, follow mandatory brand guidelines and explicit text in context over the image."
     )
     return "\n".join(lines)
+
+
+@router.post("/poll-game-artifact-intake", response_model=PollGameArtifactIntakeResponse)
+async def create_poll_game_artifact_intake(
+    payload: PollGameArtifactIntakeRequest,
+) -> PollGameArtifactIntakeResponse:
+    api_key = (settings.anthropic_api_key or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Artifact intake is not configured. Set ANTHROPIC_API_KEY on backend.",
+        )
+
+    messages = [
+        {"role": message.role, "text": message.text.strip()}
+        for message in payload.messages
+        if message.text.strip()
+    ]
+    if not any(message["role"] == "user" for message in messages):
+        raise HTTPException(
+            status_code=422,
+            detail="Artifact intake requires at least one user message.",
+        )
+
+    brand_profile_names = normalize_intake_brand_profile_names(payload.brand_profile_names)
+    selected_brand_profile_name = (
+        match_brand_profile_name(payload.selected_brand_profile_name, brand_profile_names)
+        or (payload.selected_brand_profile_name or "").strip()
+    )
+
+    questions_asked = sum(1 for message in messages if message["role"] == "assistant")
+    force_ready = payload.force_ready or questions_asked >= ARTIFACT_INTAKE_MAX_QUESTIONS
+
+    model = resolve_anthropic_intake_model()
+    text, _stop_reason = await request_anthropic_text(
+        api_key=api_key,
+        model=model,
+        system_instruction=build_artifact_intake_system_instruction(
+            brand_profile_names=brand_profile_names,
+            selected_brand_profile_name=selected_brand_profile_name,
+            questions_asked=questions_asked,
+            force_ready=force_ready,
+        ),
+        prompt_text=build_artifact_intake_prompt(messages, payload.context),
+        temperature=0.3,
+        max_tokens=ANTHROPIC_INTAKE_MAX_TOKENS,
+        timeout_seconds=getattr(settings, "anthropic_intake_timeout_seconds", 30.0),
+        request_stage="artifact intake",
+    )
+
+    reply = normalize_artifact_intake_reply(
+        text,
+        force_ready=force_ready,
+        messages=messages,
+        brand_profile_names=brand_profile_names,
+        selected_brand_profile_name=selected_brand_profile_name,
+    )
+    return PollGameArtifactIntakeResponse(
+        action=reply["action"],
+        question=reply.get("question"),
+        brief=reply.get("brief"),
+        model=model,
+    )
 
 
 @router.post("/poll-game-edit-plan", response_model=PollGameEditPlanResponse)
