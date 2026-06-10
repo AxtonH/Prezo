@@ -9,6 +9,25 @@ export interface AuthUser {
 
 const EMAIL_REDIRECT_URL = import.meta.env.VITE_SUPABASE_EMAIL_REDIRECT_URL?.toString()
 
+// A hung network would otherwise leave the login form disabled forever
+// (supabase-js has no built-in request timeout).
+const AUTH_TIMEOUT_MS = 30_000
+
+async function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('The request timed out. Check your connection and try again.')),
+      AUTH_TIMEOUT_MS
+    )
+  })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
@@ -18,10 +37,12 @@ function isDuplicateSignUpResponse(user: User | null): boolean {
 }
 
 export async function signIn(email: string, password: string): Promise<User | null> {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: normalizeEmail(email),
-    password
-  })
+  const { data, error } = await withTimeout(
+    supabase.auth.signInWithPassword({
+      email: normalizeEmail(email),
+      password
+    })
+  )
   if (error) {
     throw new Error(error.message)
   }
@@ -30,11 +51,13 @@ export async function signIn(email: string, password: string): Promise<User | nu
 
 export async function signUp(email: string, password: string): Promise<void> {
   const normalizedEmail = normalizeEmail(email)
-  const { data, error } = await supabase.auth.signUp({
-    email: normalizedEmail,
-    password,
-    options: EMAIL_REDIRECT_URL ? { emailRedirectTo: EMAIL_REDIRECT_URL } : undefined
-  })
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: EMAIL_REDIRECT_URL ? { emailRedirectTo: EMAIL_REDIRECT_URL } : undefined
+    })
+  )
   if (error) {
     throw new Error(error.message)
   }

@@ -7,6 +7,13 @@ import { isPowerPointAddinHost } from '../utils/officeHost'
 const AUDIENCE_BASE_URL =
   import.meta.env.VITE_AUDIENCE_BASE_URL?.toString() ?? 'http://localhost:5174'
 
+// A production build with VITE_AUDIENCE_BASE_URL unset would otherwise ship a
+// dead localhost guest link; hide the guest path instead of breaking it.
+const GUEST_LINK_USABLE =
+  !import.meta.env.PROD || !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(AUDIENCE_BASE_URL)
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 interface LoginPageProps {
   onLogin?: () => void
 }
@@ -23,26 +30,31 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     new URLSearchParams(window.location.search).has('_host_Info')
 
   useEffect(() => {
-    if (isPowerPointHost) {
-      return
-    }
+    // Applied in the PowerPoint host too: the app shell locks document scroll
+    // (#root overflow hidden), so without this class a short taskpane or high
+    // zoom clips the form with no way to reach the Sign In button.
     document.body.classList.add('login-view')
     return () => {
       document.body.classList.remove('login-view')
     }
-  }, [isPowerPointHost])
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setInfo(null)
+    if (!email.trim() || !password) {
+      setError('Enter your email and password to sign in.')
+      return
+    }
     setLoadingAction('sign-in')
     try {
       await signIn(email, password)
       onLogin?.()
+      // Stay in the pending state: the auth listener swaps the view, and
+      // resetting here re-enables the form for a few frames first.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in')
-    } finally {
       setLoadingAction(null)
     }
   }
@@ -52,6 +64,16 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setInfo(null)
     if (!email || !password) {
       setError('Enter your email and password to sign up')
+      return
+    }
+    // The button is type="button", so the browser's type="email" constraint
+    // validation never runs for sign-up; check the basics before the network.
+    if (!EMAIL_PATTERN.test(email.trim())) {
+      setError('Enter a valid email address.')
+      return
+    }
+    if (password.length < 6) {
+      setError('Choose a password with at least 6 characters.')
       return
     }
     setLoadingAction('sign-up')
@@ -81,6 +103,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
+          autoFocus
+          required
         />
       </div>
 
@@ -93,47 +117,83 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
+          minLength={6}
+          required
         />
       </div>
 
-      {error ? <p className="error">{error}</p> : null}
-      {info ? <p className="muted">{info}</p> : null}
+      {/* Always-mounted live regions so inserted messages are announced. */}
+      <div aria-live="assertive" role="alert">
+        {error ? <p className="error">{error}</p> : null}
+      </div>
+      <div aria-live="polite" role="status">
+        {info ? <p className="login-info">{info}</p> : null}
+      </div>
 
-      <button type="submit" className="login-btn" disabled={isLoading}>
-        {loadingAction === 'sign-in' ? 'Signing in...' : 'Sign In'}
+      <button
+        type="submit"
+        className="login-btn"
+        disabled={isLoading}
+        aria-busy={loadingAction === 'sign-in' ? 'true' : 'false'}
+      >
+        {loadingAction === 'sign-in' ? (
+          <>
+            <span className="login-btn-spinner" aria-hidden="true" />
+            Signing in...
+          </>
+        ) : (
+          'Sign In'
+        )}
       </button>
 
       <button
         type="button"
         className="login-signup-btn"
         disabled={isLoading}
+        aria-busy={loadingAction === 'sign-up' ? 'true' : 'false'}
         onClick={handleSignUp}
       >
-        {loadingAction === 'sign-up' ? 'Sending...' : 'Sign Up'}
+        {loadingAction === 'sign-up' ? (
+          <>
+            <span className="login-btn-spinner" aria-hidden="true" />
+            Sending...
+          </>
+        ) : (
+          'Sign Up'
+        )}
       </button>
 
-      <div className="login-divider">
-        <span>or</span>
-      </div>
+      {GUEST_LINK_USABLE ? (
+        <>
+          <div className="login-divider">
+            <span>or</span>
+          </div>
 
-      <a href={AUDIENCE_BASE_URL} className="login-guest-btn">
-        Join as Guest
-      </a>
+          <a
+            href={AUDIENCE_BASE_URL}
+            className="login-guest-btn"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Join as Guest
+          </a>
 
-      <div className="login-footer">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path
-            d="M8 14A6 6 0 108 2a6 6 0 000 12z"
-            stroke="#64748b"
-            strokeWidth="1.5"
-            fill="none"
-          />
-          <path d="M8 5v3l2 1" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-        <span className="muted">
-          Guests can join live sessions but cannot host.
-        </span>
-      </div>
+          <div className="login-footer">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M8 14A6 6 0 108 2a6 6 0 000 12z"
+                stroke="#64748b"
+                strokeWidth="1.5"
+                fill="none"
+              />
+              <path d="M8 5v3l2 1" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span className="muted">
+              Guests can join live sessions but cannot host.
+            </span>
+          </div>
+        </>
+      ) : null}
     </form>
   )
 
@@ -164,7 +224,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
             <div className="login-features">
               <div className="feature-card">
                 <div className="feature-icon">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <rect x="2" y="10" width="4" height="8" rx="1" fill="#60a5fa" />
                     <rect x="8" y="6" width="4" height="12" rx="1" fill="#60a5fa" />
                     <rect x="14" y="2" width="4" height="16" rx="1" fill="#60a5fa" />
@@ -178,7 +238,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
               <div className="feature-card">
                 <div className="feature-icon">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path
                       d="M10 2l2.5 5 5.5.8-4 3.9.9 5.3L10 14.5 5.1 17l.9-5.3-4-3.9 5.5-.8L10 2z"
                       fill="#60a5fa"
@@ -193,7 +253,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
               <div className="feature-card">
                 <div className="feature-icon">
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path
                       d="M10 18a8 8 0 100-16 8 8 0 000 16z"
                       stroke="#60a5fa"
