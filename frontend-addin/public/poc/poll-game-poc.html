@@ -659,30 +659,25 @@
               tabindex="-1"
               aria-label="Upload reference image for artifact look"
             />
-            <div
-              id="artifact-brand-profile-row"
-              class="artifact-brand-profile-row hidden"
+            <!-- Hidden data stores: the select holds the saved brand profile
+                 names and the current selection; the visible brand UI is the
+                 quick-reply chips rendered inside the chat log. -->
+            <select
+              id="artifact-brand-profile-select"
+              class="hidden"
+              tabindex="-1"
               aria-hidden="true"
             >
-              <label class="artifact-brand-profile-label" for="artifact-brand-profile-select"
-                >Brand library or reference (optional)</label
-              >
-              <select
-                id="artifact-brand-profile-select"
-                class="artifact-brand-profile-select"
-                aria-label="Saved brand profile or reference image for design guidelines"
-              >
-                <option value="">None</option>
-                <option value="__reference__">Upload a reference image…</option>
-              </select>
-              <input
-                id="artifact-brand-reference-input"
-                class="artifact-brand-reference-input hidden"
-                type="file"
-                accept="image/png,image/jpeg,image/gif,image/webp"
-                aria-label="Upload reference image for brand guidelines"
-              />
-            </div>
+              <option value="">None</option>
+              <option value="__reference__">Upload a reference image…</option>
+            </select>
+            <input
+              id="artifact-brand-reference-input"
+              class="artifact-brand-reference-input hidden"
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              aria-label="Upload reference image for brand guidelines"
+            />
             <div
               id="artifact-intake-build-now-row"
               class="artifact-intake-build-now-row hidden"
