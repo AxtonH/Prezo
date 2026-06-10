@@ -678,20 +678,6 @@
               accept="image/png,image/jpeg,image/gif,image/webp"
               aria-label="Upload reference image for brand guidelines"
             />
-            <div
-              id="artifact-intake-build-now-row"
-              class="artifact-intake-build-now-row hidden"
-              aria-hidden="true"
-            >
-              <button
-                id="artifact-intake-build-now"
-                class="artifact-intake-build-now"
-                type="button"
-                title="Skip the remaining questions and build with what you've described so far"
-              >
-                Just build it
-              </button>
-            </div>
             <div class="artifact-prompt-bar">
               <div class="composer-input-field artifact-prompt-bar-field">
                 <div
@@ -733,6 +719,15 @@
                       title="Attach reference image (or drag &amp; drop / paste)"
                     >
                       <span class="material-symbols-outlined" aria-hidden="true">attach_file</span>
+                    </button>
+                    <button
+                      id="artifact-intake-build-now"
+                      type="button"
+                      class="artifact-intake-build-now hidden"
+                      aria-label="Skip the remaining questions and build now"
+                      title="Skip the remaining questions and build with what you've described so far"
+                    >
+                      <span class="material-symbols-outlined" aria-hidden="true">bolt</span>
                     </button>
                   </div>
                 </div>

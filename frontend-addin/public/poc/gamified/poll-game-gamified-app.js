@@ -384,7 +384,6 @@ import {
     artifactTypeReferenceClear: must('artifact-type-reference-clear'),
     artifactTypeReferenceStatus: must('artifact-type-reference-status'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
-    artifactIntakeBuildNowRow: must('artifact-intake-build-now-row'),
     artifactIntakeBuildNow: must('artifact-intake-build-now'),
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
@@ -2286,6 +2285,89 @@ import {
     return artifactBrandProfilesFetchPromise
   }
 
+  // While the intake request is in flight, the wizard's bubble types out a
+  // short narration of what the turn is actually doing (read the answer,
+  // check brand profiles, decide what to ask) instead of a static
+  // "Thinking…" label. The provider call is not streamed, so this is a
+  // local typewriter over honest pipeline descriptions, not model output.
+  const ARTIFACT_INTAKE_THINKING_TICK_MS = 35
+  const ARTIFACT_INTAKE_THINKING_PAUSE_TICKS = 12
+  let artifactIntakeThinkingPhrases = []
+  let artifactIntakeThinkingPhraseIndex = 0
+  let artifactIntakeThinkingShownChars = 0
+  let artifactIntakeThinkingPauseTicks = 0
+  let artifactIntakeThinkingTimer = null
+
+  function buildArtifactIntakeThinkingPhrases({ forceReady }) {
+    if (forceReady) {
+      return ['Skipping ahead — pulling everything you told me into a creative brief…']
+    }
+    const intake = state.artifact.intake
+    const userTurns = intake.messages.filter((message) => message.role === 'user').length
+    const phrases = [userTurns <= 1 ? 'Reading your idea…' : 'Reading your answer…']
+    const chosenBrand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+    if (collectArtifactBrandProfileNames().length && !chosenBrand) {
+      phrases.push('Checking your saved brand profiles…')
+    }
+    phrases.push('Deciding whether I have enough to build, or what to ask next…')
+    return phrases
+  }
+
+  function getArtifactIntakeThinkingText() {
+    const done = artifactIntakeThinkingPhrases.slice(0, artifactIntakeThinkingPhraseIndex)
+    const current = artifactIntakeThinkingPhrases[artifactIntakeThinkingPhraseIndex]
+    const lines = current ? [...done, current.slice(0, artifactIntakeThinkingShownChars)] : done
+    return lines.filter(Boolean).join('\n')
+  }
+
+  function startArtifactIntakeThinking(options) {
+    stopArtifactIntakeThinking()
+    artifactIntakeThinkingPhrases = buildArtifactIntakeThinkingPhrases(options)
+    artifactIntakeThinkingPhraseIndex = 0
+    artifactIntakeThinkingShownChars = 0
+    artifactIntakeThinkingPauseTicks = 0
+    artifactIntakeThinkingTimer = window.setInterval(
+      tickArtifactIntakeThinking,
+      ARTIFACT_INTAKE_THINKING_TICK_MS
+    )
+  }
+
+  function stopArtifactIntakeThinking() {
+    if (artifactIntakeThinkingTimer) {
+      window.clearInterval(artifactIntakeThinkingTimer)
+      artifactIntakeThinkingTimer = null
+    }
+    artifactIntakeThinkingPhrases = []
+    artifactIntakeThinkingPhraseIndex = 0
+    artifactIntakeThinkingShownChars = 0
+  }
+
+  function tickArtifactIntakeThinking() {
+    if (!state.artifact.intake?.busy) {
+      stopArtifactIntakeThinking()
+      return
+    }
+    if (artifactIntakeThinkingPauseTicks > 0) {
+      artifactIntakeThinkingPauseTicks -= 1
+      return
+    }
+    const phrase = artifactIntakeThinkingPhrases[artifactIntakeThinkingPhraseIndex]
+    if (!phrase) {
+      // All phrases typed; the CSS caret keeps blinking until the reply lands.
+      return
+    }
+    artifactIntakeThinkingShownChars += 1
+    if (artifactIntakeThinkingShownChars >= phrase.length) {
+      artifactIntakeThinkingPhraseIndex += 1
+      artifactIntakeThinkingShownChars = 0
+      artifactIntakeThinkingPauseTicks = ARTIFACT_INTAKE_THINKING_PAUSE_TICKS
+    }
+    const node = el.artifactChatLog.querySelector('.artifact-intake-thinking')
+    if (node) {
+      node.textContent = getArtifactIntakeThinkingText()
+    }
+  }
+
   // Quick-reply chips replace the old labeled brand dropdown: they render
   // inside the chat log under the intake model's brand question (it labels
   // each question with a topic) and answer the turn in one click. The hidden
@@ -2371,7 +2453,7 @@ import {
     renderArtifactConversation()
     syncArtifactComposerModeLabel()
     syncArtifactComposerBusyState()
-    syncArtifactIntakeBuildNowRow()
+    syncArtifactIntakeBuildNowButton()
     if (state.artifact.busy) {
       return
     }
@@ -2380,7 +2462,7 @@ import {
     }
   }
 
-  function syncArtifactIntakeBuildNowRow() {
+  function syncArtifactIntakeBuildNowButton() {
     const intake = state.artifact.intake
     const hasUserMessage = intake.messages.some((message) => message.role === 'user')
     const show =
@@ -2388,8 +2470,8 @@ import {
       hasUserMessage &&
       !intake.busy &&
       !state.artifact.busy
-    el.artifactIntakeBuildNowRow.classList.toggle('hidden', !show)
-    el.artifactIntakeBuildNowRow.setAttribute('aria-hidden', show ? 'false' : 'true')
+    el.artifactIntakeBuildNow.classList.toggle('hidden', !show)
+    el.artifactIntakeBuildNow.setAttribute('aria-hidden', show ? 'false' : 'true')
   }
 
   function renderArtifactConversation() {
@@ -2419,7 +2501,9 @@ import {
         )
       }
       if (intake.busy) {
-        fragment.appendChild(createArtifactChatMessage('Thinking…', 'assistant'))
+        const thinking = createArtifactChatMessage(getArtifactIntakeThinkingText(), 'assistant')
+        thinking.classList.add('artifact-intake-thinking')
+        fragment.appendChild(thinking)
       } else if (shouldShowArtifactBrandChips()) {
         fragment.appendChild(createArtifactBrandChipsRow())
       }
@@ -3126,6 +3210,7 @@ import {
   async function runArtifactIntakeTurn({ forceReady }) {
     const intake = state.artifact.intake
     intake.busy = true
+    startArtifactIntakeThinking({ forceReady })
     syncArtifactConversationUi()
     // Make sure the saved brand profile names are in the dropdown before the
     // call — they ride along so the intake model can offer them to the user.
@@ -3137,17 +3222,19 @@ import {
       reply = await requestAiArtifactIntake(intake.messages, { forceReady })
     } catch (error) {
       intake.busy = false
+      stopArtifactIntakeThinking()
       const detail = asText(error?.message).trim()
       intake.messages.push({
         role: 'assistant',
         text: detail
-          ? `I hit a problem (${detail}). Send your answer again, or press "Just build it".`
-          : 'I hit a problem. Send your answer again, or press "Just build it".'
+          ? `I hit a problem (${detail}). Send your answer again, or use the lightning bolt below to build now.`
+          : 'I hit a problem. Send your answer again, or use the lightning bolt below to build now.'
       })
       syncArtifactConversationUi()
       return
     }
     intake.busy = false
+    stopArtifactIntakeThinking()
     if (reply.action === 'ask' && reply.question) {
       intake.messages.push({ role: 'assistant', text: reply.question, topic: reply.topic })
       syncArtifactConversationUi()
@@ -12890,6 +12977,7 @@ import {
       state.snapshotRenderTimer = null
     }
     stopArtifactLoaderAnimation()
+    stopArtifactIntakeThinking()
     state.artifact.busy = false
     state.artifact.frameReady = false
     state.artifact.lastPayloadKey = ''

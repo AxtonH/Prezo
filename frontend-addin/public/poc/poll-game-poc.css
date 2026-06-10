@@ -2426,29 +2426,26 @@ h1 {
   border-color: var(--chrome-text-muted);
 }
 
-/* "Just build it" reads as a skip affordance: a quiet centered pill that
-   only picks up the accent on hover. */
-.artifact-intake-build-now-row {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: center;
-}
-
-.artifact-intake-build-now-row.hidden {
-  display: none;
-}
-
+/* "Just build it": a lightning-bolt icon button next to the paperclip in
+   the prompt bar footer, sized and toned to match it. */
 .artifact-intake-build-now {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: none;
   background: transparent;
-  color: var(--chrome-text-muted);
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-family);
+  color: var(--chrome-text-secondary);
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  border-radius: 6px;
+  transition: color 0.12s ease, background 0.12s ease;
+  flex-shrink: 0;
+}
+
+.artifact-intake-build-now.hidden {
+  display: none;
 }
 
 .artifact-intake-build-now:hover {
@@ -2460,6 +2457,35 @@ h1 {
   outline: none;
   color: var(--chrome-accent);
   box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18);
+}
+
+.artifact-intake-build-now .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* The wizard's in-flight bubble types out what it is doing, with a
+   blinking caret, instead of a static "Thinking…" label. */
+.artifact-intake-thinking {
+  white-space: pre-line;
+  font-style: italic;
+  color: var(--chrome-text-secondary);
+}
+
+.artifact-intake-thinking::after {
+  content: '▍';
+  margin-left: 1px;
+  color: var(--chrome-accent);
+  animation: artifact-thinking-caret 1s steps(1) infinite;
+}
+
+@keyframes artifact-thinking-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .artifact-brand-reference-status {
