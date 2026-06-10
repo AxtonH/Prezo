@@ -383,7 +383,6 @@ import {
     artifactTypeReferencePreviewImg: must('artifact-type-reference-preview-img'),
     artifactTypeReferenceClear: must('artifact-type-reference-clear'),
     artifactTypeReferenceStatus: must('artifact-type-reference-status'),
-    artifactBrandProfileRow: must('artifact-brand-profile-row'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactIntakeBuildNowRow: must('artifact-intake-build-now-row'),
     artifactIntakeBuildNow: must('artifact-intake-build-now'),
@@ -2287,55 +2286,74 @@ import {
     return artifactBrandProfilesFetchPromise
   }
 
-  function getArtifactIntakeCurrentTopic() {
-    const messages = state.artifact.intake?.messages || []
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      if (messages[index].role !== 'user') {
-        return asText(messages[index].topic).trim().toLowerCase() || 'other'
-      }
+  // Quick-reply chips replace the old labeled brand dropdown: they render
+  // inside the chat log under the intake model's brand question (it labels
+  // each question with a topic) and answer the turn in one click. The hidden
+  // select stays as the data store — form submits re-read its value.
+  function shouldShowArtifactBrandChips() {
+    const intake = state.artifact.intake
+    if (isArtifactConversationComplete() || intake.busy || state.artifact.busy) {
+      return false
     }
-    return 'other'
+    const last = intake.messages[intake.messages.length - 1]
+    return (
+      Boolean(last) &&
+      last.role !== 'user' &&
+      asText(last.topic).trim().toLowerCase() === 'brand'
+    )
   }
 
-  function syncArtifactBrandProfileRow() {
-    const currentStep = getArtifactConversationStep()
-    const token = getLibraryAccessToken()
-    // The dropdown appears only while the intake model's current question is
-    // about brand choice (it labels each question with a topic), instead of
-    // lingering for the whole conversation.
-    const show =
-      Boolean(currentStep) &&
-      getArtifactIntakeCurrentTopic() === 'brand' &&
-      !state.artifact.busy &&
-      Boolean(token)
-    el.artifactBrandProfileRow.classList.toggle('hidden', !show)
-    el.artifactBrandProfileRow.setAttribute('aria-hidden', show ? 'false' : 'true')
-    if (show) {
-      setEditorShellExpanded(true)
-      void ensureArtifactBrandProfilesLoaded().finally(() => {
-        const saved = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
-        const refText = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
-        const hasRefOption = Array.from(el.artifactBrandProfileSelect.options).some(
-          (o) => o.value === ARTIFACT_BRAND_REFERENCE_VALUE
-        )
-        if (saved && saved !== ARTIFACT_BRAND_REFERENCE_VALUE) {
-          const hasOption = Array.from(el.artifactBrandProfileSelect.options).some((o) => o.value === saved)
-          if (hasOption) {
-            el.artifactBrandProfileSelect.value = saved
-          } else {
-            const option = document.createElement('option')
-            option.value = saved
-            option.textContent = saved
-            el.artifactBrandProfileSelect.appendChild(option)
-            el.artifactBrandProfileSelect.value = saved
-          }
-        } else if (refText && hasRefOption) {
-          el.artifactBrandProfileSelect.value = ARTIFACT_BRAND_REFERENCE_VALUE
-        } else {
-          el.artifactBrandProfileSelect.value = ''
-        }
-      })
+  function createArtifactBrandChipsRow() {
+    const row = document.createElement('div')
+    row.className = 'artifact-intake-chips'
+    const addChip = (label, secondary, onClick) => {
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = secondary ? 'artifact-intake-chip secondary' : 'artifact-intake-chip'
+      chip.textContent = label
+      chip.addEventListener('click', onClick)
+      row.appendChild(chip)
     }
+    for (const name of collectArtifactBrandProfileNames()) {
+      addChip(name, false, () => handleArtifactIntakeBrandChipClick(name))
+    }
+    addChip('No brand', true, () => handleArtifactIntakeBrandChipClick(''))
+    if (getLibraryAccessToken()) {
+      addChip('Use a reference image…', true, handleArtifactIntakeReferenceChipClick)
+    }
+    return row
+  }
+
+  function handleArtifactIntakeBrandChipClick(name) {
+    const intake = state.artifact.intake
+    if (intake.busy || state.artifact.busy || isArtifactConversationComplete()) {
+      return
+    }
+    const select = el.artifactBrandProfileSelect
+    if (name && !Array.from(select.options).some((option) => option.value === name)) {
+      const option = document.createElement('option')
+      option.value = name
+      option.textContent = name
+      select.appendChild(option)
+    }
+    select.value = name
+    handleArtifactBrandProfileSelectChange()
+    void submitArtifactConversationAnswer(
+      name ? `Use the "${name}" brand profile.` : 'No brand — use your judgment.'
+    )
+  }
+
+  function handleArtifactIntakeReferenceChipClick() {
+    const intake = state.artifact.intake
+    if (intake.busy || state.artifact.busy || isArtifactConversationComplete()) {
+      return
+    }
+    if (el.artifactBrandReferenceInput.disabled) {
+      return
+    }
+    el.artifactBrandProfileSelect.value = ARTIFACT_BRAND_REFERENCE_VALUE
+    state.artifact.conversationAnswers.brandProfileName = ''
+    el.artifactBrandReferenceInput.click()
   }
 
   function syncArtifactConversationUi() {
@@ -2353,7 +2371,6 @@ import {
     renderArtifactConversation()
     syncArtifactComposerModeLabel()
     syncArtifactComposerBusyState()
-    syncArtifactBrandProfileRow()
     syncArtifactIntakeBuildNowRow()
     if (state.artifact.busy) {
       return
@@ -2403,6 +2420,8 @@ import {
       }
       if (intake.busy) {
         fragment.appendChild(createArtifactChatMessage('Thinking…', 'assistant'))
+      } else if (shouldShowArtifactBrandChips()) {
+        fragment.appendChild(createArtifactBrandChipsRow())
       }
     }
     const editHistory = Array.isArray(state.artifact.editHistory) ? state.artifact.editHistory : []
@@ -3089,9 +3108,12 @@ import {
     let text = asText(answer).trim()
     if (!text) {
       const brand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
+      const refText = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
       text = brand && brand !== ARTIFACT_BRAND_REFERENCE_VALUE
         ? `Use the "${brand}" brand profile.`
-        : 'No preference — use your judgment.'
+        : refText
+          ? 'Use the reference image I uploaded for the look.'
+          : 'No preference — use your judgment.'
     }
     // The answer text already carries any inline `[attached image: <url>]` markers.
     // Attachments accumulate in state.artifact.attachments across intake turns and
@@ -3129,6 +3151,10 @@ import {
     if (reply.action === 'ask' && reply.question) {
       intake.messages.push({ role: 'assistant', text: reply.question, topic: reply.topic })
       syncArtifactConversationUi()
+      if (asText(reply.topic).trim().toLowerCase() === 'brand') {
+        // Make sure the chat log (and its brand chips) is actually visible.
+        setEditorShellExpanded(true)
+      }
       return
     }
     await applyArtifactIntakeBrief(reply.brief || {})

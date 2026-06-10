@@ -601,8 +601,7 @@ body.editor-panel-resizing iframe {
 
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-composer-header,
 #ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating #artifact-prompt-queue,
-#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-chat-log,
-#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating #artifact-brand-profile-row {
+#ai-chat-shell:not(.editor-shell--expanded) .artifact-composer.is-floating .artifact-chat-log {
   display: none !important;
 }
 
@@ -2380,45 +2379,59 @@ h1 {
   align-items: stretch;
 }
 
-.artifact-brand-profile-row {
-  grid-column: 1 / -1;
+/* Quick-reply chips rendered in the chat log while the intake's brand
+   question is active: one pill per saved brand profile, plus "No brand"
+   and "Use a reference image…" as secondary options. */
+.artifact-intake-chips {
+  max-width: min(86%, 720px);
+  justify-self: start;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 1px 2px 3px;
 }
 
-.artifact-brand-profile-row.hidden {
-  display: none;
-}
-
-.artifact-brand-profile-label {
-  font-size: 11px;
+.artifact-intake-chip {
+  border: 1px solid var(--chrome-accent-soft);
+  background: var(--chrome-bg);
+  color: var(--chrome-accent);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
   font-weight: 600;
+  font-family: var(--font-family);
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.artifact-intake-chip:hover {
+  background: var(--chrome-accent-soft);
+  border-color: var(--chrome-accent);
+}
+
+.artifact-intake-chip:focus-visible {
+  outline: none;
+  border-color: var(--chrome-accent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18);
+}
+
+.artifact-intake-chip.secondary {
+  border-color: var(--chrome-border);
   color: var(--chrome-text-secondary);
 }
 
-.artifact-brand-profile-select {
-  width: 100%;
-  max-width: 100%;
-  border: 1px solid var(--chrome-input-border);
-  background: var(--chrome-input-bg);
-  color: var(--chrome-text);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-family: var(--font-family);
+.artifact-intake-chip.secondary:hover {
+  background: var(--chrome-hover);
+  border-color: var(--chrome-text-muted);
 }
 
-.artifact-brand-profile-select:focus-visible {
-  outline: none;
-  border-color: var(--chrome-input-focus);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
-}
-
+/* "Just build it" reads as a skip affordance: a quiet centered pill that
+   only picks up the accent on hover. */
 .artifact-intake-build-now-row {
   grid-column: 1 / -1;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .artifact-intake-build-now-row.hidden {
@@ -2426,25 +2439,27 @@ h1 {
 }
 
 .artifact-intake-build-now {
-  border: 1px solid var(--chrome-input-border);
-  background: var(--chrome-input-bg);
-  color: var(--chrome-text);
-  border-radius: 8px;
-  padding: 5px 10px;
-  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-muted);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
   font-weight: 600;
   font-family: var(--font-family);
   cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .artifact-intake-build-now:hover {
-  border-color: var(--chrome-input-focus);
+  color: var(--chrome-accent);
+  background: var(--chrome-accent-soft);
 }
 
 .artifact-intake-build-now:focus-visible {
   outline: none;
-  border-color: var(--chrome-input-focus);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  color: var(--chrome-accent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.18);
 }
 
 .artifact-brand-reference-status {
