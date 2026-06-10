@@ -354,6 +354,7 @@ class PollGameArtifactIntakeRequest(BaseModel):
 class PollGameArtifactIntakeResponse(BaseModel):
     action: str
     question: str | None = None
+    topic: str | None = None
     brief: dict[str, Any] | None = None
     model: str
 
@@ -655,6 +656,7 @@ async def create_poll_game_artifact_intake(
     return PollGameArtifactIntakeResponse(
         action=reply["action"],
         question=reply.get("question"),
+        topic=reply.get("topic"),
         brief=reply.get("brief"),
         model=model,
     )

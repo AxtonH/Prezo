@@ -1958,11 +1958,11 @@ import {
   }
 
   function syncArtifactTypeReferenceRow() {
-    const currentStep = getArtifactConversationStep()
-    // Show the attach-image affordance during the artifact-type creation step AND
-    // in edit mode (an artifact already exists), so users can attach an image to an edit.
+    // Show the attach-image affordance during the whole intake conversation AND
+    // in edit mode (an artifact already exists), so users can attach an image
+    // to any answer or edit.
     const inEditMode = Boolean(state.artifact.html) && isArtifactConversationComplete()
-    const show = Boolean(currentStep?.key === 'artifactType') || inEditMode
+    const show = !isArtifactConversationComplete() || inEditMode
     if (show && !inEditMode) {
       setEditorShellExpanded(true)
     }
@@ -2147,10 +2147,10 @@ import {
     if (!active || !el.artifactComposer.contains(active)) {
       return
     }
-    // Allow pasting an image on any step where the attach affordance is shown (the
-    // artifactType build step or edit mode), mirroring syncArtifactTypeReferenceRow.
+    // Allow pasting an image whenever the attach affordance is shown (any intake
+    // turn or edit mode), mirroring syncArtifactTypeReferenceRow.
     const inEditMode = Boolean(state.artifact.html) && isArtifactConversationComplete()
-    if (getArtifactConversationStep()?.key !== 'artifactType' && !inEditMode) {
+    if (isArtifactConversationComplete() && !inEditMode) {
       return
     }
     if (state.artifact.busy) {
@@ -2287,12 +2287,25 @@ import {
     return artifactBrandProfilesFetchPromise
   }
 
+  function getArtifactIntakeCurrentTopic() {
+    const messages = state.artifact.intake?.messages || []
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role !== 'user') {
+        return asText(messages[index].topic).trim().toLowerCase() || 'other'
+      }
+    }
+    return 'other'
+  }
+
   function syncArtifactBrandProfileRow() {
     const currentStep = getArtifactConversationStep()
     const token = getLibraryAccessToken()
+    // The dropdown appears only while the intake model's current question is
+    // about brand choice (it labels each question with a topic), instead of
+    // lingering for the whole conversation.
     const show =
       Boolean(currentStep) &&
-      currentStep.key === 'designGuidelines' &&
+      getArtifactIntakeCurrentTopic() === 'brand' &&
       !state.artifact.busy &&
       Boolean(token)
     el.artifactBrandProfileRow.classList.toggle('hidden', !show)
@@ -3114,7 +3127,7 @@ import {
     }
     intake.busy = false
     if (reply.action === 'ask' && reply.question) {
-      intake.messages.push({ role: 'assistant', text: reply.question })
+      intake.messages.push({ role: 'assistant', text: reply.question, topic: reply.topic })
       syncArtifactConversationUi()
       return
     }
@@ -4449,6 +4462,7 @@ import {
     return {
       action: action === 'ask' ? 'ask' : 'ready',
       question: asText(payload?.question).trim(),
+      topic: asText(payload?.topic).trim().toLowerCase() || 'other',
       brief: payload?.brief && typeof payload.brief === 'object' ? payload.brief : null
     }
   }
