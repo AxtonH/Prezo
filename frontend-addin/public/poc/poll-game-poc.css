@@ -62,7 +62,7 @@
   --chrome-active-bg: rgba(124, 58, 237, 0.12);
   --chrome-active-border: #7c3aed;
   /* User chat bubbles: tinted border aligned with --chrome-active-border */
-  --chrome-message-user-border: color-mix(in srgb, var(--chrome-active-border) 22%, transparent);
+  --chrome-message-user-border: rgba(124, 58, 237, 0.22);
   --chrome-input-bg: #ffffff;
   --chrome-input-border: #e2e8f0;
   --chrome-input-focus: #7c3aed;
@@ -2638,7 +2638,7 @@ h1 {
 /* Drag-over highlight on the prompt bar */
 .artifact-prompt-bar--drag-over {
   border-color: var(--chrome-input-focus) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chrome-active-border) 18%, transparent) !important;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18) !important;
 }
 
 .artifact-prompt-input {
@@ -2698,9 +2698,9 @@ h1 {
   margin: 0 1px;
   padding: 1px 4px 1px 5px;
   vertical-align: baseline;
-  border: 1px solid color-mix(in srgb, var(--chrome-active-border) 35%, transparent);
+  border: 1px solid rgba(124, 58, 237, 0.35);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--chrome-active-border) 12%, transparent);
+  background: rgba(124, 58, 237, 0.12);
   color: var(--chrome-active-border);
   font-size: 11px;
   line-height: 1.5;
@@ -2714,8 +2714,8 @@ h1 {
 }
 
 .artifact-image-chip--error {
-  border-color: color-mix(in srgb, #dc2626 45%, transparent);
-  background: color-mix(in srgb, #dc2626 12%, transparent);
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(220, 38, 38, 0.12);
   color: #dc2626;
 }
 
@@ -2749,7 +2749,7 @@ h1 {
 }
 
 .artifact-image-chip-remove:hover {
-  background: color-mix(in srgb, var(--chrome-active-border) 22%, transparent);
+  background: rgba(124, 58, 237, 0.22);
 }
 
 /* Rounded prompt bar (artifact + sidebar AI) — no send button; Enter submits via form handler */
@@ -2790,7 +2790,7 @@ h1 {
   border: 0;
   border-right: 1px solid var(--chrome-border);
   border-radius: 0;
-  background: color-mix(in srgb, var(--chrome-surface) 90%, transparent);
+  background: rgba(248, 250, 252, 0.9);
   color: var(--chrome-text-secondary);
   font-size: 11px;
   font-weight: 700;
@@ -2843,7 +2843,7 @@ h1 {
 .artifact-prompt-bar:focus-within,
 .ai-prompt-bar:focus-within {
   border-color: var(--chrome-input-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--chrome-active-border) 18%, transparent);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
 }
 
 .artifact-prompt-bar-field .artifact-prompt-input,
@@ -2870,7 +2870,7 @@ h1 {
   align-items: center;
   border-top: 1px solid var(--chrome-border);
   padding: 6px 10px 8px;
-  background: color-mix(in srgb, var(--chrome-surface) 88%, transparent);
+  background: rgba(248, 250, 252, 0.88);
   border-radius: 0 0 12px 12px;
 }
 
@@ -3212,7 +3212,7 @@ h1 {
   height: 9px;
   border-radius: 999px;
   background: var(--chrome-btn-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chrome-active-border) 15%, transparent);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
 }
 
 .ai-chat-fab.hidden {
