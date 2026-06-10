@@ -793,8 +793,12 @@ body.login-view #root {
 }
 
 .error {
-  color: var(--danger);
+  /* #dc2626 instead of var(--danger) #ef4444: the lighter red is 3.8:1 on
+     white and fails AA for body-size text. */
+  color: #dc2626;
   font-size: 14px;
+  /* Server error strings can contain long unbroken tokens (URLs, ids). */
+  overflow-wrap: anywhere;
 }
 
 @keyframes riseIn {
@@ -957,15 +961,25 @@ body.login-view #root {
   justify-content: center;
 }
 
+/* Taskpane variant: the dark panel must fill the page (no white bands when
+   the pane is taller than the form), and centering must stay scrollable —
+   auto margins collapse to 0 when space runs out, unlike place-items:
+   center, which pushes overflow off the top where it cannot be reached. */
 .login-page.ppt {
   grid-template-columns: 1fr;
-  place-items: center;
+  background: #0f172a;
 }
 
 .login-page.ppt .login-left {
   width: 100%;
   align-items: center;
   text-align: left;
+  justify-content: flex-start;
+  min-height: 100vh;
+}
+
+.login-page.ppt .login-brand {
+  margin-top: auto;
 }
 
 .login-page.ppt .login-form {
@@ -973,6 +987,7 @@ body.login-view #root {
   width: min(420px, 100%);
   margin-left: auto;
   margin-right: auto;
+  margin-bottom: auto;
   max-width: 420px;
   background: transparent;
   border: none;
@@ -985,11 +1000,11 @@ body.login-view #root {
 }
 
 .login-page.ppt .login-form .muted {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .login-page.ppt .login-form label {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .login-page.ppt .login-form input {
@@ -998,13 +1013,22 @@ body.login-view #root {
   color: #ffffff;
 }
 
+.login-page.ppt .login-form input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
 .login-page.ppt .login-form input:focus {
-  border-color: var(--primary);
+  border-color: #60a5fa;
   background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.4);
 }
 
 .login-page.ppt .login-form .error {
   color: #f87171;
+}
+
+.login-page.ppt .login-form .login-info {
+  color: #4ade80;
 }
 
 .login-page.ppt .login-guest-btn {
@@ -1029,7 +1053,7 @@ body.login-view #root {
 }
 
 .login-page.ppt .login-divider {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .login-page.ppt .login-divider::before,
@@ -1042,11 +1066,11 @@ body.login-view #root {
 }
 
 .login-page.ppt .login-footer .muted {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .login-page.ppt .login-footer svg path {
-  stroke: rgba(255, 255, 255, 0.4);
+  stroke: rgba(255, 255, 255, 0.65);
 }
 
 .login-page:not(.ppt) {
@@ -1200,6 +1224,47 @@ body.login-view #root {
 
 .login-form .field {
   margin-bottom: 18px;
+}
+
+/* Login-scoped overrides of the shared input rules: a clearly visible focus
+   ring (the shared 12%-alpha ring is nearly invisible) and an explicit
+   placeholder color instead of the UA default. */
+.login-page input:focus {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28);
+}
+
+.login-page input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Sign-up confirmation: distinct from muted helper text. */
+.login-info {
+  color: var(--success);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.login-form .muted {
+  overflow-wrap: anywhere;
+}
+
+.login-btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: login-spin 0.8s linear infinite;
+}
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .login-btn {
