@@ -2426,6 +2426,26 @@ h1 {
   border-color: var(--chrome-text-muted);
 }
 
+/* Brand chips wear the brand's own color, pulled from the profile's saved
+   brand facts; text flips dark/light by luminance. Profiles without a
+   usable color keep the default accent chip style. */
+.artifact-intake-chip.branded {
+  background: var(--chip-brand);
+  border-color: var(--chip-brand);
+  color: var(--chip-brand-text, #ffffff);
+}
+
+.artifact-intake-chip.branded:hover {
+  background: var(--chip-brand);
+  border-color: var(--chip-brand);
+  filter: brightness(0.92);
+}
+
+.artifact-intake-chip.branded:focus-visible {
+  border-color: var(--chip-brand);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.3);
+}
+
 /* "Just build it": a lightning-bolt icon button next to the paperclip in
    the prompt bar footer, sized and toned to match it. */
 .artifact-intake-build-now {
