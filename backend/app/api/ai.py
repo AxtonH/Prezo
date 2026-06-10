@@ -5,8 +5,7 @@ import json
 import logging
 import re
 import time
-import colorsys
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger("prezo.ai")
 
@@ -122,7 +121,6 @@ from ..artifact_css_edit import (  # noqa: F401  (re-exported for tests/backcomp
     upsert_css_rule_in_artifact_html,
     upsert_css_rule_in_css,
 )
-from ..artifact_css_tree import extract_selector_property_map
 from ..artifact_edit_intent import (  # noqa: F401  (re-exported for tests/backcompat)
     ARTIFACT_BROAD_EDIT_REQUEST_RE,
     ARTIFACT_FEEDBACK_FOLLOWUP_RE,
@@ -177,12 +175,8 @@ from ..artifact_selectors import (  # noqa: F401  (re-exported for tests/backcom
     score_title_selector_candidate,
 )
 from ..artifact_package import (
-    ARTIFACT_PACKAGE_ENTRY_FILE,
-    ARTIFACT_PACKAGE_RENDERER_FILE,
-    ARTIFACT_PACKAGE_STYLES_FILE,
     build_segmented_artifact_package,
     materialize_artifact_html_from_package,
-    sanitize_artifact_package,
 )
 from ..artifact_patch import (
     apply_artifact_patch_plan_to_package,
