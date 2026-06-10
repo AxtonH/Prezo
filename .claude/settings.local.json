@@ -47,7 +47,10 @@
       "Bash(node -e \"import\\('./public/poc/gamified/poll-game-gamified-artifact-textstyle.js'\\).then\\(m => { const lines = m.buildTextStyleBridgeLines\\(\\); const src = '\\(function\\(\\){' + lines.join\\('\\\\n'\\) + '}\\)\\(\\)'; try { new Function\\(src\\); console.log\\('PARSE OK, lines=' + lines.length\\); } catch \\(e\\) { console.error\\('PARSE FAIL:', e.message\\); process.exit\\(1\\); } }\\)\")",
       "Bash(npm ls *)",
       "Bash(node public/poc/gamified/__classifier-simulator.mjs)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(git check-ignore *)",
+      "Bash(cat)",
+      "Bash(rm -f /tmp/cm.txt)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
