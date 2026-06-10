@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_artifact_build_model: str = "claude-sonnet-4-6"
     anthropic_artifact_build_timeout_seconds: float = 180.0
+    anthropic_intake_model: str = "claude-haiku-4-5"
+    anthropic_intake_timeout_seconds: float = 30.0
     gemini_api_key: str | None = None
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_model: str = "gemini-2.5-flash"
