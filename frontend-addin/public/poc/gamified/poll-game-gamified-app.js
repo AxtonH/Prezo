@@ -2186,6 +2186,56 @@ import {
   }
 
   let artifactBrandProfilesFetchPromise = null
+  // name → representative hex from the profile's saved brand facts, used to
+  // tint that brand's quick-reply chip. Empty/missing → default chip style.
+  const artifactBrandChipColorByName = new Map()
+
+  function hexLuminance(hex) {
+    const clean = sanitizeHex(hex, '').replace('#', '')
+    if (!clean) {
+      return null
+    }
+    const full = clean.length === 3 ? clean.split('').map((ch) => `${ch}${ch}`).join('') : clean
+    const r = parseInt(full.slice(0, 2), 16) / 255
+    const g = parseInt(full.slice(2, 4), 16) / 255
+    const b = parseInt(full.slice(4, 6), 16) / 255
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  function pickArtifactBrandChipColor(row) {
+    const candidates = []
+    const facts = row?.brand_facts
+    if (Array.isArray(facts?.colors)) {
+      // Already sorted by hierarchy_rank server-side (brand_facts.py).
+      for (const item of facts.colors) {
+        const hex = sanitizeHex(asText(item?.hex).trim(), '')
+        if (hex) {
+          candidates.push(hex)
+        }
+      }
+    }
+    const legacy = row?.guidelines?.primary_colors
+    if (Array.isArray(legacy)) {
+      for (const line of legacy) {
+        const match = /#([0-9a-f]{3}|[0-9a-f]{6})\b/i.exec(asText(line))
+        if (match) {
+          candidates.push(match[0])
+        }
+      }
+    }
+    // First color that reads as a chip fill on the light chrome: skip the
+    // backend's grey "no hex found" placeholder and near-white swatches.
+    for (const hex of candidates) {
+      if (hex.toLowerCase() === '#cccccc' || hex.toLowerCase() === '#ccc') {
+        continue
+      }
+      const luminance = hexLuminance(hex)
+      if (luminance != null && luminance <= 0.88) {
+        return hex
+      }
+    }
+    return ''
+  }
 
   async function handleArtifactBrandReferenceInputChange(event) {
     const file = event?.target?.files?.[0]
@@ -2268,6 +2318,7 @@ import {
         referenceOption.value = ARTIFACT_BRAND_REFERENCE_VALUE
         referenceOption.textContent = 'Upload a reference image…'
         select.appendChild(referenceOption)
+        artifactBrandChipColorByName.clear()
         for (const row of payload) {
           const name = asText(row?.name).trim()
           if (!name) {
@@ -2277,6 +2328,7 @@ import {
           option.value = name
           option.textContent = name
           select.appendChild(option)
+          artifactBrandChipColorByName.set(name, pickArtifactBrandChipColor(row))
         }
       } catch {
         artifactBrandProfilesFetchPromise = null
@@ -2388,16 +2440,29 @@ import {
   function createArtifactBrandChipsRow() {
     const row = document.createElement('div')
     row.className = 'artifact-intake-chips'
-    const addChip = (label, secondary, onClick) => {
+    const addChip = (label, secondary, onClick, brandColor = '') => {
       const chip = document.createElement('button')
       chip.type = 'button'
       chip.className = secondary ? 'artifact-intake-chip secondary' : 'artifact-intake-chip'
+      if (brandColor) {
+        chip.classList.add('branded')
+        chip.style.setProperty('--chip-brand', brandColor)
+        chip.style.setProperty(
+          '--chip-brand-text',
+          hexLuminance(brandColor) > 0.6 ? '#0f172a' : '#ffffff'
+        )
+      }
       chip.textContent = label
       chip.addEventListener('click', onClick)
       row.appendChild(chip)
     }
     for (const name of collectArtifactBrandProfileNames()) {
-      addChip(name, false, () => handleArtifactIntakeBrandChipClick(name))
+      addChip(
+        name,
+        false,
+        () => handleArtifactIntakeBrandChipClick(name),
+        artifactBrandChipColorByName.get(name) || ''
+      )
     }
     addChip('No brand', true, () => handleArtifactIntakeBrandChipClick(''))
     if (getLibraryAccessToken()) {
