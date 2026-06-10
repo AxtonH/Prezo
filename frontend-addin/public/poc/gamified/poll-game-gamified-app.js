@@ -2224,14 +2224,19 @@ import {
         }
       }
     }
-    // Top three distinct colors in rank order; only the backend's grey
-    // "no hex found" placeholder is skipped (white is a legitimate brand
-    // color and belongs in the gradient).
+    // Top three distinct colors in rank order. The backend's grey "no hex
+    // found" placeholder is skipped, and so are near-white swatches: the
+    // colors paint the chip's outline and label on the white chrome, where
+    // a white stop would simply vanish.
     const colors = []
     const seen = new Set()
     for (const hex of candidates) {
       const key = hex.toLowerCase()
       if (key === '#cccccc' || key === '#ccc' || seen.has(key)) {
+        continue
+      }
+      const luminance = hexLuminance(hex)
+      if (luminance == null || luminance > 0.85) {
         continue
       }
       seen.add(key)
@@ -2452,19 +2457,21 @@ import {
       chip.className = secondary ? 'artifact-intake-chip secondary' : 'artifact-intake-chip'
       if (brandColors.length) {
         chip.classList.add('branded')
-        const fill =
-          brandColors.length === 1
-            ? brandColors[0]
-            : `linear-gradient(120deg, ${brandColors.join(', ')})`
-        chip.style.setProperty('--chip-brand-bg', fill)
-        // Text tone follows the gradient's average luminance; the CSS halo
-        // keeps it readable where individual stops disagree with the average.
-        const average =
-          brandColors.reduce((sum, hex) => sum + (hexLuminance(hex) ?? 0.5), 0) /
-          brandColors.length
-        chip.classList.toggle('branded-light', average > 0.6)
+        // Duplicate a lone color so the same gradient CSS path applies.
+        const stops = brandColors.length === 1 ? [...brandColors, ...brandColors] : brandColors
+        chip.style.setProperty(
+          '--chip-brand-gradient',
+          `linear-gradient(120deg, ${stops.join(', ')})`
+        )
+        // The label needs its own element: the gradient is clipped to the
+        // text while the button's background paints the gradient border.
+        const labelSpan = document.createElement('span')
+        labelSpan.className = 'artifact-intake-chip-label'
+        labelSpan.textContent = label
+        chip.appendChild(labelSpan)
+      } else {
+        chip.textContent = label
       }
-      chip.textContent = label
       chip.addEventListener('click', onClick)
       row.appendChild(chip)
     }
