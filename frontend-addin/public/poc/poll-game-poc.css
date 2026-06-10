@@ -2603,9 +2603,10 @@ h1 {
   flex-shrink: 0;
 }
 
+/* Hover matches the build-now bolt next to it. */
 .artifact-type-reference-paperclip:hover:not(:disabled) {
-  color: var(--chrome-text);
-  background: var(--chrome-hover);
+  color: var(--chrome-accent);
+  background: var(--chrome-accent-soft);
 }
 
 .artifact-type-reference-paperclip:disabled {
