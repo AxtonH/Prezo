@@ -2451,27 +2451,31 @@ import {
   function createArtifactBrandChipsRow() {
     const row = document.createElement('div')
     row.className = 'artifact-intake-chips'
+    let brandedIndex = 0
     const addChip = (label, secondary, onClick, brandColors = []) => {
       const chip = document.createElement('button')
       chip.type = 'button'
       chip.className = secondary ? 'artifact-intake-chip secondary' : 'artifact-intake-chip'
       if (brandColors.length) {
         chip.classList.add('branded')
-        // Duplicate a lone color so the same gradient CSS path applies.
-        const stops = brandColors.length === 1 ? [...brandColors, ...brandColors] : brandColors
+        // The outline's gradient is mostly the standard soft purple with a
+        // narrow band of the brand colors at 40–56% of an oversized image;
+        // the CSS animation slides that band across the ring periodically.
+        const band = brandColors
+          .map((hex, index) => {
+            const t = brandColors.length === 1 ? 0.5 : index / (brandColors.length - 1)
+            return `${hex} ${(40 + t * 16).toFixed(1)}%`
+          })
+          .join(', ')
         chip.style.setProperty(
-          '--chip-brand-gradient',
-          `linear-gradient(120deg, ${stops.join(', ')})`
+          '--chip-brand-sweep',
+          `linear-gradient(110deg, var(--chrome-accent-soft) 36%, ${band}, var(--chrome-accent-soft) 60%)`
         )
-        // The label needs its own element: the gradient is clipped to the
-        // text while the button's background paints the gradient border.
-        const labelSpan = document.createElement('span')
-        labelSpan.className = 'artifact-intake-chip-label'
-        labelSpan.textContent = label
-        chip.appendChild(labelSpan)
-      } else {
-        chip.textContent = label
+        // Stagger the phase so the shimmer travels across the row of chips.
+        chip.style.animationDelay = `${-(brandedIndex * 0.5).toFixed(1)}s`
+        brandedIndex += 1
       }
+      chip.textContent = label
       chip.addEventListener('click', onClick)
       row.appendChild(chip)
     }

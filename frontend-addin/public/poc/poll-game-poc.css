@@ -2426,36 +2426,45 @@ h1 {
   border-color: var(--chrome-text-muted);
 }
 
-/* Brand chips stay a neutral pill; the brand's top identity colors paint
-   the outline (two-layer padding-box/border-box background) and the label
-   (gradient clipped to the text). Near-white swatches are excluded when
-   the colors are picked — they vanish against the white chrome. Profiles
-   without usable colors keep the default accent chip style. */
+/* Brand chips look like the standard purple chip at rest; every few
+   seconds a narrow band of the brand's identity colors sweeps along the
+   outline. The ring is a two-layer background (solid padding-box over a
+   gradient border-box behind a transparent border) whose border layer is
+   3x oversized, with the brand band parked out of view at either end so
+   the loop's wrap-around is invisible. Near-white swatches are excluded
+   when the colors are picked — they vanish against the white chrome.
+   Profiles without usable colors keep the default accent chip style. */
 .artifact-intake-chip.branded {
   border: 1.5px solid transparent;
   background:
     linear-gradient(var(--chrome-bg), var(--chrome-bg)) padding-box,
-    var(--chip-brand-gradient) border-box;
+    var(--chip-brand-sweep) border-box;
+  background-size: 100% 100%, 300% 100%;
+  background-position: 0 0, 100% 0;
+  animation: artifact-chip-brand-sweep 4.5s linear infinite;
 }
 
 .artifact-intake-chip.branded:hover {
   background:
-    linear-gradient(var(--chrome-hover), var(--chrome-hover)) padding-box,
-    var(--chip-brand-gradient) border-box;
-  border-color: transparent;
+    linear-gradient(var(--chrome-accent-soft), var(--chrome-accent-soft)) padding-box,
+    var(--chip-brand-sweep) border-box;
+  background-size: 100% 100%, 300% 100%;
 }
 
-.artifact-intake-chip.branded:focus-visible {
-  border-color: transparent;
-  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.25);
+@keyframes artifact-chip-brand-sweep {
+  0%,
+  60% {
+    background-position: 0 0, 100% 0;
+  }
+  100% {
+    background-position: 0 0, 0 0;
+  }
 }
 
-.artifact-intake-chip.branded .artifact-intake-chip-label {
-  background: var(--chip-brand-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  font-weight: 700;
+@media (prefers-reduced-motion: reduce) {
+  .artifact-intake-chip.branded {
+    animation: none;
+  }
 }
 
 /* "Just build it": a lightning-bolt icon button next to the paperclip in
