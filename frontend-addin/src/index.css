@@ -40,11 +40,14 @@ body {
   color: #0f172a;
 }
 
-/* Login (and similar full-page flows) may scroll the document */
+/* Login (and similar full-page flows) may scroll.
+   The body must stay pinned to the viewport (height: 100%) and scroll its
+   own overflow: with height: auto it would grow with the form instead, and
+   html's overflow: hidden clips the excess with no scrollbar anywhere —
+   exactly what happened in short PowerPoint taskpanes. */
 body.login-view {
-  height: auto;
-  min-height: 100vh;
-  overflow: auto;
+  height: 100%;
+  overflow-y: auto;
 }
 
 #root {
