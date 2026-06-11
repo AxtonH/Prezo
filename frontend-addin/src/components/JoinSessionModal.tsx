@@ -18,16 +18,13 @@ export interface JoinSessionModalProps {
   onJoinWithCode: (code: string) => Promise<void>
 }
 
-/** Recent sessions shown before the user types. */
-const RECENT_LIMIT = 5
-
 function sessionLabel(s: Session) {
   return s.title?.trim() || 'Untitled session'
 }
 
 /**
  * Single-purpose join flow: enter a code to join a session you are not on,
- * with your recent sessions embedded as instant shortcuts (no dropdown).
+ * with all of the user's sessions embedded as instant shortcuts (no dropdown).
  * Typing filters the embedded list; the primary button always joins by code.
  */
 export function JoinSessionModal({
@@ -69,9 +66,9 @@ export function JoinSessionModal({
 
   const q = query.trim()
 
-  /** Empty query: recent shortcuts. Otherwise: all of the user's matches. */
+  /** Empty query: all of the user's sessions (scrollable). Otherwise: their matches. */
   const visibleSessions = useMemo(
-    () => (q ? filterHostSessionsByQuery(q, sessions) : sessions.slice(0, RECENT_LIMIT)),
+    () => (q ? filterHostSessionsByQuery(q, sessions) : sessions),
     [q, sessions]
   )
 
@@ -180,7 +177,7 @@ export function JoinSessionModal({
             </h2>
           </div>
           <p className="text-sm text-muted mt-2 leading-relaxed !m-0">
-            Open a recent session, or enter a code to join one you&apos;re not on.
+            Open one of your sessions, or enter a code to join one you&apos;re not on.
           </p>
         </div>
 
@@ -238,14 +235,14 @@ export function JoinSessionModal({
 
           <div className="mt-4">
             <p className="text-[0.65rem] font-bold uppercase tracking-widest text-muted !m-0 mb-1.5">
-              {q ? 'Matching sessions' : 'Recent sessions'}
+              {q ? 'Matching sessions' : 'Your sessions'}
             </p>
             {visibleSessions.length > 0 ? (
               <ul
                 id="join-session-list"
                 role="listbox"
                 aria-label="Your sessions"
-                className="space-y-0.5 max-h-56 overflow-y-auto -mx-2 px-1"
+                className="space-y-0.5 max-h-[min(18rem,40vh)] overflow-y-auto -mx-2 px-1"
               >
                 {visibleSessions.map((s, i) => (
                   <li
@@ -300,7 +297,7 @@ export function JoinSessionModal({
               <p className="text-sm text-muted py-2 !m-0">Loading your sessions…</p>
             ) : (
               <p className="text-sm text-muted py-2 !m-0">
-                No recent sessions yet. Enter a code to join one.
+                No sessions yet. Enter a code to join one.
               </p>
             )}
           </div>
