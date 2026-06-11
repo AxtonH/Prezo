@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Raw game-slide seed deck (contains a minted embedId; the sanitized
+# template is generated into public/game-slide.pptx — see seed/README.md)
+seed/*.pptx
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
