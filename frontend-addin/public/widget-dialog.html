@@ -366,7 +366,7 @@
               </div>
             </div>
             <div class="card-actions">
-              <button id="open-qna">Customize &amp; insert</button>
+              <button type="button" id="open-qna">Customize &amp; insert</button>
             </div>
           </div>
           <div class="card">
@@ -378,7 +378,7 @@
               </div>
             </div>
             <div class="card-actions">
-              <button id="open-discussion">Customize &amp; insert</button>
+              <button type="button" id="open-discussion">Customize &amp; insert</button>
             </div>
           </div>
           <div class="card">
@@ -390,7 +390,7 @@
               </div>
             </div>
             <div class="card-actions">
-              <button id="open-poll">Customize &amp; insert</button>
+              <button type="button" id="open-poll">Customize &amp; insert</button>
             </div>
           </div>
           <div class="card">
@@ -398,7 +398,10 @@
               <div class="card-icon game">GM</div>
               <div>
                 <div class="card-title">Game embed</div>
-                <p class="muted">Adds a new slide with the live Prezo game surface on it.</p>
+                <p class="muted">
+                  Adds a new slide with the live game right after your current slide. To use an
+                  existing slide instead, cut the frame and paste it there.
+                </p>
               </div>
             </div>
             <div class="card-actions">
@@ -412,7 +415,7 @@
 
       <div id="view-qna" class="view hidden">
         <div class="toolbar">
-          <button class="ghost" id="back-qna">Back</button>
+          <button type="button" class="ghost" id="back-qna">Back</button>
           <h1>Q&amp;A Widget</h1>
         </div>
         <div class="grid">
@@ -509,7 +512,7 @@
           </div>
         </div>
         <div class="actions">
-          <button id="insert-qna">Insert widget</button>
+          <button type="button" id="insert-qna">Insert widget</button>
           <div id="status"></div>
           <div id="error"></div>
           <div id="debug" class="muted"></div>
@@ -518,7 +521,7 @@
 
       <div id="view-discussion" class="view hidden">
         <div class="toolbar">
-          <button class="ghost" id="back-discussion">Back</button>
+          <button type="button" class="ghost" id="back-discussion">Back</button>
           <h1>Open Discussion Widget</h1>
         </div>
         <div class="grid">
@@ -628,7 +631,7 @@
           </div>
         </div>
         <div class="actions">
-          <button id="insert-discussion">Insert widget</button>
+          <button type="button" id="insert-discussion">Insert widget</button>
           <div id="discussion-status"></div>
           <div id="discussion-error"></div>
           <div id="discussion-debug" class="muted"></div>
@@ -637,7 +640,7 @@
 
       <div id="view-poll" class="view hidden">
         <div class="toolbar">
-          <button class="ghost" id="back-poll">Back</button>
+          <button type="button" class="ghost" id="back-poll">Back</button>
           <h1>Poll Widget</h1>
         </div>
         <div class="grid">
@@ -754,7 +757,7 @@
           </div>
         </div>
         <div class="actions">
-          <button id="insert-poll">Insert poll</button>
+          <button type="button" id="insert-poll">Insert poll</button>
           <div id="poll-status"></div>
           <div id="poll-error"></div>
           <div id="poll-debug" class="muted"></div>

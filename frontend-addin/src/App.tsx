@@ -2052,6 +2052,7 @@ function HostConsole({
                     </div>
                     <div className="px-7 pb-7 flex gap-3">
                       <button
+                        type="button"
                         onClick={() => {
                           setIsCreating(true)
                           void createSession(newSessionTitle.trim())
@@ -2067,6 +2068,7 @@ function HostConsole({
                         {isCreating ? 'Starting...' : 'Start session'}
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setShowCreateForm(false)
                           setNewSessionTitle('')

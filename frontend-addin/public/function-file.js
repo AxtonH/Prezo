@@ -2285,12 +2285,36 @@
     const base64 = await fetchGameSlideBase64()
     const targetSlideId = await getSelectedSlideTargetId()
     await PowerPoint.run(async (context) => {
-      const options = { formatting: 'KeepSourceFormatting' }
+      // Snapshot slide ids so the inserted slide can be found and selected.
+      const slidesBefore = context.presentation.slides
+      slidesBefore.load('items/id')
+      await context.sync()
+      const beforeIds = {}
+      slidesBefore.items.forEach((slide) => {
+        beforeIds[slide.id] = true
+      })
+
+      // UseDestinationTheme: the inserted slide adopts the host deck's
+      // theme/master instead of dragging the seed deck's along, so the game
+      // slide blends with the presentation it lands in.
+      const options = { formatting: 'UseDestinationTheme' }
       if (targetSlideId) {
         options.targetSlideId = targetSlideId
       }
       context.presentation.insertSlidesFromBase64(base64, options)
       await context.sync()
+
+      // Land the user on the new slide (best effort; needs PowerPointApi 1.5).
+      if (Office.context.requirements.isSetSupported('PowerPointApi', '1.5')) {
+        const slidesAfter = context.presentation.slides
+        slidesAfter.load('items/id')
+        await context.sync()
+        const added = slidesAfter.items.find((slide) => !beforeIds[slide.id])
+        if (added) {
+          context.presentation.setSelectedSlides([added.id])
+          await context.sync()
+        }
+      }
     })
   }
 
