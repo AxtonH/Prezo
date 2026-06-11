@@ -29,6 +29,12 @@ interface SessionSetupProps {
   /** Active / Host / Co-Host filter (all-sessions list). */
   sessionListFilter?: 'active' | 'host' | 'cohost'
   onSessionListFilterChange?: (id: 'active' | 'host' | 'cohost') => void
+  /**
+   * Per-tab counts under the current search (undefined while the first load
+   * is still pending, so tabs don't flash "0"). Also drives the empty Active
+   * tab's "View all your sessions" action.
+   */
+  sessionListCounts?: { active: number; host: number; cohost: number }
 }
 
 function formatDate(value: string) {
@@ -48,19 +54,19 @@ export function SessionSetup({
   loadError,
   onResume,
   onDelete,
-  onRefresh: _onRefresh,
+  onRefresh,
   deletingSessionId = null,
   isCompact: _isCompact = false,
   onOpenCreateSession,
   listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]',
-  emptyListMessage = 'Ops looks like you dont have any active sessions yet, click "Start a new session" to start one!',
+  emptyListMessage = 'You don\'t have any active sessions yet. Click "Start a new session" to create one.',
   sessionListFilter,
-  onSessionListFilterChange
+  onSessionListFilterChange,
+  sessionListCounts
 }: SessionSetupProps) {
   void _isCompact
   void _onCreate
   void _onJoinByCode
-  void _onRefresh
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
@@ -121,6 +127,19 @@ export function SessionSetup({
   const joinUrl = resolveJoinUrl(session)
   const hasRecentSessions = Boolean(recentSessions?.length)
 
+  /**
+   * Empty Active tab with sessions elsewhere ("where did my session go" after
+   * it ended): offer a one-click switch to the tab that has them.
+   */
+  const emptyActiveSwitchTarget =
+    sessionListFilter === 'active' && sessionListCounts && onSessionListFilterChange
+      ? sessionListCounts.host > 0
+        ? ('host' as const)
+        : sessionListCounts.cohost > 0
+          ? ('cohost' as const)
+          : null
+      : null
+
   if (!session) {
     return (
       <div className="space-y-6">
@@ -162,6 +181,11 @@ export function SessionSetup({
                 }`}
               >
                 {label}
+                {sessionListCounts ? (
+                  <span className="ml-1.5 opacity-60 tabular-nums tracking-normal">
+                    {sessionListCounts[id]}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -178,8 +202,8 @@ export function SessionSetup({
                 const isLive = entry.status === 'active'
                 const isCoHost = entry.is_original_host === false
                 const stats = statsBySessionId[entry.id]
-                const interactions =
-                  stats === undefined ? undefined : stats === null ? null : (stats.active_activities ?? (stats as unknown as Record<string, number>).total_interactions ?? 0)
+                const liveActivities =
+                  stats === undefined ? undefined : stats === null ? null : stats.active_activities
                 const participants =
                   stats === undefined ? undefined : stats === null ? null : stats.unique_participants
                 const showOwnerActions = !isCoHost && onDelete
@@ -273,12 +297,12 @@ export function SessionSetup({
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="material-symbols-outlined text-lg leading-none">bolt</span>
                         <span>
-                          {interactions === undefined
+                          {liveActivities === undefined
                             ? '…'
-                            : interactions === null
+                            : liveActivities === null
                               ? '—'
-                              : interactions}{' '}
-                          activities
+                              : liveActivities}{' '}
+                          live activities
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-slate-600">
@@ -369,9 +393,36 @@ export function SessionSetup({
             ))}
           </div>
         ) : null}
-        {loadError ? <p className="text-danger text-sm py-2">{loadError}</p> : null}
+        {loadError ? (
+          <div className="flex items-center gap-3 py-2">
+            <p className="text-danger text-sm !m-0">{loadError}</p>
+            {onRefresh ? (
+              <button
+                type="button"
+                onClick={onRefresh}
+                className="!bg-transparent !border !border-slate-200 !text-slate-600 !px-3 !py-1.5 !rounded-lg !text-xs !font-semibold hover:!border-slate-300 !transition-all !shadow-none shrink-0"
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {!isLoading && !loadError && !hasRecentSessions ? (
-          <p className="text-muted text-sm py-4">{emptyListMessage}</p>
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <span className="material-symbols-outlined text-xl text-slate-400">layers</span>
+            </div>
+            <p className="text-muted text-sm max-w-sm !m-0">{emptyListMessage}</p>
+            {emptyActiveSwitchTarget ? (
+              <button
+                type="button"
+                onClick={() => onSessionListFilterChange?.(emptyActiveSwitchTarget)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors text-sm font-medium"
+              >
+                View all your sessions
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {error ? <p className="text-danger text-sm">{error}</p> : null}

@@ -1505,22 +1505,33 @@ function HostConsole({
     [recentSessions, debouncedSearch, getSnapshot]
   )
 
+  /** Search applied, tab filter not: drives both the visible tab's rows and the per-tab counts. */
+  const searchMatchedSessions = useMemo(
+    () => recentSessions.filter((s) => matchesSessionTitleOrCode(s, sessionSearchQuery)),
+    [recentSessions, sessionSearchQuery]
+  )
+
   const filteredRecentSessions = useMemo(() => {
-    return recentSessions.filter((s) => {
+    return searchMatchedSessions.filter((s) => {
       if (sessionFilter === 'active') {
-        if (s.status !== 'active') {
-          return false
-        }
-      } else if (sessionFilter === 'host') {
-        if (s.is_original_host === false) {
-          return false
-        }
-      } else if (s.is_original_host !== false) {
-        return false
+        return s.status === 'active'
       }
-      return matchesSessionTitleOrCode(s, sessionSearchQuery)
+      if (sessionFilter === 'host') {
+        return s.is_original_host !== false
+      }
+      return s.is_original_host === false
     })
-  }, [recentSessions, sessionFilter, sessionSearchQuery])
+  }, [searchMatchedSessions, sessionFilter])
+
+  /** Per-tab counts that match what each tab would show under the current search. */
+  const sessionTabCounts = useMemo(
+    () => ({
+      active: searchMatchedSessions.filter((s) => s.status === 'active').length,
+      host: searchMatchedSessions.filter((s) => s.is_original_host !== false).length,
+      cohost: searchMatchedSessions.filter((s) => s.is_original_host === false).length
+    }),
+    [searchMatchedSessions]
+  )
 
   /**
    * While a session restore may still complete, avoid painting the All Sessions list (flash on refresh).
@@ -1774,7 +1785,7 @@ function HostConsole({
                       <h1
                         className={`${isAddinHost ? 'text-2xl' : 'text-[2.5rem]'} font-extrabold tracking-tight text-slate-900 mb-2`}
                       >
-                        Your Sessions
+                        My Sessions
                       </h1>
                       <p className="text-muted max-w-3xl leading-relaxed text-sm">
                         Create and manage interactive experiences for your presentations
@@ -1825,6 +1836,7 @@ function HostConsole({
                   }}
                   sessionListFilter={sessionFilter}
                   onSessionListFilterChange={setSessionFilter}
+                  sessionListCounts={sessionsReady ? sessionTabCounts : undefined}
                   recentSessions={filteredRecentSessions}
                   emptyListMessage={
                     sessionSearchQuery.trim()
