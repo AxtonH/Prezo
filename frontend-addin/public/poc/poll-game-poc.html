@@ -71,10 +71,25 @@
       }
     </style>
 
+    <!--
+      Fonts via the same preload-then-promote pattern as the main stylesheet
+      below: a plain rel="stylesheet" to fonts.googleapis.com blocks FIRST
+      PAINT on that origin's RTT, which in a slideshow cold-load shows as a
+      white frame until the response lands. font-display:swap covers the
+      glyph swap once the CSS arrives.
+    -->
     <link
+      rel="preload"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap"
+      />
+    </noscript>
 
     <!--
       Async-load the main stylesheet via the well-supported

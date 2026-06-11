@@ -13,10 +13,23 @@
       to a never-used origin is wasted but harmless.
     -->
     <link rel="preconnect" href="https://prezo-backend.up.railway.app" crossorigin />
+    <!--
+      Non-blocking fonts (preload-then-promote): a plain stylesheet link to
+      fonts.googleapis.com blocks first paint on that origin, which a cold
+      slideshow load shows as a white frame. Inter swaps in when ready.
+    -->
     <link
+      rel="preload"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      />
+    </noscript>
     <style>
       :root {
         --bg: #f8fafc;

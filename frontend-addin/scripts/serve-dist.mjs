@@ -110,10 +110,28 @@ const server = createServer(async (request, response) => {
 
     const ext = path.extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
+
+    // no-cache means revalidate, not refetch: with Last-Modified validators,
+    // unchanged files answer If-Modified-Since with a bodyless 304. This is
+    // what keeps cold add-in webview loads (e.g. the game embed entering a
+    // slideshow) fast while still picking up every deploy.
+    const stats = await fs.stat(filePath)
+    const lastModified = stats.mtime.toUTCString()
+    const ifModifiedSince = request.headers['if-modified-since']
+    if (ifModifiedSince === lastModified) {
+      response.writeHead(304, {
+        'Cache-Control': cacheControlFor(filePath, ext),
+        'Last-Modified': lastModified
+      })
+      response.end()
+      return
+    }
+
     const body = await fs.readFile(filePath)
     response.writeHead(200, {
       'Content-Type': contentType,
-      'Cache-Control': cacheControlFor(filePath, ext)
+      'Cache-Control': cacheControlFor(filePath, ext),
+      'Last-Modified': lastModified
     })
     response.end(body)
   } catch (error) {
