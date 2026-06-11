@@ -27,6 +27,8 @@ yarn-error.log*
 
 # Office add-in cache
 *.pptx
+# ...except the shipped game-slide template (sanitized; see frontend-addin/seed/README.md)
+!frontend-addin/public/game-slide.pptx
 
 # Misc
 Untitled

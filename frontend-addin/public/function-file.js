@@ -2218,6 +2218,82 @@
     }
   }
 
+  /**
+   * Inserts the pre-embedded game slide (public/game-slide.pptx, sanitized so
+   * it ships with no embedId — each inserted copy mints its own identity on
+   * first load). Spike note: insertSlidesFromBase64 is documented for slide
+   * reuse; whether the slide's webextension (content add-in) survives and
+   * loads live is exactly what this path exists to prove.
+   */
+  const GAME_SLIDE_TEMPLATE_URL = `${window.location.origin}/game-slide.pptx`
+
+  const fetchGameSlideBase64 = async () => {
+    const response = await fetch(GAME_SLIDE_TEMPLATE_URL, { cache: 'no-store' })
+    if (!response.ok) {
+      throw new Error(
+        response.status === 404
+          ? 'The game slide template is not on the server yet (game-slide.pptx).'
+          : `Could not download the game slide template (HTTP ${response.status}).`
+      )
+    }
+    const buffer = await response.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    // Chunked conversion: String.fromCharCode.apply on the whole buffer
+    // overflows the argument limit for files beyond ~100KB.
+    let binary = ''
+    const CHUNK_SIZE = 0x8000
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK_SIZE))
+    }
+    return btoa(binary)
+  }
+
+  /** Resolves the selected slide as an insertSlidesFromBase64 target id, or null to use the default position. */
+  const getSelectedSlideTargetId = () =>
+    new Promise((resolve) => {
+      try {
+        Office.context.document.getSelectedDataAsync(
+          Office.CoercionType.SlideRange,
+          (result) => {
+            const slide =
+              result.status === Office.AsyncResultStatus.Succeeded &&
+              result.value &&
+              Array.isArray(result.value.slides)
+                ? result.value.slides[0]
+                : null
+            if (slide && slide.id !== undefined && slide.id !== null) {
+              resolve(`${slide.id}#`)
+              return
+            }
+            resolve(null)
+          }
+        )
+      } catch (error) {
+        resolve(null)
+      }
+    })
+
+  const insertGameSlide = async () => {
+    if (
+      typeof PowerPoint === 'undefined' ||
+      !Office.context.requirements.isSetSupported('PowerPointApi', '1.2')
+    ) {
+      throw new Error(
+        'Inserting slides needs a newer PowerPoint version (PowerPointApi 1.2).'
+      )
+    }
+    const base64 = await fetchGameSlideBase64()
+    const targetSlideId = await getSelectedSlideTargetId()
+    await PowerPoint.run(async (context) => {
+      const options = { formatting: 'KeepSourceFormatting' }
+      if (targetSlideId) {
+        options.targetSlideId = targetSlideId
+      }
+      context.presentation.insertSlidesFromBase64(base64, options)
+      await context.sync()
+    })
+  }
+
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -2276,6 +2352,20 @@
           error && error.message ? error.message : 'Failed to insert open discussion widget'
         activeDialog.messageChild(
           JSON.stringify({ type: 'error', source: 'discussion', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'insert-game') {
+      try {
+        await insertGameSlide()
+        activeDialog.messageChild(JSON.stringify({ type: 'game-inserted' }))
+        activeDialog.close()
+        activeDialog = null
+      } catch (error) {
+        const detail =
+          error && error.message ? error.message : 'Failed to insert the game slide'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'game', message: detail })
         )
       }
     }

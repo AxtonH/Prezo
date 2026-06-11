@@ -18,12 +18,30 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.mjs': 'application/javascript; charset=utf-8',
   '.png': 'image/png',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.txt': 'text/plain; charset=utf-8',
   '.xml': 'application/xml; charset=utf-8',
   '.webp': 'image/webp',
+}
+
+/**
+ * Content-hashed bundles cache forever; everything else must revalidate so
+ * new dialog/function-file/manifest code is picked up without bumping the
+ * manifest's ?v= cache-bust param (which forces an add-in reinstall).
+ */
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'])
+
+const cacheControlFor = (filePath, ext) => {
+  if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+    return 'public, max-age=31536000, immutable'
+  }
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    return 'public, max-age=3600'
+  }
+  return 'no-cache'
 }
 
 const exists = async (targetPath) => {
@@ -93,7 +111,10 @@ const server = createServer(async (request, response) => {
     const ext = path.extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
     const body = await fs.readFile(filePath)
-    response.writeHead(200, { 'Content-Type': contentType })
+    response.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': cacheControlFor(filePath, ext)
+    })
     response.end(body)
   } catch (error) {
     response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' })

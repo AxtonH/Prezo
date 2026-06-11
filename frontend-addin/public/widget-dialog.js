@@ -15,12 +15,15 @@
   const openPollButton = () => el('open-poll')
   const backPollButton = () => el('back-poll')
   const insertPollButton = () => el('insert-poll')
+  const insertGameButton = () => el('insert-game')
   const statusEl = () => el('status')
   const errorEl = () => el('error')
   const discussionStatusEl = () => el('discussion-status')
   const discussionErrorEl = () => el('discussion-error')
   const pollStatusEl = () => el('poll-status')
   const pollErrorEl = () => el('poll-error')
+  const gameStatusEl = () => el('game-status')
+  const gameErrorEl = () => el('game-error')
   const debugEl = () => el('debug')
   const discussionDebugEl = () => el('discussion-debug')
   const pollDebugEl = () => el('poll-debug')
@@ -174,6 +177,21 @@
     if (!btn) return
     btn.disabled = busy
     btn.textContent = busy ? 'Inserting...' : 'Insert poll'
+  }
+
+  const setGameStatus = (text) => {
+    if (gameStatusEl()) gameStatusEl().textContent = text || ''
+  }
+
+  const setGameError = (text) => {
+    if (gameErrorEl()) gameErrorEl().textContent = text || ''
+  }
+
+  const setGameBusy = (busy) => {
+    const btn = insertGameButton()
+    if (!btn) return
+    btn.disabled = busy
+    btn.textContent = busy ? 'Inserting...' : 'Insert game slide'
   }
 
   const readQnaConfig = () => ({
@@ -344,6 +362,13 @@
     )
   }
 
+  const sendGameInsert = () => {
+    setGameError('')
+    setGameStatus('Inserting game slide...')
+    setGameBusy(true)
+    Office.context.ui.messageParent(JSON.stringify({ type: 'insert-game' }))
+  }
+
   Office.onReady(() => {
     if (openQnaButton()) {
       openQnaButton().addEventListener('click', () => showView('qna'))
@@ -371,6 +396,9 @@
     }
     if (insertPollButton()) {
       insertPollButton().addEventListener('click', sendPollInsert)
+    }
+    if (insertGameButton()) {
+      insertGameButton().addEventListener('click', sendGameInsert)
     }
 
     Object.values(qnaInputs).forEach((getter) => {
@@ -410,8 +438,15 @@
         } else if (message && message.type === 'poll-inserted') {
           setPollStatus('Poll widget inserted.')
           setPollBusy(false)
+        } else if (message && message.type === 'game-inserted') {
+          setGameStatus('Game slide inserted.')
+          setGameBusy(false)
         } else if (message && message.type === 'error') {
-          if (message.source === 'poll') {
+          if (message.source === 'game') {
+            setGameStatus('')
+            setGameError(message.message || 'Failed to insert the game slide.')
+            setGameBusy(false)
+          } else if (message.source === 'poll') {
             setPollStatus('')
             setPollError(message.message || 'Failed to insert poll widget.')
             setPollBusy(false)
