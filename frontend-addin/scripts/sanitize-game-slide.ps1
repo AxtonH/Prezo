@@ -48,7 +48,11 @@ $webExtensionEntries = 0
 
 $zip = [System.IO.Compression.ZipFile]::Open($Destination, [System.IO.Compression.ZipArchiveMode]::Update)
 try {
-  $entries = @($zip.Entries | Where-Object { $_.FullName -like 'ppt/webExtensions/*.xml' })
+  # PowerPoint writes the folder as lowercase 'webextensions'; -like is
+  # case-insensitive in PowerShell, but match both spellings explicitly.
+  $entries = @($zip.Entries | Where-Object {
+    $_.FullName -like 'ppt/webextensions/*.xml' -or $_.FullName -like 'ppt/webExtensions/*.xml'
+  })
   foreach ($entry in $entries) {
     $webExtensionEntries++
 
