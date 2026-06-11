@@ -20,6 +20,7 @@ import { PrezoWordmark } from './components/PrezoWordmark'
 import { PrezoLogo } from './components/PrezoLogo'
 import { HostConsoleBootstrap } from './components/HostConsoleBootstrap'
 import { JoinSessionModal } from './components/JoinSessionModal'
+import { DeleteSessionConfirmModal } from './components/DeleteSessionConfirmModal'
 import { OnboardingModal } from './components/OnboardingModal'
 import {
   SessionDashboardPage,
@@ -55,6 +56,11 @@ import {
   setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
+import {
+  clearSessionsListCache,
+  readSessionsListCache,
+  writeSessionsListCache
+} from './utils/sessionsListCache'
 import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { isPowerPointAddinHost } from './utils/officeHost'
 import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
@@ -67,44 +73,73 @@ const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
  * Module-level prefetch: starts the network request the instant this JS module
  * is parsed — well before React mounts any component.
  * The resolved result is cached so the component can read it synchronously.
+ *
+ * Two stages so the list can paint before stats arrive (cards render "…"
+ * placeholders for missing stats). Results carry the user id they were
+ * fetched for: a sign-out/sign-in within the same page load must not show
+ * the first account's sessions.
  */
-interface PrefetchResult {
+interface SessionsListPrefetch {
+  userId: string
   sessions: Session[]
+}
+
+interface PrefetchResult extends SessionsListPrefetch {
   statsMap: Partial<Record<string, SessionSessionStats | null>>
 }
 
 let _prefetchCache: PrefetchResult | null = null
 
-const sessionsPrefetchPromise: Promise<PrefetchResult | null> = (async () => {
+async function fetchSessionStatsMap(
+  ids: string[]
+): Promise<Partial<Record<string, SessionSessionStats | null>>> {
   try {
-    const sessions = await api.listSessions('active', 100)
-    let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
-    if (sessions.length > 0) {
-      const ids = sessions.map((s) => s.id)
-      try {
-        const batchResult = await api.batchSessionStats(ids)
-        for (const id of ids) {
-          statsMap[id] = batchResult[id] ?? null
-        }
-      } catch {
-        const results = await Promise.all(
-          ids.map(async (id) => {
-            try {
-              const st = await api.getSessionSessionStats(id)
-              return [id, st] as const
-            } catch {
-              return [id, null] as const
-            }
-          })
-        )
-        statsMap = Object.fromEntries(results)
-      }
+    const batchResult = await api.batchSessionStats(ids)
+    const statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
+    for (const id of ids) {
+      statsMap[id] = batchResult[id] ?? null
     }
-    _prefetchCache = { sessions, statsMap }
-    return _prefetchCache
+    return statsMap
+  } catch {
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const st = await api.getSessionSessionStats(id)
+          return [id, st] as const
+        } catch {
+          return [id, null] as const
+        }
+      })
+    )
+    return Object.fromEntries(results)
+  }
+}
+
+const sessionsListPrefetchPromise: Promise<SessionsListPrefetch | null> = (async () => {
+  try {
+    const authSession = await getSession()
+    const userId = authSession?.user?.id
+    if (!userId) {
+      return null
+    }
+    const sessions = await api.listSessions('active', 100)
+    return { userId, sessions }
   } catch {
     return null
   }
+})()
+
+const sessionsPrefetchPromise: Promise<PrefetchResult | null> = (async () => {
+  const listed = await sessionsListPrefetchPromise
+  if (!listed) {
+    return null
+  }
+  const statsMap =
+    listed.sessions.length > 0
+      ? await fetchSessionStatsMap(listed.sessions.map((s) => s.id))
+      : {}
+  _prefetchCache = { ...listed, statsMap }
+  return _prefetchCache
 })()
 
 function readStoredHostSideNavCollapsed(): boolean {
@@ -376,6 +411,7 @@ export default function App() {
     persistHostSession(null, 'dashboard')
     clearAllHostQnaInactiveFlags()
     clearAllAudienceQnaOpenedAt()
+    clearSessionsListCache()
     void signOut()
   }
 
@@ -476,17 +512,27 @@ function HostConsole({
   const [polls, setPolls] = useState<Poll[]>([])
   const [prompts, setPrompts] = useState<QnaPrompt[]>([])
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Synchronous first paint for the sessions list: a completed prefetch for
+   * this user wins (fresh), else the list persisted on the previous visit
+   * (stale, revalidated in the background by the mount effects below).
+   */
+  const [initialSessionsData] = useState(() => {
+    if (_prefetchCache && _prefetchCache.userId === hostProfile.id) {
+      return { sessions: _prefetchCache.sessions, statsMap: _prefetchCache.statsMap }
+    }
+    return readSessionsListCache(hostProfile.id)
+  })
   const [recentSessions, setRecentSessions] = useState<Session[]>(
-    () => _prefetchCache?.sessions ?? []
+    () => initialSessionsData?.sessions ?? []
   )
-  // true once the first fetch (prefetch or loadSessions) has completed
-  const [sessionsReady, setSessionsReady] = useState(() => _prefetchCache !== null)
+  // true once the list has content to show (cache hydration, prefetch, or loadSessions)
+  const [sessionsReady, setSessionsReady] = useState(() => initialSessionsData !== null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionStatsBySessionId, setSessionStatsBySessionId] = useState<
     Partial<Record<string, SessionSessionStats | null>>
-  >(() => _prefetchCache?.statsMap ?? {})
-  const sessionsPrefetchedRef = useRef(_prefetchCache !== null)
+  >(() => initialSessionsData?.statsMap ?? {})
   const [sessionSessionStats, setSessionSessionStats] = useState<SessionSessionStats | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newSessionTitle, setNewSessionTitle] = useState('')
@@ -640,27 +686,54 @@ function HostConsole({
       }
     }
 
-    // Wait for both restore AND prefetch before marking complete,
-    // so we never flash "Loading..." when data is almost ready
-    void Promise.all([
-      tryRestore(),
-      sessionsPrefetchPromise.then((prefetched) => {
-        if (!cancelled && prefetched) {
-          setRecentSessions(prefetched.sessions)
-          setSessionStatsBySessionId(prefetched.statsMap)
-          setSessionsReady(true)
-          sessionsPrefetchedRef.current = true
-        }
-      })
-    ]).finally(finish)
+    // The restore gate only waits for the list-vs-live-session decision.
+    // The sessions prefetch streams into state separately (effect below), so
+    // a slow sessions or stats request never holds the page on the splash.
+    void tryRestore().finally(finish)
 
     return () => {
       cancelled = true
     }
   }, [])
+
+  /** Apply the module prefetch as each stage lands: list first (paint), stats after. */
+  useEffect(() => {
+    let cancelled = false
+    void sessionsListPrefetchPromise.then((listed) => {
+      if (cancelled || !listed || listed.userId !== hostProfile.id) {
+        return
+      }
+      setRecentSessions(listed.sessions)
+      setSessionsReady(true)
+    })
+    void sessionsPrefetchPromise.then((prefetched) => {
+      if (cancelled || !prefetched || prefetched.userId !== hostProfile.id) {
+        return
+      }
+      setSessionStatsBySessionId(prefetched.statsMap)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [hostProfile.id])
+
+  /** Persist the last known list so the next open paints instantly (stale-while-revalidate). */
+  useEffect(() => {
+    if (!sessionsReady) {
+      return
+    }
+    writeSessionsListCache({
+      userId: hostProfile.id,
+      sessions: recentSessions,
+      statsMap: sessionStatsBySessionId
+    })
+  }, [sessionsReady, hostProfile.id, recentSessions, sessionStatsBySessionId])
   /** Rows visible before scrolling; API fetch size so the list can scroll for older sessions. */
   const maxSessionsLimit = 100
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  /** Session awaiting delete confirmation (modal open while non-null). */
+  const [pendingDeleteSession, setPendingDeleteSession] = useState<Session | null>(null)
+  const [deleteSessionError, setDeleteSessionError] = useState<string | null>(null)
   const latestSessionRef = useRef<Session | null>(null)
   const latestQuestionsRef = useRef<Question[]>([])
   const latestPollsRef = useRef<Poll[]>([])
@@ -1021,34 +1094,17 @@ function HostConsole({
     try {
       const sessions = await api.listSessions('active', limit)
 
-      // Fetch stats before rendering cards so data arrives together
-      let statsMap: Partial<Record<string, SessionSessionStats | null>> = {}
-      if (sessions.length > 0) {
-        const ids = sessions.map((s) => s.id)
-        try {
-          const batchResult = await api.batchSessionStats(ids)
-          for (const id of ids) {
-            statsMap[id] = batchResult[id] ?? null
-          }
-        } catch {
-          const results = await Promise.all(
-            ids.map(async (id) => {
-              try {
-                const st = await api.getSessionSessionStats(id)
-                return [id, st] as const
-              } catch {
-                return [id, null] as const
-              }
-            })
-          )
-          statsMap = Object.fromEntries(results)
-        }
-      }
-
-      // Set both at the same time so cards render with their data
+      // Paint the list immediately; stats stream in below. Cards show "…"
+      // placeholders for ids without stats and keep prior values meanwhile.
       setRecentSessions(sessions)
-      setSessionStatsBySessionId(statsMap)
       setSessionsReady(true)
+
+      if (sessions.length > 0) {
+        const statsMap = await fetchSessionStatsMap(sessions.map((s) => s.id))
+        setSessionStatsBySessionId(statsMap)
+      } else {
+        setSessionStatsBySessionId({})
+      }
     } catch (err) {
       setSessionsError(err instanceof Error ? err.message : 'Failed to load sessions')
       setSessionsReady(true)
@@ -1058,6 +1114,7 @@ function HostConsole({
   }, [])
 
   /** Load session list when viewing all sessions (after host restore completes). */
+  const initialSessionsLoadRef = useRef(false)
   useEffect(() => {
     if (session) {
       return
@@ -1065,13 +1122,23 @@ function HostConsole({
     if (!hostRestoreComplete) {
       return
     }
-    // Skip if prefetch already loaded the sessions list
-    if (sessionsPrefetchedRef.current) {
-      sessionsPrefetchedRef.current = false // allow future manual refreshes
-      return
+    if (!initialSessionsLoadRef.current) {
+      // First view: the module prefetch is already in flight (or settled), so
+      // defer to it and fetch ourselves only if it missed — e.g. the user
+      // signed in after the bundle loaded, so the prefetch ran without auth.
+      initialSessionsLoadRef.current = true
+      let cancelled = false
+      void sessionsListPrefetchPromise.then((listed) => {
+        if (!cancelled && (!listed || listed.userId !== hostProfile.id)) {
+          void loadSessions(maxSessionsLimit)
+        }
+      })
+      return () => {
+        cancelled = true
+      }
     }
     void loadSessions(maxSessionsLimit)
-  }, [session, hostRestoreComplete, loadSessions, maxSessionsLimit])
+  }, [session, hostRestoreComplete, loadSessions, maxSessionsLimit, hostProfile.id])
 
   useEffect(() => {
     if (!showJoinByCodeForm) {
@@ -1195,13 +1262,15 @@ function HostConsole({
   }
 
   const deleteSession = async (selected: Session) => {
-    setSessionsError(null)
+    setDeleteSessionError(null)
     setDeletingSessionId(selected.id)
     try {
       await api.deleteSession(selected.id)
       setRecentSessions((prev) => prev.filter((entry) => entry.id !== selected.id))
+      setPendingDeleteSession(null)
     } catch (err) {
-      setSessionsError(err instanceof Error ? err.message : 'Failed to delete session')
+      // Keep the confirm modal open so the error is visible and retry is one click
+      setDeleteSessionError(err instanceof Error ? err.message : 'Failed to delete session')
     } finally {
       setDeletingSessionId(null)
     }
@@ -1770,7 +1839,10 @@ function HostConsole({
                   isLoading={sessionsLoading || !sessionsReady}
                   loadError={sessionsError}
                   onResume={resumeSession}
-                  onDelete={deleteSession}
+                  onDelete={(selected) => {
+                    setDeleteSessionError(null)
+                    setPendingDeleteSession(selected)
+                  }}
                   deletingSessionId={deletingSessionId}
                   onRefresh={() => {
                     void loadSessions(maxSessionsLimit)
@@ -1977,6 +2049,22 @@ function HostConsole({
                   </div>
                 </div>
               ) : null}
+
+              <DeleteSessionConfirmModal
+                open={pendingDeleteSession !== null}
+                sessionTitle={pendingDeleteSession?.title?.trim() || 'Untitled session'}
+                busy={deletingSessionId !== null}
+                error={deleteSessionError}
+                onCancel={() => {
+                  setPendingDeleteSession(null)
+                  setDeleteSessionError(null)
+                }}
+                onConfirm={() => {
+                  if (pendingDeleteSession) {
+                    void deleteSession(pendingDeleteSession)
+                  }
+                }}
+              />
 
               <JoinSessionModal
                 open={showJoinByCodeForm}

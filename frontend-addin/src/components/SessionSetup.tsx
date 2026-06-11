@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
 import type { Session, SessionSessionStats } from '../api/types'
@@ -15,6 +15,7 @@ interface SessionSetupProps {
   isLoading?: boolean
   loadError?: string | null
   onResume?: (session: Session) => void
+  /** Requests deletion; the parent shows the confirm modal and performs it. */
   onDelete?: (session: Session) => void
   onRefresh?: () => void
   deletingSessionId?: string | null
@@ -63,6 +64,31 @@ export function SessionSetup({
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [menuSessionId, setMenuSessionId] = useState<string | null>(null)
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null)
+  const copyResetTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+    }
+  }, [])
+
+  const handleCopyCode = async (entry: Session) => {
+    try {
+      await navigator.clipboard.writeText(entry.code)
+      setCopiedSessionId(entry.id)
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+      copyResetTimerRef.current = window.setTimeout(() => setCopiedSessionId(null), 2000)
+    } catch {
+      // Clipboard unavailable (e.g. webview permission): leave the icon as-is
+      // rather than showing a false "copied" state.
+      setCopiedSessionId(null)
+    }
+  }
 
   useEffect(() => {
     if (!menuSessionId) {
@@ -235,7 +261,7 @@ export function SessionSetup({
                                 disabled={deletingSessionId === entry.id}
                               >
                                 <span className="material-symbols-outlined text-lg">delete</span>
-                                {deletingSessionId === entry.id ? 'Deleting…' : 'Delete session'}
+                                Delete session
                               </button>
                             </div>
                           ) : null}
@@ -294,13 +320,22 @@ export function SessionSetup({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
-                              void navigator.clipboard.writeText(entry.code)
+                              void handleCopyCode(entry)
                             }}
                             className="p-1 hover:bg-slate-100 rounded transition-colors shrink-0"
-                            title="Copy join code"
+                            title={copiedSessionId === entry.id ? 'Copied' : 'Copy join code'}
+                            aria-label={
+                              copiedSessionId === entry.id ? 'Copied' : 'Copy join code'
+                            }
                           >
-                            <span className="material-symbols-outlined text-base text-slate-500">
-                              content_copy
+                            <span
+                              className={`material-symbols-outlined text-base ${
+                                copiedSessionId === entry.id
+                                  ? 'text-emerald-600'
+                                  : 'text-slate-500'
+                              }`}
+                            >
+                              {copiedSessionId === entry.id ? 'check' : 'content_copy'}
                             </span>
                           </button>
                         </div>
