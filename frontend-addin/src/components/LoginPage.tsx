@@ -23,18 +23,15 @@ type LoginView = 'sign-in' | 'sign-up' | 'forgot' | 'sign-up-sent' | 'reset-sent
 
 type LoadingAction = 'submit' | 'resend' | 'confirm-sign-in' | null
 
-interface LoginPageProps {
-  onLogin?: () => void
-}
-
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
 }
 
-export function LoginPage({ onLogin }: LoginPageProps) {
+export function LoginPage() {
   const [view, setView] = useState<LoginView>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
@@ -115,7 +112,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoadingAction('submit')
     try {
       await signIn(email, password)
-      onLogin?.()
       // Stay in the pending state: the auth listener swaps the view, and
       // resetting here re-enables the form for a few frames first.
     } catch (err) {
@@ -154,7 +150,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setLoadingAction('confirm-sign-in')
     try {
       await signIn(email, password)
-      onLogin?.()
     } catch (err) {
       setError(errorMessage(err, 'Unable to sign in'))
       setLoadingAction(null)
@@ -197,7 +192,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const form = (
     <form className="login-form" onSubmit={handleSubmit}>
       <div className="login-form-header">
-        <h2>{header.title}</h2>
+        {/* In the taskpane the form header is the page's top-level heading;
+            the web variant's h1 is the marketing headline. */}
+        {isPowerPointHost ? <h1>{header.title}</h1> : <h2>{header.title}</h2>}
         <p className="muted">{header.subtitle}</p>
       </div>
 
@@ -222,17 +219,29 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <label htmlFor="login-password">Password</label>
           {/* autoComplete and aria-describedby via spread: the Edge Tools axe
               linter cannot evaluate JSX expressions in these attributes. */}
-          <input
-            id="login-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            {...(view === 'sign-up'
-              ? { autoComplete: 'new-password', 'aria-describedby': 'login-password-hint' }
-              : { autoComplete: 'current-password' })}
-            minLength={6}
-            required
-          />
+          <div className="password-field-wrap">
+            <input
+              id="login-password"
+              type={passwordVisible ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              {...(view === 'sign-up'
+                ? { autoComplete: 'new-password', 'aria-describedby': 'login-password-hint' }
+                : { autoComplete: 'current-password' })}
+              minLength={6}
+              required
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+              onClick={() => setPasswordVisible((value) => !value)}
+            >
+              <span className="material-symbols-outlined" aria-hidden="true">
+                {passwordVisible ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+          </div>
           {view === 'sign-up' ? (
             <span id="login-password-hint" className="muted field-hint">
               At least 6 characters
