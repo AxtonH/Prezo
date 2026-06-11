@@ -35,11 +35,49 @@ export function HostSearchBar({
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
+  /** Keyboard-highlighted option, flattened across sessions then activities; -1 = none. */
+  const [activeIndex, setActiveIndex] = useState(-1)
 
   const q = value.trim()
   const dq = debouncedQuery.trim()
   const showActivitiesSection = dq.length >= 2
   const showPanel = open && q.length > 0
+  const totalOptions = sessionMatches.length + (showActivitiesSection ? activityHits.length : 0)
+
+  useEffect(() => {
+    if (!showPanel) {
+      setActiveIndex(-1)
+    }
+  }, [showPanel])
+
+  // Results can shrink while the debounced activity search settles
+  useEffect(() => {
+    if (activeIndex >= totalOptions) {
+      setActiveIndex(totalOptions > 0 ? totalOptions - 1 : -1)
+    }
+  }, [activeIndex, totalOptions])
+
+  useEffect(() => {
+    if (activeIndex < 0) {
+      return
+    }
+    document
+      .getElementById(`host-search-option-${activeIndex}`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  /** aria-activedescendant via setAttribute: the hint linter rejects JSX expressions for ARIA values. */
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) {
+      return
+    }
+    if (activeIndex >= 0) {
+      input.setAttribute('aria-activedescendant', `host-search-option-${activeIndex}`)
+    } else {
+      input.removeAttribute('aria-activedescendant')
+    }
+  }, [activeIndex])
 
   useEffect(() => {
     if (inputRef.current) {
@@ -84,6 +122,20 @@ export function HostSearchBar({
     onSelectSession(hit.session)
   }
 
+  const pickOptionAt = (index: number) => {
+    if (index < sessionMatches.length) {
+      const s = sessionMatches[index]
+      if (s) {
+        handlePickSession(s)
+      }
+      return
+    }
+    const hit = activityHits[index - sessionMatches.length]
+    if (hit) {
+      handlePickActivity(hit)
+    }
+  }
+
   return (
     <div ref={rootRef} className="relative flex-1 min-w-0 max-w-xl">
       <div
@@ -102,8 +154,27 @@ export function HostSearchBar({
           role="combobox"
           autoComplete="off"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setActiveIndex(-1)
+            onChange(e.target.value)
+          }}
           onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (q.length === 0) {
+              return
+            }
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setOpen(true)
+              setActiveIndex((i) => Math.min(i + 1, totalOptions - 1))
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setActiveIndex((i) => (i <= 0 ? -1 : i - 1))
+            } else if (e.key === 'Enter' && activeIndex >= 0 && activeIndex < totalOptions) {
+              e.preventDefault()
+              pickOptionAt(activeIndex)
+            }
+          }}
           placeholder="Search sessions or activities..."
           title="Search sessions or activities"
           className="!min-w-0 !flex-1 !bg-transparent !border-none !shadow-none focus:!ring-0 !text-sm !font-medium !tracking-tight !p-0 !text-slate-900 placeholder:!text-slate-400"
@@ -139,13 +210,22 @@ export function HostSearchBar({
                 Sessions
               </p>
               <ul role="listbox" aria-label="Sessions" className="space-y-0.5 px-1">
-                {sessionMatches.map((s) => (
+                {sessionMatches.map((s, i) => (
                   <li
                     key={s.id}
                     role="option"
                     aria-selected="false"
+                    /* id + aria-selected via ref: the hint linter rejects JSX expressions for both */
+                    ref={(node) => {
+                      if (node) {
+                        node.id = `host-search-option-${i}`
+                        node.setAttribute('aria-selected', activeIndex === i ? 'true' : 'false')
+                      }
+                    }}
                     tabIndex={0}
-                    className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer"
+                    className={`flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer ${
+                      activeIndex === i ? 'bg-slate-50' : ''
+                    }`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handlePickSession(s)}
                     onKeyDown={(e) => e.key === 'Enter' && handlePickSession(s)}
@@ -192,13 +272,26 @@ export function HostSearchBar({
                   else if (hit.kind === 'question') primary = hit.question.text
                   else primary = hit.prompt.prompt
                   const sub = sessionLabel(hit.session)
+                  const optionIndex = sessionMatches.length + i
                   return (
                     <li
                       key={key}
                       role="option"
                       aria-selected="false"
+                      /* id + aria-selected via ref: the hint linter rejects JSX expressions for both */
+                      ref={(node) => {
+                        if (node) {
+                          node.id = `host-search-option-${optionIndex}`
+                          node.setAttribute(
+                            'aria-selected',
+                            activeIndex === optionIndex ? 'true' : 'false'
+                          )
+                        }
+                      }}
                       tabIndex={0}
-                      className="flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer"
+                      className={`flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 cursor-pointer ${
+                        activeIndex === optionIndex ? 'bg-slate-50' : ''
+                      }`}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handlePickActivity(hit)}
                       onKeyDown={(e) => e.key === 'Enter' && handlePickActivity(hit)}
