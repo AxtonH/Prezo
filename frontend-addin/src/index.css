@@ -69,11 +69,13 @@ body.login-view #root {
   display: none;
 }
 
-/* Host console: recent sessions list — smooth scroll + refined scrollbar */
+/* Host console: recent sessions list — smooth scroll + refined scrollbar.
+   scrollbar-gutter/width/color are progressive enhancement (Firefox and
+   Chromium 121+); engines that ignore them fall back to the
+   ::-webkit-scrollbar rules below. */
 .session-list-scroll {
   scroll-behavior: smooth;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
