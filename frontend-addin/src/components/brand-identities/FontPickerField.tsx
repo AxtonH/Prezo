@@ -201,14 +201,15 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
         type="file"
         accept=".woff2,.woff,.ttf,.otf,font/woff2,font/ttf,font/otf,application/octet-stream"
         className="hidden"
+        aria-label="Upload custom font file"
         onChange={(e) => void onPickFile(e)}
       />
 
+      {/* Plain container: the popup holds an upload action and a search field,
+          which a listbox must not contain — only the options region below
+          carries role="listbox". */}
       {open ? (
-        <div
-          className="absolute left-0 right-0 z-[100] mt-1 flex max-h-[min(70vh,26rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
-          role="listbox"
-        >
+        <div className="absolute left-0 right-0 z-[100] mt-1 flex max-h-[min(70vh,26rem)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
           {/* Upload — compact single row */}
           <div className="shrink-0 border-b border-slate-100">
             <button
@@ -260,63 +261,67 @@ export function FontPickerField({ label, slotKey, value, onChange }: Props) {
             </div>
           </div>
 
-          {/* Custom font + Google list — one scroll region; search filters both */}
+          {/* Custom font + Google list — one scroll region; search filters both.
+              role="listbox" wraps only the options (its only allowed children);
+              the empty-state paragraph renders outside it. */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            {showCustomRow ? (
-              <button
-                type="button"
-                role="option"
-                aria-selected="false"
-                /* aria-selected via ref: linter-safe (see trigger above) */
-                ref={(node) => {
-                  node?.setAttribute('aria-selected', isCustom ? 'true' : 'false')
-                }}
-                onClick={() => selectCustomFont()}
-                className={`flex w-full items-center justify-between gap-3 border-b border-slate-50 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
-                  isCustom ? 'bg-primary/5' : ''
-                }`}
-              >
-                <span
-                  className="min-w-0 truncate text-[15px] text-slate-900"
-                  style={{ fontFamily: previewFamilyCss }}
-                >
-                  {value.family}
-                </span>
-                <span className="shrink-0 text-xs font-medium text-primary">custom</span>
-              </button>
-            ) : null}
             {filtered.length === 0 && !showCustomRow ? (
               <p className="px-3 py-6 text-center text-sm text-slate-500">No fonts match your search.</p>
             ) : (
-              filtered.map((entry) => (
-                <button
-                  key={entry.family}
-                  type="button"
-                  role="option"
-                  aria-selected="false"
-                  /* aria-selected via ref: linter-safe (see trigger above) */
-                  ref={(node) => {
-                    node?.setAttribute(
-                      'aria-selected',
-                      value.source === 'google' && value.family === entry.family
-                        ? 'true'
-                        : 'false'
-                    )
-                  }}
-                  onClick={() => pickGoogleFont(entry.family)}
-                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
-                    value.source === 'google' && value.family === entry.family ? 'bg-primary/5' : ''
-                  }`}
-                >
-                  <span
-                    className="min-w-0 truncate text-[15px] text-slate-900"
-                    style={{ fontFamily: `${entry.family}, system-ui, sans-serif` }}
+              <div role="listbox" aria-label={`${label} options`}>
+                {showCustomRow ? (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    /* aria-selected via ref: linter-safe (see trigger above) */
+                    ref={(node) => {
+                      node?.setAttribute('aria-selected', isCustom ? 'true' : 'false')
+                    }}
+                    onClick={() => selectCustomFont()}
+                    className={`flex w-full items-center justify-between gap-3 border-b border-slate-50 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
+                      isCustom ? 'bg-primary/5' : ''
+                    }`}
                   >
-                    {entry.family}
-                  </span>
-                  <span className="shrink-0 text-[11px] capitalize text-slate-400">{entry.category}</span>
-                </button>
-              ))
+                    <span
+                      className="min-w-0 truncate text-[15px] text-slate-900"
+                      style={{ fontFamily: previewFamilyCss }}
+                    >
+                      {value.family}
+                    </span>
+                    <span className="shrink-0 text-xs font-medium text-primary">custom</span>
+                  </button>
+                ) : null}
+                {filtered.map((entry) => (
+                  <button
+                    key={entry.family}
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    /* aria-selected via ref: linter-safe (see trigger above) */
+                    ref={(node) => {
+                      node?.setAttribute(
+                        'aria-selected',
+                        value.source === 'google' && value.family === entry.family
+                          ? 'true'
+                          : 'false'
+                      )
+                    }}
+                    onClick={() => pickGoogleFont(entry.family)}
+                    className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-slate-50 ${
+                      value.source === 'google' && value.family === entry.family ? 'bg-primary/5' : ''
+                    }`}
+                  >
+                    <span
+                      className="min-w-0 truncate text-[15px] text-slate-900"
+                      style={{ fontFamily: `${entry.family}, system-ui, sans-serif` }}
+                    >
+                      {entry.family}
+                    </span>
+                    <span className="shrink-0 text-[11px] capitalize text-slate-400">{entry.category}</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         </div>
