@@ -107,8 +107,17 @@ export function SessionSetup({
       }
       setMenuSessionId(null)
     }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenuSessionId(null)
+      }
+    }
     document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [menuSessionId])
 
   const handleHostJoinAccessToggle = async () => {
@@ -221,7 +230,10 @@ export function SessionSetup({
                     <div className="flex items-start justify-between gap-2 mb-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <h3 className="font-semibold text-slate-900 truncate group-hover:text-primary transition-colors">
+                          <h3
+                            className="font-semibold text-slate-900 truncate group-hover:text-primary transition-colors"
+                            title={sessionTitle}
+                          >
                             <button
                               type="button"
                               className="all-unset cursor-pointer text-inherit font-inherit"
@@ -259,10 +271,19 @@ export function SessionSetup({
                             className={`p-1.5 rounded-lg transition-all ${
                               menuSessionId === entry.id
                                 ? 'bg-slate-100 opacity-100'
-                                : 'opacity-0 group-hover:opacity-100 hover:bg-slate-100'
+                                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-slate-100'
                             }`}
                             title="Session actions"
                             aria-haspopup="menu"
+                            /* aria-expanded via setAttribute: the hint linter rejects JSX
+                               expressions for ARIA values (same workaround as HostSearchBar).
+                               Inline ref re-runs each render, so it tracks menu state. */
+                            ref={(node) => {
+                              node?.setAttribute(
+                                'aria-expanded',
+                                menuSessionId === entry.id ? 'true' : 'false'
+                              )
+                            }}
                           >
                             <span className="material-symbols-outlined text-lg text-slate-500">
                               more_vert
@@ -293,7 +314,7 @@ export function SessionSetup({
                       ) : null}
                     </div>
 
-                    <div className="flex items-center gap-4 mb-4 text-sm">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-sm">
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="material-symbols-outlined text-lg leading-none">bolt</span>
                         <span>
@@ -308,7 +329,12 @@ export function SessionSetup({
                       <div className="flex items-center gap-1.5 text-slate-600">
                         <span className="material-symbols-outlined text-lg leading-none">group</span>
                         <span>
-                          {participants === undefined ? '…' : participants === null ? '—' : participants}
+                          {participants === undefined
+                            ? '…'
+                            : participants === null
+                              ? '—'
+                              : participants}{' '}
+                          participants
                         </span>
                       </div>
                     </div>
