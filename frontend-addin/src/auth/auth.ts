@@ -47,7 +47,9 @@ const AUTH_ERROR_COPY: Record<string, string> = {
   over_email_send_rate_limit: 'Too many emails requested. Wait a minute, then try again.',
   over_request_rate_limit: 'Too many attempts. Wait a minute, then try again.',
   request_timeout: 'The request timed out. Check your connection and try again.',
-  signup_disabled: 'New sign-ups are currently disabled.'
+  signup_disabled: 'New sign-ups are currently disabled.',
+  same_password: 'Your new password must be different from the current one.',
+  otp_expired: 'That link has expired. Request a new one and try again.'
 }
 
 function friendlyAuthError(error: AuthError): Error {
@@ -93,6 +95,39 @@ export async function signUp(email: string, password: string): Promise<void> {
   }
   if (isDuplicateSignUpResponse(data.user)) {
     throw new Error('An account with this email already exists. Sign in instead.')
+  }
+}
+
+export async function resetPassword(email: string): Promise<void> {
+  const { error } = await withTimeout(
+    supabase.auth.resetPasswordForEmail(
+      normalizeEmail(email),
+      EMAIL_REDIRECT_URL ? { redirectTo: EMAIL_REDIRECT_URL } : undefined
+    )
+  )
+  if (error) {
+    throw friendlyAuthError(error)
+  }
+}
+
+export async function resendSignUpConfirmation(email: string): Promise<void> {
+  const { error } = await withTimeout(
+    supabase.auth.resend({
+      type: 'signup',
+      email: normalizeEmail(email),
+      options: EMAIL_REDIRECT_URL ? { emailRedirectTo: EMAIL_REDIRECT_URL } : undefined
+    })
+  )
+  if (error) {
+    throw friendlyAuthError(error)
+  }
+}
+
+/** Used by the password-recovery screen; requires an active (recovery) session. */
+export async function updatePassword(newPassword: string): Promise<void> {
+  const { error } = await withTimeout(supabase.auth.updateUser({ password: newPassword }))
+  if (error) {
+    throw friendlyAuthError(error)
   }
 }
 
