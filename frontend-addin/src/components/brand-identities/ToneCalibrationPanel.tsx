@@ -56,9 +56,9 @@ export function ToneCalibrationPanel({ value, onChange }: Props) {
                 max={100}
                 value={v}
                 onChange={(e) => patch(key, Number(e.target.value))}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={v}
+                /* No aria-valuemin/max/now: a native range input already
+                   exposes them via min/max/value, and the Edge Tools axe
+                   linter flags the redundant JSX-expression duplicates. */
                 aria-label={`${left} to ${right}`}
                 className="tone-cal-slider h-2 w-full cursor-pointer"
               />
