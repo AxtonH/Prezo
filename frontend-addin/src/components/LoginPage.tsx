@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { signIn, signUp } from '../auth/auth'
+import { resendSignUpConfirmation, resetPassword, signIn, signUp } from '../auth/auth'
 import { PrezoWordmark } from './PrezoWordmark'
 import { isPowerPointAddinHost } from '../utils/officeHost'
 
@@ -14,16 +14,30 @@ const GUEST_LINK_USABLE =
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/**
+ * sign-in / sign-up / forgot are form modes (the submit button does the
+ * active intent, so Enter always does the right thing); the two *-sent
+ * views replace the fields with a confirmation state and resend action.
+ */
+type LoginView = 'sign-in' | 'sign-up' | 'forgot' | 'sign-up-sent' | 'reset-sent'
+
+type LoadingAction = 'submit' | 'resend' | 'confirm-sign-in' | null
+
 interface LoginPageProps {
   onLogin?: () => void
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback
+}
+
 export function LoginPage({ onLogin }: LoginPageProps) {
+  const [view, setView] = useState<LoginView>('sign-in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
-  const [loadingAction, setLoadingAction] = useState<'sign-in' | 'sign-up' | null>(null)
+  const [loadingAction, setLoadingAction] = useState<LoadingAction>(null)
   const isLoading = loadingAction !== null
   const isPowerPointHost =
     isPowerPointAddinHost() ||
@@ -39,93 +53,206 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     }
   }, [])
 
+  const switchView = (next: LoginView) => {
+    setView(next)
+    setError(null)
+    setInfo(null)
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
     setInfo(null)
-    if (!email.trim() || !password) {
-      setError('Enter your email and password to sign in.')
+    const trimmedEmail = email.trim()
+
+    if (view === 'forgot') {
+      if (!EMAIL_PATTERN.test(trimmedEmail)) {
+        setError('Enter a valid email address.')
+        return
+      }
+      setLoadingAction('submit')
+      try {
+        await resetPassword(trimmedEmail)
+        switchView('reset-sent')
+      } catch (err) {
+        setError(errorMessage(err, 'Unable to send the reset email'))
+      } finally {
+        setLoadingAction(null)
+      }
       return
     }
-    setLoadingAction('sign-in')
+
+    if (!trimmedEmail || !password) {
+      setError(
+        view === 'sign-up'
+          ? 'Enter your email and a password to create your account.'
+          : 'Enter your email and password to sign in.'
+      )
+      return
+    }
+
+    if (view === 'sign-up') {
+      if (!EMAIL_PATTERN.test(trimmedEmail)) {
+        setError('Enter a valid email address.')
+        return
+      }
+      if (password.length < 6) {
+        setError('Choose a password with at least 6 characters.')
+        return
+      }
+      setLoadingAction('submit')
+      try {
+        await signUp(email, password)
+        switchView('sign-up-sent')
+      } catch (err) {
+        setError(errorMessage(err, 'Unable to create your account'))
+      } finally {
+        setLoadingAction(null)
+      }
+      return
+    }
+
+    setLoadingAction('submit')
     try {
       await signIn(email, password)
       onLogin?.()
       // Stay in the pending state: the auth listener swaps the view, and
       // resetting here re-enables the form for a few frames first.
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to sign in')
+      setError(errorMessage(err, 'Unable to sign in'))
       setLoadingAction(null)
     }
   }
 
-  const handleSignUp = async () => {
+  const handleResend = async () => {
     setError(null)
     setInfo(null)
-    if (!email || !password) {
-      setError('Enter your email and a password to create your account.')
-      return
-    }
-    // The button is type="button", so the browser's type="email" constraint
-    // validation never runs for sign-up; check the basics before the network.
-    if (!EMAIL_PATTERN.test(email.trim())) {
-      setError('Enter a valid email address.')
-      return
-    }
-    if (password.length < 6) {
-      setError('Choose a password with at least 6 characters.')
-      return
-    }
-    setLoadingAction('sign-up')
+    setLoadingAction('resend')
     try {
-      await signUp(email, password)
-      setInfo(
-        `Almost there: we sent a confirmation link to ${email.trim()}. Open it, then come back and sign in.`
-      )
+      if (view === 'sign-up-sent') {
+        await resendSignUpConfirmation(email)
+      } else {
+        await resetPassword(email.trim())
+      }
+      setInfo('Email sent again. Give it a minute, and check your spam folder.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create your account')
+      setError(errorMessage(err, 'Unable to resend the email'))
     } finally {
       setLoadingAction(null)
     }
   }
 
+  // One-click attempt from the "confirm your email" state, reusing the
+  // credentials already in memory from sign-up.
+  const handleConfirmedSignIn = async () => {
+    setError(null)
+    setInfo(null)
+    if (!email.trim() || !password) {
+      switchView('sign-in')
+      return
+    }
+    setLoadingAction('confirm-sign-in')
+    try {
+      await signIn(email, password)
+      onLogin?.()
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to sign in'))
+      setLoadingAction(null)
+    }
+  }
+
+  const isSentView = view === 'sign-up-sent' || view === 'reset-sent'
+  const showFields = !isSentView
+  const showPassword = view === 'sign-in' || view === 'sign-up'
+
+  const header = {
+    'sign-in': {
+      title: 'Sign in to Prezo',
+      subtitle: 'Host live polls and Q&A from your PowerPoint workspace'
+    },
+    'sign-up': {
+      title: 'Create your Prezo account',
+      subtitle: 'Host live polls and Q&A from your PowerPoint workspace'
+    },
+    forgot: {
+      title: 'Reset your password',
+      subtitle: "Enter your email and we'll send you a link to set a new one"
+    },
+    'sign-up-sent': {
+      title: 'Confirm your email',
+      subtitle: `We sent a confirmation link to ${email.trim()}. Open it in your browser, then come back here.`
+    },
+    'reset-sent': {
+      title: 'Check your email',
+      subtitle: `We sent a password reset link to ${email.trim()}. Open it in your browser to set a new password.`
+    }
+  }[view]
+
+  const submitLabel = {
+    'sign-in': { idle: 'Sign in', busy: 'Signing in…' },
+    'sign-up': { idle: 'Create account', busy: 'Creating account…' },
+    forgot: { idle: 'Send reset link', busy: 'Sending…' }
+  }[view as 'sign-in' | 'sign-up' | 'forgot']
+
   const form = (
     <form className="login-form" onSubmit={handleSubmit}>
       <div className="login-form-header">
-        <h2>Sign in to Prezo</h2>
-        <p className="muted">Host live polls and Q&A from your PowerPoint workspace</p>
+        <h2>{header.title}</h2>
+        <p className="muted">{header.subtitle}</p>
       </div>
 
-      <div className="field">
-        <label htmlFor="login-email">Email</label>
-        <input
-          id="login-email"
-          type="email"
-          placeholder="name@company.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="email"
-          autoFocus
-          required
-        />
-      </div>
+      {showFields ? (
+        <div className="field">
+          <label htmlFor="login-email">Email</label>
+          <input
+            id="login-email"
+            type="email"
+            placeholder="name@company.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            autoFocus
+            required
+          />
+        </div>
+      ) : null}
 
-      <div className="field">
-        <label htmlFor="login-password">Password</label>
-        <input
-          id="login-password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
-          aria-describedby="login-password-hint"
-          minLength={6}
-          required
-        />
-        <span id="login-password-hint" className="muted field-hint">
-          At least 6 characters
-        </span>
-      </div>
+      {showPassword ? (
+        <div className="field">
+          <label htmlFor="login-password">Password</label>
+          {/* autoComplete and aria-describedby via spread: the Edge Tools axe
+              linter cannot evaluate JSX expressions in these attributes. */}
+          <input
+            id="login-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            {...(view === 'sign-up'
+              ? { autoComplete: 'new-password', 'aria-describedby': 'login-password-hint' }
+              : { autoComplete: 'current-password' })}
+            minLength={6}
+            required
+          />
+          {view === 'sign-up' ? (
+            <span id="login-password-hint" className="muted field-hint">
+              At least 6 characters
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === 'sign-in' ? (
+        <div className="login-forgot-row">
+          <button
+            type="button"
+            className="login-link"
+            disabled={isLoading}
+            onClick={() => switchView('forgot')}
+          >
+            Forgot password?
+          </button>
+        </div>
+      ) : null}
 
       {/* Always-mounted live regions so inserted messages are announced. */}
       <div aria-live="assertive" role="alert">
@@ -135,44 +262,102 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {info ? <p className="login-info">{info}</p> : null}
       </div>
 
-      {/* aria-busy via spread: the Edge Tools axe linter cannot evaluate JSX
-          expressions and flags any aria-* expression value as invalid. */}
-      <button
-        type="submit"
-        className="login-btn"
-        disabled={isLoading}
-        {...(loadingAction === 'sign-in' ? { 'aria-busy': true } : {})}
-      >
-        {loadingAction === 'sign-in' ? (
+      {!isSentView ? (
+        /* aria-busy via spread: the Edge Tools axe linter cannot evaluate JSX
+           expressions and flags any aria-* expression value as invalid. */
+        <button
+          type="submit"
+          className="login-btn"
+          disabled={isLoading}
+          {...(loadingAction === 'submit' ? { 'aria-busy': true } : {})}
+        >
+          {loadingAction === 'submit' ? (
+            <>
+              <span className="login-btn-spinner" aria-hidden="true" />
+              {submitLabel.busy}
+            </>
+          ) : (
+            submitLabel.idle
+          )}
+        </button>
+      ) : null}
+
+      {view === 'sign-up-sent' ? (
+        <button
+          type="button"
+          className="login-btn"
+          disabled={isLoading}
+          {...(loadingAction === 'confirm-sign-in' ? { 'aria-busy': true } : {})}
+          onClick={handleConfirmedSignIn}
+        >
+          {loadingAction === 'confirm-sign-in' ? (
+            <>
+              <span className="login-btn-spinner" aria-hidden="true" />
+              Signing in…
+            </>
+          ) : (
+            "I've confirmed, sign me in"
+          )}
+        </button>
+      ) : null}
+
+      {isSentView ? (
+        <button
+          type="button"
+          className="login-signup-btn"
+          disabled={isLoading}
+          {...(loadingAction === 'resend' ? { 'aria-busy': true } : {})}
+          onClick={handleResend}
+        >
+          {loadingAction === 'resend' ? (
+            <>
+              <span className="login-btn-spinner" aria-hidden="true" />
+              Resending…
+            </>
+          ) : (
+            'Resend email'
+          )}
+        </button>
+      ) : null}
+
+      <p className="login-toggle-row">
+        {view === 'sign-in' ? (
           <>
-            <span className="login-btn-spinner" aria-hidden="true" />
-            Signing in…
+            New to Prezo?
+            <button
+              type="button"
+              className="login-link"
+              disabled={isLoading}
+              onClick={() => switchView('sign-up')}
+            >
+              Create an account
+            </button>
+          </>
+        ) : view === 'sign-up' ? (
+          <>
+            Already have an account?
+            <button
+              type="button"
+              className="login-link"
+              disabled={isLoading}
+              onClick={() => switchView('sign-in')}
+            >
+              Sign in
+            </button>
           </>
         ) : (
-          'Sign in'
+          <button
+            type="button"
+            className="login-link"
+            disabled={isLoading}
+            onClick={() => switchView('sign-in')}
+          >
+            Back to sign in
+          </button>
         )}
-      </button>
+      </p>
 
-      <p className="muted login-signup-hint">New to Prezo? Use the same fields to create an account.</p>
-
-      <button
-        type="button"
-        className="login-signup-btn"
-        disabled={isLoading}
-        {...(loadingAction === 'sign-up' ? { 'aria-busy': true } : {})}
-        onClick={handleSignUp}
-      >
-        {loadingAction === 'sign-up' ? (
-          <>
-            <span className="login-btn-spinner" aria-hidden="true" />
-            Creating account…
-          </>
-        ) : (
-          'Create account'
-        )}
-      </button>
-
-      {GUEST_LINK_USABLE ? (
+      {GUEST_LINK_USABLE && (view === 'sign-in' || view === 'sign-up') ? (
         <>
           <div className="login-divider">
             <span>or</span>

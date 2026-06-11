@@ -1249,10 +1249,54 @@ body.login-view #root {
   font-size: 12px;
 }
 
-.login-signup-hint {
+/* Link-styled buttons (mode toggle, forgot password). The shared
+   `.login-page button` rule paints buttons as primary CTAs, so every
+   visual property it sets is reset here, including the hover lift. */
+.login-page .login-link {
+  display: inline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.login-page .login-link:hover {
+  background: none;
+  transform: none;
+  box-shadow: none;
+  text-decoration: underline;
+}
+
+.login-page .login-link:disabled {
+  background: none;
+}
+
+.login-forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -10px 0 16px;
+}
+
+.login-toggle-row {
   text-align: center;
   font-size: 13px;
-  margin: 14px 0 0;
+  color: var(--muted);
+  margin: 16px 0 0;
+}
+
+.login-toggle-row .login-link {
+  margin-left: 5px;
+}
+
+.login-page.ppt .login-link {
+  color: #93bbfd;
+}
+
+.login-page.ppt .login-toggle-row {
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .login-form .muted {

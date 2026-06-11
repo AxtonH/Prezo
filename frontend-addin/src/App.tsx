@@ -14,6 +14,7 @@ import type {
 import { getSession, onAuthStateChange, signOut } from './auth/auth'
 import { fetchHostProfile, type HostProfile } from './auth/profile'
 import { LoginPage } from './components/LoginPage'
+import { SetNewPasswordPage } from './components/SetNewPasswordPage'
 import { HostSearchBar } from './components/HostSearchBar'
 import { PrezoWordmark } from './components/PrezoWordmark'
 import { PrezoLogo } from './components/PrezoLogo'
@@ -220,6 +221,9 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false)
   const [hostProfile, setHostProfile] = useState<HostProfile | null>(null)
   const [profileReady, setProfileReady] = useState(false)
+  // True while the session came from a password-recovery link; the console is
+  // held back until the user sets a new password (or skips).
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -239,8 +243,13 @@ export default function App() {
         setAuthReady(true)
       })
 
-    const { data } = onAuthStateChange((_event, session) => {
+    const { data } = onAuthStateChange((event, session) => {
       setAuthSession(session)
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true)
+      } else if (event === 'SIGNED_OUT') {
+        setPasswordRecovery(false)
+      }
     })
 
     return () => {
@@ -362,6 +371,15 @@ export default function App() {
 
   if (!authSession?.user) {
     return <LoginPage />
+  }
+
+  if (passwordRecovery) {
+    return (
+      <SetNewPasswordPage
+        email={authSession.user.email ?? null}
+        onDone={() => setPasswordRecovery(false)}
+      />
+    )
   }
 
   const resolvedProfile: HostProfile =
