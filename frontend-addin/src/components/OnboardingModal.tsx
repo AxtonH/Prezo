@@ -122,6 +122,8 @@ export function OnboardingModal({ onCompleted }: OnboardingModalProps) {
                   type="file"
                   accept="image/jpeg,image/png,image/gif,image/webp"
                   className="hidden"
+                  aria-label="Upload profile photo"
+                  tabIndex={-1}
                   onChange={(e) => onPickFile(e.target.files)}
                 />
                 <button
