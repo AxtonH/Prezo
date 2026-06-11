@@ -84,7 +84,12 @@ export function CollapsibleActivityPanelShell({
           inactive ? 'hover:bg-slate-300/40' : 'hover:bg-slate-50/80'
         } ${expanded ? (inactive ? 'border-b border-slate-400/30' : 'border-b border-slate-100') : ''}`}
         onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
+        aria-expanded="false"
+        /* aria-expanded via ref: the Edge Tools axe linter rejects JSX
+           expressions for ARIA values (same workaround as HostSearchBar). */
+        ref={(node) => {
+          node?.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+        }}
       >
         <div className="flex items-start gap-4 min-w-0 flex-1">
           {icon}

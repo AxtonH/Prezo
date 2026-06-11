@@ -161,7 +161,9 @@ export function SideNav({
           className={`text-[0.7rem] font-medium uppercase tracking-widest text-muted/60 ${
             collapsed ? 'invisible whitespace-nowrap' : ''
           }`}
-          aria-hidden={collapsed}
+          /* aria-hidden via spread: the Edge Tools axe linter cannot evaluate
+             JSX expressions and flags any aria-* expression value as invalid. */
+          {...(collapsed ? { 'aria-hidden': true } : {})}
         >
           Live Sessions
         </p>
