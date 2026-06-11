@@ -18,6 +18,8 @@ interface SetNewPasswordPageProps {
 export function SetNewPasswordPage({ email, onDone }: SetNewPasswordPageProps) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -67,7 +69,7 @@ export function SetNewPasswordPage({ email, onDone }: SetNewPasswordPageProps) {
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-form-header">
-            <h2>Set a new password</h2>
+            <h1>Set a new password</h1>
             <p className="muted">
               {email ? `You're signed in as ${email}.` : 'You followed a password reset link.'}
             </p>
@@ -75,17 +77,29 @@ export function SetNewPasswordPage({ email, onDone }: SetNewPasswordPageProps) {
 
           <div className="field">
             <label htmlFor="new-password">New password</label>
-            <input
-              id="new-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="new-password"
-              aria-describedby="new-password-hint"
-              minLength={6}
-              autoFocus
-              required
-            />
+            <div className="password-field-wrap">
+              <input
+                id="new-password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                aria-describedby="new-password-hint"
+                minLength={6}
+                autoFocus
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                onClick={() => setShowPassword((value) => !value)}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  {showPassword ? 'visibility_off' : 'visibility'}
+                </span>
+              </button>
+            </div>
             <span id="new-password-hint" className="muted field-hint">
               At least 6 characters
             </span>
@@ -93,15 +107,27 @@ export function SetNewPasswordPage({ email, onDone }: SetNewPasswordPageProps) {
 
           <div className="field">
             <label htmlFor="confirm-password">Confirm new password</label>
-            <input
-              id="confirm-password"
-              type="password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              autoComplete="new-password"
-              minLength={6}
-              required
-            />
+            <div className="password-field-wrap">
+              <input
+                id="confirm-password"
+                type={showConfirm ? 'text' : 'password'}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                minLength={6}
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                onClick={() => setShowConfirm((value) => !value)}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">
+                  {showConfirm ? 'visibility_off' : 'visibility'}
+                </span>
+              </button>
+            </div>
           </div>
 
           <div aria-live="assertive" role="alert">

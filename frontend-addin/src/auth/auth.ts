@@ -64,6 +64,10 @@ function friendlyAuthError(error: AuthError): Error {
   return new Error(error.message)
 }
 
+// Deliberate tradeoff (product decision, June 2026): surfacing "this email
+// already has an account" reveals account existence (email enumeration),
+// which Supabase's obfuscated duplicate response is designed to hide. For
+// this B2B tool the clear "sign in instead" guidance outweighs that risk.
 function isDuplicateSignUpResponse(user: User | null): boolean {
   return Array.isArray(user?.identities) && user.identities.length === 0
 }

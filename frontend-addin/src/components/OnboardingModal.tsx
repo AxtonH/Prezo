@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 
 import type { HostProfile } from '../auth/profile'
 import { completeHostOnboarding, skipHostOnboarding } from '../auth/profile'
@@ -16,6 +17,48 @@ export function OnboardingModal({ onCompleted }: OnboardingModalProps) {
   const [savingAction, setSavingAction] = useState<'idle' | 'continue' | 'skip'>('idle')
   const saving = savingAction !== 'idle'
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Return focus to whatever opened/preceded the modal once it closes.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement
+    return () => {
+      if (previouslyFocused instanceof HTMLElement) {
+        previouslyFocused.focus()
+      }
+    }
+  }, [])
+
+  // Keep Tab cycling inside the dialog. aria-modal only signals intent to
+  // assistive tech; browsers do not enforce it. Escape deliberately does
+  // nothing: closing has side effects (skip writes to the profile), so it
+  // stays behind the explicit buttons.
+  const handleTrapKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Tab') {
+      return
+    }
+    const root = dialogRef.current
+    if (!root) {
+      return
+    }
+    const focusables = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select, textarea, a[href], [tabindex]:not([tabindex="-1"])'
+      )
+    )
+    if (!focusables.length) {
+      return
+    }
+    const first = focusables[0]
+    const last = focusables[focusables.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
 
   const onPickFile = useCallback((list: FileList | null) => {
     const next = list?.[0] ?? null
@@ -69,6 +112,8 @@ export function OnboardingModal({ onCompleted }: OnboardingModalProps) {
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/45 backdrop-blur-sm" aria-hidden />
       <div
+        ref={dialogRef}
+        onKeyDown={handleTrapKeyDown}
         className="relative bg-white rounded-2xl shadow-[0_24px_60px_rgba(15,23,42,0.2)] w-full max-w-md overflow-hidden border border-slate-100"
         role="dialog"
         aria-modal="true"
@@ -148,7 +193,11 @@ export function OnboardingModal({ onCompleted }: OnboardingModalProps) {
             </div>
           </div>
 
-          {error ? <p className="text-danger text-sm">{error}</p> : null}
+          {error ? (
+            <p className="text-danger text-sm" role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
 
         <div className="px-7 pb-7 flex flex-col gap-3">

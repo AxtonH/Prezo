@@ -224,6 +224,10 @@ export default function App() {
   // True while the session came from a password-recovery link; the console is
   // held back until the user sets a new password (or skips).
   const [passwordRecovery, setPasswordRecovery] = useState(false)
+  // Profile fetch failed (after one automatic retry); a banner offers a
+  // manual retry, which bumps the nonce to re-run the effect.
+  const [profileError, setProfileError] = useState(false)
+  const [profileRetryNonce, setProfileRetryNonce] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -262,30 +266,43 @@ export default function App() {
     if (!authSession?.user) {
       setHostProfile(null)
       setProfileReady(true)
+      setProfileError(false)
       return
     }
     let cancelled = false
     setProfileReady(false)
-    fetchHostProfile()
-      .then((p) => {
+    setProfileError(false)
+    const load = async () => {
+      try {
+        const p = await fetchHostProfile()
         if (!cancelled) {
           setHostProfile(p)
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHostProfile(null)
+      } catch {
+        // One automatic retry: a transient failure right after login would
+        // otherwise silently skip onboarding and label the user "Host".
+        try {
+          const p = await fetchHostProfile()
+          if (!cancelled) {
+            setHostProfile(p)
+          }
+        } catch {
+          if (!cancelled) {
+            setHostProfile(null)
+            setProfileError(true)
+          }
         }
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) {
           setProfileReady(true)
         }
-      })
+      }
+    }
+    void load()
     return () => {
       cancelled = true
     }
-  }, [authSession?.user?.id])
+  }, [authSession?.user?.id, profileRetryNonce])
 
   useEffect(() => {
     let active = true
@@ -392,14 +409,49 @@ export default function App() {
       onboarding_completed: true
     } satisfies HostProfile)
 
+  const showOnboarding = !resolvedProfile.onboarding_completed
+
   return (
     <>
-      <HostConsole
-        onLogout={handleLogout}
-        hostProfile={resolvedProfile}
-        onHostProfileChange={setHostProfile}
-      />
-      {!resolvedProfile.onboarding_completed ? (
+      {/* display:contents wrapper (no layout impact) so the console behind
+          the onboarding modal can be made inert: aria-modal alone does not
+          stop Tab or screen readers from reaching the obscured background.
+          React 18 has no inert prop, so the callback ref applies it. */}
+      <div
+        style={{ display: 'contents' }}
+        ref={(node) => {
+          if (!node) {
+            return
+          }
+          if (showOnboarding) {
+            node.setAttribute('inert', '')
+          } else {
+            node.removeAttribute('inert')
+          }
+        }}
+      >
+        <HostConsole
+          onLogout={handleLogout}
+          hostProfile={resolvedProfile}
+          onHostProfileChange={setHostProfile}
+        />
+      </div>
+      {profileError ? (
+        <div
+          className="fixed bottom-4 left-1/2 z-[120] flex -translate-x-1/2 items-center gap-3 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg"
+          role="alert"
+        >
+          <span>We couldn't load your profile, so some details may be missing.</span>
+          <button
+            type="button"
+            className="font-bold underline underline-offset-2"
+            onClick={() => setProfileRetryNonce((nonce) => nonce + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
+      {showOnboarding ? (
         <OnboardingModal
           onCompleted={(next) => {
             setHostProfile(next)
