@@ -1,0 +1,45 @@
+{
+  "version": 1.1,
+  "atDirectives": [
+    {
+      "name": "@tailwind",
+      "description": "Tailwind CSS: injects the base, components, or utilities layer.",
+      "references": [
+        {
+          "name": "Tailwind documentation",
+          "url": "https://tailwindcss.com/docs/functions-and-directives#tailwind"
+        }
+      ]
+    },
+    {
+      "name": "@apply",
+      "description": "Tailwind CSS: inlines utility classes into custom CSS.",
+      "references": [
+        {
+          "name": "Tailwind documentation",
+          "url": "https://tailwindcss.com/docs/functions-and-directives#apply"
+        }
+      ]
+    },
+    {
+      "name": "@screen",
+      "description": "Tailwind CSS: media query from a named breakpoint.",
+      "references": [
+        {
+          "name": "Tailwind documentation",
+          "url": "https://tailwindcss.com/docs/functions-and-directives#screen"
+        }
+      ]
+    },
+    {
+      "name": "@config",
+      "description": "Tailwind CSS: selects the config file for this stylesheet.",
+      "references": [
+        {
+          "name": "Tailwind documentation",
+          "url": "https://tailwindcss.com/docs/functions-and-directives#config"
+        }
+      ]
+    }
+  ]
+}

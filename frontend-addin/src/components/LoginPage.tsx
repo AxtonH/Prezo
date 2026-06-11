@@ -135,11 +135,13 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {info ? <p className="login-info">{info}</p> : null}
       </div>
 
+      {/* aria-busy via spread: the Edge Tools axe linter cannot evaluate JSX
+          expressions and flags any aria-* expression value as invalid. */}
       <button
         type="submit"
         className="login-btn"
         disabled={isLoading}
-        aria-busy={loadingAction === 'sign-in' ? 'true' : 'false'}
+        {...(loadingAction === 'sign-in' ? { 'aria-busy': true } : {})}
       >
         {loadingAction === 'sign-in' ? (
           <>
@@ -157,7 +159,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         type="button"
         className="login-signup-btn"
         disabled={isLoading}
-        aria-busy={loadingAction === 'sign-up' ? 'true' : 'false'}
+        {...(loadingAction === 'sign-up' ? { 'aria-busy': true } : {})}
         onClick={handleSignUp}
       >
         {loadingAction === 'sign-up' ? (
