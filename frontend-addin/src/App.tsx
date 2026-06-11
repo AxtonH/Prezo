@@ -1140,12 +1140,30 @@ function HostConsole({
     void loadSessions(maxSessionsLimit)
   }, [session, hostRestoreComplete, loadSessions, maxSessionsLimit, hostProfile.id])
 
+  /**
+   * Silent list-only revalidate when the join modal opens. The modal renders
+   * the cached list instantly; no loading flags, no stats batch (the modal
+   * never shows stats, and a code join doesn't need the list at all).
+   */
   useEffect(() => {
     if (!showJoinByCodeForm) {
       return
     }
-    void loadSessions(maxSessionsLimit)
-  }, [showJoinByCodeForm, loadSessions, maxSessionsLimit])
+    let cancelled = false
+    api
+      .listSessions('active', maxSessionsLimit)
+      .then((sessions) => {
+        if (!cancelled) {
+          setRecentSessions(sessions)
+        }
+      })
+      .catch(() => {
+        /* keep showing the cached list */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [showJoinByCodeForm, maxSessionsLimit])
 
   const hydrateSession = async (selected: Session) => {
     const snapshot = await api.getSnapshot(selected.id)
@@ -2085,7 +2103,7 @@ function HostConsole({
                   setJoinByCodeError(null)
                 }}
                 sessions={recentSessions}
-                sessionsLoading={sessionsLoading}
+                sessionsLoading={sessionsLoading || !sessionsReady}
                 isBusy={isJoiningByCode}
                 error={joinByCodeError}
                 onClearError={clearJoinByCodeError}
