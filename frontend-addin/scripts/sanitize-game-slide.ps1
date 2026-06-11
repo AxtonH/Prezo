@@ -25,7 +25,13 @@ powershell -ExecutionPolicy Bypass -File scripts/sanitize-game-slide.ps1
 #>
 param(
   [string]$Source = (Join-Path $PSScriptRoot "..\seed\game-slide.source.pptx"),
-  [string]$Destination = (Join-Path $PSScriptRoot "..\public\game-slide.pptx")
+  [string]$Destination = (Join-Path $PSScriptRoot "..\public\game-slide.pptx"),
+  # Replaces the embed's snapshot image (what PowerPoint paints in the frame
+  # during slide transitions and on machines without the add-in). The seed's
+  # own snapshot captures whatever the embed showed at authoring time — often
+  # the near-white signed-out screen, which reads as a white flash mid-
+  # transition. Skipped when the file doesn't exist.
+  [string]$SnapshotImage = (Join-Path $PSScriptRoot "..\seed\snapshot-placeholder.png")
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,6 +51,8 @@ $gameAddinId = '0885b291-af1d-4808-a2f8-6a3ee4c61e5e'
 $removedCount = 0
 $sawGameReference = $false
 $webExtensionEntries = 0
+$snapshotsReplaced = 0
+$replaceSnapshot = (Test-Path $SnapshotImage)
 
 $zip = [System.IO.Compression.ZipFile]::Open($Destination, [System.IO.Compression.ZipArchiveMode]::Update)
 try {
@@ -86,6 +94,51 @@ try {
       $writer.Write($updated)
       $writer.Dispose()
     }
+
+    if ($replaceSnapshot) {
+      # Resolve the snapshot media part via the webextension's relationships:
+      # <we:snapshot r:embed="rIdX"/> -> _rels/<part>.rels -> Target.
+      $snapshotMatch = [regex]::Match($updated, '<we:snapshot\b[^>]*r:embed="([^"]+)"')
+      if ($snapshotMatch.Success) {
+        $relId = $snapshotMatch.Groups[1].Value
+        $partDir = [System.IO.Path]::GetDirectoryName($entry.FullName).Replace('\', '/')
+        $partName = [System.IO.Path]::GetFileName($entry.FullName)
+        $relsEntry = $zip.Entries | Where-Object { $_.FullName -eq "$partDir/_rels/$partName.rels" }
+        if ($relsEntry) {
+          $relsReader = New-Object System.IO.StreamReader($relsEntry.Open(), [System.Text.Encoding]::UTF8)
+          $relsXml = $relsReader.ReadToEnd()
+          $relsReader.Dispose()
+          $targetMatch = [regex]::Match(
+            $relsXml,
+            ('<Relationship\b[^>]*Id="' + [regex]::Escape($relId) + '"[^>]*Target="([^"]+)"|<Relationship\b[^>]*Target="([^"]+)"[^>]*Id="' + [regex]::Escape($relId) + '"')
+          )
+          $target = if ($targetMatch.Groups[1].Value) { $targetMatch.Groups[1].Value } else { $targetMatch.Groups[2].Value }
+          if ($target) {
+            $mediaPath = if ($target.StartsWith('/')) {
+              $target.TrimStart('/')
+            } else {
+              # Targets are relative to the part's folder, e.g. ../media/image1.png
+              $combined = "$partDir/$target"
+              while ($combined -match '[^/]+/\.\./') {
+                $combined = $combined -replace '[^/]+/\.\./', ''
+              }
+              $combined
+            }
+            $mediaEntry = $zip.Entries | Where-Object { $_.FullName -eq $mediaPath }
+            if ($mediaEntry) {
+              $bytes = [System.IO.File]::ReadAllBytes($SnapshotImage)
+              $mediaStream = $mediaEntry.Open()
+              $mediaStream.SetLength(0)
+              $mediaStream.Write($bytes, 0, $bytes.Length)
+              $mediaStream.Dispose()
+              $snapshotsReplaced++
+            } else {
+              Write-Warning "Snapshot media part not found in archive: $mediaPath"
+            }
+          }
+        }
+      }
+    }
   }
 }
 finally {
@@ -99,7 +152,10 @@ if ($webExtensionEntries -eq 0) {
 }
 
 Write-Output "Sanitized template written: $Destination"
-Write-Output "Webextension parts scanned: $webExtensionEntries | embedId properties removed: $removedCount"
+Write-Output "Webextension parts scanned: $webExtensionEntries | embedId properties removed: $removedCount | snapshots replaced: $snapshotsReplaced"
+if ($replaceSnapshot -and $snapshotsReplaced -eq 0 -and $webExtensionEntries -gt 0) {
+  Write-Warning 'Snapshot placeholder provided but no snapshot reference was found to replace.'
+}
 if ($removedCount -eq 0 -and $webExtensionEntries -gt 0) {
   Write-Output '(No embedId found. That is fine if the embed never persisted one before the save; inserted copies mint their own id on first load either way.)'
 }

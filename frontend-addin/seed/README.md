@@ -37,10 +37,25 @@ manual insert (see `public/embed/embed-identity.js`).
 - The game add-in's **manifest id or SourceLocation domain changes**.
 - You want a different default size/position/snapshot for inserted slides.
 
+## Snapshot placeholder
+
+`snapshot-placeholder.png` (this folder, tracked) replaces the embed's
+snapshot image inside the template during sanitization. The snapshot is
+what PowerPoint paints in the frame **during slide transitions** and on
+machines without the add-in; the seed's own snapshot captures whatever
+the embed showed at authoring time (often the near-white signed-out
+screen, which reads as a white flash mid-transition). Once a user's deck
+is saved with the live embed loaded, PowerPoint refreshes the snapshot
+to the game's actual look. Pass `-SnapshotImage` to the sanitizer to use
+a different image; delete the file to keep the seed's own snapshot.
+
 ## Behavior notes
 
 - Machines **without** the content add-in installed show the slide's
   static snapshot instead of the live surface (`AllowSnapshot`).
+- Live webviews never animate through PowerPoint transitions: the
+  snapshot is shown during the transition and the live embed attaches
+  after it completes. That swap ("pop") is platform behavior.
 - Inserted copies start with no identity; duplicate detection + fork logic
   in `public/embed/poll-game-content.html` remains the backstop for users
   copy-pasting slides whose embed is already live.
