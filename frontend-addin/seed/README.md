@@ -40,7 +40,9 @@ manual insert (see `public/embed/embed-identity.js`).
 ## Snapshot placeholder
 
 `snapshot-placeholder.png` (this folder, tracked) replaces the embed's
-snapshot image inside the template during sanitization. The snapshot is
+snapshot image inside the template during sanitization. Its source is
+`snapshot-placeholder.html` next to it, which documents the
+headless-Chrome command to regenerate the PNG. The snapshot is
 what PowerPoint paints in the frame **during slide transitions** and on
 machines without the add-in; the seed's own snapshot captures whatever
 the embed showed at authoring time (often the near-white signed-out

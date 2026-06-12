@@ -1,0 +1,80 @@
+<!doctype html>
+<!--
+  Source for seed/snapshot-placeholder.png (the image the sanitizer bakes
+  into public/game-slide.pptx as the embed's snapshot — shown to viewers
+  without the add-in installed or offline). Styled to match the live game's
+  background (#fafafa gradient, see public/poc/poll-game-poc.css).
+
+  Regenerate the PNG after editing:
+
+  & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `
+    --screenshot="frontend-addin\seed\snapshot-placeholder.png" `
+    --window-size=1240,698 --disable-gpu "file:///<abs-path-to-this-file>"
+
+  Then re-run scripts/sanitize-game-slide.ps1 to rebuild the template.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prezo Game placeholder</title>
+    <style>
+      * { margin: 0; box-sizing: border-box; }
+      body {
+        width: 1240px;
+        height: 698px;
+        background: linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .wrap { text-align: center; }
+      .logo {
+        width: 88px;
+        height: 88px;
+        border-radius: 50%;
+        background: #004080;
+        border: 4px solid #ff7f60;
+        color: #ffffff;
+        font-size: 48px;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 26px;
+      }
+      h1 {
+        color: #0f172a;
+        font-size: 42px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        margin-bottom: 12px;
+      }
+      p {
+        color: #64748b;
+        font-size: 21px;
+      }
+      .dots { margin-top: 32px; }
+      .dots span {
+        display: inline-block;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        margin: 0 6px;
+      }
+      .dots span:nth-child(1) { background: #2563eb; }
+      .dots span:nth-child(2) { background: #ff7f60; }
+      .dots span:nth-child(3) { background: #10b981; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo">P</div>
+      <h1>Prezo Game</h1>
+      <p>The live game loads here in a moment</p>
+      <div class="dots"><span></span><span></span><span></span></div>
+    </div>
+  </body>
+</html>
