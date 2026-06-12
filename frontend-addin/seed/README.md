@@ -55,9 +55,18 @@ a different image; delete the file to keep the seed's own snapshot.
 
 - Machines **without** the content add-in installed show the slide's
   static snapshot instead of the live surface (`AllowSnapshot`).
-- Live webviews never animate through PowerPoint transitions: the
-  snapshot is shown during the transition and the live embed attaches
-  after it completes. That swap ("pop") is platform behavior.
+- **Transitions: keep the game slide's transition set to None/Cut.**
+  PowerPoint hides every live add-in frame while a transition animation
+  plays and reveals it only afterwards — confirmed empirically
+  (12/06/2026): manually inserted and template-inserted embeds behave
+  identically (white frame during the animation, pop after); a frame in
+  "Show as Saved Image" mode rides the transition perfectly (static
+  bitmaps are composited, live webviews are not); other shapes on the
+  slide animate normally while the frame area alone stays blank. No
+  snapshot, theme, or load-speed change affects this. Since the
+  *incoming* slide's transition is the one that plays, setting None on
+  the game slide eliminates the blank window while the rest of the deck
+  keeps its transitions.
 - Inserted copies start with no identity; duplicate detection + fork logic
   in `public/embed/poll-game-content.html` remains the backstop for users
   copy-pasting slides whose embed is already live.
