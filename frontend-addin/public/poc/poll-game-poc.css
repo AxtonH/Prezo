@@ -2565,11 +2565,15 @@ h1 {
   color: var(--chrome-text-secondary);
 }
 
-/* Sits on the LEFT next to the brand reference pill. It must NOT take margin-left:auto,
-   or its text would claim the footer's free space and shove the bolt/paperclip toward
-   center — the bug this layout fixes. Truncates instead of growing the row. */
+/* Brand reference status ("Analyzing…" / errors) sits on the LEFT next to the pill.
+   It must NOT take margin-left:auto, or its text would claim the footer's free space
+   and shove the bolt/paperclip toward center — the bug this layout fixes. The icons
+   group (.artifact-type-reference-inline) owns the only margin-left:auto, so it alone
+   holds the right edge and everything else packs left. Truncates instead of growing. */
 .artifact-prompt-bar-footer > #artifact-brand-reference-status {
-  order: 1;
+  /* order:0 keeps it in the left cluster (before the auto-margin icons in DOM order);
+     a higher order would jump it past the icons to the right of the row. */
+  order: 0;
   min-width: 0;
   max-width: 180px;
   overflow: hidden;
@@ -2581,54 +2585,16 @@ h1 {
   display: none;
 }
 
-/* Uploaded brand reference image, shown as a compact thumbnail pill on the left.
-   Mirrors .artifact-type-reference-preview-inline so both reference flows match. */
-.artifact-brand-reference-preview {
+/* The uploaded brand reference reuses the standard .artifact-image-chip pill; only
+   placement differs (left of the footer, flex item, with a small right gap). */
+.artifact-prompt-bar-footer > .artifact-brand-reference-preview {
   order: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 6px;
+  margin: 0 6px 0 0;
   flex-shrink: 0;
 }
 
 .artifact-brand-reference-preview.hidden {
   display: none;
-}
-
-.artifact-brand-reference-preview img {
-  height: 22px;
-  width: auto;
-  border-radius: 4px;
-  border: 1px solid var(--chrome-input-border);
-  object-fit: cover;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.artifact-brand-reference-clear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  font-size: 13px;
-  line-height: 1;
-  border-radius: 50%;
-  border: 1px solid var(--chrome-input-border);
-  background: transparent;
-  color: var(--chrome-text-secondary);
-  cursor: pointer;
-}
-
-.artifact-brand-reference-clear:hover:not(:disabled) {
-  color: var(--chrome-text);
-  border-color: var(--chrome-input-focus);
-}
-
-.artifact-brand-reference-clear:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* Inline reference image controls in the prompt bar footer */
@@ -2900,15 +2866,18 @@ h1 {
 }
 
 /* Artifact editor: shell toggle sits inside the footer on the left, as a compact
-   button matching the attach paperclip. margin-right:auto pushes the paperclip right. */
+   button matching the attach paperclip. The icons group (.artifact-type-reference-inline)
+   owns margin-left:auto and holds the right edge, so the toggle just packs left here —
+   leaving room for the brand reference pill/status to sit beside it on the left. */
 .artifact-prompt-bar-footer > .editor-shell-toggle {
+  order: -1;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
   padding: 0;
-  margin: 0 auto 0 0;
+  margin: 0;
   border: none;
   border-radius: 6px;
   background: transparent;

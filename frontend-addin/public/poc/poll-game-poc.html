@@ -716,18 +716,23 @@
                     ▲
                   </button>
                   <!-- Brand reference (from the "Use a reference image…" chip) renders as a
-                       thumbnail pill on the LEFT so the bolt + paperclip stay pinned right. The
-                       status <p> is kept for screen readers / errors but no longer claims the
-                       footer's auto-margin (see CSS), so it can't shove the icons toward center. -->
+                       standard pill (same .artifact-image-chip look used everywhere else) on the
+                       LEFT, so the bolt + paperclip stay pinned right. The status <p> is kept for
+                       screen readers / errors but no longer claims the footer's auto-margin (see
+                       CSS), so it can't shove the icons toward center. -->
                   <div
                     id="artifact-brand-reference-preview"
-                    class="artifact-brand-reference-preview hidden"
+                    class="artifact-image-chip artifact-brand-reference-preview hidden"
+                    role="group"
                   >
-                    <img id="artifact-brand-reference-preview-img" alt="Brand reference preview" />
+                    <span class="material-symbols-outlined" aria-hidden="true">image</span>
+                    <span id="artifact-brand-reference-preview-name" class="artifact-image-chip-name"
+                      >Reference image</span
+                    >
                     <button
                       id="artifact-brand-reference-clear"
                       type="button"
-                      class="artifact-brand-reference-clear"
+                      class="artifact-image-chip-remove artifact-brand-reference-clear"
                       aria-label="Remove brand reference image"
                     >×</button>
                   </div>

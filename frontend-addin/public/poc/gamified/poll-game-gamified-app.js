@@ -177,8 +177,6 @@ import {
 
   /** True while POST /brand-profiles/extract runs for the artifact reference image control. */
   let artifactBrandReferenceBusy = false
-  /** Object URL backing the brand reference thumbnail pill; revoked when cleared/replaced. */
-  let artifactBrandReferenceObjectUrl = ''
   /** Per-chip object URLs (for preview thumbnails), keyed by attachment id, so each can
       be revoked when its chip is removed or the composer is cleared. */
   const attachmentObjectUrls = new Map()
@@ -390,7 +388,7 @@ import {
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
     artifactBrandReferencePreview: must('artifact-brand-reference-preview'),
-    artifactBrandReferencePreviewImg: must('artifact-brand-reference-preview-img'),
+    artifactBrandReferencePreviewName: must('artifact-brand-reference-preview-name'),
     artifactBrandReferenceClear: must('artifact-brand-reference-clear'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactEditorShellToggle: must('artifact-editor-shell-toggle'),
@@ -1842,24 +1840,28 @@ import {
     hideArtifactBrandReferencePreview()
   }
 
-  /** Show the chosen brand reference image as a thumbnail pill in the footer (left side). */
-  function showArtifactBrandReferencePreview(file) {
-    if (artifactBrandReferenceObjectUrl) {
-      URL.revokeObjectURL(artifactBrandReferenceObjectUrl)
-    }
-    artifactBrandReferenceObjectUrl = URL.createObjectURL(file)
-    el.artifactBrandReferencePreviewImg.src = artifactBrandReferenceObjectUrl
+  /** Show the chosen brand reference as a standard pill (filename label) in the footer.
+   *  While `uploading`, the pill dims via the shared --uploading state, matching the
+   *  inline image chips used elsewhere. */
+  function showArtifactBrandReferencePreview(file, { uploading = false } = {}) {
+    const filename = asText(file?.name).trim() || 'Reference image'
+    el.artifactBrandReferencePreviewName.textContent = filename
+    el.artifactBrandReferencePreview.title = filename
+    el.artifactBrandReferencePreview.classList.toggle('artifact-image-chip--uploading', uploading)
     el.artifactBrandReferencePreview.classList.remove('hidden')
   }
 
-  /** Hide + reset the brand reference thumbnail pill and revoke its object URL. */
+  /** Drop the pill's uploading state once extraction resolves (keeps the pill visible). */
+  function settleArtifactBrandReferencePreview() {
+    el.artifactBrandReferencePreview.classList.remove('artifact-image-chip--uploading')
+  }
+
+  /** Hide + reset the brand reference pill. */
   function hideArtifactBrandReferencePreview() {
-    if (artifactBrandReferenceObjectUrl) {
-      URL.revokeObjectURL(artifactBrandReferenceObjectUrl)
-      artifactBrandReferenceObjectUrl = ''
-    }
     el.artifactBrandReferencePreview.classList.add('hidden')
-    el.artifactBrandReferencePreviewImg.removeAttribute('src')
+    el.artifactBrandReferencePreview.classList.remove('artifact-image-chip--uploading')
+    el.artifactBrandReferencePreviewName.textContent = 'Reference image'
+    el.artifactBrandReferencePreview.removeAttribute('title')
   }
 
   /** × on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
@@ -2301,10 +2303,10 @@ import {
       clearArtifactReferenceFileUi()
       return
     }
-    // Show the thumbnail pill immediately (left of the footer) so the user sees the
-    // upload land; the bolt + paperclip stay pinned right because the pill and the
-    // short status text no longer claim the footer's auto-margin.
-    showArtifactBrandReferencePreview(file)
+    // Show the pill immediately (left of the footer) so the user sees the upload land;
+    // the bolt + paperclip stay pinned right because the pill and the short status text
+    // no longer claim the footer's auto-margin. The pill dims while analyzing.
+    showArtifactBrandReferencePreview(file, { uploading: true })
     artifactBrandReferenceBusy = true
     el.artifactBrandReferenceStatus.textContent = 'Analyzing…'
     syncArtifactComposerBusyState()
@@ -2328,8 +2330,9 @@ import {
         throw new Error('Could not read visual guidelines from that image.')
       }
       state.artifact.conversationAnswers.referenceImageGuidelines = text
-      // Success is conveyed by the persistent thumbnail pill, not a footer sentence
+      // Success is conveyed by the persistent pill (un-dimmed), not a footer sentence
       // (which would otherwise push the icons toward the center).
+      settleArtifactBrandReferencePreview()
       el.artifactBrandReferenceStatus.textContent = ''
     } catch (error) {
       state.artifact.conversationAnswers.referenceImageGuidelines = ''
