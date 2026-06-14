@@ -177,6 +177,8 @@ import {
 
   /** True while POST /brand-profiles/extract runs for the artifact reference image control. */
   let artifactBrandReferenceBusy = false
+  /** Object URL backing the brand reference thumbnail pill; revoked when cleared/replaced. */
+  let artifactBrandReferenceObjectUrl = ''
   /** Per-chip object URLs (for preview thumbnails), keyed by attachment id, so each can
       be revoked when its chip is removed or the composer is cleared. */
   const attachmentObjectUrls = new Map()
@@ -387,6 +389,9 @@ import {
     artifactIntakeBuildNow: must('artifact-intake-build-now'),
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
+    artifactBrandReferencePreview: must('artifact-brand-reference-preview'),
+    artifactBrandReferencePreviewImg: must('artifact-brand-reference-preview-img'),
+    artifactBrandReferenceClear: must('artifact-brand-reference-clear'),
     artifactPromptInput: must('artifact-prompt-input'),
     artifactEditorShellToggle: must('artifact-editor-shell-toggle'),
     artifactComposerVisibilityToggle: must('artifact-composer-visibility-toggle'),
@@ -1635,6 +1640,7 @@ import {
     el.artifactPromptInput.addEventListener('input', handleArtifactPromptInputInput)
     el.artifactBrandProfileSelect.addEventListener('change', handleArtifactBrandProfileSelectChange)
     el.artifactBrandReferenceInput.addEventListener('change', handleArtifactBrandReferenceInputChange)
+    el.artifactBrandReferenceClear.addEventListener('click', handleArtifactBrandReferenceClearClick)
     el.artifactTypeReferencePaperclip.addEventListener('click', handleArtifactTypeReferencePaperclipClick)
     el.artifactPromptForm.addEventListener('dragover', handleArtifactTypeReferenceDragOver)
     el.artifactPromptForm.addEventListener('dragleave', handleArtifactTypeReferenceDragLeave)
@@ -1833,6 +1839,40 @@ import {
   function clearArtifactReferenceFileUi() {
     el.artifactBrandReferenceInput.value = ''
     el.artifactBrandReferenceStatus.textContent = ''
+    hideArtifactBrandReferencePreview()
+  }
+
+  /** Show the chosen brand reference image as a thumbnail pill in the footer (left side). */
+  function showArtifactBrandReferencePreview(file) {
+    if (artifactBrandReferenceObjectUrl) {
+      URL.revokeObjectURL(artifactBrandReferenceObjectUrl)
+    }
+    artifactBrandReferenceObjectUrl = URL.createObjectURL(file)
+    el.artifactBrandReferencePreviewImg.src = artifactBrandReferenceObjectUrl
+    el.artifactBrandReferencePreview.classList.remove('hidden')
+  }
+
+  /** Hide + reset the brand reference thumbnail pill and revoke its object URL. */
+  function hideArtifactBrandReferencePreview() {
+    if (artifactBrandReferenceObjectUrl) {
+      URL.revokeObjectURL(artifactBrandReferenceObjectUrl)
+      artifactBrandReferenceObjectUrl = ''
+    }
+    el.artifactBrandReferencePreview.classList.add('hidden')
+    el.artifactBrandReferencePreviewImg.removeAttribute('src')
+  }
+
+  /** × on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
+  function handleArtifactBrandReferenceClearClick() {
+    if (el.artifactBrandReferenceClear.disabled || artifactBrandReferenceBusy) {
+      return
+    }
+    state.artifact.conversationAnswers.referenceImageGuidelines = ''
+    if (el.artifactBrandProfileSelect.value === ARTIFACT_BRAND_REFERENCE_VALUE) {
+      el.artifactBrandProfileSelect.value = ''
+    }
+    clearArtifactReferenceFileUi()
+    syncArtifactConversationUi()
   }
 
   function revokeAttachmentObjectUrl(id) {
@@ -2261,8 +2301,12 @@ import {
       clearArtifactReferenceFileUi()
       return
     }
+    // Show the thumbnail pill immediately (left of the footer) so the user sees the
+    // upload land; the bolt + paperclip stay pinned right because the pill and the
+    // short status text no longer claim the footer's auto-margin.
+    showArtifactBrandReferencePreview(file)
     artifactBrandReferenceBusy = true
-    el.artifactBrandReferenceStatus.textContent = 'Analyzing image…'
+    el.artifactBrandReferenceStatus.textContent = 'Analyzing…'
     syncArtifactComposerBusyState()
     try {
       const formData = new FormData()
@@ -2284,12 +2328,14 @@ import {
         throw new Error('Could not read visual guidelines from that image.')
       }
       state.artifact.conversationAnswers.referenceImageGuidelines = text
-      el.artifactBrandReferenceStatus.textContent =
-        'Reference guidelines loaded. Add notes below if you like, then press Enter.'
+      // Success is conveyed by the persistent thumbnail pill, not a footer sentence
+      // (which would otherwise push the icons toward the center).
+      el.artifactBrandReferenceStatus.textContent = ''
     } catch (error) {
       state.artifact.conversationAnswers.referenceImageGuidelines = ''
       el.artifactBrandReferenceStatus.textContent = errorToMessage(error)
       el.artifactBrandReferenceInput.value = ''
+      hideArtifactBrandReferencePreview()
     } finally {
       artifactBrandReferenceBusy = false
       syncArtifactComposerBusyState()
@@ -13016,6 +13062,7 @@ import {
     el.artifactTypeReferenceClear.removeEventListener('click', handleArtifactTypeReferenceClearClick)
     document.removeEventListener('paste', handleArtifactBuildReferencePaste, true)
     el.artifactBrandReferenceInput.removeEventListener('change', handleArtifactBrandReferenceInputChange)
+    el.artifactBrandReferenceClear.removeEventListener('click', handleArtifactBrandReferenceClearClick)
     el.artifactPromptInput.removeEventListener('keydown', handleArtifactPromptInputKeydown)
     el.artifactPromptInput.removeEventListener('input', handleArtifactPromptInputInput)
     el.artifactFrame.removeEventListener('load', handleArtifactFrameLoad)
