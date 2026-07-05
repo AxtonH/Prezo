@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { Poll, PollMode } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
+import { ControlModeChip, FollowSlidesButton } from './ControlModeUi'
 
 export interface ActivePollActivityCardProps {
   poll: Poll
@@ -42,20 +43,13 @@ export function ActivePollActivityCard({
   const inactive = variant === 'inactive'
   const mode: PollMode = poll.mode ?? 'auto'
 
-  const followSlidesButton =
-    onSetMode && mode !== 'auto' ? (
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          void onSetMode(poll.id, 'auto')
-        }}
-        title="Let the slideshow control this poll: it opens when its slide is presented and closes when the show moves on"
-        className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-sky-50 !text-sky-800 !border !border-sky-200 hover:!bg-sky-100 !transition-colors"
-      >
-        Follow slides
-      </button>
-    ) : null
+  const followSlidesButton = (
+    <FollowSlidesButton
+      mode={mode}
+      title="Let the slideshow control this poll: it opens when its slide is presented and closes when the show moves on"
+      onFollow={onSetMode ? () => onSetMode(poll.id, 'auto') : undefined}
+    />
+  )
 
   const handleBindWidget = async () => {
     if (!onBindWidget) {
@@ -110,20 +104,10 @@ export function ActivePollActivityCard({
             >
               {inactive ? 'Ended' : 'Live'}
             </span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                mode === 'auto' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
-              }`}
-              title={
-                mode === 'auto'
-                  ? 'Slide-driven: opens when its slide is presented, closes when the show moves on'
-                  : mode === 'open'
-                    ? 'Pinned by the host: stays open regardless of the slideshow'
-                    : 'Pinned by the host: stays closed regardless of the slideshow'
-              }
-            >
-              {mode === 'auto' ? 'Auto · follows slides' : mode === 'open' ? 'Pinned open' : 'Pinned closed'}
-            </span>
+            <ControlModeChip
+              mode={mode}
+              autoTitle="Slide-driven: opens when its slide is presented, closes when the show moves on"
+            />
             <span className="inline-flex items-center gap-1.5">
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${

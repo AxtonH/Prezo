@@ -26,8 +26,7 @@ def run(coro):
 
 class PromptPresenceTests(TestCase):
     def setUp(self) -> None:
-        prompts_api._presence.clear()
-        prompts_api._prompt_cache.clear()
+        prompts_api.channel.clear()
         self.store = InMemoryStore()
         self.manager = ConnectionManager()
         self.session = run(self.store.create_session("Deck", HOST.id))
@@ -106,8 +105,8 @@ class PromptPresenceTests(TestCase):
             self.store.create_qna_prompt(self.session.id, "Other?", HOST.id)
         )
         self.report(on_air=True, prompt_id=other.id)
-        stale = time.monotonic() - prompts_api._PRESENCE_TTL_SECONDS - 1
-        prompts_api._presence[(self.session.id, other.id)] = (True, stale)
+        stale = time.monotonic() - prompts_api.channel.ttl_seconds - 1
+        prompts_api.channel.presence[(self.session.id, other.id)] = (True, stale)
         self.report(on_air=False)
         self.assertEqual(
             self.prompt_in_store(other.id).status, QnaPromptStatus.closed
@@ -116,8 +115,7 @@ class PromptPresenceTests(TestCase):
 
 class QnaPresenceTests(TestCase):
     def setUp(self) -> None:
-        sessions_api._qna_presence.clear()
-        sessions_api._qna_cache.clear()
+        sessions_api.qna_channel.clear()
         self.store = InMemoryStore()
         self.manager = ConnectionManager()
         self.session = run(self.store.create_session("Deck", HOST.id))

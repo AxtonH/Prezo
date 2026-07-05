@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import logging
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -23,24 +22,20 @@ from ..models import (
 )
 from ..realtime import ConnectionManager
 from ..store import ConflictError, InMemoryStore, NotFoundError
+from .slide_presence import SlidePresenceChannel
 
 router = APIRouter(prefix="/sessions/{session_id}/polls", tags=["polls"])
 logger = logging.getLogger("prezo.polls")
 
-# Last presence report per (session_id, poll_id): (on_air, monotonic ts).
-# Runtime-only state — a backend restart just means auto polls close on the
-# next report/sweep and reopen on the next on-air keepalive (~5s).
-_PRESENCE_TTL_SECONDS = 15.0
-_presence: dict[tuple[str, str], tuple[bool, float]] = {}
-
-# Last (mode, status) this process read or wrote per poll. Presence reports
-# are latency-critical (they gate how fast the audience sees a poll open),
-# and the Supabase-backed store pays several REST round trips per read —
-# with the cache, keepalives touch no storage at all and transitions pay
-# only the actual status write. Safe because every mutation of poll
-# mode/status flows through this module in this process; entries are
-# dropped when a write discovers the poll is gone.
-_poll_cache: dict[tuple[str, str], tuple[PollMode, PollStatus]] = {}
+# Presence reports are latency-critical (they gate how fast the audience
+# sees a poll open), and the Supabase-backed store pays several REST round
+# trips per read — with the channel's state cache, keepalives touch no
+# storage at all and transitions pay only the actual status write. Safe
+# because every mutation of poll mode/status flows through this module in
+# this process; entries are dropped when a write discovers the poll is gone.
+channel: SlidePresenceChannel[tuple[str, str], tuple[PollMode, PollStatus]] = (
+    SlidePresenceChannel()
+)
 
 
 def make_activity(activity_type: str, payload: dict) -> SessionActivity:
@@ -50,15 +45,7 @@ def make_activity(activity_type: str, payload: dict) -> SessionActivity:
 
 
 def _cache_poll(poll: Poll) -> None:
-    _poll_cache[(poll.session_id, poll.id)] = (poll.mode, poll.status)
-
-
-def _presence_is_on_air(session_id: str, poll_id: str) -> bool:
-    entry = _presence.get((session_id, poll_id))
-    if entry is None:
-        return False
-    on_air, reported_at = entry
-    return on_air and (time.monotonic() - reported_at) <= _PRESENCE_TTL_SECONDS
+    channel.state[(poll.session_id, poll.id)] = (poll.mode, poll.status)
 
 
 async def _broadcast_status_activity(
@@ -118,25 +105,23 @@ async def _sweep_stale_auto_polls(
     silent (webview killed, deck closed mid-show). Runs piggybacked on
     every presence report for the session; candidates come from the cache,
     so the common case (nothing stale) costs no storage reads."""
-    now = time.monotonic()
     candidates = [
         poll_id
-        for (sid, poll_id), (mode, status) in _poll_cache.items()
+        for (sid, poll_id), (mode, status) in channel.state.items()
         if sid == session_id
         and poll_id != exclude_poll_id
         and mode == PollMode.auto
         and status == PollStatus.open
     ]
     for poll_id in candidates:
-        entry = _presence.get((session_id, poll_id))
-        if entry is not None and (now - entry[1]) <= _PRESENCE_TTL_SECONDS and entry[0]:
+        if channel.is_on_air((session_id, poll_id)):
             continue
         try:
             poll = await store.set_poll_status(
                 session_id, poll_id, PollStatus.closed, user.id
             )
         except NotFoundError:
-            _poll_cache.pop((session_id, poll_id), None)
+            channel.forget((session_id, poll_id))
             continue
         _cache_poll(poll)
         await _broadcast_status_activity(session_id, poll, store, manager)
@@ -213,7 +198,7 @@ async def _apply_poll_mode(
         # now — open only if a conductor reported this poll on-air recently.
         desired = (
             PollStatus.open
-            if _presence_is_on_air(session_id, poll_id)
+            if channel.is_on_air((session_id, poll_id))
             else PollStatus.closed
         )
     try:
@@ -261,20 +246,15 @@ async def report_poll_presence(
     Latency-critical: audience open/close waits on this. The state cache
     makes no-op reports (keepalives, pinned polls) storage-free; only real
     transitions write."""
-    now = time.monotonic()
-    if len(_presence) > 5000:
-        cutoff = now - 20 * _PRESENCE_TTL_SECONDS
-        for key in [k for k, v in _presence.items() if v[1] < cutoff]:
-            _presence.pop(key, None)
-    _presence[(session_id, poll_id)] = (payload.on_air, now)
+    channel.record((session_id, poll_id), payload.on_air)
 
-    cached = _poll_cache.get((session_id, poll_id))
+    cached = channel.state.get((session_id, poll_id))
     if cached is None:
         try:
             await _seed_poll_cache(store, session_id)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        cached = _poll_cache.get((session_id, poll_id))
+        cached = channel.state.get((session_id, poll_id))
         if cached is None:
             raise HTTPException(status_code=404, detail="poll not found")
     mode, status = cached
@@ -287,7 +267,7 @@ async def report_poll_presence(
                     session_id, poll_id, desired, user.id
                 )
             except NotFoundError as exc:
-                _poll_cache.pop((session_id, poll_id), None)
+                channel.forget((session_id, poll_id))
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             _cache_poll(poll)
             await _broadcast_status_activity(session_id, poll, store, manager)
@@ -309,8 +289,7 @@ async def delete_poll(
         await store.delete_poll(session_id, poll_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    _poll_cache.pop((session_id, poll_id), None)
-    _presence.pop((session_id, poll_id), None)
+    channel.forget((session_id, poll_id))
     activity = make_activity("poll_deleted", {"poll_id": poll_id})
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)

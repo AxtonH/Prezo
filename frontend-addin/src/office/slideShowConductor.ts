@@ -55,13 +55,105 @@ let slidePromptMap = new Map<string, string>()
 let qnaSlideIds = new Set<string>()
 let mapBuiltAt = 0
 let mapBuiltForSession: string | null = null
-/** What this conductor has reported on-air per channel. */
-let reportedPollId: string | null = null
-let reportedPromptId: string | null = null
-let reportedQnaOnAir = false
-let lastPollReportAt = 0
-let lastPromptReportAt = 0
-let lastQnaReportAt = 0
+
+/**
+ * One reporting channel keyed by an activity id (polls, prompts): applies
+ * on-air transitions with a hand-off (old activity off-air first), sends a
+ * keepalive while on air so the backend's stale sweep leaves us alone, and
+ * keeps its reported state for retry when a send fails.
+ */
+class IdPresenceChannel {
+  private reportedId: string | null = null
+  private lastReportAt = 0
+  private readonly send: (sessionId: string, id: string, onAir: boolean) => Promise<unknown>
+
+  constructor(send: (sessionId: string, id: string, onAir: boolean) => Promise<unknown>) {
+    this.send = send
+  }
+
+  async apply(sessionId: string, activeId: string | null): Promise<void> {
+    if (activeId && activeId !== this.reportedId) {
+      if (this.reportedId) {
+        await this.report(sessionId, this.reportedId, false)
+      }
+      await this.report(sessionId, activeId, true)
+    } else if (!activeId && this.reportedId) {
+      await this.report(sessionId, this.reportedId, false)
+    } else if (
+      activeId &&
+      this.reportedId === activeId &&
+      Date.now() - this.lastReportAt >= KEEPALIVE_MS
+    ) {
+      await this.report(sessionId, activeId, true)
+    }
+  }
+
+  /** Best-effort off-air for a session we are leaving; resets local state. */
+  release(sessionId: string | null): void {
+    const previous = this.reportedId
+    this.reportedId = null
+    if (sessionId && previous) {
+      void this.send(sessionId, previous, false).catch(() => undefined)
+    }
+  }
+
+  private async report(sessionId: string, id: string, onAir: boolean): Promise<void> {
+    try {
+      await this.send(sessionId, id, onAir)
+      this.reportedId = onAir ? id : null
+      this.lastReportAt = Date.now()
+    } catch {
+      // keep state so the next tick retries the same transition
+    }
+  }
+}
+
+/** Boolean variant for session-level Q&A. */
+class FlagPresenceChannel {
+  private reportedOnAir = false
+  private lastReportAt = 0
+  private readonly send: (sessionId: string, onAir: boolean) => Promise<unknown>
+
+  constructor(send: (sessionId: string, onAir: boolean) => Promise<unknown>) {
+    this.send = send
+  }
+
+  async apply(sessionId: string, onAir: boolean): Promise<void> {
+    if (onAir !== this.reportedOnAir) {
+      await this.report(sessionId, onAir)
+    } else if (onAir && Date.now() - this.lastReportAt >= KEEPALIVE_MS) {
+      await this.report(sessionId, onAir)
+    }
+  }
+
+  release(sessionId: string | null): void {
+    const wasOnAir = this.reportedOnAir
+    this.reportedOnAir = false
+    if (sessionId && wasOnAir) {
+      void this.send(sessionId, false).catch(() => undefined)
+    }
+  }
+
+  private async report(sessionId: string, onAir: boolean): Promise<void> {
+    try {
+      await this.send(sessionId, onAir)
+      this.reportedOnAir = onAir
+      this.lastReportAt = Date.now()
+    } catch {
+      // keep state so the next tick retries
+    }
+  }
+}
+
+const pollChannel = new IdPresenceChannel((sid, id, onAir) =>
+  api.reportPollPresence(sid, id, onAir, null)
+)
+const promptChannel = new IdPresenceChannel((sid, id, onAir) =>
+  api.reportPromptPresence(sid, id, onAir)
+)
+const qnaChannel = new FlagPresenceChannel((sid, onAir) =>
+  api.reportQnaPresence(sid, onAir)
+)
 
 const officeDocReady = (): boolean =>
   typeof Office !== 'undefined' && Boolean(Office.context?.document)
@@ -199,39 +291,6 @@ const rebuildSlideMaps = async (forSession: string): Promise<void> => {
   }
 }
 
-const reportPoll = async (forSession: string, pollId: string, onAir: boolean): Promise<boolean> => {
-  try {
-    await api.reportPollPresence(forSession, pollId, onAir, null)
-    reportedPollId = onAir ? pollId : null
-    lastPollReportAt = Date.now()
-    return true
-  } catch {
-    return false
-  }
-}
-
-const reportPrompt = async (forSession: string, promptId: string, onAir: boolean): Promise<boolean> => {
-  try {
-    await api.reportPromptPresence(forSession, promptId, onAir)
-    reportedPromptId = onAir ? promptId : null
-    lastPromptReportAt = Date.now()
-    return true
-  } catch {
-    return false
-  }
-}
-
-const reportQna = async (forSession: string, onAir: boolean): Promise<boolean> => {
-  try {
-    await api.reportQnaPresence(forSession, onAir)
-    reportedQnaOnAir = onAir
-    lastQnaReportAt = Date.now()
-    return true
-  } catch {
-    return false
-  }
-}
-
 const tick = async (): Promise<void> => {
   const now = Date.now()
   if (tickBusySince && now - tickBusySince < TICK_STALL_MS) {
@@ -270,45 +329,9 @@ const tick = async (): Promise<void> => {
     if (viewEpoch !== epochAtDecision || sessionId !== forSession) {
       return
     }
-    // Polls
-    if (activePollId && activePollId !== reportedPollId) {
-      if (reportedPollId) {
-        await reportPoll(forSession, reportedPollId, false)
-      }
-      await reportPoll(forSession, activePollId, true)
-    } else if (!activePollId && reportedPollId) {
-      await reportPoll(forSession, reportedPollId, false)
-    } else if (
-      activePollId &&
-      reportedPollId === activePollId &&
-      Date.now() - lastPollReportAt >= KEEPALIVE_MS
-    ) {
-      await reportPoll(forSession, activePollId, true)
-    }
-    // Discussion prompts (and prompt-bound Q&A widgets)
-    if (activePromptId && activePromptId !== reportedPromptId) {
-      if (reportedPromptId) {
-        await reportPrompt(forSession, reportedPromptId, false)
-      }
-      await reportPrompt(forSession, activePromptId, true)
-    } else if (!activePromptId && reportedPromptId) {
-      await reportPrompt(forSession, reportedPromptId, false)
-    } else if (
-      activePromptId &&
-      reportedPromptId === activePromptId &&
-      Date.now() - lastPromptReportAt >= KEEPALIVE_MS
-    ) {
-      await reportPrompt(forSession, activePromptId, true)
-    }
-    // Session Q&A (unbound Q&A widget slides)
-    if (qnaOnAir !== reportedQnaOnAir) {
-      await reportQna(forSession, qnaOnAir)
-    } else if (
-      qnaOnAir &&
-      Date.now() - lastQnaReportAt >= KEEPALIVE_MS
-    ) {
-      await reportQna(forSession, qnaOnAir)
-    }
+    await pollChannel.apply(forSession, activePollId)
+    await promptChannel.apply(forSession, activePromptId)
+    await qnaChannel.apply(forSession, qnaOnAir)
   } finally {
     tickBusySince = 0
   }
@@ -363,27 +386,13 @@ export function setConductorSession(nextSessionId: string | null): void {
     return
   }
   const previousSession = sessionId
-  const previousPoll = reportedPollId
-  const previousPrompt = reportedPromptId
-  const previousQnaOnAir = reportedQnaOnAir
   sessionId = nextSessionId
-  reportedPollId = null
-  reportedPromptId = null
-  reportedQnaOnAir = false
   mapBuiltAt = 0
   mapBuiltForSession = null
-  if (previousSession) {
-    // Release whatever we put on air under the old session.
-    if (previousPoll) {
-      void reportPoll(previousSession, previousPoll, false)
-    }
-    if (previousPrompt) {
-      void reportPrompt(previousSession, previousPrompt, false)
-    }
-    if (previousQnaOnAir) {
-      void reportQna(previousSession, false)
-    }
-  }
+  // Release whatever we put on air under the old session.
+  pollChannel.release(previousSession)
+  promptChannel.release(previousSession)
+  qnaChannel.release(previousSession)
   if (nextSessionId) {
     startLoop()
   }

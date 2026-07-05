@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -35,6 +34,7 @@ from ..store import (
     NotFoundError,
     PermissionDeniedError,
 )
+from .slide_presence import SlidePresenceChannel
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -280,22 +280,14 @@ async def get_snapshot(
 
 # Slide-driven (auto) session Q&A. Same design as polls/prompts, but the
 # unit is the whole session's qna_open flag: on-air means "a Q&A widget
-# slide is currently presented". Cache holds (control_mode, qna_open).
-_QNA_PRESENCE_TTL_SECONDS = 15.0
-_qna_presence: dict[str, tuple[bool, float]] = {}
-_qna_cache: dict[str, tuple[ControlMode, bool]] = {}
+# slide is currently presented". State holds (control_mode, qna_open).
+qna_channel: SlidePresenceChannel[str, tuple[ControlMode, bool]] = (
+    SlidePresenceChannel()
+)
 
 
 def _cache_qna(session: Session) -> None:
-    _qna_cache[session.id] = (session.qna_control_mode, session.qna_open)
-
-
-def _qna_is_on_air(session_id: str) -> bool:
-    entry = _qna_presence.get(session_id)
-    if entry is None:
-        return False
-    on_air, reported_at = entry
-    return on_air and (time.monotonic() - reported_at) <= _QNA_PRESENCE_TTL_SECONDS
+    qna_channel.state[session.id] = (session.qna_control_mode, session.qna_open)
 
 
 async def _broadcast_qna_status(
@@ -329,7 +321,7 @@ async def _apply_qna_control_mode(
     elif mode == ControlMode.closed:
         desired = False
     else:
-        desired = _qna_is_on_air(session_id)
+        desired = qna_channel.is_on_air(session_id)
     if session.qna_open != desired:
         try:
             session = await store.set_qna_status(session_id, desired, user.id)
@@ -403,23 +395,23 @@ async def report_qna_presence(
     """Reported by the taskpane conductor: on_air=true while a Q&A widget
     slide is presented. Auto-mode Q&A opens/closes; pinned Q&A only records
     presence so switching back to auto lands on the right state."""
-    _qna_presence[session_id] = (payload.on_air, time.monotonic())
+    qna_channel.record(session_id, payload.on_air)
 
-    cached = _qna_cache.get(session_id)
+    cached = qna_channel.state.get(session_id)
     if cached is None:
         try:
             session = await store.get_session(session_id, user.id)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         _cache_qna(session)
-        cached = _qna_cache[session_id]
+        cached = qna_channel.state[session_id]
     mode, qna_open = cached
 
     if mode == ControlMode.auto and qna_open != payload.on_air:
         try:
             session = await store.set_qna_status(session_id, payload.on_air, user.id)
         except NotFoundError as exc:
-            _qna_cache.pop(session_id, None)
+            qna_channel.forget(session_id)
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         session = with_join_url(session)
         _cache_qna(session)

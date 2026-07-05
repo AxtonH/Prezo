@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -19,16 +18,16 @@ from ..models import (
 )
 from ..realtime import ConnectionManager
 from ..store import InMemoryStore, NotFoundError
+from .slide_presence import SlidePresenceChannel
 
 router = APIRouter(prefix="/sessions/{session_id}/qna-prompts", tags=["qna-prompts"])
 
 # Presence + state tracking for slide-driven (auto) discussion prompts —
-# same design as polls (see api/polls.py): registry of last reports, plus a
-# per-prompt (mode, status) cache so keepalives are storage-free and
+# same design as polls (see api/polls.py): keepalives are storage-free and
 # transitions pay only the status write.
-_PRESENCE_TTL_SECONDS = 15.0
-_presence: dict[tuple[str, str], tuple[bool, float]] = {}
-_prompt_cache: dict[tuple[str, str], tuple[ControlMode, QnaPromptStatus]] = {}
+channel: SlidePresenceChannel[tuple[str, str], tuple[ControlMode, QnaPromptStatus]] = (
+    SlidePresenceChannel()
+)
 
 
 def make_activity(activity_type: str, payload: dict) -> SessionActivity:
@@ -38,15 +37,7 @@ def make_activity(activity_type: str, payload: dict) -> SessionActivity:
 
 
 def _cache_prompt(prompt: QnaPrompt) -> None:
-    _prompt_cache[(prompt.session_id, prompt.id)] = (prompt.mode, prompt.status)
-
-
-def _presence_is_on_air(session_id: str, prompt_id: str) -> bool:
-    entry = _presence.get((session_id, prompt_id))
-    if entry is None:
-        return False
-    on_air, reported_at = entry
-    return on_air and (time.monotonic() - reported_at) <= _PRESENCE_TTL_SECONDS
+    channel.state[(prompt.session_id, prompt.id)] = (prompt.mode, prompt.status)
 
 
 async def _broadcast_status_activity(
@@ -78,25 +69,23 @@ async def _sweep_stale_auto_prompts(
     manager: ConnectionManager,
     user: AuthUser,
 ) -> None:
-    now = time.monotonic()
     candidates = [
         prompt_id
-        for (sid, prompt_id), (mode, prompt_status) in _prompt_cache.items()
+        for (sid, prompt_id), (mode, prompt_status) in channel.state.items()
         if sid == session_id
         and prompt_id != exclude_prompt_id
         and mode == ControlMode.auto
         and prompt_status == QnaPromptStatus.open
     ]
     for prompt_id in candidates:
-        entry = _presence.get((session_id, prompt_id))
-        if entry is not None and (now - entry[1]) <= _PRESENCE_TTL_SECONDS and entry[0]:
+        if channel.is_on_air((session_id, prompt_id)):
             continue
         try:
             prompt = await store.set_qna_prompt_status(
                 session_id, prompt_id, QnaPromptStatus.closed, user.id
             )
         except NotFoundError:
-            _prompt_cache.pop((session_id, prompt_id), None)
+            channel.forget((session_id, prompt_id))
             continue
         _cache_prompt(prompt)
         await _broadcast_status_activity(session_id, prompt, store, manager)
@@ -143,7 +132,7 @@ async def _apply_prompt_mode(
     else:
         desired = (
             QnaPromptStatus.open
-            if _presence_is_on_air(session_id, prompt_id)
+            if channel.is_on_air((session_id, prompt_id))
             else QnaPromptStatus.closed
         )
     if prompt.status != desired:
@@ -221,20 +210,15 @@ async def report_prompt_presence(
     """Reported by the taskpane conductor while a widget slide bound to this
     prompt is (or stops being) presented. Auto-mode prompts open/close;
     pinned prompts only record presence."""
-    now = time.monotonic()
-    if len(_presence) > 5000:
-        cutoff = now - 20 * _PRESENCE_TTL_SECONDS
-        for key in [k for k, v in _presence.items() if v[1] < cutoff]:
-            _presence.pop(key, None)
-    _presence[(session_id, prompt_id)] = (payload.on_air, now)
+    channel.record((session_id, prompt_id), payload.on_air)
 
-    cached = _prompt_cache.get((session_id, prompt_id))
+    cached = channel.state.get((session_id, prompt_id))
     if cached is None:
         try:
             await _seed_prompt_cache(store, session_id)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        cached = _prompt_cache.get((session_id, prompt_id))
+        cached = channel.state.get((session_id, prompt_id))
         if cached is None:
             raise HTTPException(status_code=404, detail="prompt not found")
     mode, prompt_status = cached
@@ -249,7 +233,7 @@ async def report_prompt_presence(
                     session_id, prompt_id, desired, user.id
                 )
             except NotFoundError as exc:
-                _prompt_cache.pop((session_id, prompt_id), None)
+                channel.forget((session_id, prompt_id))
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             _cache_prompt(prompt)
             await _broadcast_status_activity(session_id, prompt, store, manager)
@@ -271,8 +255,7 @@ async def delete_prompt(
         await store.delete_qna_prompt(session_id, prompt_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    _prompt_cache.pop((session_id, prompt_id), None)
-    _presence.pop((session_id, prompt_id), None)
+    channel.forget((session_id, prompt_id))
     activity = make_activity("qna_prompt_deleted", {"prompt_id": prompt_id})
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)

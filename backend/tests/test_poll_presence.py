@@ -25,8 +25,7 @@ def run(coro):
 
 class PollPresenceTests(TestCase):
     def setUp(self) -> None:
-        polls_api._presence.clear()
-        polls_api._poll_cache.clear()
+        polls_api.channel.clear()
         self.store = InMemoryStore()
         self.manager = ConnectionManager()
         self.session = run(self.store.create_session("Deck", HOST.id))
@@ -81,7 +80,7 @@ class PollPresenceTests(TestCase):
         # Simulate a backend restart between reports: the cache is empty but
         # the store still has the poll — the report must reseed and apply.
         self.report(on_air=True)
-        polls_api._poll_cache.clear()
+        polls_api.channel.state.clear()
         ack = self.report(on_air=False)
         self.assertEqual(ack.status, PollStatus.closed)
         self.assertEqual(self.poll_in_store().status, PollStatus.closed)
@@ -144,8 +143,8 @@ class PollPresenceTests(TestCase):
             )
         )
         self.report(on_air=True)
-        stale = time.monotonic() - polls_api._PRESENCE_TTL_SECONDS - 1
-        polls_api._presence[(self.session.id, self.poll.id)] = (True, stale)
+        stale = time.monotonic() - polls_api.channel.ttl_seconds - 1
+        polls_api.channel.presence[(self.session.id, self.poll.id)] = (True, stale)
         poll = self.set_mode(PollMode.auto)
         self.assertEqual(poll.status, PollStatus.closed)
 
@@ -161,8 +160,8 @@ class PollPresenceTests(TestCase):
             next(p for p in opened.polls if p.id == other.id).status,
             PollStatus.open,
         )
-        stale = time.monotonic() - polls_api._PRESENCE_TTL_SECONDS - 1
-        polls_api._presence[(self.session.id, other.id)] = (True, stale)
+        stale = time.monotonic() - polls_api.channel.ttl_seconds - 1
+        polls_api.channel.presence[(self.session.id, other.id)] = (True, stale)
         # Any presence report for another poll in the session sweeps it shut.
         self.report(on_air=False)
         swept = run(self.store.snapshot(self.session.id))
