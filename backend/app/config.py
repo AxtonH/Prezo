@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     supabase_artifact_images_bucket: str = "artifact-images"
     library_sync_secret: str | None = None
     library_sync_ttl_seconds: int = 604800
+    # Dev-only spike/e2e collector endpoints (/spike/*). Unauthenticated by
+    # design, so they stay off unless a local harness turns them on.
+    spike_endpoints_enabled: bool = False
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_artifact_build_model: str = "claude-sonnet-4-6"

@@ -43,7 +43,8 @@ app.include_router(brand_fonts.router)
 app.include_router(brand_logos.router)
 app.include_router(artifact_images.router)
 app.include_router(embed_instances.router)
-app.include_router(spike.router)
+if settings.spike_endpoints_enabled:
+    app.include_router(spike.router)
 
 
 @app.exception_handler(SupabaseError)

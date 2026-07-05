@@ -20,6 +20,7 @@ from pathlib import Path
 import uvicorn
 
 os.environ.setdefault("LIBRARY_SYNC_SECRET", "prezo-spike-dev-secret")
+os.environ.setdefault("SPIKE_ENDPOINTS_ENABLED", "true")
 
 from app import auth  # noqa: E402  (env must be set before settings load)
 from app.config import settings  # noqa: E402

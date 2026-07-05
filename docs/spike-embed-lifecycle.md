@@ -112,7 +112,9 @@ slideshow loads) but bounded and write-only.
 
 ## Running it
 
-1. Backend: `cd backend; .venv\Scripts\python -m uvicorn app.main:app --port 8000`
+1. Backend: `cd backend; $env:SPIKE_ENDPOINTS_ENABLED = "true"; .venv\Scripts\python -m uvicorn app.main:app --port 8000`
+   (the `/spike/*` collector is off by default so production never exposes
+   it; `run_spike_e2e_server.py` enables it automatically)
 2. Probed static build: `cd frontend-addin; npm run build; npm start` (serves `dist` on :3000)
 3. Close PowerPoint, then repoint the installed content add-in:
    `powershell -ExecutionPolicy Bypass -File scripts/spike-manifest-target.ps1 -Target localhost`
