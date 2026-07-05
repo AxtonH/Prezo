@@ -1338,13 +1338,15 @@ function HostConsole({
     }
     setError(null)
     try {
-      const created = await api.createPoll(
+      // New polls start in auto mode (slide-driven): they open when the
+      // slideshow reaches their embed's slide. Opening here would pin them
+      // open, so hosts who want that use the explicit Resume/pin control.
+      await api.createPoll(
         session.id,
         questionText,
         options,
         allowMultiple
       )
-      await api.openPoll(session.id, created.id)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create poll'
       setError(message)

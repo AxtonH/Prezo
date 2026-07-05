@@ -14,9 +14,11 @@ Every poll has a `mode` (`backend/app/models.py`):
 - **open**: host pin — stays open regardless of the slideshow.
 - **closed**: host pin — stays closed regardless of the slideshow.
 
-The existing Stop/Resume buttons now PIN (`POST .../open|close` sets mode +
-status); the "Follow slides" button (`POST .../mode {mode:"auto"}`) hands
-control back to the slideshow. Switching to auto immediately applies the
+Creating a poll no longer opens it: new polls start auto + closed and go
+live when the slideshow reaches their slide (or when the host pins them
+open). The existing Stop/Resume buttons PIN (`POST .../open|close` sets
+mode + status); the "Follow slides" button (`POST .../mode {mode:"auto"}`)
+hands control back to the slideshow. Switching to auto immediately applies the
 current presentation state: open if the poll's slide is on air right now,
 closed otherwise. The audience app is untouched — it keeps reacting to the
 same `poll_opened`/`poll_closed` broadcasts.

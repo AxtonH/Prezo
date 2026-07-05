@@ -142,7 +142,7 @@ export function PollManager({
               Allow multiple selections
             </label>
             <button className="primary" onClick={handleCreate}>
-              Create &amp; open poll
+              Create poll
             </button>
             {error ? <p className="error">{error}</p> : null}
           </div>
