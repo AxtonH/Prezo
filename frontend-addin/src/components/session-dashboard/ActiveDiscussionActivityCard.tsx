@@ -100,12 +100,18 @@ export function ActiveDiscussionActivityCard({
   onHideQuestion,
   onBindWidget
 }: ActiveDiscussionActivityCardProps) {
-  const inactive = variant === 'inactive'
   const pendingCount = pendingQuestions.length
   const approvedCount = approvedQuestions.length
   const responseTotal = pendingCount + approvedCount
   const expandByDefault = false
   const mode: PollMode = prompt.mode ?? 'auto'
+  /** Actual open/closed state — drives the Live/Ended chip and which actions show. */
+  const closed = variant === 'inactive'
+  /**
+   * Muted (ended) visual tone: closed AND not slide-driven. An auto-follow
+   * activity is armed — it keeps the active look even while closed.
+   */
+  const inactive = closed && mode !== 'auto'
 
   const followSlidesButton = (
     <FollowSlidesButton
@@ -185,10 +191,10 @@ export function ActiveDiscussionActivityCard({
           >
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                inactive ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'
+                closed ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'
               }`}
             >
-              {inactive ? 'Ended' : 'Live'}
+              {closed ? 'Ended' : 'Live'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -283,7 +289,7 @@ export function ActiveDiscussionActivityCard({
           </div>
         )}
 
-        {!inactive ? (
+        {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
             <button
               type="button"
