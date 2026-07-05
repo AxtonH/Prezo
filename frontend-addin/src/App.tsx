@@ -63,6 +63,7 @@ import {
   writeSessionsListCache
 } from './utils/sessionsListCache'
 import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
+import { useEmbedWarmup } from './office/embedWarmup'
 import { setConductorSession } from './office/slideShowConductor'
 import { isPowerPointAddinHost } from './utils/officeHost'
 import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
@@ -1482,6 +1483,11 @@ function HostConsole({
   // and idempotent within it; see lib/embed-cache/use-embed-prefetch.ts.
   useEmbedPrefetch()
 
+  // Then wake the embed webviews themselves: briefly visit each slide that
+  // carries a content add-in frame so every embed is booted, connected, and
+  // presentable before the show starts (see office/embedWarmup.ts).
+  const embedWarmup = useEmbedWarmup()
+
   // Widget (native shape) poll slides have no webview to report presence,
   // so the taskpane conducts for them during slideshows: it tracks the
   // presented slide and drives auto-mode polls bound via widget slide tags.
@@ -1875,6 +1881,12 @@ function HostConsole({
               ) : null}
 
               {error ? <p className="text-danger text-sm mb-4">{error}</p> : null}
+
+              {embedWarmup.running ? (
+                <p className="text-sm mb-4 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 px-3 py-2">
+                  Waking slide embeds so they're ready to present… {embedWarmup.visited}/{embedWarmup.total}
+                </p>
+              ) : null}
 
               {/* All-sessions list: always show SessionSetup (no session). Live session: show SessionSetup + panels only on Dashboard; other tabs are placeholders. */}
               {!session ? (

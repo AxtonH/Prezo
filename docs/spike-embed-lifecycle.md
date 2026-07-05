@@ -78,6 +78,16 @@ added to the lifecycle model:
     never trusting `Presentations.Open`'s marshaled return value (re-resolve
     from the collection and probe a member before use), and force-killed
     instances leave the next cold start rejecting calls for a long time.
+11. **Embed frames are identifiable from the JS API**:
+    `shape.type === "ContentApp"` (COM MsoShapeType 27). Frame NAMES are
+    generic/localized ("Add-in 3") and unusable. This powers the warm-up
+    sweep's discovery (`src/office/embedWarmup.ts`).
+12. **A brief display is enough to create a webview.** Visiting an embed
+    slide for 800ms and navigating on still creates the webview, which
+    finishes booting in the background and stays alive (measured: a
+    2-second sweep booted both embeds of a cold deck). And
+    `goToByIdAsync(sheetId, Slide)` navigates correctly from add-in code —
+    the sweep's navigation primitive, verified live.
 
 ## Questions this spike answers
 

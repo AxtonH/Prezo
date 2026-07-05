@@ -434,9 +434,90 @@
     }
   }
 
+  // Warm-up-sweep discovery research: what does the PowerPoint JS API
+  // report for content add-in (webextension) frames? Scans every slide's
+  // shapes and posts names/types so the taskpane's embed discovery can be
+  // designed against real values.
+  function scanDeckShapes(label) {
+    try {
+      if (
+        typeof globalObj.PowerPoint === "undefined" ||
+        typeof globalObj.PowerPoint.run !== "function"
+      ) {
+        post("shape-scan", { at: label, result: "powerpoint-api-unavailable" })
+        return
+      }
+      globalObj.PowerPoint
+        .run(function (context) {
+          var slides = context.presentation.slides
+          slides.load("items/id")
+          return context.sync().then(function () {
+            for (var i = 0; i < slides.items.length; i += 1) {
+              slides.items[i].shapes.load("items")
+            }
+            return context.sync().then(function () {
+              var report = slides.items.map(function (slide) {
+                var shapes = []
+                try {
+                  shapes = slide.shapes.items.map(function (shape) {
+                    var entry = { name: null, type: null, id: null }
+                    try { entry.name = shape.name } catch (e) { entry.name = "err" }
+                    try { entry.type = String(shape.type) } catch (e) { entry.type = "err" }
+                    try { entry.id = String(shape.id) } catch (e) { entry.id = "err" }
+                    return entry
+                  })
+                } catch (e) {
+                  shapes = [{ name: "shapes-err", type: String(e && e.message), id: null }]
+                }
+                return { slideId: String(slide.id), shapes: shapes }
+              })
+              post("shape-scan", { at: label, result: "ok", deck: report })
+            })
+          })
+        })
+        .catch(function (error) {
+          post("shape-scan", { at: label, result: "error:" + String(error && error.message) })
+        })
+    } catch (error) {
+      post("shape-scan", { at: label, result: "threw:" + String(error && error.message) })
+    }
+  }
+
+  // Warm-up-sweep research: exercise goToByIdAsync (the taskpane sweep's
+  // navigation primitive) when the page URL carries ?spikeGoto=<sheetId>.
+  function testGoToById() {
+    var target = params ? params.get("spikeGoto") : null
+    if (!target) {
+      return
+    }
+    try {
+      if (!officeDocumentReady() || typeof globalObj.Office.context.document.goToByIdAsync !== "function") {
+        post("goto-test", { target: target, result: "api-unavailable" })
+        return
+      }
+      globalObj.Office.context.document.goToByIdAsync(
+        Number(target),
+        globalObj.Office.GoToType.Slide,
+        function (result) {
+          var ok = result && result.status === globalObj.Office.AsyncResultStatus.Succeeded
+          post("goto-test", {
+            target: target,
+            result: ok ? "ok" : "failed:" + String(result && result.error && result.error.message),
+          })
+        }
+      )
+    } catch (error) {
+      post("goto-test", { target: target, result: "threw:" + String(error && error.message) })
+    }
+  }
+
   if (globalObj.Office && typeof globalObj.Office.onReady === "function") {
     globalObj.Office.onReady(function (info) {
       checkCustomXml("ready")
+      globalObj.setTimeout(function () {
+        scanDeckShapes("ready+8s")
+      }, 8000)
+      globalObj.setTimeout(testGoToById, 15000)
       globalObj.setTimeout(function () {
         checkCustomXml("ready+6s")
       }, 6000)
