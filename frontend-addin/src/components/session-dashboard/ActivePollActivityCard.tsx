@@ -228,6 +228,17 @@ export function ActivePollActivityCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
+                  onConfigure?.(poll.id)
+                }}
+                title="Open Prezo editing station for this poll"
+                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
+              >
+                Configure
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
                   onResume?.(poll.id)
                 }}
                 title="Open now and keep open regardless of the slideshow"

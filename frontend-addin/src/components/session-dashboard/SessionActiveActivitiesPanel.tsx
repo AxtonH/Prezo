@@ -352,6 +352,7 @@ export function SessionActiveActivitiesPanel({
                   key={`poll-closed-${row.poll.id}`}
                   poll={row.poll}
                   variant="inactive"
+                  onConfigure={onConfigurePoll}
                   onResume={onResumePoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
                   onBindWidget={onBindPollWidget}
