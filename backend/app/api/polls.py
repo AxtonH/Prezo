@@ -14,6 +14,7 @@ from ..models import (
     PollCreate,
     PollMode,
     PollModeUpdate,
+    PollPresenceAck,
     PollPresenceReport,
     PollStatus,
     PollUpdate,
@@ -32,11 +33,24 @@ logger = logging.getLogger("prezo.polls")
 _PRESENCE_TTL_SECONDS = 15.0
 _presence: dict[tuple[str, str], tuple[bool, float]] = {}
 
+# Last (mode, status) this process read or wrote per poll. Presence reports
+# are latency-critical (they gate how fast the audience sees a poll open),
+# and the Supabase-backed store pays several REST round trips per read —
+# with the cache, keepalives touch no storage at all and transitions pay
+# only the actual status write. Safe because every mutation of poll
+# mode/status flows through this module in this process; entries are
+# dropped when a write discovers the poll is gone.
+_poll_cache: dict[tuple[str, str], tuple[PollMode, PollStatus]] = {}
+
 
 def make_activity(activity_type: str, payload: dict) -> SessionActivity:
     return SessionActivity(
         type=activity_type, payload=payload, ts=datetime.now(timezone.utc)
     )
+
+
+def _cache_poll(poll: Poll) -> None:
+    _poll_cache[(poll.session_id, poll.id)] = (poll.mode, poll.status)
 
 
 def _presence_is_on_air(session_id: str, poll_id: str) -> bool:
@@ -47,6 +61,23 @@ def _presence_is_on_air(session_id: str, poll_id: str) -> bool:
     return on_air and (time.monotonic() - reported_at) <= _PRESENCE_TTL_SECONDS
 
 
+async def _broadcast_status_activity(
+    session_id: str,
+    poll: Poll,
+    store: InMemoryStore,
+    manager: ConnectionManager,
+) -> None:
+    """Emit the same poll_opened/poll_closed activities the manual endpoints
+    emit, so the audience and host UIs react identically to auto
+    transitions."""
+    activity_type = (
+        "poll_opened" if poll.status == PollStatus.open else "poll_closed"
+    )
+    activity = make_activity(activity_type, {"poll": poll.model_dump(mode="json")})
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+
+
 async def _transition_poll_status(
     session_id: str,
     poll: Poll,
@@ -55,22 +86,25 @@ async def _transition_poll_status(
     manager: ConnectionManager,
     user: AuthUser,
 ) -> Poll:
-    """Set the poll's status if it differs and broadcast the same
-    poll_opened/poll_closed activities the manual endpoints emit, so the
-    audience and host UIs react identically to auto transitions."""
     if poll.status == desired:
+        _cache_poll(poll)
         return poll
     poll = await store.set_poll_status(session_id, poll.id, desired, user.id)
-    activity_type = "poll_opened" if desired == PollStatus.open else "poll_closed"
-    activity = make_activity(activity_type, {"poll": poll.model_dump(mode="json")})
-    await store.record_activity(session_id, activity)
-    await manager.broadcast(session_id, activity)
+    _cache_poll(poll)
+    await _broadcast_status_activity(session_id, poll, store, manager)
     return poll
 
 
 async def _get_session_polls(store: InMemoryStore, session_id: str) -> list[Poll]:
     snapshot = await store.snapshot(session_id)
     return snapshot.polls
+
+
+async def _seed_poll_cache(store: InMemoryStore, session_id: str) -> None:
+    """One snapshot read to (re)learn a session's polls — only needed the
+    first time this process sees the session (e.g. after a restart)."""
+    for poll in await _get_session_polls(store, session_id):
+        _cache_poll(poll)
 
 
 async def _sweep_stale_auto_polls(
@@ -82,27 +116,30 @@ async def _sweep_stale_auto_polls(
 ) -> None:
     """Close auto-mode polls that are open but whose conductor has gone
     silent (webview killed, deck closed mid-show). Runs piggybacked on
-    every presence report for the session, so multi-embed decks self-heal
-    without a background task."""
-    try:
-        polls = await _get_session_polls(store, session_id)
-    except NotFoundError:
-        return
+    every presence report for the session; candidates come from the cache,
+    so the common case (nothing stale) costs no storage reads."""
     now = time.monotonic()
-    for poll in polls:
-        if poll.id == exclude_poll_id:
-            continue
-        if poll.mode != PollMode.auto or poll.status != PollStatus.open:
-            continue
-        entry = _presence.get((session_id, poll.id))
+    candidates = [
+        poll_id
+        for (sid, poll_id), (mode, status) in _poll_cache.items()
+        if sid == session_id
+        and poll_id != exclude_poll_id
+        and mode == PollMode.auto
+        and status == PollStatus.open
+    ]
+    for poll_id in candidates:
+        entry = _presence.get((session_id, poll_id))
         if entry is not None and (now - entry[1]) <= _PRESENCE_TTL_SECONDS and entry[0]:
             continue
         try:
-            await _transition_poll_status(
-                session_id, poll, PollStatus.closed, store, manager, user
+            poll = await store.set_poll_status(
+                session_id, poll_id, PollStatus.closed, user.id
             )
         except NotFoundError:
+            _poll_cache.pop((session_id, poll_id), None)
             continue
+        _cache_poll(poll)
+        await _broadcast_status_activity(session_id, poll, store, manager)
 
 
 @router.post("", response_model=Poll, status_code=status.HTTP_201_CREATED)
@@ -119,6 +156,7 @@ async def create_poll(
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _cache_poll(poll)
     activity = make_activity("poll_created", {"poll": poll.model_dump(mode="json")})
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)
@@ -206,7 +244,7 @@ async def set_poll_mode(
     )
 
 
-@router.post("/{poll_id}/presence", response_model=Poll)
+@router.post("/{poll_id}/presence", response_model=PollPresenceAck)
 async def report_poll_presence(
     session_id: str,
     poll_id: str,
@@ -214,11 +252,15 @@ async def report_poll_presence(
     store: InMemoryStore = Depends(get_store),
     manager: ConnectionManager = Depends(get_manager),
     user: AuthUser = Depends(get_library_user),
-) -> Poll:
+) -> PollPresenceAck:
     """Called by the on-slide embed (library-sync token) while its deck is
     open: on_air=true when the slideshow is displaying the embed's slide.
     Only auto-mode polls change status; pinned polls just record presence
-    so switching back to auto lands on the right state."""
+    so switching back to auto lands on the right state.
+
+    Latency-critical: audience open/close waits on this. The state cache
+    makes no-op reports (keepalives, pinned polls) storage-free; only real
+    transitions write."""
     now = time.monotonic()
     if len(_presence) > 5000:
         cutoff = now - 20 * _PRESENCE_TTL_SECONDS
@@ -226,25 +268,33 @@ async def report_poll_presence(
             _presence.pop(key, None)
     _presence[(session_id, poll_id)] = (payload.on_air, now)
 
-    try:
-        polls = await _get_session_polls(store, session_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    poll = next((p for p in polls if p.id == poll_id), None)
-    if poll is None:
-        raise HTTPException(status_code=404, detail="poll not found")
-
-    if poll.mode == PollMode.auto:
-        desired = PollStatus.open if payload.on_air else PollStatus.closed
+    cached = _poll_cache.get((session_id, poll_id))
+    if cached is None:
         try:
-            poll = await _transition_poll_status(
-                session_id, poll, desired, store, manager, user
-            )
+            await _seed_poll_cache(store, session_id)
         except NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        cached = _poll_cache.get((session_id, poll_id))
+        if cached is None:
+            raise HTTPException(status_code=404, detail="poll not found")
+    mode, status = cached
+
+    if mode == PollMode.auto:
+        desired = PollStatus.open if payload.on_air else PollStatus.closed
+        if status != desired:
+            try:
+                poll = await store.set_poll_status(
+                    session_id, poll_id, desired, user.id
+                )
+            except NotFoundError as exc:
+                _poll_cache.pop((session_id, poll_id), None)
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            _cache_poll(poll)
+            await _broadcast_status_activity(session_id, poll, store, manager)
+            mode, status = poll.mode, poll.status
 
     await _sweep_stale_auto_polls(session_id, poll_id, store, manager, user)
-    return poll
+    return PollPresenceAck(mode=mode, status=status)
 
 
 @router.delete("/{poll_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -259,6 +309,8 @@ async def delete_poll(
         await store.delete_poll(session_id, poll_id, user.id)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _poll_cache.pop((session_id, poll_id), None)
+    _presence.pop((session_id, poll_id), None)
     activity = make_activity("poll_deleted", {"poll_id": poll_id})
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)

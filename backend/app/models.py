@@ -123,6 +123,15 @@ class PollPresenceReport(BaseModel):
     embed_id: str | None = Field(default=None, max_length=64)
 
 
+class PollPresenceAck(BaseModel):
+    """Presence response. Deliberately tiny: reports are latency-critical
+    (they gate how fast the audience sees a poll open) and the conductor
+    only needs the applied state, so no options/votes payload is built."""
+
+    mode: PollMode
+    status: PollStatus
+
+
 class PollUpdate(BaseModel):
     question: str | None = Field(default=None, max_length=200)
     options: dict[str, str] | None = Field(

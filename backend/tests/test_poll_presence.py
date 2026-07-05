@@ -26,6 +26,7 @@ def run(coro):
 class PollPresenceTests(TestCase):
     def setUp(self) -> None:
         polls_api._presence.clear()
+        polls_api._poll_cache.clear()
         self.store = InMemoryStore()
         self.manager = ConnectionManager()
         self.session = run(self.store.create_session("Deck", HOST.id))
@@ -63,11 +64,27 @@ class PollPresenceTests(TestCase):
         self.assertEqual(self.poll.mode, PollMode.auto)
         self.assertEqual(self.poll.status, PollStatus.closed)
 
+    def poll_in_store(self, poll_id: str | None = None):
+        snapshot = run(self.store.snapshot(self.session.id))
+        target = poll_id or self.poll.id
+        return next(p for p in snapshot.polls if p.id == target)
+
     def test_on_air_presence_opens_auto_poll_and_off_air_closes(self) -> None:
-        poll = self.report(on_air=True)
-        self.assertEqual(poll.status, PollStatus.open)
-        poll = self.report(on_air=False)
-        self.assertEqual(poll.status, PollStatus.closed)
+        ack = self.report(on_air=True)
+        self.assertEqual(ack.status, PollStatus.open)
+        self.assertEqual(self.poll_in_store().status, PollStatus.open)
+        ack = self.report(on_air=False)
+        self.assertEqual(ack.status, PollStatus.closed)
+        self.assertEqual(self.poll_in_store().status, PollStatus.closed)
+
+    def test_presence_fast_path_survives_cold_cache(self) -> None:
+        # Simulate a backend restart between reports: the cache is empty but
+        # the store still has the poll — the report must reseed and apply.
+        self.report(on_air=True)
+        polls_api._poll_cache.clear()
+        ack = self.report(on_air=False)
+        self.assertEqual(ack.status, PollStatus.closed)
+        self.assertEqual(self.poll_in_store().status, PollStatus.closed)
 
     def test_pinned_open_ignores_off_air_presence(self) -> None:
         poll = run(
@@ -81,8 +98,9 @@ class PollPresenceTests(TestCase):
         )
         self.assertEqual(poll.mode, PollMode.open)
         self.assertEqual(poll.status, PollStatus.open)
-        poll = self.report(on_air=False)
-        self.assertEqual(poll.status, PollStatus.open)
+        ack = self.report(on_air=False)
+        self.assertEqual(ack.status, PollStatus.open)
+        self.assertEqual(self.poll_in_store().status, PollStatus.open)
 
     def test_pinned_closed_ignores_on_air_presence(self) -> None:
         run(
@@ -94,9 +112,10 @@ class PollPresenceTests(TestCase):
                 user=HOST,
             )
         )
-        poll = self.report(on_air=True)
-        self.assertEqual(poll.mode, PollMode.closed)
-        self.assertEqual(poll.status, PollStatus.closed)
+        ack = self.report(on_air=True)
+        self.assertEqual(ack.mode, PollMode.closed)
+        self.assertEqual(ack.status, PollStatus.closed)
+        self.assertEqual(self.poll_in_store().status, PollStatus.closed)
 
     def test_switching_to_auto_applies_fresh_presence(self) -> None:
         # Presence recorded while pinned closed, then unpinned: poll should
@@ -157,3 +176,4 @@ class PollPresenceTests(TestCase):
         second = self.report(on_air=True)
         self.assertEqual(first.status, PollStatus.open)
         self.assertEqual(second.status, PollStatus.open)
+        self.assertEqual(self.poll_in_store().status, PollStatus.open)

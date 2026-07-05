@@ -1167,7 +1167,13 @@
         // Reports only ever fire from read view (plus the read→edit exit
         // transition): an edit-view copy of the deck on another machine
         // must not fight a live show's conductor.
-        const CONDUCTOR_TICK_MS = 1000
+        // Open/close latency is bounded by the tick cadence, so run fast
+        // while presenting and slow in edit view (where the conductor never
+        // reports anyway). The view is tracked via ActiveViewChanged plus a
+        // periodic re-check, so the hot path costs ONE host call per tick.
+        const CONDUCTOR_TICK_READ_MS = 500
+        const CONDUCTOR_TICK_EDIT_MS = 2000
+        const CONDUCTOR_VIEW_RECHECK_TICKS = 6
         const CONDUCTOR_KEEPALIVE_MS = 5000
         // Host callbacks can stall indefinitely while PowerPoint is busy
         // (bulk webview wake-ups, deck open storms) — every await must have
@@ -1176,6 +1182,8 @@
         const CONDUCTOR_HOST_CALL_TIMEOUT_MS = 4000
         const CONDUCTOR_TICK_STALL_MS = 6000
         let conductorViewIsRead = false
+        let conductorViewKnown = false
+        let conductorTicksSinceViewCheck = 0
         let conductorMySlideId = ""
         let conductorReportedOnAir = null
         let conductorReportedPollId = ""
@@ -1318,11 +1326,20 @@
           conductorReportedPollId = ""
         }
 
+        // Bumped whenever the view flips; a tick that started under the old
+        // view discards its on-air verdict (a stale read-view tick landing
+        // after show exit would otherwise re-open the poll).
+        let conductorViewEpoch = 0
+
         const conductorSetViewIsRead = (isRead) => {
+          if (isRead !== conductorViewIsRead || !conductorViewKnown) {
+            conductorViewEpoch += 1
+          }
           if (isRead && !conductorViewIsRead) {
             conductorReadResizeArmed = true
           }
           conductorViewIsRead = isRead
+          conductorViewKnown = true
         }
 
         const conductorTick = async () => {
@@ -1335,14 +1352,31 @@
           }
           conductorTickBusySince = now
           try {
-            const view = await conductorGetActiveView()
-            if (view) {
-              conductorSetViewIsRead(view === "read")
+            // ActiveViewChanged keeps the flag current between periodic
+            // re-checks; skipping the per-tick view call halves host
+            // round trips on the latency-critical path.
+            if (
+              !conductorViewKnown ||
+              conductorTicksSinceViewCheck >= CONDUCTOR_VIEW_RECHECK_TICKS
+            ) {
+              conductorTicksSinceViewCheck = 0
+              const view = await conductorGetActiveView()
+              if (view) {
+                conductorSetViewIsRead(view === "read")
+              }
+            } else {
+              conductorTicksSinceViewCheck += 1
             }
+            const epochAtDecision = conductorViewEpoch
             let onAir = false
             if (conductorViewIsRead && conductorMySlideId) {
               const current = await conductorGetCurrentSlide()
               onAir = Boolean(current && current.id === conductorMySlideId)
+            }
+            if (conductorViewEpoch !== epochAtDecision) {
+              // View flipped while we were reading — this verdict describes
+              // the old view; the event-triggered tick handles the new one.
+              return
             }
             if (onAir && conductorReportedOnAir !== true) {
               await conductorReportForPoll(selectedSessionId, selectedPollId, true)
@@ -1414,6 +1448,9 @@
                   conductorSetViewIsRead(
                     String(args?.activeView || "").toLowerCase() === "read"
                   )
+                  // Show start/exit must not wait behind an in-flight tick
+                  // (its verdict is now discarded by the epoch guard anyway).
+                  conductorTickBusySince = 0
                   void conductorTick()
                 },
                 () => {}
@@ -1435,14 +1472,23 @@
                 const current = await conductorGetCurrentSlide()
                 if (current?.id) {
                   conductorMySlideId = current.id
+                  // First display in the show — report without waiting for
+                  // the next scheduled tick.
+                  void conductorTick()
                 }
               })()
             }, 500)
           })
-          void conductorLocalizeFromBoot()
-          window.setInterval(() => {
-            void conductorTick()
-          }, CONDUCTOR_TICK_MS)
+          void conductorLocalizeFromBoot().then(() => conductorTick())
+          const conductorLoop = async () => {
+            await conductorTick()
+            window.setTimeout(() => {
+              void conductorLoop()
+            }, conductorViewIsRead ? CONDUCTOR_TICK_READ_MS : CONDUCTOR_TICK_EDIT_MS)
+          }
+          window.setTimeout(() => {
+            void conductorLoop()
+          }, CONDUCTOR_TICK_READ_MS)
         }
         // === end conductor ================================================
 

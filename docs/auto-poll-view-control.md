@@ -44,6 +44,20 @@ same `poll_opened`/`poll_closed` broadcasts.
    the session whose conductor has gone silent for 15s. Pinned polls only
    record presence so a later switch to auto lands on the right state.
 
+## Latency budget
+
+Measured locally (marker → audience WebSocket, including PowerPoint's own
+slide-change time): 0.3-0.9s per transition. The budget is: conductor tick
+(500ms cadence while presenting, one SlideRange host call per tick;
+view-change and first-display edges trigger immediate ticks) + presence
+POST round trip + backend transition (exactly one status write; keepalives
+and pinned polls are storage-free thanks to a per-poll state cache) +
+WebSocket push. On the deployed stack add network RTT and ~3 Supabase
+queries per actual transition. If transitions feel slow in production,
+check the Railway↔Supabase region pairing first — the code path pays one
+`get_session` + one `PATCH polls` + one `poll_options` select per flip and
+nothing per keepalive.
+
 ## Operational notes
 
 - **Supabase migration required before deploy**: `sql/polls_mode.sql`
