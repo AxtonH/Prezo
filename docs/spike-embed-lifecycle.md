@@ -48,6 +48,37 @@ row); the backend maps current slide id → bound poll and opens/closes/
 switches. Boot/teardown beacons alone cannot work (points 1-2). PowerPoint
 on the web and Mac need their own runs — this harness is reusable there.
 
+## E2E verdict (05/07/2026) — feature built and proven
+
+The production design shipped (see `docs/auto-poll-view-control.md`) and
+the full loop was verified in a real slideshow via
+`scripts/spike-e2e-autopilot.ps1` + `backend/run_spike_e2e_server.py` +
+`backend/spike_ws_watcher.py`: all six expected audience transitions fired
+(open on reaching each embed slide, close on leaving, reopen on jump-back,
+close on show exit) with ~0.6-1.3s audience latency. Facts the e2e round
+added to the lifecycle model:
+
+7. **Webviews can bulk-boot without their slide being displayed.** A deck
+   sitting open in a backgrounded PowerPoint woke ALL embed webviews at
+   once when the app was foregrounded. "Current slide at boot = my slide"
+   is therefore only trustworthy when the host answers the slide query
+   promptly (≤3s); the first-resize-in-read edge is the authoritative
+   localizer and must override earlier guesses.
+8. **Host async callbacks can stall indefinitely** (seen during boot
+   storms). Any code awaiting `getActiveViewAsync` / `getSelectedDataAsync`
+   needs a timeout and a self-clearing in-flight guard, or one lost
+   callback silences it permanently.
+9. **`Office.context.document.customXmlParts` is unavailable in PowerPoint
+   content add-ins** (Word-only common API — confirmed `api-unavailable` on
+   16.0.20131). Embed tokens flow via shared-origin localStorage written by
+   the taskpane; the harness mimics that through `GET /spike/e2e-token` +
+   the probe seeding `localStorage["prezo:library-sync"]`.
+10. **PowerShell COM automation of PowerPoint** needs: retries around
+    `New-Object` and first calls (RPC_E_CALL_REJECTED while busy/starting),
+    never trusting `Presentations.Open`'s marshaled return value (re-resolve
+    from the collection and probe a member before use), and force-killed
+    instances leave the next cold start rejecting calls for a long time.
+
 ## Questions this spike answers
 
 1. **Instantiation timing.** Is the embed's webview created when its slide

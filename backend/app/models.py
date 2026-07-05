@@ -28,6 +28,20 @@ class PollStatus(str, Enum):
     open = "open"
 
 
+class PollMode(str, Enum):
+    """How a poll's open/closed status is controlled.
+
+    auto: slide-driven — presence reports from the on-slide embed open the
+    poll while its slide is presented and close it when the show moves on.
+    open/closed: host pins; the poll stays that way regardless of the
+    slideshow until the host changes mode.
+    """
+
+    auto = "auto"
+    open = "open"
+    closed = "closed"
+
+
 class QnaPromptStatus(str, Enum):
     closed = "closed"
     open = "open"
@@ -91,6 +105,22 @@ class Poll(BaseModel):
     status: PollStatus
     allow_multiple: bool
     created_at: datetime
+    mode: PollMode = PollMode.auto
+
+
+class PollModeUpdate(BaseModel):
+    mode: PollMode
+
+
+class PollPresenceReport(BaseModel):
+    """Sent by a live on-slide embed while a deck is open: whether the
+    embed's slide is the one currently presented (on_air), plus context for
+    diagnostics. Drives auto-mode polls only."""
+
+    on_air: bool
+    view: str | None = Field(default=None, max_length=16)
+    slide_id: str | None = Field(default=None, max_length=64)
+    embed_id: str | None = Field(default=None, max_length=64)
 
 
 class PollUpdate(BaseModel):

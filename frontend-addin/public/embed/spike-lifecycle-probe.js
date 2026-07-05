@@ -248,6 +248,54 @@
     dpr: globalObj.devicePixelRatio || null,
   })
 
+  // E2E harness auth: PowerPoint content add-ins can't read customXmlParts,
+  // so production tokens arrive via the taskpane writing shared-origin
+  // localStorage. The harness does the same — if the local collector has an
+  // e2e seed, mirror its token into the key the wrapper polls. No-op (404)
+  // outside a seeded dev run.
+  ;(function seedE2eToken() {
+    try {
+      var existing = globalObj.localStorage
+        ? globalObj.localStorage.getItem("prezo:library-sync")
+        : null
+      if (existing) {
+        var parsed = JSON.parse(existing)
+        if (parsed && parsed.expiresAt && Date.parse(parsed.expiresAt) > Date.now()) {
+          return
+        }
+      }
+    } catch (error) {
+      /* fall through to fetch */
+    }
+    try {
+      globalObj
+        .fetch(target + "/spike/e2e-token")
+        .then(function (resp) {
+          if (!resp.ok) {
+            return null
+          }
+          return resp.json()
+        })
+        .then(function (data) {
+          if (!data || !data.token || !data.expiresAt) {
+            return
+          }
+          globalObj.localStorage.setItem(
+            "prezo:library-sync",
+            JSON.stringify({
+              token: data.token,
+              expiresAt: data.expiresAt,
+              apiBaseUrl: data.apiBaseUrl || "",
+            })
+          )
+          post("e2e-token-seeded", { expiresAt: data.expiresAt })
+        })
+        .catch(function () {})
+    } catch (error) {
+      /* no fetch — nothing to seed */
+    }
+  })()
+
   var resizeTimer = null
   globalObj.addEventListener("resize", function () {
     if (resizeTimer) {
@@ -266,6 +314,40 @@
   doc.addEventListener("visibilitychange", function () {
     post("visibility", { visibility: doc.visibilityState })
   })
+
+  // Mirror the wrapper page's status pill into the timeline — shows how far
+  // the wrapper's init progressed (initializing → loading → connected /
+  // not signed in / error) without touching wrapper code.
+  function watchStatusPill() {
+    var label = doc.querySelector("#status .status-label")
+    if (!label) {
+      globalObj.setTimeout(watchStatusPill, 500)
+      return
+    }
+    var lastText = ""
+    var report = function () {
+      var text = String(label.textContent || "").trim()
+      if (text && text !== lastText) {
+        lastText = text
+        post("wrapper-status", { status: text })
+      }
+    }
+    report()
+    try {
+      new MutationObserver(report).observe(label, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      })
+    } catch (error) {
+      /* observer unavailable — initial value already posted */
+    }
+  }
+  if (doc.readyState === "loading") {
+    doc.addEventListener("DOMContentLoaded", watchStatusPill)
+  } else {
+    watchStatusPill()
+  }
   globalObj.addEventListener("pagehide", function (event) {
     beacon("pagehide", { persisted: Boolean(event && event.persisted) })
   })
@@ -310,8 +392,57 @@
     })
   }, HEARTBEAT_MS)
 
+  // E2E diagnosis: can this frame see the library-sync custom XML part the
+  // host (taskpane in production, COM in the harness) wrote into the deck?
+  function checkCustomXml(label) {
+    try {
+      var parts = globalObj.Office.context.document.customXmlParts
+      if (!parts || typeof parts.getByNamespaceAsync !== "function") {
+        post("customxml-check", { at: label, result: "api-unavailable" })
+        return
+      }
+      parts.getByNamespaceAsync("https://prezo.app/library-sync", function (result) {
+        if (!result || result.status !== globalObj.Office.AsyncResultStatus.Succeeded) {
+          post("customxml-check", {
+            at: label,
+            result: "error:" + String(result && result.error && result.error.message),
+          })
+          return
+        }
+        var found = result.value || []
+        if (found.length === 0) {
+          post("customxml-check", { at: label, result: "no-parts" })
+          return
+        }
+        try {
+          found[0].getXmlAsync(function (xmlResult) {
+            var ok = xmlResult && xmlResult.status === globalObj.Office.AsyncResultStatus.Succeeded
+            var xml = ok ? String(xmlResult.value || "") : ""
+            post("customxml-check", {
+              at: label,
+              result: "parts:" + found.length,
+              xmlLen: xml.length,
+              hasToken: xml.indexOf("<token>") !== -1 || /token/i.test(xml),
+            })
+          })
+        } catch (error) {
+          post("customxml-check", { at: label, result: "getXml-threw:" + String(error && error.message) })
+        }
+      })
+    } catch (error) {
+      post("customxml-check", { at: label, result: "threw:" + String(error && error.message) })
+    }
+  }
+
   if (globalObj.Office && typeof globalObj.Office.onReady === "function") {
     globalObj.Office.onReady(function (info) {
+      checkCustomXml("ready")
+      globalObj.setTimeout(function () {
+        checkCustomXml("ready+6s")
+      }, 6000)
+      globalObj.setTimeout(function () {
+        checkCustomXml("ready+15s")
+      }, 15000)
       var diagnostics = {}
       try {
         var diag = globalObj.Office.context && globalObj.Office.context.diagnostics

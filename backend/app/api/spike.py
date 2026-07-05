@@ -217,6 +217,30 @@ _VIEWER_HTML = """<!doctype html>
 """
 
 
+@router.get("/e2e-token")
+async def e2e_token() -> Any:
+    """Library-sync token for the local end-to-end harness.
+
+    PowerPoint content add-ins cannot read customXmlParts (Word-only common
+    API), so the harness delivers the token the way production does: the
+    probe writes it to the shared-origin localStorage the embed reads.
+    Serves data only when run_spike_e2e_server.py has written a seed file —
+    404s (and holds no secrets) everywhere else.
+    """
+    seed_path = Path(settings.data_dir) / "spike" / "e2e-seed.json"
+    if not seed_path.exists():
+        return JSONResponse(status_code=404, content={"detail": "no e2e seed"})
+    try:
+        seed = json.loads(seed_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return JSONResponse(status_code=404, content={"detail": "seed unreadable"})
+    return {
+        "token": seed.get("token"),
+        "expiresAt": seed.get("token_expires_at"),
+        "apiBaseUrl": seed.get("api_base"),
+    }
+
+
 @router.get("", include_in_schema=False)
 async def viewer() -> HTMLResponse:
     return HTMLResponse(_VIEWER_HTML)

@@ -21,6 +21,7 @@ from .models import (
     HostDashboardStats,
     SessionSessionStats,
     Poll,
+    PollMode,
     PollOption,
     PollStatus,
     SavedArtifactVersion,
@@ -1021,6 +1022,7 @@ class SupabaseStore:
             "question": question,
             "status": PollStatus.closed.value,
             "allow_multiple": allow_multiple,
+            "mode": PollMode.auto.value,
         }
         poll_response = await self._request(
             "POST", "polls", json=poll_payload, prefer="return=representation"
@@ -1052,6 +1054,27 @@ class SupabaseStore:
             "polls",
             params={"id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
             json={"status": status.value},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("poll not found")
+        options = await self._select(
+            "poll_options",
+            {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},
+        )
+        self._invalidate_session_snapshot(session_id)
+        return self._to_poll(data[0], options)
+
+    async def set_poll_mode(
+        self, session_id: str, poll_id: str, mode: PollMode, user_id: str
+    ) -> Poll:
+        await self.get_session(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "polls",
+            params={"id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
+            json={"mode": mode.value},
             prefer="return=representation",
         )
         data = response.json()

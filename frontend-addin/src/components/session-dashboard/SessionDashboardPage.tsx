@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { Poll, Question, QnaPrompt, Session, SessionSessionStats } from '../../api/types'
+import type { Poll, PollMode, Question, QnaPrompt, Session, SessionSessionStats } from '../../api/types'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
@@ -41,6 +41,8 @@ export interface SessionDashboardPageProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Switch a poll between auto (slide-driven) and pinned control. */
+  onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -78,6 +80,7 @@ export function SessionDashboardPage({
   onDeletePoll,
   onDeleteQna,
   onDeleteDiscussion,
+  onSetPollMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
@@ -214,6 +217,7 @@ export function SessionDashboardPage({
           onDeletePoll={onDeletePoll}
           onDeleteQna={onDeleteQna}
           onDeleteDiscussion={onDeleteDiscussion}
+          onSetPollMode={onSetPollMode}
           onApproveDiscussionQuestion={onApproveDiscussionQuestion}
           onHideDiscussionQuestion={onHideDiscussionQuestion}
           onApproveAudienceQuestion={onApproveAudienceQuestion}

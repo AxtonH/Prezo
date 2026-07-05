@@ -20,7 +20,12 @@ param(
   [Parameter(Mandatory = $true)]
   [ValidateSet("localhost", "railway")]
   [string]$Target,
-  [int]$Port = 3000
+  [int]$Port = 3000,
+  # Optional query string (without leading ?) appended to the localhost
+  # SourceLocation, e.g. "sessionId=X&pollId=Y&apiBase=http://localhost:8000".
+  # The embed page reads sessionId/pollId/apiBase from its URL, so this
+  # pre-binds every embed instance for scripted end-to-end runs.
+  [string]$Query = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,9 +44,13 @@ if ($Target -eq "railway") {
   Write-Host "Restored original manifest from backup."
 } else {
   if (-not (Test-Path $backupPath)) { Copy-Item $manifestPath $backupPath }
-  $xml = Get-Content $manifestPath -Raw
+  $xml = Get-Content $backupPath -Raw
   $localBase = "http://localhost:$Port"
-  $xml = $xml -replace 'https://prezo-addin\.up\.railway\.app/embed/poll-game-content', "$localBase/embed/poll-game-content"
+  $localSource = "$localBase/embed/poll-game-content"
+  if ($Query) {
+    $localSource = "$localSource" + "?" + [System.Security.SecurityElement]::Escape($Query)
+  }
+  $xml = $xml -replace 'https://prezo-addin\.up\.railway\.app/embed/poll-game-content', $localSource
   if ($xml -notmatch [regex]::Escape("<AppDomain>$localBase</AppDomain>")) {
     $xml = $xml -replace '<AppDomains>', "<AppDomains>`r`n    <AppDomain>$localBase</AppDomain>"
   }

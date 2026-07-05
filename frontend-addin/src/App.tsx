@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { api } from './api/client'
 import type {
   Poll,
+  PollMode,
   QnaPrompt,
   Question,
   Session,
@@ -1381,6 +1382,13 @@ function HostConsole({
     await api.closePoll(session.id, pollId)
   }
 
+  const setPollMode = async (pollId: string, mode: PollMode) => {
+    if (!session) {
+      return
+    }
+    await api.setPollMode(session.id, pollId, mode)
+  }
+
   const openPrompt = async (promptId: string) => {
     if (!session) {
       return
@@ -1904,6 +1912,7 @@ function HostConsole({
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onResumePoll={(pollId) => void openPoll(pollId)}
                   onDeletePoll={deletePoll}
+                  onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
                   onCreatePoll={createPoll}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
                 />
@@ -1983,6 +1992,7 @@ function HostConsole({
                   onDeletePoll={deletePoll}
                   onDeleteQna={deleteQnaPanel}
                   onDeleteDiscussion={deleteDiscussionPrompt}
+                  onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onApproveAudienceQuestion={approveQuestion}

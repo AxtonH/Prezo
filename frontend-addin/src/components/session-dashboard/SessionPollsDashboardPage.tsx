@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { Poll, Session } from '../../api/types'
+import type { Poll, PollMode, Session } from '../../api/types'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionPollBuilderCard } from './SessionPollBuilderCard'
@@ -22,6 +22,7 @@ export interface SessionPollsDashboardPageProps {
   onStopPoll?: (pollId: string) => void | Promise<void>
   onResumePoll?: (pollId: string) => void | Promise<void>
   onDeletePoll?: (pollId: string) => void | Promise<void>
+  onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   onCreatePoll: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
   /** PowerPoint add-in: bind slide widget to a poll. */
   onBindPollWidget?: (pollId: string) => Promise<void>
@@ -35,6 +36,7 @@ export function SessionPollsDashboardPage({
   onStopPoll,
   onResumePoll,
   onDeletePoll,
+  onSetPollMode,
   onCreatePoll,
   onBindPollWidget
 }: SessionPollsDashboardPageProps) {
@@ -147,6 +149,7 @@ export function SessionPollsDashboardPage({
                     onDeletePoll={onDeletePoll}
                     onDeleteQna={undefined}
                     onDeleteDiscussion={undefined}
+                    onSetPollMode={onSetPollMode}
                     onApproveDiscussionQuestion={undefined}
                     onHideDiscussionQuestion={undefined}
                     onApproveAudienceQuestion={undefined}

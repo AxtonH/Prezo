@@ -1,6 +1,13 @@
 export type SessionStatus = 'active' | 'ended'
 export type QuestionStatus = 'pending' | 'approved' | 'hidden'
 export type PollStatus = 'closed' | 'open'
+/**
+ * How a poll's open/closed status is controlled.
+ * auto: slide-driven — the on-slide embed opens the poll while its slide is
+ * presented and closes it when the show moves on.
+ * open/closed: host pins that hold regardless of the slideshow.
+ */
+export type PollMode = 'auto' | 'open' | 'closed'
 export type QnaMode = 'audience' | 'prompt'
 export type QnaPromptStatus = 'closed' | 'open'
 
@@ -42,6 +49,7 @@ export interface Poll {
   status: PollStatus
   allow_multiple: boolean
   created_at: string
+  mode?: PollMode
 }
 
 export interface QnaPrompt {

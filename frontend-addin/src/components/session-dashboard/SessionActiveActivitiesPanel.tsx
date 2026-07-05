@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import type { Poll, QnaPrompt, Question } from '../../api/types'
+import type { Poll, PollMode, QnaPrompt, Question } from '../../api/types'
 import { ActiveDiscussionActivityCard } from './ActiveDiscussionActivityCard'
 import { ActivePollActivityCard } from './ActivePollActivityCard'
 import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
@@ -41,6 +41,8 @@ export interface SessionActiveActivitiesPanelProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Switch a poll between auto (slide-driven) and pinned control. */
+  onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -99,6 +101,7 @@ export function SessionActiveActivitiesPanel({
   onDeletePoll,
   onDeleteQna,
   onDeleteDiscussion,
+  onSetPollMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
@@ -295,6 +298,7 @@ export function SessionActiveActivitiesPanel({
                   onStop={onStopPoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
                   onBindWidget={onBindPollWidget}
+                  onSetMode={onSetPollMode}
                 />
               )
             }
@@ -339,6 +343,7 @@ export function SessionActiveActivitiesPanel({
                   onResume={onResumePoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
                   onBindWidget={onBindPollWidget}
+                  onSetMode={onSetPollMode}
                 />
               )
             }

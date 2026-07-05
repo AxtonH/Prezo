@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { Poll } from '../../api/types'
+import type { Poll, PollMode } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 
 export interface ActivePollActivityCardProps {
@@ -17,6 +17,11 @@ export interface ActivePollActivityCardProps {
    * PowerPoint only: link the poll widget on the selected slide to this poll (updates tags + text only).
    */
   onBindWidget?: (pollId: string) => Promise<void>
+  /**
+   * Change how the poll is controlled. Stop/Resume pin it closed/open; this
+   * is the way back to auto (slide-driven) control.
+   */
+  onSetMode?: (pollId: string, mode: PollMode) => void | Promise<void>
 }
 
 export function ActivePollActivityCard({
@@ -26,7 +31,8 @@ export function ActivePollActivityCard({
   onStop,
   onResume,
   onDelete,
-  onBindWidget
+  onBindWidget,
+  onSetMode
 }: ActivePollActivityCardProps) {
   const [bindBusy, setBindBusy] = useState(false)
   const [bindMessage, setBindMessage] = useState<string | null>(null)
@@ -34,6 +40,22 @@ export function ActivePollActivityCard({
 
   const totalVotes = poll.options.reduce((sum, o) => sum + (o.votes ?? 0), 0)
   const inactive = variant === 'inactive'
+  const mode: PollMode = poll.mode ?? 'auto'
+
+  const followSlidesButton =
+    onSetMode && mode !== 'auto' ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          void onSetMode(poll.id, 'auto')
+        }}
+        title="Let the slideshow control this poll: it opens when its slide is presented and closes when the show moves on"
+        className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-sky-50 !text-sky-800 !border !border-sky-200 hover:!bg-sky-100 !transition-colors"
+      >
+        Follow slides
+      </button>
+    ) : null
 
   const handleBindWidget = async () => {
     if (!onBindWidget) {
@@ -87,6 +109,20 @@ export function ActivePollActivityCard({
               }`}
             >
               {inactive ? 'Ended' : 'Live'}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                mode === 'auto' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
+              }`}
+              title={
+                mode === 'auto'
+                  ? 'Slide-driven: opens when its slide is presented, closes when the show moves on'
+                  : mode === 'open'
+                    ? 'Pinned by the host: stays open regardless of the slideshow'
+                    : 'Pinned by the host: stays closed regardless of the slideshow'
+              }
+            >
+              {mode === 'auto' ? 'Auto · follows slides' : mode === 'open' ? 'Pinned open' : 'Pinned closed'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -156,10 +192,12 @@ export function ActivePollActivityCard({
                   e.stopPropagation()
                   onStop?.(poll.id)
                 }}
+                title="Close now and keep closed regardless of the slideshow"
                 className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
               >
                 Stop poll
               </button>
+              {followSlidesButton}
               {onDelete ? (
                 <button
                   type="button"
@@ -195,10 +233,12 @@ export function ActivePollActivityCard({
                   e.stopPropagation()
                   onResume?.(poll.id)
                 }}
+                title="Open now and keep open regardless of the slideshow"
                 className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
               >
                 Resume poll
               </button>
+              {followSlidesButton}
               {onDelete ? (
                 <button
                   type="button"

@@ -17,6 +17,7 @@ from .models import (
     HostDashboardStats,
     SessionSessionStats,
     Poll,
+    PollMode,
     PollOption,
     PollStatus,
     SavedArtifactVersion,
@@ -98,6 +99,7 @@ class PollData:
     status: PollStatus
     allow_multiple: bool
     created_at: datetime
+    mode: PollMode = PollMode.auto
 
 
 @dataclass(slots=True)
@@ -547,6 +549,15 @@ class InMemoryStore:
             self._ensure_host_access(session_id, user_id)
             poll = self._get_poll(session_id, poll_id)
             poll.status = status
+            return self._to_poll(poll)
+
+    async def set_poll_mode(
+        self, session_id: str, poll_id: str, mode: PollMode, user_id: str
+    ) -> Poll:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            poll = self._get_poll(session_id, poll_id)
+            poll.mode = mode
             return self._to_poll(poll)
 
     async def update_poll(
@@ -1023,6 +1034,7 @@ class InMemoryStore:
             status=data.status,
             allow_multiple=data.allow_multiple,
             created_at=data.created_at,
+            mode=data.mode,
         )
 
     def _to_saved_theme(self, data: SavedThemeData) -> SavedTheme:

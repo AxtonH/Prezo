@@ -6,6 +6,7 @@ import type {
   HostDashboardStats,
   SessionSessionStats,
   Poll,
+  PollMode,
   Question,
   QnaMode,
   QnaPrompt,
@@ -332,6 +333,11 @@ export const api = {
   closePoll: (sessionId: string, pollId: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/close`, {
       method: 'POST'
+    }, true),
+  setPollMode: (sessionId: string, pollId: string, mode: PollMode) =>
+    request<Poll>(`/sessions/${sessionId}/polls/${pollId}/mode`, {
+      method: 'POST',
+      body: JSON.stringify({ mode })
     }, true),
   deletePoll: (sessionId: string, pollId: string) =>
     request<void>(`/sessions/${sessionId}/polls/${pollId}`, { method: 'DELETE' }, true),

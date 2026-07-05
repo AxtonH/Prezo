@@ -1143,6 +1143,309 @@
           setStatus("connected")
         }
 
+        // === Auto poll view conductor =====================================
+        // Slide-driven poll control (see docs/spike-embed-lifecycle.md).
+        // PowerPoint keeps this webview alive for the whole deck lifetime
+        // and re-parents it into the slideshow window, so display state
+        // must come from the host: while the deck is in "read" view, poll
+        // getSelectedDataAsync(SlideRange) every second — during a show it
+        // returns the PRESENTED slide — and report on-air/off-air
+        // transitions to the backend, which opens/closes auto-mode polls.
+        //
+        // The embed learns which slide it lives on without any persistence:
+        // - edit-view boot: edit only instantiates a webview when its slide
+        //   is displayed, so the current slide at boot is ours;
+        // - read-view boot: shows preload the NEXT slide's embed, so only
+        //   adopt the current slide if rAF shows we are already composited
+        //   (≈60fps; preloaded-but-hidden frames tick at ~3fps);
+        // - first resize in read view: frames are laid out when first
+        //   composited into the show window, so the slide presented at that
+        //   moment is ours.
+        // Kept in memory only — the duplicate-detection flow owns row
+        // metadata, and a second writer can race away its loadToken.
+        //
+        // Reports only ever fire from read view (plus the read→edit exit
+        // transition): an edit-view copy of the deck on another machine
+        // must not fight a live show's conductor.
+        const CONDUCTOR_TICK_MS = 1000
+        const CONDUCTOR_KEEPALIVE_MS = 5000
+        // Host callbacks can stall indefinitely while PowerPoint is busy
+        // (bulk webview wake-ups, deck open storms) — every await must have
+        // a timeout, and the tick's in-flight guard must self-clear, or one
+        // lost callback silences the conductor forever.
+        const CONDUCTOR_HOST_CALL_TIMEOUT_MS = 4000
+        const CONDUCTOR_TICK_STALL_MS = 6000
+        let conductorViewIsRead = false
+        let conductorMySlideId = ""
+        let conductorReportedOnAir = null
+        let conductorReportedPollId = ""
+        let conductorLastReportAt = 0
+        let conductorTickBusySince = 0
+        let conductorStarted = false
+        // Armed on entering read view (and on read-view boot): the FIRST
+        // resize while armed is the frame being composited into the show
+        // window, and the slide presented at that moment is authoritatively
+        // OURS — overrides any earlier guess. Later resizes (window drags)
+        // are ignored.
+        let conductorReadResizeArmed = false
+
+        const conductorOfficeDocReady = () =>
+          Boolean(window.Office?.context?.document)
+
+        const conductorWithTimeout = (run, fallbackValue) =>
+          new Promise((resolve) => {
+            let settled = false
+            const finish = (value) => {
+              if (!settled) {
+                settled = true
+                resolve(value)
+              }
+            }
+            window.setTimeout(() => finish(fallbackValue), CONDUCTOR_HOST_CALL_TIMEOUT_MS)
+            try {
+              run(finish)
+            } catch {
+              finish(fallbackValue)
+            }
+          })
+
+        const conductorGetActiveView = () =>
+          conductorWithTimeout((finish) => {
+            if (
+              !conductorOfficeDocReady() ||
+              typeof Office.context.document.getActiveViewAsync !== "function"
+            ) {
+              finish("")
+              return
+            }
+            Office.context.document.getActiveViewAsync((result) => {
+              finish(
+                result?.status === Office.AsyncResultStatus.Succeeded
+                  ? String(result.value || "")
+                  : ""
+              )
+            })
+          }, "")
+
+        const conductorGetCurrentSlide = () =>
+          conductorWithTimeout((finish) => {
+            if (
+              !conductorOfficeDocReady() ||
+              typeof Office.context.document.getSelectedDataAsync !== "function" ||
+              !window.Office?.CoercionType
+            ) {
+              finish(null)
+              return
+            }
+            Office.context.document.getSelectedDataAsync(
+              Office.CoercionType.SlideRange,
+              (result) => {
+                if (result?.status === Office.AsyncResultStatus.Succeeded) {
+                  const slide = result.value?.slides?.[0]
+                  finish(
+                    slide && slide.id != null
+                      ? { id: String(slide.id), index: slide.index }
+                      : null
+                  )
+                } else {
+                  finish(null)
+                }
+              }
+            )
+          }, null)
+
+        const conductorCountRafFrames = (windowMs) =>
+          new Promise((resolve) => {
+            let frames = 0
+            let stopped = false
+            const loop = () => {
+              if (stopped) {
+                return
+              }
+              frames += 1
+              window.requestAnimationFrame(loop)
+            }
+            window.requestAnimationFrame(loop)
+            window.setTimeout(() => {
+              stopped = true
+              resolve(frames)
+            }, windowMs)
+          })
+
+        const conductorReportForPoll = async (sessionId, pollId, onAir) => {
+          if (!sessionId || !pollId || !librarySyncState?.token) {
+            return false
+          }
+          try {
+            const resp = await window.fetch(
+              `${apiBase}/sessions/${encodeURIComponent(sessionId)}/polls/${encodeURIComponent(pollId)}/presence`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeaders() },
+                body: JSON.stringify({
+                  on_air: onAir,
+                  view: conductorViewIsRead ? "read" : "edit",
+                  slide_id: conductorMySlideId || null,
+                  embed_id: embedIdentity?.id || null,
+                }),
+              }
+            )
+            if (!resp.ok) {
+              return false
+            }
+            conductorReportedOnAir = onAir
+            conductorReportedPollId = pollId
+            conductorLastReportAt = Date.now()
+            return true
+          } catch {
+            return false
+          }
+        }
+
+        // Called (synchronously, before state mutates) when the picker moves
+        // this embed to a different poll/session: release the old poll if we
+        // put it on air, and forget report state so the new binding gets a
+        // fresh transition.
+        const conductorHandleBindingChange = (previousSessionId, previousPollId) => {
+          if (
+            conductorReportedOnAir === true &&
+            conductorReportedPollId &&
+            conductorReportedPollId === previousPollId
+          ) {
+            void conductorReportForPoll(previousSessionId, previousPollId, false)
+          }
+          conductorReportedOnAir = null
+          conductorReportedPollId = ""
+        }
+
+        const conductorSetViewIsRead = (isRead) => {
+          if (isRead && !conductorViewIsRead) {
+            conductorReadResizeArmed = true
+          }
+          conductorViewIsRead = isRead
+        }
+
+        const conductorTick = async () => {
+          const now = Date.now()
+          if (
+            conductorTickBusySince &&
+            now - conductorTickBusySince < CONDUCTOR_TICK_STALL_MS
+          ) {
+            return
+          }
+          conductorTickBusySince = now
+          try {
+            const view = await conductorGetActiveView()
+            if (view) {
+              conductorSetViewIsRead(view === "read")
+            }
+            let onAir = false
+            if (conductorViewIsRead && conductorMySlideId) {
+              const current = await conductorGetCurrentSlide()
+              onAir = Boolean(current && current.id === conductorMySlideId)
+            }
+            if (onAir && conductorReportedOnAir !== true) {
+              await conductorReportForPoll(selectedSessionId, selectedPollId, true)
+            } else if (!onAir && conductorReportedOnAir === true) {
+              await conductorReportForPoll(
+                selectedSessionId,
+                conductorReportedPollId || selectedPollId,
+                false
+              )
+            } else if (
+              onAir &&
+              Date.now() - conductorLastReportAt >= CONDUCTOR_KEEPALIVE_MS
+            ) {
+              await conductorReportForPoll(selectedSessionId, selectedPollId, true)
+            }
+          } finally {
+            conductorTickBusySince = 0
+          }
+        }
+
+        const conductorLocalizeFromBoot = async () => {
+          // Boot-time inference ("the displayed slide is ours") only holds
+          // when the host answers promptly: PowerPoint bulk-wakes webviews
+          // (e.g. foregrounding an app whose deck sat open), and a callback
+          // that lands seconds late describes whatever slide the user is on
+          // THEN. The first-resize-in-read edge remains the authoritative
+          // fallback for anything discarded here.
+          const askedAt = Date.now()
+          const view = await conductorGetActiveView()
+          conductorSetViewIsRead(view === "read")
+          if (view === "edit") {
+            const current = await conductorGetCurrentSlide()
+            if (current?.id && Date.now() - askedAt <= 3000) {
+              conductorMySlideId = current.id
+            }
+            return
+          }
+          if (view === "read") {
+            conductorReadResizeArmed = true
+            // Booted straight into a show: preloaded (next slide) or created
+            // on display (show started on our slide). Composition tells them
+            // apart — only adopt the current slide when we are demonstrably
+            // being painted.
+            const frames = await conductorCountRafFrames(1000)
+            if (frames >= 30) {
+              const current = await conductorGetCurrentSlide()
+              if (current?.id) {
+                conductorMySlideId = current.id
+                conductorReadResizeArmed = false
+              }
+            }
+          }
+        }
+
+        const conductorStart = () => {
+          if (conductorStarted) {
+            return
+          }
+          conductorStarted = true
+          if (
+            conductorOfficeDocReady() &&
+            typeof Office.context.document.addHandlerAsync === "function" &&
+            window.Office?.EventType
+          ) {
+            try {
+              Office.context.document.addHandlerAsync(
+                Office.EventType.ActiveViewChanged,
+                (args) => {
+                  conductorSetViewIsRead(
+                    String(args?.activeView || "").toLowerCase() === "read"
+                  )
+                  void conductorTick()
+                },
+                () => {}
+              )
+            } catch {
+              // fall back to the tick's own view polling
+            }
+          }
+          window.addEventListener("resize", () => {
+            if (!conductorViewIsRead || !conductorReadResizeArmed) {
+              return
+            }
+            conductorReadResizeArmed = false
+            window.setTimeout(() => {
+              void (async () => {
+                if (!conductorViewIsRead) {
+                  return
+                }
+                const current = await conductorGetCurrentSlide()
+                if (current?.id) {
+                  conductorMySlideId = current.id
+                }
+              })()
+            }, 500)
+          })
+          void conductorLocalizeFromBoot()
+          window.setInterval(() => {
+            void conductorTick()
+          }, CONDUCTOR_TICK_MS)
+        }
+        // === end conductor ================================================
+
         const pollForLibrarySyncToken = async (attempts = 10, delayMs = 1500) => {
           for (let i = 0; i < attempts; i += 1) {
             if (librarySyncState?.token) {
@@ -1182,6 +1485,9 @@
 
         const init = async () => {
           setStatus("loading")
+          // Localize before anything slow: the displayed slide at boot is
+          // only guaranteed to be ours while the user hasn't navigated yet.
+          conductorStart()
           await refreshLibrarySyncFromDocument()
           await resolveEmbedIdentityOnce()
           const binding = await readBindingFromDocument()
@@ -1205,6 +1511,7 @@
           if (next === selectedSessionId) {
             return
           }
+          conductorHandleBindingChange(selectedSessionId, selectedPollId)
           selectedSessionId = next
           selectedPollId = ""
           queueEmbedStatePatch({
@@ -1219,6 +1526,7 @@
           if (next === selectedPollId) {
             return
           }
+          conductorHandleBindingChange(selectedSessionId, selectedPollId)
           selectedPollId = next
           queueEmbedStatePatch({ poll_id: selectedPollId || null })
           loadGameFrame()

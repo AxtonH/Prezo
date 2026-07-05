@@ -74,8 +74,13 @@ if ($ColdShow) {
   Send-Marker "cold: opening prebuilt deck read-only, straight to slideshow"
   $pres = $pp.Presentations.Open($OutDeck, -1, 0, -1)   # ReadOnly=msoTrue
   if (-not $pres) {
-    Start-Sleep -Seconds 2
-    $pres = $pp.Presentations.Item($pp.Presentations.Count)
+    $deadline = (Get-Date).AddSeconds(20)
+    while (-not $pres -and (Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 500
+      if ($pp.Presentations.Count -ge 1) {
+        $pres = $pp.Presentations.Item($pp.Presentations.Count)
+      }
+    }
   }
   if (-not $pres) { throw "Could not obtain the opened presentation from PowerPoint." }
   $pres.Windows.Item(1).View.GotoSlide(1)
@@ -90,8 +95,13 @@ Send-Marker "deck: opening seed as untitled copy (embed webview may boot now)"
 # PowerShell even though the open succeeded, so fall back to the collection.
 $pres = $pp.Presentations.Open($SeedDeck, 0, -1, -1)
 if (-not $pres) {
-  Start-Sleep -Seconds 2
-  $pres = $pp.Presentations.Item($pp.Presentations.Count)
+  $deadline = (Get-Date).AddSeconds(20)
+  while (-not $pres -and (Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 500
+    if ($pp.Presentations.Count -ge 1) {
+      $pres = $pp.Presentations.Item($pp.Presentations.Count)
+    }
+  }
 }
 if (-not $pres) { throw "Could not obtain the opened presentation from PowerPoint." }
 
