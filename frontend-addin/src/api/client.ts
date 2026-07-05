@@ -7,6 +7,7 @@ import type {
   SessionSessionStats,
   Poll,
   PollMode,
+  PollStatus,
   Question,
   QnaMode,
   QnaPrompt,
@@ -339,6 +340,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mode })
     }, true),
+  /** Slideshow conductor: whether the poll's slide is currently presented. */
+  reportPollPresence: (
+    sessionId: string,
+    pollId: string,
+    onAir: boolean,
+    slideId?: string | null
+  ) =>
+    request<{ mode: PollMode; status: PollStatus }>(
+      `/sessions/${sessionId}/polls/${pollId}/presence`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          on_air: onAir,
+          view: onAir ? 'read' : undefined,
+          slide_id: slideId ?? undefined
+        })
+      },
+      true
+    ),
   deletePoll: (sessionId: string, pollId: string) =>
     request<void>(`/sessions/${sessionId}/polls/${pollId}`, { method: 'DELETE' }, true),
   updatePoll: (

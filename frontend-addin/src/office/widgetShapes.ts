@@ -23,6 +23,12 @@ const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
 const POLL_BINDING_TAG = 'PrezoPollWidgetPollId'
 const POLL_TEXT_SYNC_TAG = 'PrezoPollWidgetAutoText'
+
+/** Slide tags the slideshow conductor needs to map widget slides to polls. */
+export const POLL_WIDGET_SLIDE_TAGS = {
+  sessionTag: POLL_SESSION_TAG,
+  bindingTag: POLL_BINDING_TAG,
+} as const
 const MAX_POLL_OPTIONS = 5
 const PANEL_TITLE = 'Questions from your audience'
 const PROMPT_PANEL_TITLE = 'Audience answers'

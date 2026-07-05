@@ -25,6 +25,25 @@ same `poll_opened`/`poll_closed` broadcasts.
 
 ## How the pieces fit
 
+Two conductors feed one policy, depending on what carries the poll on the
+slide:
+
+- **Embed slides** (live game surface): the content add-in webview
+  conducts for itself (below).
+- **Widget slides** (native PowerPoint shapes inserted by the taskpane):
+  nothing lives on the slide, so the TASKPANE conducts
+  (`src/office/slideShowConductor.ts`). While the deck is in read view it
+  tracks the presented slide the same way, maps it to a poll through the
+  `PrezoPollWidgetSessionId` / `PrezoPollWidgetPollId` slide tags (the map
+  refreshes at each show start), and reports to the same presence
+  endpoint. Requirements that follow: the Prezo Host taskpane must be open
+  on the presenting machine, and the widget must be explicitly bound to a
+  poll ("Bind widget") — unbound follow-the-latest widgets are not
+  auto-driven. If the same poll is bound to both a widget slide and an
+  embed slide, a direct jump between those two slides can close-then-open
+  within a few seconds (two conductors handing off); it self-heals via the
+  on-air keepalive.
+
 1. **Conductor (embed wrapper, `public/embed/poll-game-content.html`).**
    While the deck's view is `read`, each live embed polls
    `getSelectedDataAsync(SlideRange)` every second and compares the

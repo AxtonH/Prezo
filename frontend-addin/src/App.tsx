@@ -63,6 +63,7 @@ import {
   writeSessionsListCache
 } from './utils/sessionsListCache'
 import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
+import { setConductorSession } from './office/slideShowConductor'
 import { isPowerPointAddinHost } from './utils/officeHost'
 import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
 
@@ -1465,6 +1466,16 @@ function HostConsole({
   // time the host taskpane mounts. The hook is a no-op outside PowerPoint
   // and idempotent within it; see lib/embed-cache/use-embed-prefetch.ts.
   useEmbedPrefetch()
+
+  // Widget (native shape) poll slides have no webview to report presence,
+  // so the taskpane conducts for them during slideshows: it tracks the
+  // presented slide and drives auto-mode polls bound via widget slide tags.
+  useEffect(() => {
+    if (!isAddinHost) {
+      return
+    }
+    setConductorSession(session?.id ?? null)
+  }, [isAddinHost, session?.id])
 
   const editorLink = session
     ? buildEditingStationUrl({
