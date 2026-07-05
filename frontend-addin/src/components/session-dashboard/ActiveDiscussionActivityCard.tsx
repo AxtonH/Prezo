@@ -191,10 +191,21 @@ export function ActiveDiscussionActivityCard({
           >
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                closed ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'
+                !closed
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : mode === 'auto'
+                    ? 'bg-sky-100 text-sky-700'
+                    : 'bg-slate-200 text-slate-700'
               }`}
+              title={
+                !closed
+                  ? 'Visible on the audience screen right now'
+                  : mode === 'auto'
+                    ? 'Waiting for its slide — goes live when the slideshow reaches it'
+                    : 'Closed by the host'
+              }
             >
-              {closed ? 'Ended' : 'Live'}
+              {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -328,7 +339,7 @@ export function ActiveDiscussionActivityCard({
               title="Open now and keep open regardless of the slideshow"
               className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
             >
-              Resume discussion
+              Pin open
             </button>
             {followSlidesButton}
             {onDelete ? (
