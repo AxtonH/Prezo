@@ -21,6 +21,8 @@ export interface Session {
   qna_open: boolean
   qna_mode: QnaMode
   qna_prompt?: string | null
+  /** Slide-driven vs pinned control of qna_open (see PollMode semantics). */
+  qna_control_mode?: PollMode
   created_at: string
   join_url?: string | null
 }
@@ -58,6 +60,7 @@ export interface QnaPrompt {
   prompt: string
   status: QnaPromptStatus
   created_at: string
+  mode?: PollMode
 }
 
 export interface SessionSnapshot {

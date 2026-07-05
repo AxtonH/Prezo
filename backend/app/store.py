@@ -16,6 +16,7 @@ from .models import (
     BrandProfile,
     HostDashboardStats,
     SessionSessionStats,
+    ControlMode,
     Poll,
     PollMode,
     PollOption,
@@ -70,6 +71,7 @@ class SessionData:
     qna_prompt: str | None
     allow_host_join: bool
     created_at: datetime
+    qna_control_mode: ControlMode = ControlMode.auto
 
 
 @dataclass(slots=True)
@@ -109,6 +111,7 @@ class QnaPromptData:
     prompt: str
     status: QnaPromptStatus
     created_at: datetime
+    mode: ControlMode = ControlMode.auto
 
 
 @dataclass(slots=True)
@@ -445,6 +448,15 @@ class InMemoryStore:
             session.qna_open = is_open
             return self._to_session(session, user_id)
 
+    async def set_qna_control_mode(
+        self, session_id: str, mode: ControlMode, user_id: str
+    ) -> Session:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            session = self._sessions[session_id]
+            session.qna_control_mode = mode
+            return self._to_session(session, user_id)
+
     async def set_qna_config(
         self,
         session_id: str,
@@ -487,6 +499,19 @@ class InMemoryStore:
             self._ensure_host_access(session_id, user_id)
             prompt = self._get_prompt(session_id, prompt_id)
             prompt.status = status
+            return self._to_prompt(prompt)
+
+    async def set_qna_prompt_mode(
+        self,
+        session_id: str,
+        prompt_id: str,
+        mode: ControlMode,
+        user_id: str,
+    ) -> QnaPrompt:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            prompt = self._get_prompt(session_id, prompt_id)
+            prompt.mode = mode
             return self._to_prompt(prompt)
 
     async def set_question_status(
@@ -993,6 +1018,7 @@ class InMemoryStore:
             qna_open=data.qna_open,
             qna_mode=data.qna_mode,
             qna_prompt=data.qna_prompt,
+            qna_control_mode=data.qna_control_mode,
             allow_host_join=data.allow_host_join,
             is_original_host=(
                 data.user_id == viewer_user_id
@@ -1020,6 +1046,7 @@ class InMemoryStore:
             prompt=data.prompt,
             status=data.status,
             created_at=data.created_at,
+            mode=data.mode,
         )
 
     def _to_poll(self, data: PollData) -> Poll:

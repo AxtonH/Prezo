@@ -507,7 +507,7 @@ export function CreateActivityMenu({
                     onClick={() => void handleCreateDiscussion()}
                     className="!flex-1 !bg-primary !text-white !py-3 !rounded-xl !text-sm !font-bold hover:!bg-primary-dark active:!scale-[0.98] !transition-all !shadow-sm !border-0 disabled:!opacity-50"
                   >
-                    {busy ? 'Starting…' : 'Create & open discussion'}
+                    {busy ? 'Starting…' : 'Create discussion'}
                   </button>
                   <button
                     type="button"

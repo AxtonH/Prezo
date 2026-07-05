@@ -65,7 +65,7 @@ export function SessionDiscussionBuilderCard({
           ) : (
             <>
               <span className="material-symbols-outlined text-lg">forum</span>
-              Create &amp; open discussion
+              Create discussion
             </>
           )}
         </button>

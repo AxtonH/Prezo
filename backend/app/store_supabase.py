@@ -20,6 +20,7 @@ from .models import (
     BrandProfile,
     HostDashboardStats,
     SessionSessionStats,
+    ControlMode,
     Poll,
     PollMode,
     PollOption,
@@ -840,6 +841,23 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_session(data[0], user_id)
 
+    async def set_qna_control_mode(
+        self, session_id: str, mode: ControlMode, user_id: str
+    ) -> Session:
+        await self._ensure_host_access(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "sessions",
+            params={"id": f"eq.{session_id}"},
+            json={"qna_control_mode": mode.value},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("session not found")
+        self._invalidate_session_snapshot(session_id)
+        return self._to_session(data[0], user_id)
+
     async def set_qna_config(
         self,
         session_id: str,
@@ -871,11 +889,33 @@ class SupabaseStore:
             "session_id": session_id,
             "prompt": prompt,
             "status": QnaPromptStatus.closed.value,
+            "mode": ControlMode.auto.value,
         }
         response = await self._request(
             "POST", "qna_prompts", json=payload, prefer="return=representation"
         )
         data = response.json()
+        self._invalidate_session_snapshot(session_id)
+        return self._to_prompt(data[0])
+
+    async def set_qna_prompt_mode(
+        self,
+        session_id: str,
+        prompt_id: str,
+        mode: ControlMode,
+        user_id: str,
+    ) -> QnaPrompt:
+        await self.get_session(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "qna_prompts",
+            params={"id": f"eq.{prompt_id}", "session_id": f"eq.{session_id}"},
+            json={"mode": mode.value},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("prompt not found")
         self._invalidate_session_snapshot(session_id)
         return self._to_prompt(data[0])
 

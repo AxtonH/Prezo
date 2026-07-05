@@ -1,4 +1,4 @@
-import type { Question } from '../../api/types'
+import type { PollMode, Question } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import { formatRelativeTime } from './formatRelativeTime'
 
@@ -8,9 +8,13 @@ export interface ActiveQnaActivityCardProps {
   /** Audience Q&amp;A questions with status approved (newest first). */
   approvedQuestions: Question[]
   variant?: 'active' | 'inactive'
+  /** Slide-driven vs pinned control of Q&amp;A (see PollMode semantics). */
+  mode?: PollMode
   onStop?: () => void
   onResume?: () => void
   onDelete?: () => void
+  /** Hand control back to the slideshow (auto) or pin. */
+  onSetMode?: (mode: PollMode) => void | Promise<void>
   onApproveQuestion?: (questionId: string) => void | Promise<void>
   onHideQuestion?: (questionId: string) => void | Promise<void>
 }
@@ -80,9 +84,11 @@ export function ActiveQnaActivityCard({
   pendingQuestions,
   approvedQuestions,
   variant = 'active',
+  mode: modeProp,
   onStop,
   onResume,
   onDelete,
+  onSetMode,
   onApproveQuestion,
   onHideQuestion
 }: ActiveQnaActivityCardProps) {
@@ -91,6 +97,22 @@ export function ActiveQnaActivityCard({
   const approvedCount = approvedQuestions.length
   const questionTotal = pendingCount + approvedCount
   const expandByDefault = false
+  const mode: PollMode = modeProp ?? 'auto'
+
+  const followSlidesButton =
+    onSetMode && mode !== 'auto' ? (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          void onSetMode('auto')
+        }}
+        title="Let the slideshow control Q&A: it opens while a Q&A slide is presented and closes when the show moves on"
+        className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-sky-50 !text-sky-800 !border !border-sky-200 hover:!bg-sky-100 !transition-colors"
+      >
+        Follow slides
+      </button>
+    ) : null
 
   return (
     <CollapsibleActivityPanelShell
@@ -124,6 +146,20 @@ export function ActiveQnaActivityCard({
               }`}
             >
               {inactive ? 'Ended' : 'Live'}
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                mode === 'auto' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
+              }`}
+              title={
+                mode === 'auto'
+                  ? 'Slide-driven: opens while a Q&A slide is presented, closes when the show moves on'
+                  : mode === 'open'
+                    ? 'Pinned by the host: stays open regardless of the slideshow'
+                    : 'Pinned by the host: stays closed regardless of the slideshow'
+              }
+            >
+              {mode === 'auto' ? 'Auto · follows slides' : mode === 'open' ? 'Pinned open' : 'Pinned closed'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span
@@ -226,10 +262,12 @@ export function ActiveQnaActivityCard({
                 e.stopPropagation()
                 onStop?.()
               }}
+              title="Close now and keep closed regardless of the slideshow"
               className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
             >
               Stop Q&amp;A
             </button>
+            {followSlidesButton}
             {onDelete ? (
               <button
                 type="button"
@@ -251,10 +289,12 @@ export function ActiveQnaActivityCard({
                 e.stopPropagation()
                 onResume?.()
               }}
+              title="Open now and keep open regardless of the slideshow"
               className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
             >
               Resume Q&amp;A
             </button>
+            {followSlidesButton}
             {onDelete ? (
               <button
                 type="button"

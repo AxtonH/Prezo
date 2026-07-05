@@ -1361,8 +1361,9 @@ function HostConsole({
     }
     setError(null)
     try {
-      const created = await api.createQnaPrompt(session.id, promptText.trim())
-      await api.openQnaPrompt(session.id, created.id)
+      // New discussions start in auto mode (slide-driven); opening here
+      // would pin them open. Hosts pin explicitly via Resume when needed.
+      await api.createQnaPrompt(session.id, promptText.trim())
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to create discussion'
@@ -1390,6 +1391,20 @@ function HostConsole({
       return
     }
     await api.setPollMode(session.id, pollId, mode)
+  }
+
+  const setPromptMode = async (promptId: string, mode: PollMode) => {
+    if (!session) {
+      return
+    }
+    await api.setPromptMode(session.id, promptId, mode)
+  }
+
+  const setQnaMode = async (mode: PollMode) => {
+    if (!session) {
+      return
+    }
+    await api.setQnaControlMode(session.id, mode)
   }
 
   const openPrompt = async (promptId: string) => {
@@ -1938,6 +1953,7 @@ function HostConsole({
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
                   onResumeDiscussion={(promptId) => void openPrompt(promptId)}
                   onDeleteDiscussion={deleteDiscussionPrompt}
+                  onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onCreateDiscussion={createDiscussionPrompt}
@@ -1961,6 +1977,7 @@ function HostConsole({
                     )
                   }
                   onDeleteQna={deleteQnaPanel}
+                  onSetQnaMode={(mode) => void setQnaMode(mode)}
                   onApproveAudienceQuestion={approveQuestion}
                   onHideAudienceQuestion={hideQuestion}
                 />
@@ -2006,6 +2023,8 @@ function HostConsole({
                   onDeleteQna={deleteQnaPanel}
                   onDeleteDiscussion={deleteDiscussionPrompt}
                   onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
+                  onSetQnaMode={(mode) => void setQnaMode(mode)}
+                  onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onApproveAudienceQuestion={approveQuestion}

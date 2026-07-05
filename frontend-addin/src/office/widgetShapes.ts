@@ -29,6 +29,19 @@ export const POLL_WIDGET_SLIDE_TAGS = {
   sessionTag: POLL_SESSION_TAG,
   bindingTag: POLL_BINDING_TAG,
 } as const
+
+/** Q&A widget slide tags: an unbound widget drives session Q&A; a
+ * prompt-bound one drives that prompt. */
+export const QNA_WIDGET_SLIDE_TAGS = {
+  sessionTag: SESSION_TAG,
+  promptBindingTag: QNA_PROMPT_BINDING_TAG,
+} as const
+
+/** Discussion widget slide tags (always prompt-bound when driveable). */
+export const DISCUSSION_WIDGET_SLIDE_TAGS = {
+  sessionTag: DISCUSSION_SESSION_TAG,
+  bindingTag: DISCUSSION_PROMPT_BINDING_TAG,
+} as const
 const MAX_POLL_OPTIONS = 5
 const PANEL_TITLE = 'Questions from your audience'
 const PROMPT_PANEL_TITLE = 'Audience answers'

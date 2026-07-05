@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { QnaPrompt, Question, Session } from '../../api/types'
+import type { PollMode, QnaPrompt, Question, Session } from '../../api/types'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionDiscussionBuilderCard } from './SessionDiscussionBuilderCard'
@@ -22,6 +22,8 @@ export interface SessionDiscussionDashboardPageProps {
   onStopDiscussion?: (promptId: string) => void | Promise<void>
   onResumeDiscussion?: (promptId: string) => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Switch a discussion prompt between auto (slide-driven) and pinned control. */
+  onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onCreateDiscussion: (prompt: string) => Promise<void>
@@ -37,6 +39,7 @@ export function SessionDiscussionDashboardPage({
   onStopDiscussion,
   onResumeDiscussion,
   onDeleteDiscussion,
+  onSetDiscussionMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onCreateDiscussion,
@@ -150,6 +153,7 @@ export function SessionDiscussionDashboardPage({
                     onDeletePoll={undefined}
                     onDeleteQna={undefined}
                     onDeleteDiscussion={onDeleteDiscussion}
+                    onSetDiscussionMode={onSetDiscussionMode}
                     onApproveDiscussionQuestion={onApproveDiscussionQuestion}
                     onHideDiscussionQuestion={onHideDiscussionQuestion}
                     onApproveAudienceQuestion={undefined}

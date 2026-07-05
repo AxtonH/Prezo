@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { Question, Session } from '../../api/types'
+import type { PollMode, Question, Session } from '../../api/types'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
@@ -33,6 +33,8 @@ export interface SessionQnaDashboardPageProps {
   onStopQna: () => Promise<void> | void
   onResumeQna?: () => Promise<void> | void
   onDeleteQna?: () => void | Promise<void>
+  /** Switch session Q&A between auto (slide-driven) and pinned control. */
+  onSetQnaMode?: (mode: PollMode) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
   onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
 }
@@ -46,6 +48,7 @@ export function SessionQnaDashboardPage({
   onStopQna,
   onResumeQna,
   onDeleteQna,
+  onSetQnaMode,
   onApproveAudienceQuestion,
   onHideAudienceQuestion
 }: SessionQnaDashboardPageProps) {
@@ -213,6 +216,8 @@ export function SessionQnaDashboardPage({
                     onDeletePoll={undefined}
                     onDeleteQna={onDeleteQna}
                     onDeleteDiscussion={undefined}
+                    qnaControlMode={session.qna_control_mode}
+                    onSetQnaMode={onSetQnaMode}
                     onApproveDiscussionQuestion={undefined}
                     onHideDiscussionQuestion={undefined}
                     onApproveAudienceQuestion={onApproveAudienceQuestion}

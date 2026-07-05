@@ -43,6 +43,12 @@ export interface SessionActiveActivitiesPanelProps {
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a poll between auto (slide-driven) and pinned control. */
   onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
+  /** Current control mode of session Q&A (for the card's chip). */
+  qnaControlMode?: PollMode
+  /** Switch session Q&A between auto and pinned control. */
+  onSetQnaMode?: (mode: PollMode) => void | Promise<void>
+  /** Switch a discussion prompt between auto and pinned control. */
+  onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -102,6 +108,9 @@ export function SessionActiveActivitiesPanel({
   onDeleteQna,
   onDeleteDiscussion,
   onSetPollMode,
+  qnaControlMode,
+  onSetQnaMode,
+  onSetDiscussionMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
@@ -309,8 +318,10 @@ export function SessionActiveActivitiesPanel({
                   pendingQuestions={audiencePendingQuestions}
                   approvedQuestions={audienceApprovedQuestions}
                   variant="active"
+                  mode={qnaControlMode}
                   onStop={onStopQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onSetMode={onSetQnaMode}
                   onApproveQuestion={onApproveAudienceQuestion}
                   onHideQuestion={onHideAudienceQuestion}
                 />
@@ -326,6 +337,7 @@ export function SessionActiveActivitiesPanel({
                 variant="active"
                 onStop={onStopDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onSetMode={onSetDiscussionMode}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}
                 onBindWidget={onBindDiscussionWidget}
@@ -354,8 +366,10 @@ export function SessionActiveActivitiesPanel({
                   pendingQuestions={audiencePendingQuestions}
                   approvedQuestions={audienceApprovedQuestions}
                   variant="inactive"
+                  mode={qnaControlMode}
                   onResume={onResumeQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onSetMode={onSetQnaMode}
                   onApproveQuestion={onApproveAudienceQuestion}
                   onHideQuestion={onHideAudienceQuestion}
                 />
@@ -371,6 +385,7 @@ export function SessionActiveActivitiesPanel({
                 variant="inactive"
                 onResume={onResumeDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onSetMode={onSetDiscussionMode}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}
                 onBindWidget={onBindDiscussionWidget}

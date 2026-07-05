@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
@@ -11,13 +12,17 @@ from ..config import settings
 from ..deps import get_manager, get_store
 from ..models import (
     BatchSessionStatsRequest,
+    ControlMode,
     SessionActivity,
     HostAccessUpdate,
     HostDashboardStats,
     HostJoinRequest,
     SessionSessionStats,
+    PollPresenceReport,
     QnaConfigUpdate,
+    QnaControlModeUpdate,
     QnaMode,
+    QnaPresenceAck,
     Session,
     SessionCreate,
     SessionSnapshot,
@@ -273,6 +278,83 @@ async def get_snapshot(
     return snapshot
 
 
+# Slide-driven (auto) session Q&A. Same design as polls/prompts, but the
+# unit is the whole session's qna_open flag: on-air means "a Q&A widget
+# slide is currently presented". Cache holds (control_mode, qna_open).
+_QNA_PRESENCE_TTL_SECONDS = 15.0
+_qna_presence: dict[str, tuple[bool, float]] = {}
+_qna_cache: dict[str, tuple[ControlMode, bool]] = {}
+
+
+def _cache_qna(session: Session) -> None:
+    _qna_cache[session.id] = (session.qna_control_mode, session.qna_open)
+
+
+def _qna_is_on_air(session_id: str) -> bool:
+    entry = _qna_presence.get(session_id)
+    if entry is None:
+        return False
+    on_air, reported_at = entry
+    return on_air and (time.monotonic() - reported_at) <= _QNA_PRESENCE_TTL_SECONDS
+
+
+async def _broadcast_qna_status(
+    session_id: str,
+    session: Session,
+    store: InMemoryStore,
+    manager: ConnectionManager,
+) -> None:
+    activity = SessionActivity(
+        type="qna_opened" if session.qna_open else "qna_closed",
+        payload={"session": session.model_dump(mode="json")},
+        ts=datetime.now(timezone.utc),
+    )
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+
+
+async def _apply_qna_control_mode(
+    session_id: str,
+    mode: ControlMode,
+    store: InMemoryStore,
+    manager: ConnectionManager,
+    user: AuthUser,
+) -> Session:
+    try:
+        session = await store.set_qna_control_mode(session_id, mode, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if mode == ControlMode.open:
+        desired = True
+    elif mode == ControlMode.closed:
+        desired = False
+    else:
+        desired = _qna_is_on_air(session_id)
+    if session.qna_open != desired:
+        try:
+            session = await store.set_qna_status(session_id, desired, user.id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        session = with_join_url(session)
+        _cache_qna(session)
+        await _broadcast_qna_status(session_id, session, store, manager)
+    else:
+        session = with_join_url(session)
+        _cache_qna(session)
+        # Mode changed without a status change — reuse the config activity so
+        # host UIs refresh the session payload (and its new control mode).
+        activity = SessionActivity(
+            type="qna_config_updated",
+            payload={"session": session.model_dump(mode="json")},
+            ts=datetime.now(timezone.utc),
+        )
+        await store.record_activity(session_id, activity)
+        await manager.broadcast(session_id, activity)
+    return session
+
+
+# Manual open/close are PINS, mirroring polls: explicitly opened Q&A stays
+# open regardless of the slideshow until the host changes mode.
 @router.post("/{session_id}/qna/open", response_model=Session)
 async def open_qna(
     session_id: str,
@@ -280,20 +362,9 @@ async def open_qna(
     manager: ConnectionManager = Depends(get_manager),
     user: AuthUser = Depends(get_current_user),
 ) -> Session:
-    try:
-        session = await store.set_qna_status(session_id, True, user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    session = with_join_url(session)
-    activity = SessionActivity(
-        type="qna_opened",
-        payload={"session": session.model_dump(mode="json")},
-        ts=datetime.now(timezone.utc),
+    return await _apply_qna_control_mode(
+        session_id, ControlMode.open, store, manager, user
     )
-    await store.record_activity(session_id, activity)
-    await manager.broadcast(session_id, activity)
-    return session
 
 
 @router.post("/{session_id}/qna/close", response_model=Session)
@@ -303,20 +374,59 @@ async def close_qna(
     manager: ConnectionManager = Depends(get_manager),
     user: AuthUser = Depends(get_current_user),
 ) -> Session:
-    try:
-        session = await store.set_qna_status(session_id, False, user.id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    session = with_join_url(session)
-    activity = SessionActivity(
-        type="qna_closed",
-        payload={"session": session.model_dump(mode="json")},
-        ts=datetime.now(timezone.utc),
+    return await _apply_qna_control_mode(
+        session_id, ControlMode.closed, store, manager, user
     )
-    await store.record_activity(session_id, activity)
-    await manager.broadcast(session_id, activity)
-    return session
+
+
+@router.post("/{session_id}/qna/mode", response_model=Session)
+async def set_qna_control_mode(
+    session_id: str,
+    payload: QnaControlModeUpdate,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> Session:
+    return await _apply_qna_control_mode(
+        session_id, payload.mode, store, manager, user
+    )
+
+
+@router.post("/{session_id}/qna/presence", response_model=QnaPresenceAck)
+async def report_qna_presence(
+    session_id: str,
+    payload: PollPresenceReport,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_library_user),
+) -> QnaPresenceAck:
+    """Reported by the taskpane conductor: on_air=true while a Q&A widget
+    slide is presented. Auto-mode Q&A opens/closes; pinned Q&A only records
+    presence so switching back to auto lands on the right state."""
+    _qna_presence[session_id] = (payload.on_air, time.monotonic())
+
+    cached = _qna_cache.get(session_id)
+    if cached is None:
+        try:
+            session = await store.get_session(session_id, user.id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _cache_qna(session)
+        cached = _qna_cache[session_id]
+    mode, qna_open = cached
+
+    if mode == ControlMode.auto and qna_open != payload.on_air:
+        try:
+            session = await store.set_qna_status(session_id, payload.on_air, user.id)
+        except NotFoundError as exc:
+            _qna_cache.pop(session_id, None)
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        session = with_join_url(session)
+        _cache_qna(session)
+        await _broadcast_qna_status(session_id, session, store, manager)
+        mode, qna_open = session.qna_control_mode, session.qna_open
+
+    return QnaPresenceAck(mode=mode, qna_open=qna_open)
 
 
 @router.delete(

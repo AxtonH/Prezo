@@ -1,9 +1,18 @@
 # Auto poll view control
 
-Polls open on the audience view when the slideshow reaches the slide
-carrying their embed, and close when the show moves on — no host clicks.
-Verified end to end in real PowerPoint on 05/07/2026 (six transitions,
-~0.8s audience latency; harness in `docs/spike-embed-lifecycle.md`).
+Polls, discussions, and Q&A open on the audience view when the slideshow
+reaches the slide carrying their embed or widget, and close when the show
+moves on — no host clicks. The poll/embed path was verified end to end in
+real PowerPoint on 05/07/2026 (six transitions, sub-second audience
+latency; harness in `docs/spike-embed-lifecycle.md`).
+
+The same control model applies to all three activity kinds:
+
+| Activity | Carrier on the slide | Mode field | Conductor |
+| --- | --- | --- | --- |
+| Poll | game embed or poll widget | `Poll.mode` | embed webview or taskpane |
+| Discussion | discussion widget (or prompt-bound Q&A widget) | `QnaPrompt.mode` | taskpane |
+| Session Q&A | Q&A widget (unbound) | `Session.qna_control_mode` | taskpane |
 
 ## Control model
 
@@ -81,8 +90,10 @@ nothing per keepalive.
 
 ## Operational notes
 
-- **Supabase migration required before deploy**: `sql/polls_mode.sql`
-  (polls.mode column). `create_poll` and the mode endpoint write it.
+- **Supabase migrations required before deploy**: `sql/polls_mode.sql`
+  (polls.mode) and `sql/qna_discussion_mode.sql` (qna_prompts.mode,
+  sessions.qna_control_mode). The create and mode endpoints write these
+  columns.
 - Presence state is in-memory: a backend restart closes auto polls on the
   next report/sweep and reopens them on the next keepalive (≤5s).
 - If a deck's only embed dies mid-show (PowerPoint crash), its auto poll

@@ -29,17 +29,24 @@ class PollStatus(str, Enum):
 
 
 class PollMode(str, Enum):
-    """How a poll's open/closed status is controlled.
+    """How an activity's open/closed state is controlled.
 
-    auto: slide-driven — presence reports from the on-slide embed open the
-    poll while its slide is presented and close it when the show moves on.
-    open/closed: host pins; the poll stays that way regardless of the
-    slideshow until the host changes mode.
+    auto: slide-driven — presence reports from the slide's conductor (embed
+    webview or taskpane) open it while its slide is presented and close it
+    when the show moves on.
+    open/closed: host pins; it stays that way regardless of the slideshow
+    until the host changes mode.
+
+    Shared by polls, discussion prompts, and session Q&A (aliased as
+    ControlMode where the poll-specific name would mislead).
     """
 
     auto = "auto"
     open = "open"
     closed = "closed"
+
+
+ControlMode = PollMode
 
 
 class QnaPromptStatus(str, Enum):
@@ -59,6 +66,8 @@ class Session(BaseModel):
     qna_open: bool
     qna_mode: QnaMode = QnaMode.audience
     qna_prompt: str | None = None
+    # Slide-driven vs pinned control of qna_open (see ControlMode).
+    qna_control_mode: ControlMode = ControlMode.auto
     allow_host_join: bool = False
     is_original_host: bool | None = None
     created_at: datetime
@@ -155,6 +164,25 @@ class QnaPrompt(BaseModel):
     prompt: str
     status: QnaPromptStatus
     created_at: datetime
+    mode: ControlMode = ControlMode.auto
+
+
+class QnaPromptModeUpdate(BaseModel):
+    mode: ControlMode
+
+
+class QnaPromptPresenceAck(BaseModel):
+    mode: ControlMode
+    status: QnaPromptStatus
+
+
+class QnaControlModeUpdate(BaseModel):
+    mode: ControlMode
+
+
+class QnaPresenceAck(BaseModel):
+    mode: ControlMode
+    qna_open: bool
 
 
 class SessionSnapshot(BaseModel):

@@ -43,6 +43,10 @@ export interface SessionDashboardPageProps {
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a poll between auto (slide-driven) and pinned control. */
   onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
+  /** Switch session Q&A between auto and pinned control. */
+  onSetQnaMode?: (mode: PollMode) => void | Promise<void>
+  /** Switch a discussion prompt between auto and pinned control. */
+  onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -81,6 +85,8 @@ export function SessionDashboardPage({
   onDeleteQna,
   onDeleteDiscussion,
   onSetPollMode,
+  onSetQnaMode,
+  onSetDiscussionMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
@@ -218,6 +224,9 @@ export function SessionDashboardPage({
           onDeleteQna={onDeleteQna}
           onDeleteDiscussion={onDeleteDiscussion}
           onSetPollMode={onSetPollMode}
+          qnaControlMode={session.qna_control_mode}
+          onSetQnaMode={onSetQnaMode}
+          onSetDiscussionMode={onSetDiscussionMode}
           onApproveDiscussionQuestion={onApproveDiscussionQuestion}
           onHideDiscussionQuestion={onHideDiscussionQuestion}
           onApproveAudienceQuestion={onApproveAudienceQuestion}

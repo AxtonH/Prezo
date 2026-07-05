@@ -1,14 +1,16 @@
 /**
- * Taskpane-side slideshow conductor for WIDGET (native shape) poll slides.
+ * Taskpane-side slideshow conductor for WIDGET (native shape) slides:
+ * poll widgets, discussion widgets, and Q&A widgets.
  *
  * Embed slides drive their own polls (the content add-in webview reports
- * presence), but a poll widget is plain PowerPoint shapes — nothing lives
- * on the slide. The taskpane keeps running on the presenting machine
- * during a slideshow, so it conducts instead: while the deck is in "read"
- * view it tracks the presented slide via getSelectedDataAsync(SlideRange),
- * maps it to a bound poll through the PrezoPollWidget slide tags, and
- * reports on-air/off-air to the same presence endpoint the embeds use.
- * Auto-mode polls then open/close; pinned polls ignore it (backend policy).
+ * presence), but widgets are plain PowerPoint shapes — nothing lives on
+ * the slide. The taskpane keeps running on the presenting machine during a
+ * slideshow, so it conducts instead: while the deck is in "read" view it
+ * tracks the presented slide via getSelectedDataAsync(SlideRange), maps it
+ * through the widget slide tags (poll → poll id, discussion or
+ * prompt-bound Q&A → prompt id, unbound Q&A → session Q&A), and reports
+ * on-air/off-air to the presence endpoints. Auto-mode activities then
+ * open/close; pinned ones ignore it (backend policy).
  *
  * Slide identity bridging: the common API returns the numeric sheet id;
  * the PowerPoint.js Slide.id is "sheetId#creationId" — we key the map by
@@ -22,7 +24,12 @@
 
 import { api } from '../api/client'
 import { runPowerPoint } from './powerpointRun'
-import { isPowerPointShapeApiAvailable, POLL_WIDGET_SLIDE_TAGS } from './widgetShapes'
+import {
+  DISCUSSION_WIDGET_SLIDE_TAGS,
+  isPowerPointShapeApiAvailable,
+  POLL_WIDGET_SLIDE_TAGS,
+  QNA_WIDGET_SLIDE_TAGS
+} from './widgetShapes'
 
 const TICK_READ_MS = 500
 const TICK_EDIT_MS = 2000
@@ -41,11 +48,20 @@ let ticksSinceViewCheck = 0
 let tickBusySince = 0
 /** Numeric sheet id → bound poll id, for the current session's widget slides. */
 let slidePollMap = new Map<string, string>()
+/** Numeric sheet id → bound discussion prompt id (discussion widgets and
+ * prompt-bound Q&A widgets). */
+let slidePromptMap = new Map<string, string>()
+/** Sheet ids of unbound Q&A widget slides (drive session-level Q&A). */
+let qnaSlideIds = new Set<string>()
 let mapBuiltAt = 0
 let mapBuiltForSession: string | null = null
-/** Poll this conductor has reported on-air (null when nothing is on air). */
+/** What this conductor has reported on-air per channel. */
 let reportedPollId: string | null = null
-let lastReportAt = 0
+let reportedPromptId: string | null = null
+let reportedQnaOnAir = false
+let lastPollReportAt = 0
+let lastPromptReportAt = 0
+let lastQnaReportAt = 0
 
 const officeDocReady = (): boolean =>
   typeof Office !== 'undefined' && Boolean(Office.context?.document)
@@ -118,51 +134,98 @@ const setViewIsRead = (isRead: boolean) => {
   viewKnown = true
 }
 
-const rebuildSlidePollMap = async (forSession: string): Promise<void> => {
+const rebuildSlideMaps = async (forSession: string): Promise<void> => {
   if (!isPowerPointShapeApiAvailable()) {
     slidePollMap = new Map()
+    slidePromptMap = new Map()
+    qnaSlideIds = new Set()
     mapBuiltAt = Date.now()
     mapBuiltForSession = forSession
     return
   }
   try {
-    const next = new Map<string, string>()
+    const nextPolls = new Map<string, string>()
+    const nextPrompts = new Map<string, string>()
+    const nextQna = new Set<string>()
     await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
       slides.load('items/id')
       await context.sync()
       const infos = slides.items.map((slide) => {
-        const sessionTag = slide.tags.getItemOrNullObject(POLL_WIDGET_SLIDE_TAGS.sessionTag)
-        const bindingTag = slide.tags.getItemOrNullObject(POLL_WIDGET_SLIDE_TAGS.bindingTag)
-        sessionTag.load('value')
-        bindingTag.load('value')
-        return { slide, sessionTag, bindingTag }
+        const tags = {
+          pollSession: slide.tags.getItemOrNullObject(POLL_WIDGET_SLIDE_TAGS.sessionTag),
+          pollBinding: slide.tags.getItemOrNullObject(POLL_WIDGET_SLIDE_TAGS.bindingTag),
+          qnaSession: slide.tags.getItemOrNullObject(QNA_WIDGET_SLIDE_TAGS.sessionTag),
+          qnaPromptBinding: slide.tags.getItemOrNullObject(QNA_WIDGET_SLIDE_TAGS.promptBindingTag),
+          discussionSession: slide.tags.getItemOrNullObject(DISCUSSION_WIDGET_SLIDE_TAGS.sessionTag),
+          discussionBinding: slide.tags.getItemOrNullObject(DISCUSSION_WIDGET_SLIDE_TAGS.bindingTag)
+        }
+        for (const tag of Object.values(tags)) {
+          tag.load('value')
+        }
+        return { slide, tags }
       })
       await context.sync()
-      for (const info of infos) {
-        if (info.sessionTag.isNullObject || info.sessionTag.value !== forSession) {
-          continue
+      const tagValue = (tag: PowerPoint.Tag): string | null =>
+        tag.isNullObject || !tag.value ? null : tag.value
+      for (const { slide, tags } of infos) {
+        const sheetId = String(slide.id).split('#')[0]
+        if (tagValue(tags.pollSession) === forSession && tagValue(tags.pollBinding)) {
+          nextPolls.set(sheetId, tags.pollBinding.value)
         }
-        if (info.bindingTag.isNullObject || !info.bindingTag.value) {
-          continue
+        if (tagValue(tags.discussionSession) === forSession && tagValue(tags.discussionBinding)) {
+          nextPrompts.set(sheetId, tags.discussionBinding.value)
         }
-        next.set(String(info.slide.id).split('#')[0], info.bindingTag.value)
+        if (tagValue(tags.qnaSession) === forSession) {
+          const boundPrompt = tagValue(tags.qnaPromptBinding)
+          if (boundPrompt) {
+            nextPrompts.set(sheetId, boundPrompt)
+          } else {
+            nextQna.add(sheetId)
+          }
+        }
       }
     })
-    slidePollMap = next
+    slidePollMap = nextPolls
+    slidePromptMap = nextPrompts
+    qnaSlideIds = nextQna
     mapBuiltAt = Date.now()
     mapBuiltForSession = forSession
   } catch {
-    // Deck busy — keep the stale map (if any) and retry on a later tick.
-    mapBuiltAt = slidePollMap.size > 0 ? Date.now() - MAP_MAX_AGE_MS / 2 : 0
+    // Deck busy — keep the stale maps (if any) and retry on a later tick.
+    const hasAnything =
+      slidePollMap.size > 0 || slidePromptMap.size > 0 || qnaSlideIds.size > 0
+    mapBuiltAt = hasAnything ? Date.now() - MAP_MAX_AGE_MS / 2 : 0
   }
 }
 
-const report = async (forSession: string, pollId: string, onAir: boolean): Promise<boolean> => {
+const reportPoll = async (forSession: string, pollId: string, onAir: boolean): Promise<boolean> => {
   try {
     await api.reportPollPresence(forSession, pollId, onAir, null)
     reportedPollId = onAir ? pollId : null
-    lastReportAt = Date.now()
+    lastPollReportAt = Date.now()
+    return true
+  } catch {
+    return false
+  }
+}
+
+const reportPrompt = async (forSession: string, promptId: string, onAir: boolean): Promise<boolean> => {
+  try {
+    await api.reportPromptPresence(forSession, promptId, onAir)
+    reportedPromptId = onAir ? promptId : null
+    lastPromptReportAt = Date.now()
+    return true
+  } catch {
+    return false
+  }
+}
+
+const reportQna = async (forSession: string, onAir: boolean): Promise<boolean> => {
+  try {
+    await api.reportQnaPresence(forSession, onAir)
+    reportedQnaOnAir = onAir
+    lastQnaReportAt = Date.now()
     return true
   } catch {
     return false
@@ -191,31 +254,60 @@ const tick = async (): Promise<void> => {
     }
     const epochAtDecision = viewEpoch
     let activePollId: string | null = null
+    let activePromptId: string | null = null
+    let qnaOnAir = false
     if (viewIsRead) {
       if (mapBuiltForSession !== forSession || now - mapBuiltAt > MAP_MAX_AGE_MS) {
-        await rebuildSlidePollMap(forSession)
+        await rebuildSlideMaps(forSession)
       }
       const currentSheetId = await getCurrentSheetId()
       if (currentSheetId) {
         activePollId = slidePollMap.get(currentSheetId) ?? null
+        activePromptId = slidePromptMap.get(currentSheetId) ?? null
+        qnaOnAir = qnaSlideIds.has(currentSheetId)
       }
     }
     if (viewEpoch !== epochAtDecision || sessionId !== forSession) {
       return
     }
+    // Polls
     if (activePollId && activePollId !== reportedPollId) {
       if (reportedPollId) {
-        await report(forSession, reportedPollId, false)
+        await reportPoll(forSession, reportedPollId, false)
       }
-      await report(forSession, activePollId, true)
+      await reportPoll(forSession, activePollId, true)
     } else if (!activePollId && reportedPollId) {
-      await report(forSession, reportedPollId, false)
+      await reportPoll(forSession, reportedPollId, false)
     } else if (
       activePollId &&
       reportedPollId === activePollId &&
-      Date.now() - lastReportAt >= KEEPALIVE_MS
+      Date.now() - lastPollReportAt >= KEEPALIVE_MS
     ) {
-      await report(forSession, activePollId, true)
+      await reportPoll(forSession, activePollId, true)
+    }
+    // Discussion prompts (and prompt-bound Q&A widgets)
+    if (activePromptId && activePromptId !== reportedPromptId) {
+      if (reportedPromptId) {
+        await reportPrompt(forSession, reportedPromptId, false)
+      }
+      await reportPrompt(forSession, activePromptId, true)
+    } else if (!activePromptId && reportedPromptId) {
+      await reportPrompt(forSession, reportedPromptId, false)
+    } else if (
+      activePromptId &&
+      reportedPromptId === activePromptId &&
+      Date.now() - lastPromptReportAt >= KEEPALIVE_MS
+    ) {
+      await reportPrompt(forSession, activePromptId, true)
+    }
+    // Session Q&A (unbound Q&A widget slides)
+    if (qnaOnAir !== reportedQnaOnAir) {
+      await reportQna(forSession, qnaOnAir)
+    } else if (
+      qnaOnAir &&
+      Date.now() - lastQnaReportAt >= KEEPALIVE_MS
+    ) {
+      await reportQna(forSession, qnaOnAir)
     }
   } finally {
     tickBusySince = 0
@@ -271,14 +363,26 @@ export function setConductorSession(nextSessionId: string | null): void {
     return
   }
   const previousSession = sessionId
-  const previousReported = reportedPollId
+  const previousPoll = reportedPollId
+  const previousPrompt = reportedPromptId
+  const previousQnaOnAir = reportedQnaOnAir
   sessionId = nextSessionId
   reportedPollId = null
+  reportedPromptId = null
+  reportedQnaOnAir = false
   mapBuiltAt = 0
   mapBuiltForSession = null
-  if (previousSession && previousReported) {
-    // Release the poll we put on air under the old session.
-    void report(previousSession, previousReported, false)
+  if (previousSession) {
+    // Release whatever we put on air under the old session.
+    if (previousPoll) {
+      void reportPoll(previousSession, previousPoll, false)
+    }
+    if (previousPrompt) {
+      void reportPrompt(previousSession, previousPrompt, false)
+    }
+    if (previousQnaOnAir) {
+      void reportQna(previousSession, false)
+    }
   }
   if (nextSessionId) {
     startLoop()

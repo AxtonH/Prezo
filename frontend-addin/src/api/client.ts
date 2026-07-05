@@ -359,6 +359,36 @@ export const api = {
       },
       true
     ),
+  setPromptMode: (sessionId: string, promptId: string, mode: PollMode) =>
+    request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts/${promptId}/mode`, {
+      method: 'POST',
+      body: JSON.stringify({ mode })
+    }, true),
+  /** Slideshow conductor: whether a slide bound to the prompt is presented. */
+  reportPromptPresence: (sessionId: string, promptId: string, onAir: boolean) =>
+    request<{ mode: PollMode; status: string }>(
+      `/sessions/${sessionId}/qna-prompts/${promptId}/presence`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ on_air: onAir, view: onAir ? 'read' : undefined })
+      },
+      true
+    ),
+  setQnaControlMode: (sessionId: string, mode: PollMode) =>
+    request<Session>(`/sessions/${sessionId}/qna/mode`, {
+      method: 'POST',
+      body: JSON.stringify({ mode })
+    }, true),
+  /** Slideshow conductor: whether a Q&A widget slide is presented. */
+  reportQnaPresence: (sessionId: string, onAir: boolean) =>
+    request<{ mode: PollMode; qna_open: boolean }>(
+      `/sessions/${sessionId}/qna/presence`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ on_air: onAir, view: onAir ? 'read' : undefined })
+      },
+      true
+    ),
   deletePoll: (sessionId: string, pollId: string) =>
     request<void>(`/sessions/${sessionId}/polls/${pollId}`, { method: 'DELETE' }, true),
   updatePoll: (
