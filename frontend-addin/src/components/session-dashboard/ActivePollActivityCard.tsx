@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import type { Poll, PollMode } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
-import { ControlModeChip, FollowSlidesButton } from './ControlModeUi'
+import { controlModeShellVariant, FollowSlidesButton } from './ControlModeUi'
 
 export interface ActivePollActivityCardProps {
   poll: Poll
@@ -70,7 +70,7 @@ export function ActivePollActivityCard({
 
   return (
     <CollapsibleActivityPanelShell
-      variant={inactive ? 'inactive' : 'active'}
+      variant={controlModeShellVariant(mode)}
       icon={
         <div
           className={
@@ -104,10 +104,6 @@ export function ActivePollActivityCard({
             >
               {inactive ? 'Ended' : 'Live'}
             </span>
-            <ControlModeChip
-              mode={mode}
-              autoTitle="Slide-driven: opens when its slide is presented, closes when the show moves on"
-            />
             <span className="inline-flex items-center gap-1.5">
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${

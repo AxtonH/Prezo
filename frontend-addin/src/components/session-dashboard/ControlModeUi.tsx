@@ -6,30 +6,15 @@ import type { PollMode } from '../../api/types'
  * behaviorally identical.
  */
 
-export function ControlModeChip({
-  mode,
-  autoTitle
-}: {
+/**
+ * Control mode → card shell variant: the whole card carries the state
+ * (green "Auto follow", yellow "Pinned", grey "Inactive") instead of a
+ * separate chip.
+ */
+export function controlModeShellVariant(
   mode: PollMode
-  /** Tooltip for the auto state, phrased for the specific activity. */
-  autoTitle: string
-}) {
-  return (
-    <span
-      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-        mode === 'auto' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'
-      }`}
-      title={
-        mode === 'auto'
-          ? autoTitle
-          : mode === 'open'
-            ? 'Pinned by the host: stays open regardless of the slideshow'
-            : 'Pinned by the host: stays closed regardless of the slideshow'
-      }
-    >
-      {mode === 'auto' ? 'Auto · follows slides' : mode === 'open' ? 'Pinned open' : 'Pinned closed'}
-    </span>
-  )
+): 'auto' | 'pinned' | 'inactive' {
+  return mode === 'auto' ? 'auto' : mode === 'open' ? 'pinned' : 'inactive'
 }
 
 export function FollowSlidesButton({
