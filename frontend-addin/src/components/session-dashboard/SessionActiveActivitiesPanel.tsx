@@ -32,6 +32,10 @@ export interface SessionActiveActivitiesPanelProps {
   closedPrompts: QnaPrompt[]
   questions: Question[]
   onConfigurePoll?: (pollId: string) => void
+  /** Open the editing station focused on the session Q&amp;A artifact. */
+  onConfigureQna?: () => void
+  /** Open the editing station focused on this discussion's artifact. */
+  onConfigureDiscussion?: (promptId: string) => void
   onStopPoll?: (pollId: string) => void
   onStopQna?: () => void
   onStopDiscussion?: (promptId: string) => void
@@ -98,6 +102,8 @@ export function SessionActiveActivitiesPanel({
   closedPrompts,
   questions,
   onConfigurePoll,
+  onConfigureQna,
+  onConfigureDiscussion,
   onStopPoll,
   onStopQna,
   onStopDiscussion,
@@ -319,6 +325,7 @@ export function SessionActiveActivitiesPanel({
                   approvedQuestions={audienceApprovedQuestions}
                   variant="active"
                   mode={qnaControlMode}
+                  onConfigure={onConfigureQna}
                   onStop={onStopQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
                   onSetMode={onSetQnaMode}
@@ -335,6 +342,7 @@ export function SessionActiveActivitiesPanel({
                 pendingQuestions={pendingQuestions}
                 approvedQuestions={approvedQuestions}
                 variant="active"
+                onConfigure={onConfigureDiscussion}
                 onStop={onStopDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onSetMode={onSetDiscussionMode}
@@ -368,6 +376,7 @@ export function SessionActiveActivitiesPanel({
                   approvedQuestions={audienceApprovedQuestions}
                   variant="inactive"
                   mode={qnaControlMode}
+                  onConfigure={onConfigureQna}
                   onResume={onResumeQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
                   onSetMode={onSetQnaMode}
@@ -384,6 +393,7 @@ export function SessionActiveActivitiesPanel({
                 pendingQuestions={pendingQuestions}
                 approvedQuestions={approvedQuestions}
                 variant="inactive"
+                onConfigure={onConfigureDiscussion}
                 onResume={onResumeDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onSetMode={onSetDiscussionMode}

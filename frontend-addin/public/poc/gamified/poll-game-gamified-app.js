@@ -42,6 +42,7 @@ import {
   buildArtifactAiPrompt,
   createEmptyArtifactAnswers,
   mergeArtifactDesignGuidelines,
+  normalizeArtifactActivityKind,
   sanitizeArtifactLayout
 } from './poll-game-gamified-artifact-mode.js'
 import {
@@ -201,13 +202,34 @@ import {
   }
 
   const pollSelector = parsePollSelector(query.get('pollId'))
+
+  // Discussion binding mirrors the poll selector: an explicit prompt id, or
+  // latest-open fallback when the embed has not been configured yet.
+  const parsePromptSelector = (raw) => {
+    const value = asText(raw)
+    if (!value) {
+      return { mode: 'latestOpen', descriptor: 'latest/open', explicitId: '' }
+    }
+    return { mode: 'id', descriptor: value, explicitId: value }
+  }
+
+  // Which activity this station instance renders: 'poll' (default), 'qna'
+  // (session-level audience Q&A), or 'discussion' (a QnaPrompt the host
+  // posed). See docs/artifact-activity-kinds.md for the vocabulary.
+  const activityKind = normalizeArtifactActivityKind(query.get('activityKind'))
+  const promptSelector = parsePromptSelector(query.get('promptId'))
   const state = {
     apiBase: normalizeApiBase(query.get('apiBase')) || DEFAULT_API_BASE,
     sessionId: asText(query.get('sessionId')),
     code: normalizeCode(query.get('code')),
     pollSelector,
+    activityKind,
+    promptSelector,
     snapshot: null,
     currentPoll: null,
+    /** qna/discussion kinds: the selected activity view
+        ({ id, title, status, questions[] }) rebuilt on every snapshot render. */
+    currentQnaView: null,
     socket: null,
     socketStatus: 'connecting',
     reconnectTimer: null,
@@ -625,12 +647,24 @@ import {
     getIsArtifactMode: () => currentTheme.visualMode === ARTIFACT_VISUAL_MODE,
     getIsPresentMode: () => Boolean(state.presentMode),
     getCurrentPollPayload: () => {
-      if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !state.currentPoll) {
+      if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
+        return null
+      }
+      if (state.activityKind !== 'poll') {
+        return state.currentQnaView ? buildArtifactQnaPayload(state.currentQnaView) : null
+      }
+      if (!state.currentPoll) {
         return null
       }
       return buildArtifactPollPayload(state.currentPoll, getTotalVotes(state.currentPoll))
     },
-    buildPayloadKey: buildArtifactPayloadKey,
+    buildPayloadKey: (payload) =>
+      state.activityKind !== 'poll'
+        ? buildArtifactQnaPayloadKey(payload)
+        : buildArtifactPayloadKey(payload),
+    // qna/discussion artifacts listen on the prezo-qna-state channel; polls
+    // keep the historical prezo-poll-state channel (see artifact runtime).
+    pollStateMessageType: activityKind !== 'poll' ? 'prezo-qna-state' : 'prezo-poll-state',
     clone,
     clamp,
     stageAspectRatio: ARTIFACT_STAGE_ASPECT_RATIO,
@@ -3209,7 +3243,8 @@ import {
       const repairPrompt = buildArtifactRepairPrompt(
         normalizedRequest,
         runtimeError,
-        state.artifact.lastAnswers
+        state.artifact.lastAnswers,
+        state.activityKind
       )
       context.artifact = buildArtifactContext(
         {
@@ -3559,7 +3594,8 @@ import {
     state.artifact.lastRuntimeError = ''
     const prompt = buildArtifactEditPrompt(
       resolvedRequest || normalizedRequest,
-      state.artifact.lastAnswers
+      state.artifact.lastAnswers,
+      state.activityKind
     )
     await submitArtifactPrompt(prompt, {
       conversationAnswers: state.artifact.lastAnswers,
@@ -3799,29 +3835,61 @@ import {
       runtimeRenderError,
       originalEditRequest: originalEditRequest || prompt,
       recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
-      runtimeApi: {
-        setRenderer: 'window.prezoSetPollRenderer(fn)',
-        renderHook: 'window.prezoRenderPoll(state)',
-        getState: 'window.prezoGetPollState()'
-      },
-      pollTitle: asText(state.currentPoll?.question) || asText(pollContext?.question) || '',
-      pollSelector: asText(state.pollSelector?.descriptor),
+      // Only stamp the kind for the new kinds: poll requests stay
+      // byte-identical to the pre-kind era (the backend defaults to poll).
+      ...(state.activityKind !== 'poll' ? { activityKind: state.activityKind } : {}),
+      runtimeApi:
+        state.activityKind !== 'poll'
+          ? {
+              setRenderer: 'window.prezoSetQnaRenderer(fn)',
+              renderHook: 'window.prezoRenderQna(state)',
+              getState: 'window.prezoGetQnaState()'
+            }
+          : {
+              setRenderer: 'window.prezoSetPollRenderer(fn)',
+              renderHook: 'window.prezoRenderPoll(state)',
+              getState: 'window.prezoGetPollState()'
+            },
+      pollTitle:
+        state.activityKind === 'poll'
+          ? asText(state.currentPoll?.question) || asText(pollContext?.question) || ''
+          : '',
+      pollSelector: state.activityKind === 'poll' ? asText(state.pollSelector?.descriptor) : '',
+      qnaTitle: state.activityKind !== 'poll' ? asText(state.currentQnaView?.title) : '',
+      activitySelector:
+        state.activityKind === 'discussion'
+          ? asText(state.promptSelector?.descriptor)
+          : state.activityKind === 'qna'
+            ? 'session'
+            : '',
       artifactType: answers.artifactType,
       brandProfileName: asText(answers?.brandProfileName).trim() || undefined,
       designGuidelines: mergeArtifactDesignGuidelines(answers),
-      expectedMaxVotes: voteCapacity.expectedMaxVotes,
-      recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
-      recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
-      avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects,
-      dataEndpoints: {
-        sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
-        sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
-        pollsList: `${apiBase}/sessions/${encodedSession}/polls`,
-        pollOpen: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/open`,
-        pollClose: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/close`,
-        pollVote: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/vote`,
-        liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
-      },
+      ...(state.activityKind === 'poll'
+        ? {
+            expectedMaxVotes: voteCapacity.expectedMaxVotes,
+            recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
+            recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
+            avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
+          }
+        : buildArtifactQnaCapacityMeta(state.currentQnaView)),
+      dataEndpoints:
+        state.activityKind !== 'poll'
+          ? {
+              sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
+              sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
+              questionsList: `${apiBase}/sessions/${encodedSession}/questions`,
+              liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
+            }
+          : {
+              sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
+              sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
+              pollsList: `${apiBase}/sessions/${encodedSession}/polls`,
+              pollOpen: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/open`,
+              pollClose: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/close`,
+              pollVote: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/vote`,
+              liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
+            },
       /** Merged saved + pending; backend turns this into styleOverridesSummary for the model. */
       styleOverrides: (() => {
         const merged = {
@@ -4672,14 +4740,25 @@ import {
       })),
       force_ready: Boolean(options.forceReady)
     }
-    const poll = state.currentPoll
-    if (poll) {
+    if (state.activityKind !== 'poll') {
       body.context = {
-        poll: {
-          question: asText(poll.question),
-          options: Array.isArray(poll.options)
-            ? poll.options.map((option) => asText(option?.label)).filter(Boolean)
-            : []
+        activityKind: state.activityKind,
+        qna: {
+          title: asText(state.currentQnaView?.title),
+          status: asText(state.currentQnaView?.status),
+          approvedQuestionCount: state.currentQnaView?.questions?.length || 0
+        }
+      }
+    } else {
+      const poll = state.currentPoll
+      if (poll) {
+        body.context = {
+          poll: {
+            question: asText(poll.question),
+            options: Array.isArray(poll.options)
+              ? poll.options.map((option) => asText(option?.label)).filter(Boolean)
+              : []
+          }
         }
       }
     }
@@ -4835,7 +4914,8 @@ import {
     )
     const srcDoc = buildArtifactSrcDoc(resolvedMarkup, {
       instanceId: state.artifact.instanceId,
-      hiddenCss: bakedHiddenCss
+      hiddenCss: bakedHiddenCss,
+      activityKind: state.activityKind
     })
     if (!srcDoc) {
       return false
@@ -5023,8 +5103,125 @@ import {
     return JSON.stringify(stable)
   }
 
+  /** How many question rows a 16:9 artifact board can show comfortably; the
+      generation prompt tells the model to cap the visible list around this
+      and express the rest as an overflow count. */
+  const ARTIFACT_QNA_RECOMMENDED_VISIBLE_QUESTIONS = 6
+  /** Ceiling on questions shipped in a state payload. Boards render a top-N
+      list anyway; totalQuestions still reports the real count so overflow
+      indicators stay honest, and the runtime's per-frame interpolation stays
+      bounded on very active sessions. */
+  const ARTIFACT_QNA_MAX_PAYLOAD_QUESTIONS = 60
+
+  /** Single source of the qna sizing hints shared by the generation context
+      (design-time) and the live state payload (runtime) — they must agree or
+      the model designs overflow around numbers the artifact never receives. */
+  function buildArtifactQnaCapacityMeta(view) {
+    const totalQuestions = Array.isArray(view?.questions) ? view.questions.length : 0
+    return {
+      recommendedVisibleQuestions: ARTIFACT_QNA_RECOMMENDED_VISIBLE_QUESTIONS,
+      expectedMaxQuestions: Math.max(20, totalQuestions * 2)
+    }
+  }
+
+  function buildArtifactQnaPayload(view) {
+    const source = Array.isArray(view?.questions) ? view.questions : []
+    const totalVotes = source.reduce((sum, question) => sum + toInt(question?.votes), 0)
+    const questions = source
+      .slice(0, ARTIFACT_QNA_MAX_PAYLOAD_QUESTIONS)
+      .map((question, index) => {
+        const votes = toInt(question?.votes)
+        return {
+          id: asText(question?.id) || `question-${index}`,
+          text: asText(question?.text),
+          votes,
+          percentage: totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0,
+          rank: index + 1
+        }
+      })
+    const meta = {
+      sessionId: asText(state.sessionId),
+      code: asText(state.code),
+      activityKind: state.activityKind,
+      selector:
+        state.activityKind === 'discussion' ? asText(state.promptSelector?.descriptor) : 'session',
+      socketStatus: asText(state.socketStatus),
+      ...buildArtifactQnaCapacityMeta(view)
+    }
+    const artifactCopy = getMergedArtifactCopyForPayload()
+    if (artifactCopy) {
+      meta.artifactCopy = artifactCopy
+    }
+    return {
+      kind: state.activityKind,
+      qna: {
+        id: asText(view?.id),
+        title: asText(view?.title),
+        prompt: asText(view?.title),
+        status: asText(view?.status),
+        questions,
+        totalQuestions: source.length,
+        totalVotes
+      },
+      totalQuestions: source.length,
+      totalVotes,
+      meta
+    }
+  }
+
+  function buildArtifactQnaPayloadKey(payload) {
+    const qna = payload && typeof payload === 'object' ? payload.qna : {}
+    const questions = Array.isArray(qna?.questions) ? qna.questions : []
+    const meta = payload && typeof payload.meta === 'object' ? payload.meta : {}
+    const copy = meta.artifactCopy && typeof meta.artifactCopy === 'object' ? meta.artifactCopy : {}
+    const stable = {
+      kind: asText(payload?.kind),
+      qna: {
+        id: asText(qna?.id),
+        title: asText(qna?.title),
+        status: asText(qna?.status),
+        questions: questions.map((question, index) => ({
+          id: asText(question?.id) || `question-${index}`,
+          text: asText(question?.text),
+          votes: toInt(question?.votes)
+        }))
+      },
+      totalVotes: toInt(payload?.totalVotes),
+      artifactCopy: {
+        subtitle: copy.subtitle || '',
+        footerSuffix: copy.footerSuffix || '',
+        textOverrides: copy.textOverrides && typeof copy.textOverrides === 'object' ? copy.textOverrides : null
+      }
+    }
+    return JSON.stringify(stable)
+  }
+
+  function pushArtifactQnaState(view, options = {}) {
+    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !view) {
+      return
+    }
+    const force = Boolean(options.force)
+    const payload = buildArtifactQnaPayload(view)
+    const payloadKey = buildArtifactQnaPayloadKey(payload)
+    if (!state.artifact.frameReady || !el.artifactFrame.contentWindow) {
+      state.artifact.pendingPayload = payload
+      return
+    }
+    if (!force && payloadKey === state.artifact.lastPayloadKey) {
+      return
+    }
+    artifactBridge.queuePayload(payload, { force })
+    // Same override re-push discipline as pushArtifactPollState: the renderer
+    // may rebuild question rows, so manual styling must be re-applied.
+    setTimeout(pushArtifactStyleOverrides, 160)
+    setTimeout(pushArtifactPositionOverrides, 160)
+    setTimeout(pushArtifactSizeOverrides, 160)
+    setTimeout(pushArtifactHiddenOverrides, 160)
+    setTimeout(pushArtifactGridConfig, 160)
+  }
+
   function buildAiEditorContext() {
-    const poll = state.currentPoll
+    const poll = state.activityKind === 'poll' ? state.currentPoll : null
     const options = Array.isArray(poll?.options)
       ? poll.options.map((option, index) => ({
           index,
@@ -5033,7 +5230,24 @@ import {
           votes: toInt(option?.votes)
         }))
       : []
+    const qnaView = state.activityKind !== 'poll' ? state.currentQnaView : null
     return {
+      ...(state.activityKind !== 'poll' ? { activityKind: state.activityKind } : {}),
+      qna: qnaView
+        ? {
+            id: asText(qnaView.id),
+            title: asText(qnaView.title),
+            status: asText(qnaView.status),
+            totalQuestions: qnaView.questions.length,
+            // Capped sample for design context; the artifact receives the
+            // full live list at runtime through the qna state channel.
+            questions: qnaView.questions.slice(0, 12).map((question) => ({
+              id: question.id,
+              text: question.text,
+              votes: question.votes
+            }))
+          }
+        : undefined,
       visualMode: currentTheme.visualMode,
       artifact:
         currentTheme.visualMode === ARTIFACT_VISUAL_MODE
@@ -10274,7 +10488,7 @@ import {
     renderRichText(
       el.footer,
       getFooterTextKey(),
-      `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
+      `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, ${getActivityFooterDescriptor()}`
     )
     updateMeta(null, 0)
     scheduleResizeSelectionUpdate()
@@ -10434,7 +10648,7 @@ import {
 
     disconnectSocket()
     state.socketStatus = 'connecting'
-    updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
+    updateCurrentActivityMeta()
 
     const url = `${toWsBase(state.apiBase)}/ws/sessions/${encodeURIComponent(state.sessionId)}`
     let socket
@@ -10442,7 +10656,7 @@ import {
       socket = new WebSocket(url)
     } catch {
       state.socketStatus = 'error'
-      updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
+      updateCurrentActivityMeta()
       return
     }
 
@@ -10453,7 +10667,7 @@ import {
       }
       state.socketStatus = 'connected'
       state.reconnectDelayMs = SOCKET_RECONNECT_INITIAL_DELAY_MS
-      updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
+      updateCurrentActivityMeta()
     })
 
     socket.addEventListener('message', (event) => {
@@ -10469,7 +10683,7 @@ import {
         return
       }
       state.socketStatus = 'disconnected'
-      updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
+      updateCurrentActivityMeta()
       scheduleReconnect()
     })
 
@@ -10478,7 +10692,7 @@ import {
         return
       }
       state.socketStatus = 'error'
-      updateMeta(state.currentPoll, getTotalVotes(state.currentPoll))
+      updateCurrentActivityMeta()
     })
   }
 
@@ -10539,11 +10753,41 @@ import {
       hasPatch = true
     }
     let isPollPatch = false
+    let isQnaPatch = false
     if (eventPayload.poll && typeof eventPayload.poll === 'object') {
       ensureSnapshotContainer()
       mergePoll(eventPayload.poll)
       hasPatch = true
       isPollPatch = true
+    }
+    if (eventPayload.question && typeof eventPayload.question === 'object') {
+      ensureSnapshotContainer()
+      mergeQuestion(eventPayload.question)
+      hasPatch = true
+      isQnaPatch = true
+    }
+    if (eventPayload.prompt && typeof eventPayload.prompt === 'object') {
+      ensureSnapshotContainer()
+      mergePrompt(eventPayload.prompt)
+      hasPatch = true
+      isQnaPatch = true
+    }
+    if (payload.type === 'qna_prompt_deleted' && eventPayload.prompt_id) {
+      ensureSnapshotContainer()
+      state.snapshot.prompts = (Array.isArray(state.snapshot.prompts) ? state.snapshot.prompts : []).filter(
+        (prompt) => asText(prompt?.id) !== asText(eventPayload.prompt_id)
+      )
+      hasPatch = true
+      isQnaPatch = true
+    }
+    if (payload.type === 'audience_questions_deleted' && Array.isArray(eventPayload.question_ids)) {
+      ensureSnapshotContainer()
+      const removed = new Set(eventPayload.question_ids.map((id) => asText(id)))
+      state.snapshot.questions = (Array.isArray(state.snapshot.questions) ? state.snapshot.questions : []).filter(
+        (question) => !removed.has(asText(question?.id))
+      )
+      hasPatch = true
+      isQnaPatch = true
     }
 
     if (hasPatch) {
@@ -10553,6 +10797,15 @@ import {
       // into the snapshot — the next render after editing ends will
       // pick it up.
       if (isPollPatch && artifactTextEdit.isEditing()) {
+        return
+      }
+      // The patch is merged into the snapshot either way; only spend a
+      // render when the event can affect this station's activity view
+      // (session patches affect all kinds — qna_open lives on the session).
+      const renderRelevant =
+        Boolean(eventPayload.session) ||
+        (state.activityKind === 'poll' ? isPollPatch : isQnaPatch)
+      if (!renderRelevant) {
         return
       }
       scheduleSnapshotRender()
@@ -10578,14 +10831,31 @@ import {
     }
   }
 
-  function mergePoll(nextPoll) {
-    const polls = Array.isArray(state.snapshot?.polls) ? state.snapshot.polls : []
-    const index = polls.findIndex((poll) => poll.id === nextPoll.id)
+  /** Upsert-by-id into a snapshot collection (shared by poll, question, and
+      prompt socket patches). */
+  function upsertSnapshotItem(collectionKey, item) {
+    if (!Array.isArray(state.snapshot[collectionKey])) {
+      state.snapshot[collectionKey] = []
+    }
+    const list = state.snapshot[collectionKey]
+    const index = list.findIndex((entry) => entry.id === item.id)
     if (index >= 0) {
-      polls[index] = nextPoll
+      list[index] = item
       return
     }
-    polls.push(nextPoll)
+    list.push(item)
+  }
+
+  function mergePoll(nextPoll) {
+    upsertSnapshotItem('polls', nextPoll)
+  }
+
+  function mergeQuestion(nextQuestion) {
+    upsertSnapshotItem('questions', nextQuestion)
+  }
+
+  function mergePrompt(nextPrompt) {
+    upsertSnapshotItem('prompts', nextPrompt)
   }
 
   function hideInitialSkeleton() {
@@ -10605,6 +10875,11 @@ import {
     flushRichTextHostsToOverrides()
     renderRichText(el.eyebrow, getEyebrowTextKey(), 'Prezo Visual Mode PoC')
     syncArtifactComposerVisibility()
+
+    if (state.activityKind !== 'poll') {
+      renderQnaFromSnapshot(forceRender)
+      return
+    }
 
     const polls = Array.isArray(state.snapshot?.polls) ? state.snapshot.polls : []
     const poll = selectPoll(polls)
@@ -10664,7 +10939,9 @@ import {
     return Boolean(asText(state.artifact.lastPrompt))
   }
 
-  function renderArtifactExperience(poll, totalVotes) {
+  // Shared stage gating for both activity kinds: loader while a build runs,
+  // hidden stage until an artifact exists, then reveal + push live state.
+  function renderArtifactExperienceWith(pushLiveState) {
     clearArtifactModeClasses()
     if (state.artifact.busy) {
       showArtifactStageLoader('Generating artifact canvas...')
@@ -10686,11 +10963,199 @@ import {
     }
 
     showArtifactStageFrame()
-    pushArtifactPollState(poll, totalVotes)
+    pushLiveState()
+  }
+
+  function renderArtifactExperience(poll, totalVotes) {
+    renderArtifactExperienceWith(() => pushArtifactPollState(poll, totalVotes))
+  }
+
+  function renderQnaArtifactExperience(view) {
+    renderArtifactExperienceWith(() => pushArtifactQnaState(view))
   }
 
   function renderArtifactAwaitingPrompt() {
     hideArtifactStage()
+  }
+
+  /** qna/discussion twin of the poll snapshot render: selects the activity,
+      keeps the classic canvas usable by projecting questions as ranked rows,
+      and feeds the artifact stage through the qna state channel. */
+  function renderQnaFromSnapshot(forceRender) {
+    const view = buildQnaActivityView()
+    state.currentQnaView = view
+    state.currentPoll = null
+
+    const renderKey = getQnaRenderKey(view)
+    if (!forceRender && renderKey === state.lastRenderKey) {
+      // view can be null here (missing prompt renders re-key to the same
+      // "no-<kind>" value); never re-reveal the artifact stage over the
+      // missing-activity placeholder.
+      if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE && view) {
+        renderQnaArtifactExperience(view)
+      }
+      updateFooter()
+      updateMeta(view ? qnaViewAsPollShape(view) : null, getQnaTotalVotes(view))
+      scheduleResizeSelectionUpdate()
+      return
+    }
+    state.lastRenderKey = renderKey
+
+    if (!view) {
+      renderMissingQnaActivity()
+      return
+    }
+
+    renderRichText(el.question, getQnaTitleTextKey(view), view.title)
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      renderQnaArtifactExperience(view)
+    } else if (view.questions.length > 0) {
+      renderClassicOptions(qnaViewAsPollShape(view), getQnaTotalVotes(view))
+    } else {
+      clearArtifactModeClasses()
+      renderEmptyStateNote(
+        'qna-waiting',
+        state.activityKind === 'discussion'
+          ? 'No approved answers yet. Approved audience answers appear here live.'
+          : 'No approved questions yet. Approved audience questions appear here live.'
+      )
+    }
+    updateMeta(qnaViewAsPollShape(view), getQnaTotalVotes(view))
+    updateFooter()
+    scheduleResizeSelectionUpdate()
+  }
+
+  function buildQnaActivityView() {
+    const questions = Array.isArray(state.snapshot?.questions) ? state.snapshot.questions : []
+    if (state.activityKind === 'discussion') {
+      const prompts = Array.isArray(state.snapshot?.prompts) ? state.snapshot.prompts : []
+      const prompt = selectPrompt(prompts)
+      if (!prompt) {
+        return null
+      }
+      return {
+        id: asText(prompt.id),
+        title: asText(prompt.prompt) || 'Open discussion',
+        status: asText(prompt.status) || 'closed',
+        questions: sortQnaQuestions(
+          questions.filter(
+            (question) =>
+              question?.status === 'approved' && asText(question?.prompt_id) === asText(prompt.id)
+          )
+        )
+      }
+    }
+    const session = state.snapshot?.session
+    if (!session || typeof session !== 'object') {
+      return null
+    }
+    return {
+      id: asText(session.id) || asText(state.sessionId),
+      title: asText(session.qna_prompt) || 'Audience Q&A',
+      status: session.qna_open ? 'open' : 'closed',
+      questions: sortQnaQuestions(
+        questions.filter((question) => question?.status === 'approved' && !question?.prompt_id)
+      )
+    }
+  }
+
+  /** Approved questions ranked the way the audience app ranks them:
+      upvotes first, then newest. Timestamps are parsed once up front so the
+      comparator stays allocation- and parse-free. */
+  function sortQnaQuestions(list) {
+    return list
+      .map((question) => ({
+        id: asText(question?.id),
+        text: asText(question?.text),
+        votes: toInt(question?.votes),
+        createdAtMs: Date.parse(asText(question?.created_at)) || 0
+      }))
+      .sort((a, b) => {
+        if (b.votes !== a.votes) {
+          return b.votes - a.votes
+        }
+        return b.createdAtMs - a.createdAtMs
+      })
+  }
+
+  function selectPrompt(prompts) {
+    if (!Array.isArray(prompts) || prompts.length === 0) {
+      return null
+    }
+    const sorted = [...prompts].sort((a, b) => {
+      const left = Date.parse(asText(a.created_at)) || 0
+      const right = Date.parse(asText(b.created_at)) || 0
+      return right - left
+    })
+    if (state.promptSelector.mode === 'id') {
+      return sorted.find((prompt) => prompt.id === state.promptSelector.explicitId) || null
+    }
+    return sorted.find((prompt) => prompt.status === 'open') || sorted[0] || null
+  }
+
+  /** Poll-shaped projection of a qna view so the shared chrome (meta, classic
+      option rows, vote counter) renders ranked questions without new code. */
+  function qnaViewAsPollShape(view) {
+    if (!view) {
+      return null
+    }
+    return {
+      id: view.id,
+      question: view.title,
+      status: view.status,
+      options: view.questions.map((question) => ({
+        id: question.id,
+        label: question.text,
+        votes: question.votes
+      }))
+    }
+  }
+
+  function getQnaTotalVotes(view) {
+    if (!view || !Array.isArray(view.questions)) {
+      return 0
+    }
+    return view.questions.reduce((sum, question) => sum + toInt(question.votes), 0)
+  }
+
+  function getQnaTitleTextKey(view) {
+    return `${state.activityKind}:${asText(view?.id) || 'unknown'}:title`
+  }
+
+  function getQnaRenderKey(view) {
+    if (!view) {
+      return `no-${state.activityKind}`
+    }
+    return JSON.stringify({
+      kind: state.activityKind,
+      id: view.id,
+      status: view.status,
+      title: view.title,
+      questions: view.questions.map((question) => [question.id, question.text, question.votes])
+    })
+  }
+
+  function renderMissingQnaActivity() {
+    clearArtifactModeClasses()
+    syncArtifactComposerVisibility()
+    const isDiscussion = state.activityKind === 'discussion'
+    const message = isDiscussion
+      ? state.promptSelector.mode === 'id'
+        ? `Discussion "${state.promptSelector.explicitId}" was not found in this session.`
+        : 'No discussion is available in this session yet.'
+      : 'Session Q&A is not available yet.'
+    renderRichText(el.question, getQuestionStateTextKey(`missing-${state.activityKind}`), message)
+    const hint = isDiscussion
+      ? 'Create an open discussion in Host Console to render it here.'
+      : 'Start Q&A in Host Console to render it here.'
+    if (currentTheme.visualMode === ARTIFACT_VISUAL_MODE) {
+      showArtifactStagePlaceholder(hint, 'pending')
+    } else {
+      renderEmptyStateNote(`missing-${state.activityKind}`, hint)
+    }
+    updateMeta(null, 0)
+    updateFooter()
+    scheduleResizeSelectionUpdate()
   }
 
   function renderClassicOptions(poll, totalVotes) {
@@ -10865,8 +11330,34 @@ import {
     renderRichText(
       el.footer,
       getFooterTextKey(),
-      `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, poll: ${state.pollSelector.descriptor}`
+      `session: ${state.sessionId || 'n/a'}, code: ${state.code || 'n/a'}, ${getActivityFooterDescriptor()}`
     )
+  }
+
+  /** Status chip + vote counter refresh for whichever activity this station
+      instance is bound to (socket lifecycle calls this without arguments). */
+  function updateCurrentActivityMeta(forcedStatusText, forcedTone) {
+    if (state.activityKind !== 'poll') {
+      const view = state.currentQnaView
+      updateMeta(
+        view ? qnaViewAsPollShape(view) : null,
+        getQnaTotalVotes(view),
+        forcedStatusText,
+        forcedTone
+      )
+      return
+    }
+    updateMeta(state.currentPoll, getTotalVotes(state.currentPoll), forcedStatusText, forcedTone)
+  }
+
+  function getActivityFooterDescriptor() {
+    if (state.activityKind === 'discussion') {
+      return `discussion: ${state.promptSelector.descriptor}`
+    }
+    if (state.activityKind === 'qna') {
+      return 'q&a: session'
+    }
+    return `poll: ${state.pollSelector.descriptor}`
   }
 
   function updateMeta(poll, totalVotes, forcedStatusText, forcedTone) {
@@ -11338,6 +11829,13 @@ import {
 
   function applyArtifactLibraryRecord(name, artifactRecord, options = {}) {
     if (!name || !artifactRecord) {
+      return false
+    }
+    if (!artifactRecordMatchesActivityKind(artifactRecord)) {
+      showArtifactFeedback(
+        `Artifact "${name}" was built for a different activity type and can't run on this slide.`,
+        'error'
+      )
       return false
     }
     pendingArtifactStyleOverrides = {}
@@ -12190,6 +12688,7 @@ import {
     }
     const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingCopyWithPositions)
     return sanitizeSavedArtifactRecord({
+      kind: state.activityKind,
       html: materializedHtml,
       package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),
       lastPrompt: state.artifact.lastPrompt,
@@ -12202,8 +12701,23 @@ import {
     })
   }
 
+  /** A saved artifact is loadable here only when it renders this station's
+      activity kind — a poll game can't consume the qna state channel and
+      vice versa. Legacy records (no kind) are polls. */
+  function artifactRecordMatchesActivityKind(record) {
+    const normalized = normalizeArtifactActivityKind(asText(record?.kind))
+    if (state.activityKind === 'poll') {
+      return normalized === 'poll'
+    }
+    // qna and discussion share the runtime contract, so their artifacts are
+    // interchangeable between the two kinds.
+    return normalized !== 'poll'
+  }
+
   function refreshArtifactSelect(selectedName) {
-    const names = Object.keys(artifactLibrary.artifacts).sort((a, b) => a.localeCompare(b))
+    const names = Object.keys(artifactLibrary.artifacts)
+      .filter((name) => artifactRecordMatchesActivityKind(artifactLibrary.artifacts[name]))
+      .sort((a, b) => a.localeCompare(b))
     el.artifactSelect.innerHTML = ''
 
     if (names.length === 0) {
@@ -12223,7 +12737,9 @@ import {
     }
 
     const preferred =
-      selectedName && artifactLibrary.artifacts[selectedName] ? selectedName : names[0]
+      selectedName && artifactLibrary.artifacts[selectedName] && names.includes(selectedName)
+        ? selectedName
+        : names[0]
     el.artifactSelect.value = preferred
     if (!el.artifactName.value) {
       el.artifactName.value = preferred

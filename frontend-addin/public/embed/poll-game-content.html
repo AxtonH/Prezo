@@ -362,14 +362,28 @@
               <option value="">Loading sessions…</option>
             </select>
           </div>
+          <div class="field field--activity" id="activity-field">
+            <label for="activity-select">Activity</label>
+            <select id="activity-select">
+              <option value="poll">Poll</option>
+              <option value="qna">Q&amp;A</option>
+              <option value="discussion">Open discussion</option>
+            </select>
+          </div>
           <div class="field field--poll hidden" id="poll-field">
             <label for="poll-select">Poll</label>
             <select id="poll-select" disabled>
               <option value="">Loading polls…</option>
             </select>
           </div>
+          <div class="field field--prompt hidden" id="prompt-field">
+            <label for="prompt-select">Discussion</label>
+            <select id="prompt-select" disabled>
+              <option value="">Loading discussions…</option>
+            </select>
+          </div>
           <div class="actions">
-            <button id="refresh-btn" type="button" class="btn btn--ghost" title="Reload sessions and polls">Refresh</button>
+            <button id="refresh-btn" type="button" class="btn btn--ghost" title="Reload sessions and activities">Refresh</button>
           </div>
         </div>
       </header>
@@ -423,12 +437,24 @@
         const initialPollId = params.get("pollId") || ""
         const initialSessionId = (params.get("sessionId") || "").trim()
         const initialApiBase = (params.get("apiBase") || "").trim()
+        const normalizeActivityKind = (value) => {
+          const kind = String(value || "").trim().toLowerCase()
+          return kind === "qna" || kind === "discussion" ? kind : "poll"
+        }
+        // has() distinguishes an explicit activityKind=poll from an absent
+        // param — only an explicit URL value outranks the stored row.
+        const hasExplicitActivityKind = params.has("activityKind")
+        const initialActivityKind = normalizeActivityKind(params.get("activityKind"))
+        const initialPromptId = (params.get("promptId") || "").trim()
 
         const statusEl = document.getElementById("status")
         const statusLabelEl = statusEl.querySelector(".status-label")
         const sessionSelectEl = document.getElementById("session-select")
+        const activitySelectEl = document.getElementById("activity-select")
         const pollFieldEl = document.getElementById("poll-field")
         const pollSelectEl = document.getElementById("poll-select")
+        const promptFieldEl = document.getElementById("prompt-field")
+        const promptSelectEl = document.getElementById("prompt-select")
         const refreshBtn = document.getElementById("refresh-btn")
         const frame = document.getElementById("game-frame")
         const overlay = document.getElementById("overlay")
@@ -447,6 +473,11 @@
         let apiBase = initialApiBase || DEFAULT_API_BASE
         let selectedSessionId = initialSessionId
         let selectedPollId = initialPollId
+        // Which activity this embed renders (poll | qna | discussion) and,
+        // for discussion, the QnaPrompt it is bound to. Persisted on the
+        // EmbedInstance row as artifact_kind + prompt_id.
+        let selectedActivityKind = initialActivityKind
+        let selectedPromptId = initialPromptId
         let sessionsList = []
         let embedIdentity = null
         let storedEmbedInstance = null
@@ -482,6 +513,11 @@
               window.PrezoEmbedStateClient
           )
 
+        // EmbedInstance.artifact_kind keeps the legacy "poll-game" spelling
+        // for polls (existing rows) and the activity kind for the new kinds.
+        const artifactKindForActivity = (kind) =>
+          kind === "qna" || kind === "discussion" ? kind : "poll-game"
+
         const ensureEmbedInstanceOnServer = async () => {
           if (!canPersistEmbedState()) {
             return null
@@ -493,7 +529,8 @@
               {
                 session_id: selectedSessionId || null,
                 poll_id: selectedPollId || null,
-                artifact_kind: "poll-game",
+                prompt_id: selectedPromptId || null,
+                artifact_kind: artifactKindForActivity(selectedActivityKind),
               }
             )
             storedEmbedInstance = row
@@ -538,6 +575,20 @@
             !initialPollId
           ) {
             selectedPollId = row.poll_id
+          }
+          if (
+            typeof row.artifact_kind === "string" &&
+            row.artifact_kind &&
+            !hasExplicitActivityKind
+          ) {
+            selectedActivityKind = normalizeActivityKind(row.artifact_kind)
+          }
+          if (
+            typeof row.prompt_id === "string" &&
+            row.prompt_id &&
+            !initialPromptId
+          ) {
+            selectedPromptId = row.prompt_id
           }
           // Prefer the typed column, fall back to metadata for older rows.
           if (typeof row.screen_mode === "string" && row.screen_mode) {
@@ -639,7 +690,8 @@
                 id: newId,
                 session_id: selectedSessionId || null,
                 poll_id: selectedPollId || null,
-                artifact_kind: "poll-game",
+                ...(selectedPromptId ? { prompt_id: selectedPromptId } : {}),
+                artifact_kind: artifactKindForActivity(selectedActivityKind),
                 screen_mode: currentScreenMode || null,
                 metadata: {
                   forkedFrom: previousEmbedId,
@@ -963,52 +1015,94 @@
 
         const POLL_PLACEHOLDER_LABEL = "— Select a poll —"
 
-        const populatePollPicker = (polls) => {
-          if (!Array.isArray(polls) || polls.length === 0) {
-            setSelectMessage(pollSelectEl, "No polls in this session")
-            pollFieldEl.classList.remove("hidden")
-            selectedPollId = ""
+        // Shared binding-picker fill. No-silent-default rule for every
+        // picker: when the stored value is missing from the list we show the
+        // placeholder and require an explicit choice — auto-default-and-
+        // persist silently locks in a value the user never chose (phantom
+        // "duplicate poll" rows when a session spans multiple slides). The
+        // stored id is dropped locally but NOT patched off the row, so the
+        // user can recover it by recreating the activity.
+        const populateBindingPicker = (selectEl, items, options) => {
+          if (!Array.isArray(items) || items.length === 0) {
+            setSelectMessage(selectEl, options.emptyMessage)
+            options.clearSelectedId()
             return
           }
-          const sorted = [...polls].sort((a, b) => {
+          const sorted = [...items].sort((a, b) => {
             const left = Date.parse(a?.created_at || "") || 0
             const right = Date.parse(b?.created_at || "") || 0
             return right - left
           })
-          pollSelectEl.replaceChildren()
+          selectEl.replaceChildren()
           const placeholder = document.createElement("option")
           placeholder.value = ""
-          placeholder.textContent = POLL_PLACEHOLDER_LABEL
-          pollSelectEl.appendChild(placeholder)
+          placeholder.textContent = options.placeholderLabel
+          selectEl.appendChild(placeholder)
           for (let i = 0; i < sorted.length; i += 1) {
-            const poll = sorted[i]
             const opt = document.createElement("option")
-            opt.value = poll?.id || ""
-            opt.textContent = describePollOption(poll, i)
-            pollSelectEl.appendChild(opt)
+            opt.value = sorted[i]?.id || ""
+            opt.textContent = options.describeOption(sorted[i], i)
+            selectEl.appendChild(opt)
           }
-          const match = sorted.find((poll) => poll?.id === selectedPollId)
+          const selectedId = options.getSelectedId()
+          const match = sorted.find((item) => item?.id === selectedId)
           if (match) {
-            pollSelectEl.value = selectedPollId
+            selectEl.value = selectedId
           } else {
-            // No stored value, OR the stored value no longer exists in the
-            // session. Either way: show the placeholder and require the user
-            // to pick explicitly. We do NOT auto-default-and-persist, because
-            // doing so silently locks in a value the user never chose, which
-            // produces phantom "duplicate poll" rows when a session is shared
-            // across multiple slides.
-            if (selectedPollId) {
-              // Stored poll vanished. Drop our local copy so loadGameFrame
-              // shows the "pick a poll" prompt instead of trying to render
-              // an iframe pointed at a missing poll. We do NOT patch the row
-              // — the stored poll_id stays in DB so the user can recover it
-              // by recreating that poll if they want.
-              selectedPollId = ""
+            if (selectedId) {
+              options.clearSelectedId()
             }
-            pollSelectEl.value = ""
+            selectEl.value = ""
           }
-          pollSelectEl.disabled = false
+          selectEl.disabled = false
+        }
+
+        const populatePollPicker = (polls) => {
+          populateBindingPicker(pollSelectEl, polls, {
+            placeholderLabel: POLL_PLACEHOLDER_LABEL,
+            emptyMessage: "No polls in this session",
+            describeOption: describePollOption,
+            getSelectedId: () => selectedPollId,
+            clearSelectedId: () => {
+              selectedPollId = ""
+            },
+          })
           pollFieldEl.classList.remove("hidden")
+        }
+
+        const PROMPT_PLACEHOLDER_LABEL = "— Select a discussion —"
+
+        const describePromptOption = (prompt, index) => {
+          const text = String(prompt?.prompt || "").trim() || `Discussion ${index + 1}`
+          const status = prompt?.status === "open" ? " (open)" : ""
+          return `${text.slice(0, 60)}${status}`
+        }
+
+        const populatePromptPicker = (prompts) => {
+          populateBindingPicker(promptSelectEl, prompts, {
+            placeholderLabel: PROMPT_PLACEHOLDER_LABEL,
+            emptyMessage: "No discussions in this session",
+            describeOption: describePromptOption,
+            getSelectedId: () => selectedPromptId,
+            clearSelectedId: () => {
+              selectedPromptId = ""
+            },
+          })
+        }
+
+        // Which binding picker is relevant for the selected activity kind.
+        const syncActivityFieldVisibility = () => {
+          if (activitySelectEl) {
+            activitySelectEl.value = selectedActivityKind
+          }
+          pollFieldEl.classList.toggle(
+            "hidden",
+            selectedActivityKind !== "poll" || !selectedSessionId
+          )
+          promptFieldEl.classList.toggle(
+            "hidden",
+            selectedActivityKind !== "discussion" || !selectedSessionId
+          )
         }
 
         const refreshLibrarySyncFromDocument = async () => {
@@ -1070,10 +1164,12 @@
         const loadPolls = async () => {
           if (!selectedSessionId) {
             pollFieldEl.classList.add("hidden")
+            promptFieldEl.classList.add("hidden")
             return
           }
-          pollFieldEl.classList.remove("hidden")
+          syncActivityFieldVisibility()
           setSelectMessage(pollSelectEl, "Loading polls…")
+          setSelectMessage(promptSelectEl, "Loading discussions…")
           try {
             const resp = await window.fetch(
               `${apiBase}/sessions/${encodeURIComponent(selectedSessionId)}/snapshot`,
@@ -1081,12 +1177,18 @@
             )
             if (!resp.ok) {
               setSelectMessage(pollSelectEl, `Failed to load (HTTP ${resp.status})`)
+              setSelectMessage(promptSelectEl, `Failed to load (HTTP ${resp.status})`)
               return
             }
             const data = await resp.json().catch(() => null)
+            // One snapshot feeds both binding pickers; visibility picks the
+            // relevant one for the selected activity kind.
             populatePollPicker(data?.polls || [])
+            populatePromptPicker(data?.prompts || [])
+            syncActivityFieldVisibility()
           } catch {
             setSelectMessage(pollSelectEl, "Failed to load polls")
+            setSelectMessage(promptSelectEl, "Failed to load discussions")
           }
         }
 
@@ -1094,7 +1196,7 @@
           if (!selectedSessionId) {
             return
           }
-          if (!selectedPollId) {
+          if (selectedActivityKind === "poll" && !selectedPollId) {
             // Don't render the inner iframe with a missing poll. Show the
             // overlay so the user knows they have to pick one before the
             // artifact appears. This is the silent-default fix: we never
@@ -1106,12 +1208,27 @@
             setStatus("loading")
             return
           }
+          if (selectedActivityKind === "discussion" && !selectedPromptId) {
+            showOverlay(
+              "Pick a discussion above to load this slide's artifact.",
+              "Select a discussion"
+            )
+            setStatus("loading")
+            return
+          }
           const qs = new URLSearchParams()
           qs.set("sessionId", selectedSessionId)
           if (apiBase) {
             qs.set("apiBase", apiBase)
           }
-          qs.set("pollId", selectedPollId)
+          if (selectedActivityKind !== "poll") {
+            qs.set("activityKind", selectedActivityKind)
+            if (selectedActivityKind === "discussion") {
+              qs.set("promptId", selectedPromptId)
+            }
+          } else {
+            qs.set("pollId", selectedPollId)
+          }
           if (currentScreenMode) {
             qs.set("visualMode", currentScreenMode)
           }
@@ -1186,7 +1303,11 @@
         let conductorTicksSinceViewCheck = 0
         let conductorMySlideId = ""
         let conductorReportedOnAir = null
-        let conductorReportedPollId = ""
+        // What the last presence report was addressed to: the activity kind
+        // plus the poll/prompt id ("session" for session-level Q&A). Off-air
+        // releases must target what was put on air, not the current binding.
+        let conductorReportedTargetKind = ""
+        let conductorReportedTargetId = ""
         let conductorLastReportAt = 0
         let conductorTickBusySince = 0
         let conductorStarted = false
@@ -1280,13 +1401,39 @@
             }, windowMs)
           })
 
-        const conductorReportForPoll = async (sessionId, pollId, onAir) => {
-          if (!sessionId || !pollId || !librarySyncState?.token) {
+        // Presence endpoint per activity kind — all three share the report
+        // payload and open/close policy (see backend slide_presence.py).
+        const conductorPresenceUrl = (sessionId, kind, targetId) => {
+          const base = `${apiBase}/sessions/${encodeURIComponent(sessionId)}`
+          if (kind === "discussion") {
+            return `${base}/qna-prompts/${encodeURIComponent(targetId)}/presence`
+          }
+          if (kind === "qna") {
+            return `${base}/qna/presence`
+          }
+          return `${base}/polls/${encodeURIComponent(targetId)}/presence`
+        }
+
+        // The id the conductor currently drives: the bound poll or prompt,
+        // or the literal "session" sentinel for session-level Q&A (which has
+        // no per-target id).
+        const conductorCurrentTargetId = () => {
+          if (selectedActivityKind === "discussion") {
+            return selectedPromptId
+          }
+          if (selectedActivityKind === "qna") {
+            return "session"
+          }
+          return selectedPollId
+        }
+
+        const conductorReportPresence = async (sessionId, kind, targetId, onAir) => {
+          if (!sessionId || !targetId || !librarySyncState?.token) {
             return false
           }
           try {
             const resp = await window.fetch(
-              `${apiBase}/sessions/${encodeURIComponent(sessionId)}/polls/${encodeURIComponent(pollId)}/presence`,
+              conductorPresenceUrl(sessionId, kind, targetId),
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1302,7 +1449,8 @@
               return false
             }
             conductorReportedOnAir = onAir
-            conductorReportedPollId = pollId
+            conductorReportedTargetKind = kind
+            conductorReportedTargetId = targetId
             conductorLastReportAt = Date.now()
             return true
           } catch {
@@ -1311,19 +1459,25 @@
         }
 
         // Called (synchronously, before state mutates) when the picker moves
-        // this embed to a different poll/session: release the old poll if we
-        // put it on air, and forget report state so the new binding gets a
-        // fresh transition.
-        const conductorHandleBindingChange = (previousSessionId, previousPollId) => {
+        // this embed to a different activity/session: release the old target
+        // if we put it on air, and forget report state so the new binding
+        // gets a fresh transition.
+        const conductorHandleBindingChange = (previousSessionId) => {
           if (
             conductorReportedOnAir === true &&
-            conductorReportedPollId &&
-            conductorReportedPollId === previousPollId
+            conductorReportedTargetKind &&
+            conductorReportedTargetId
           ) {
-            void conductorReportForPoll(previousSessionId, previousPollId, false)
+            void conductorReportPresence(
+              previousSessionId,
+              conductorReportedTargetKind,
+              conductorReportedTargetId,
+              false
+            )
           }
           conductorReportedOnAir = null
-          conductorReportedPollId = ""
+          conductorReportedTargetKind = ""
+          conductorReportedTargetId = ""
         }
 
         // Bumped whenever the view flips; a tick that started under the old
@@ -1379,18 +1533,29 @@
               return
             }
             if (onAir && conductorReportedOnAir !== true) {
-              await conductorReportForPoll(selectedSessionId, selectedPollId, true)
-            } else if (!onAir && conductorReportedOnAir === true) {
-              await conductorReportForPoll(
+              await conductorReportPresence(
                 selectedSessionId,
-                conductorReportedPollId || selectedPollId,
+                selectedActivityKind,
+                conductorCurrentTargetId(),
+                true
+              )
+            } else if (!onAir && conductorReportedOnAir === true) {
+              await conductorReportPresence(
+                selectedSessionId,
+                conductorReportedTargetKind || selectedActivityKind,
+                conductorReportedTargetId || conductorCurrentTargetId(),
                 false
               )
             } else if (
               onAir &&
               Date.now() - conductorLastReportAt >= CONDUCTOR_KEEPALIVE_MS
             ) {
-              await conductorReportForPoll(selectedSessionId, selectedPollId, true)
+              await conductorReportPresence(
+                selectedSessionId,
+                selectedActivityKind,
+                conductorCurrentTargetId(),
+                true
+              )
             }
           } finally {
             conductorTickBusySince = 0
@@ -1557,14 +1722,29 @@
           if (next === selectedSessionId) {
             return
           }
-          conductorHandleBindingChange(selectedSessionId, selectedPollId)
+          conductorHandleBindingChange(selectedSessionId)
           selectedSessionId = next
           selectedPollId = ""
+          selectedPromptId = ""
           queueEmbedStatePatch({
             session_id: selectedSessionId || null,
             poll_id: null,
+            prompt_id: null,
           })
           await loadPolls()
+          loadGameFrame()
+        })
+        activitySelectEl.addEventListener("change", () => {
+          const next = normalizeActivityKind(activitySelectEl.value)
+          if (next === selectedActivityKind) {
+            return
+          }
+          conductorHandleBindingChange(selectedSessionId)
+          selectedActivityKind = next
+          queueEmbedStatePatch({
+            artifact_kind: artifactKindForActivity(selectedActivityKind),
+          })
+          syncActivityFieldVisibility()
           loadGameFrame()
         })
         pollSelectEl.addEventListener("change", () => {
@@ -1572,9 +1752,22 @@
           if (next === selectedPollId) {
             return
           }
-          conductorHandleBindingChange(selectedSessionId, selectedPollId)
+          conductorHandleBindingChange(selectedSessionId)
           selectedPollId = next
           queueEmbedStatePatch({ poll_id: selectedPollId || null })
+          loadGameFrame()
+        })
+        promptSelectEl.addEventListener("change", () => {
+          const next = promptSelectEl.value || ""
+          if (next === selectedPromptId) {
+            return
+          }
+          conductorHandleBindingChange(selectedSessionId)
+          selectedPromptId = next
+          // Empty string (not null) so an explicit deselection actually
+          // clears the stored binding — the store maps "" to NULL, while a
+          // JSON null is treated as "field absent" and skipped.
+          queueEmbedStatePatch({ prompt_id: selectedPromptId || "" })
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {

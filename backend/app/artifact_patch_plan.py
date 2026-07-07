@@ -48,6 +48,7 @@ from .artifact_quality import (
     attempt_artifact_structural_autorepair,
     format_style_overrides_for_prompt,
     get_artifact_patch_source_html,
+    resolve_artifact_activity_kind,
     restore_artifact_live_hooks_if_missing,
     validate_poll_game_artifact_html,
 )
@@ -838,6 +839,7 @@ def apply_artifact_patch_plan_progressively(
     raw_edits = plan.get("edits") if isinstance(plan.get("edits"), list) else []
     if not raw_edits:
         return "", current_package, ["patch plan did not include any edits."]
+    activity_kind = resolve_artifact_activity_kind(context)
 
     candidate_edits = compact_artifact_patch_plan_edits(
         [edit for edit in raw_edits if isinstance(edit, dict)],
@@ -870,7 +872,7 @@ def apply_artifact_patch_plan_progressively(
             continue
         candidate_html = restore_artifact_live_hooks_if_missing(patched_html, context)
         candidate_html = attempt_artifact_structural_autorepair(candidate_html)
-        validation_issues = validate_poll_game_artifact_html(candidate_html)
+        validation_issues = validate_poll_game_artifact_html(candidate_html, activity_kind)
         if validation_issues:
             batch_issues.extend(validation_issues)
             continue

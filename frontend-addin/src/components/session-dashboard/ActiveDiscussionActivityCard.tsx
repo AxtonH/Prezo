@@ -2,7 +2,11 @@ import { useState } from 'react'
 
 import type { PollMode, QnaPrompt, Question } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
-import { controlModeShellVariant, FollowSlidesButton } from './ControlModeUi'
+import {
+  ConfigureActivityButton,
+  controlModeShellVariant,
+  FollowSlidesButton
+} from './ControlModeUi'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveDiscussionActivityCardProps {
@@ -12,6 +16,8 @@ export interface ActiveDiscussionActivityCardProps {
   /** Approved answers for this prompt (newest first). */
   approvedQuestions: Question[]
   variant?: 'active' | 'inactive'
+  /** Open the Prezo editing station focused on this discussion's artifact. */
+  onConfigure?: (promptId: string) => void
   onStop?: (promptId: string) => void
   onResume?: (promptId: string) => void
   onDelete?: () => void
@@ -92,6 +98,7 @@ export function ActiveDiscussionActivityCard({
   pendingQuestions,
   approvedQuestions,
   variant = 'active',
+  onConfigure,
   onStop,
   onResume,
   onDelete,
@@ -141,6 +148,13 @@ export function ActiveDiscussionActivityCard({
       setBindBusy(false)
     }
   }
+
+  const configureButton = (
+    <ConfigureActivityButton
+      title="Open Prezo editing station for this discussion"
+      onConfigure={onConfigure ? () => onConfigure(prompt.id) : undefined}
+    />
+  )
 
   const bindButton = onBindWidget ? (
     <button
@@ -302,6 +316,7 @@ export function ActiveDiscussionActivityCard({
 
         {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
+            {configureButton}
             <button
               type="button"
               onClick={(e) => {
@@ -330,6 +345,7 @@ export function ActiveDiscussionActivityCard({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 pt-1">
+            {configureButton}
             <button
               type="button"
               onClick={(e) => {

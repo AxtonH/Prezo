@@ -361,6 +361,7 @@ export function createPollGameLibrarySyncManager({
       await fetchAuthedJson(`/library/poll-game/artifacts/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify({
+          kind: artifactRecord.kind || 'poll',
           html: artifactRecord.html,
           artifact_package: artifactRecord.package || null,
           last_prompt: artifactRecord.lastPrompt || null,

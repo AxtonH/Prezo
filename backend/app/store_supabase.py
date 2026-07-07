@@ -1432,21 +1432,28 @@ class SupabaseStore:
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
         style_overrides: dict[str, Any] | None = None,
+        kind: str | None = None,
     ) -> SavedArtifact:
+        body: dict[str, Any] = {
+            "user_id": user_id,
+            "name": name,
+            "html": html,
+            "artifact_package": artifact_package,
+            "last_prompt": last_prompt,
+            "last_answers": last_answers,
+            "theme_snapshot": theme_snapshot,
+            "style_overrides": style_overrides,
+        }
+        # Omit kind when the caller didn't send one: merge-duplicates then
+        # leaves the stored column untouched (and the column default covers
+        # inserts), so kind-unaware clients can't re-kind an artifact.
+        if kind is not None:
+            body["kind"] = kind
         response = await self._request(
             "POST",
             "saved_poll_game_artifacts",
             params={"on_conflict": "user_id,name"},
-            json={
-                "user_id": user_id,
-                "name": name,
-                "html": html,
-                "artifact_package": artifact_package,
-                "last_prompt": last_prompt,
-                "last_answers": last_answers,
-                "theme_snapshot": theme_snapshot,
-                "style_overrides": style_overrides,
-            },
+            json=body,
             prefer="resolution=merge-duplicates,return=representation",
         )
         data = response.json()

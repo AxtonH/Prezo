@@ -24,6 +24,70 @@ export const ARTIFACT_CONVERSATION_STEPS = Object.freeze([
   }
 ])
 
+/** Frontend twin of the backend's activity-kind vocabulary
+    (docs/artifact-activity-kinds.md). Unknown values fall back to poll. */
+export function normalizeArtifactActivityKind(value) {
+  const kind = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return kind === 'qna' || kind === 'discussion' ? kind : 'poll'
+}
+
+// Kind-dependent fragments for the prompt builders below. Poll strings are
+// the historical text verbatim; qna/discussion speak the question-list
+// contract. Only genuinely kind-dependent lines live here.
+const ARTIFACT_KIND_PROMPT_FRAGMENTS = {
+  poll: {
+    wiringLine:
+      'Preserve the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers, unless the edit request explicitly asks to replace it with an equivalent working approach.',
+    repairWiringLine:
+      'Apply the requested edit while preserving the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers.',
+    noSocketLine: 'Do not add your own window message listener or websocket logic for poll updates.',
+    structureLine:
+      'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
+    layoutDirectionLine:
+      'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
+    flickerLine:
+      'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
+    dynamicElementsLine:
+      'Poll option elements (cards, rows, bars, labels, vote counts) are typically created dynamically by the renderer JavaScript at runtime — they do not exist in the static index.html. If the edit adds, removes, or changes per-option markup (e.g. adding decorations, badges, icons, or structural elements to each option), you must modify the renderer JS where option nodes are built (e.g. ensureOptionNode or equivalent), not use insert_html targeting selectors that only exist in the live DOM. insert_html only operates on the static index.html file and will silently fail on selectors that are JS-generated. New CSS rules for dynamically created elements are fine in the stylesheet.',
+    usableLine:
+      'The result must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    repairUsableLine:
+      'The repaired artifact must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    neverStripLine:
+      'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed edit.',
+    repairNeverStripLine:
+      'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed repair.'
+  },
+  qna: {
+    wiringLine:
+      'Preserve the existing live Q&A wiring, including window.prezoSetQnaRenderer(fn), window.prezoRenderQna(state), and runtime Q&A-state helpers, unless the edit request explicitly asks to replace it with an equivalent working approach.',
+    repairWiringLine:
+      'Apply the requested edit while preserving the existing live Q&A wiring, including window.prezoSetQnaRenderer(fn), window.prezoRenderQna(state), and runtime Q&A-state helpers.',
+    noSocketLine: 'Do not add your own window message listener or websocket logic for Q&A updates.',
+    structureLine:
+      'Do not rewrite the full document, <body>, primary scene root, or question list structure unless the request explicitly requires a structural redesign.',
+    layoutDirectionLine:
+      'If the request asks to change the layout direction of the question list (e.g. vertical to horizontal, grid, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the question elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing question node, text, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite question markup, Q&A wiring, render logic, or the visual theme.',
+    flickerLine:
+      'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by question id.',
+    dynamicElementsLine:
+      'Question list elements (cards, rows, question text, vote badges) are typically created dynamically by the renderer JavaScript at runtime — they do not exist in the static index.html. If the edit adds, removes, or changes per-question markup (e.g. adding decorations, badges, icons, or structural elements to each question), you must modify the renderer JS where question nodes are built, not use insert_html targeting selectors that only exist in the live DOM. insert_html only operates on the static index.html file and will silently fail on selectors that are JS-generated. New CSS rules for dynamically created elements are fine in the stylesheet.',
+    usableLine:
+      'The result must remain immediately usable on first render: keep the board title, question list (or its designed empty state), and upvote visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    repairUsableLine:
+      'The repaired artifact must remain immediately usable on first render: keep the board title, question list (or its designed empty state), and upvote visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
+    neverStripLine:
+      'Never strip the Q&A content. The returned artifact must always contain a visible board title and either the question list with upvote visuals or its designed empty state. An artifact that renders as only a background color or empty container is a failed edit.',
+    repairNeverStripLine:
+      'Never strip the Q&A content. The returned artifact must always contain a visible board title and either the question list with upvote visuals or its designed empty state. An artifact that renders as only a background color or empty container is a failed repair.'
+  }
+}
+ARTIFACT_KIND_PROMPT_FRAGMENTS.discussion = ARTIFACT_KIND_PROMPT_FRAGMENTS.qna
+
+function promptFragmentsFor(activityKind) {
+  return ARTIFACT_KIND_PROMPT_FRAGMENTS[normalizeArtifactActivityKind(activityKind)]
+}
+
 export function createEmptyArtifactAnswers() {
   return {
     artifactType: '',
@@ -96,7 +160,8 @@ function isBackgroundAtmosphereEditRequest(value) {
   )
 }
 
-export function buildArtifactEditPrompt(editRequest, answers = {}) {
+export function buildArtifactEditPrompt(editRequest, answers = {}, activityKind = 'poll') {
+  const frag = promptFragmentsFor(activityKind)
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
   const mergedGuidelines = mergeArtifactDesignGuidelines(answers)
@@ -114,24 +179,24 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     'This is edit mode, not rebuild mode.',
     'Make the smallest viable change that satisfies the latest edit request.',
     'Treat the current artifact as a working codebase. Patch it conservatively instead of reimagining it.',
-    'Preserve the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers, unless the edit request explicitly asks to replace it with an equivalent working approach.',
-    'Do not add your own window message listener or websocket logic for poll updates.',
+    frag.wiringLine,
+    frag.noSocketLine,
     'Preserve the existing DOM structure, scene concept, layout, selector targets, and working design decisions unless the edit request explicitly asks for a broader redesign.',
     'Preserve detailed SVG or illustration markup, decorative assets, cars, characters, icons, labels, and non-targeted motion logic unless the edit request explicitly asks to change them.',
-    'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
+    frag.structureLine,
     'If the request is local, such as color, spacing, title size, motion, or positioning, do not redesign unrelated parts of the artifact.',
-    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
+    frag.layoutDirectionLine,
     backgroundEdit
       ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
       : '',
     'Prefer CSS, copy, spacing, animation tuning, and small targeted adjustments over rewriting containers or rebuilding sections.',
-    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
+    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live updates.',
     'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
-    'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
+    frag.flickerLine,
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the current render logic may depend on unless you safely update that logic too.',
-    'Poll option elements (cards, rows, bars, labels, vote counts) are typically created dynamically by the renderer JavaScript at runtime — they do not exist in the static index.html. If the edit adds, removes, or changes per-option markup (e.g. adding decorations, badges, icons, or structural elements to each option), you must modify the renderer JS where option nodes are built (e.g. ensureOptionNode or equivalent), not use insert_html targeting selectors that only exist in the live DOM. insert_html only operates on the static index.html file and will silently fail on selectors that are JS-generated. New CSS rules for dynamically created elements are fine in the stylesheet.',
-    'The result must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
-    'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed edit.',
+    frag.dynamicElementsLine,
+    frag.usableLine,
+    frag.neverStripLine,
     'If you are unsure, keep more of the stable artifact and make a smaller change.',
     'Prefer surgical refinements over reinterpretation.',
     'Return the full updated artifact HTML.'
@@ -140,7 +205,8 @@ export function buildArtifactEditPrompt(editRequest, answers = {}) {
     .join('\n')
 }
 
-export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {}) {
+export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {}, activityKind = 'poll') {
+  const frag = promptFragmentsFor(activityKind)
   const artifactType =
     typeof answers.artifactType === 'string' ? answers.artifactType.trim() : ''
   const mergedGuidelines = mergeArtifactDesignGuidelines(answers)
@@ -159,25 +225,25 @@ export function buildArtifactRepairPrompt(editRequest, runtimeError, answers = {
     'Repair the failed edit against the last stable working artifact.',
     'This is repair mode for a failed edit, not a full rebuild.',
     'Treat the stable artifact as a working codebase. Patch it conservatively instead of reimagining it.',
-    'Apply the requested edit while preserving the existing live poll wiring, including window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), and runtime poll-state helpers.',
-    'Do not add your own window message listener or websocket logic for poll updates.',
+    frag.repairWiringLine,
+    frag.noSocketLine,
     'Preserve selector targets and the working scene structure.',
     'Preserve detailed SVG or illustration markup, decorative assets, cars, characters, icons, labels, and non-targeted motion logic unless the edit request explicitly asks to change them.',
     'Do not keep the broken selector logic from the failed edited artifact.',
     'Prefer the smallest viable CSS/text/layout change over structural DOM rewrites.',
-    'Do not rewrite the full document, <body>, primary scene root, or option row structure unless the request explicitly requires a structural redesign.',
-    'If the request asks to change the layout direction of poll options (e.g. vertical to horizontal, side by side, stacked, etc.), treat it as a CSS-only change. Find the flex or grid container that wraps the poll option elements and change its flex-direction, grid-template, or equivalent layout property. Keep every existing option node, label, bar, and vote element intact. Only adjust the container direction and related spacing/sizing to fit the new orientation. Do not rewrite option markup, poll wiring, render logic, or the visual theme.',
+    frag.structureLine,
+    frag.layoutDirectionLine,
     backgroundEdit
       ? 'This request targets background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens. Do not redesign cars, foreground objects, labels, or other gameplay visuals.'
       : '',
-    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live poll updates.',
+    'Do not use document.body.innerHTML, document.documentElement.innerHTML, replaceChildren, replaceWith, or any full-root reset for live updates.',
     'Keep existing nodes mounted during updates. Change text, classes, transforms, CSS variables, and inline styles in place whenever possible.',
-    'If the request is about flicker, resets, or movement, preserve the current DOM tree and animate the existing visual elements forward with transform/transition updates keyed by option id.',
+    frag.flickerLine,
     'Do not rename, remove, or relocate existing containers, ids, classes, or data attributes that the stable artifact depends on unless you safely update that logic too.',
-    'Poll option elements (cards, rows, bars, labels, vote counts) are typically created dynamically by the renderer JavaScript at runtime — they do not exist in the static index.html. If the edit adds, removes, or changes per-option markup (e.g. adding decorations, badges, icons, or structural elements to each option), you must modify the renderer JS where option nodes are built (e.g. ensureOptionNode or equivalent), not use insert_html targeting selectors that only exist in the live DOM. insert_html only operates on the static index.html file and will silently fail on selectors that are JS-generated. New CSS rules for dynamically created elements are fine in the stylesheet.',
+    frag.dynamicElementsLine,
     'Do not simply return the unchanged stable artifact unless the request is already satisfied.',
-    'The repaired artifact must remain immediately usable on first render: keep the title, option labels, and main poll visuals visible. Do not return an empty, hidden, or near-solid full-screen overlay scene unless the user explicitly asks for that.',
-    'Never strip all poll content. The returned artifact must always contain a visible poll question or title, visible option labels or rows, and vote count or progress visuals. An artifact that renders as only a background color or empty container is a failed repair.',
+    frag.repairUsableLine,
+    frag.repairNeverStripLine,
     'Make the smallest viable change that satisfies the edit request and avoids the runtime error.',
     'Return the full updated artifact HTML.'
   ]
@@ -194,12 +260,20 @@ export function sanitizeArtifactLayout(value, fallback = ARTIFACT_LAYOUT_HORIZON
 }
 
 export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
+  const activityKind = normalizeArtifactActivityKind(artifactContext.activityKind)
+  const isQnaKind = activityKind !== 'poll'
   const promptText = typeof userPrompt === 'string' ? userPrompt.trim() : ''
   const pollTitle =
     typeof artifactContext.pollTitle === 'string' ? artifactContext.pollTitle.trim() : ''
+  const qnaTitle =
+    typeof artifactContext.qnaTitle === 'string' ? artifactContext.qnaTitle.trim() : ''
   const selector =
     typeof artifactContext.pollSelector === 'string'
       ? artifactContext.pollSelector.trim()
+      : ''
+  const activitySelector =
+    typeof artifactContext.activitySelector === 'string'
+      ? artifactContext.activitySelector.trim()
       : ''
   const endpoints =
     artifactContext.dataEndpoints && typeof artifactContext.dataEndpoints === 'object'
@@ -237,14 +311,24 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
       ? `Saved brand profile is linked (${brandProfileName}). Match promptBrandGuidelines and brandFacts in the server context: palette, fonts, logo, and voice are mandatory unless this user prompt explicitly contradicts them.`
       : '',
     isEditLike
-      ? 'Edit mode: revise the existing artifact conservatively. Treat context.artifact.originalEditRequest as the source of truth. Keep unrelated parts unchanged. Preserve concept, composition, SVG, typography, palette, motion, and live poll behavior unless explicitly asked to change them. Prefer minimal diffs.'
+      ? `Edit mode: revise the existing artifact conservatively. Treat context.artifact.originalEditRequest as the source of truth. Keep unrelated parts unchanged. Preserve concept, composition, SVG, typography, palette, motion, and ${isQnaKind ? 'live Q&A behavior' : 'live poll behavior'} unless explicitly asked to change them. Prefer minimal diffs.`
       : 'Generate a full creative artifact experience with complete control over layout, visuals, and motion. Do not constrain to existing poll game templates.',
-    'Output raw HTML. Register your renderer via window.prezoSetPollRenderer(function(state){...}). Use state.poll.question, state.poll.options, state.totalVotes, state.meta, and window.prezoGetPollState(). Do not fetch poll data yourself or open WebSockets/EventSource.',
+    isQnaKind
+      ? "Output raw HTML. Register your renderer via window.prezoSetQnaRenderer(function(state){...}). Use state.kind, state.qna.title, state.qna.status, state.qna.questions (each { id, text, votes, percentage, rank }), state.qna.totalQuestions, state.totalVotes, state.meta, and window.prezoGetQnaState(). Do not fetch Q&A data yourself or open WebSockets/EventSource."
+      : 'Output raw HTML. Register your renderer via window.prezoSetPollRenderer(function(state){...}). Use state.poll.question, state.poll.options, state.totalVotes, state.meta, and window.prezoGetPollState(). Do not fetch poll data yourself or open WebSockets/EventSource.',
     'Use data-prezo-scene-root="true" on the main container, data-prezo-background-layer="true" on backdrops, data-prezo-foreground-layer="true" on foreground content.',
-    'Build around persistent option nodes keyed by option id. On updates, never clear/rebuild the scene or use innerHTML/replaceChildren/replaceWith resets. Animate in place with CSS transitions or requestAnimationFrame. Reconcile by option id; use transforms for rank changes.',
-    'Poll option elements (cards, rows, bars, labels) are created dynamically by the renderer JS at runtime, not in static index.html. To add or change per-option markup (decorations, badges, icons), modify the renderer JS where option nodes are built, not static HTML.',
-    'Layout direction changes (vertical/horizontal) are CSS-only: change flex-direction or grid-template on the options container. Keep all option nodes intact.',
-    'Poll option columns must be distributed symmetrically across the full container width. Use CSS grid with grid-template-columns: repeat(auto, 1fr) or flexbox with flex: 1 on each option column so every option gets equal width regardless of label length. All option stacks, bars, or visual elements must share a common bottom baseline — use align-items: flex-end or equivalent on the options row. Center labels, vote counts, and visual elements within each equal-width column. Never use absolute positioning or manual pixel/percentage offsets for individual option placement.',
+    isQnaKind
+      ? 'Build around persistent question nodes keyed by question id. On updates, never clear/rebuild the scene or use innerHTML/replaceChildren/replaceWith resets. Animate in place with CSS transitions or requestAnimationFrame. Reconcile by question id; animate new questions in, hidden questions out, and rank changes with transforms.'
+      : 'Build around persistent option nodes keyed by option id. On updates, never clear/rebuild the scene or use innerHTML/replaceChildren/replaceWith resets. Animate in place with CSS transitions or requestAnimationFrame. Reconcile by option id; use transforms for rank changes.',
+    isQnaKind
+      ? 'Question list elements (cards, rows, question text, vote badges) are created dynamically by the renderer JS at runtime, not in static index.html. To add or change per-question markup (decorations, badges, icons), modify the renderer JS where question nodes are built, not static HTML.'
+      : 'Poll option elements (cards, rows, bars, labels) are created dynamically by the renderer JS at runtime, not in static index.html. To add or change per-option markup (decorations, badges, icons), modify the renderer JS where option nodes are built, not static HTML.',
+    isQnaKind
+      ? 'Layout direction changes (vertical/horizontal/grid) are CSS-only: change flex-direction or grid-template on the questions container. Keep all question nodes intact.'
+      : 'Layout direction changes (vertical/horizontal) are CSS-only: change flex-direction or grid-template on the options container. Keep all option nodes intact.',
+    isQnaKind
+      ? 'Question rows must stay readable at every list length: audience questions are free text of unpredictable length, so wrap or clamp long text gracefully (multi-line with ellipsis). Cap the visible list around state.meta.recommendedVisibleQuestions and express the remainder as an overflow indicator (e.g. "+N more"). Render question text verbatim — never invent, paraphrase, or reorder submissions. Design a compelling empty state for zero questions that invites the audience to participate.'
+      : 'Poll option columns must be distributed symmetrically across the full container width. Use CSS grid with grid-template-columns: repeat(auto, 1fr) or flexbox with flex: 1 on each option column so every option gets equal width regardless of label length. All option stacks, bars, or visual elements must share a common bottom baseline — use align-items: flex-end or equivalent on the options row. Center labels, vote counts, and visual elements within each equal-width column. Never use absolute positioning or manual pixel/percentage offsets for individual option placement.',
     backgroundEdit
       ? 'Background/atmosphere request: modify only backdrop layers and color tokens. Do not redesign foreground gameplay visuals.'
       : '',
@@ -258,19 +342,35 @@ export function buildArtifactAiPrompt(userPrompt, artifactContext = {}) {
       ? 'Use context.artifact.failedArtifactHtml only as reference for what broke. Do not preserve its broken logic.'
       : '',
     hasExistingArtifact
-      ? 'Revise context.artifact.currentArtifactHtml rather than creating a new unrelated concept. The result must be immediately usable: visible poll scene, readable labels, no empty overlays.'
+      ? `Revise context.artifact.currentArtifactHtml rather than creating a new unrelated concept. The result must be immediately usable: ${isQnaKind ? 'visible Q&A board, readable question text' : 'visible poll scene, readable labels'}, no empty overlays.`
       : '',
-    'The artifact must always contain visible poll question/title, option labels/rows, and vote visuals. An empty or background-only artifact is a failure.',
-    'Viewport is fixed 16:9 widescreen. Keep all UI inside with 6-10% safe padding. No clipping. Poll updates must be smooth (200-500ms easing).',
+    isQnaKind
+      ? 'The artifact must always contain a visible board title and either the ranked question list with upvote visuals or its designed empty state. A background-only artifact is a failure.'
+      : 'The artifact must always contain visible poll question/title, option labels/rows, and vote visuals. An empty or background-only artifact is a failure.',
+    `Viewport is fixed 16:9 widescreen. Keep all UI inside with 6-10% safe padding. No clipping. ${isQnaKind ? 'Question list updates' : 'Poll updates'} must be smooth (200-500ms easing).`,
     'Avoid markdown fences and explanations; return artifact HTML only.',
-    pollTitle ? `Live poll title: ${pollTitle}` : '',
-    selector ? `Poll selector: ${selector}` : '',
+    isQnaKind
+      ? qnaTitle
+        ? `${activityKind === 'discussion' ? 'Live discussion prompt' : 'Live Q&A title'}: ${qnaTitle}`
+        : ''
+      : pollTitle
+        ? `Live poll title: ${pollTitle}`
+        : '',
+    isQnaKind
+      ? activitySelector
+        ? `Activity selector: ${activitySelector}`
+        : ''
+      : selector
+        ? `Poll selector: ${selector}`
+        : '',
     endpointLines.length > 0
-      ? `Live poll data endpoints:\n${endpointLines.join('\n')}`
+      ? `${isQnaKind ? 'Live Q&A data endpoints' : 'Live poll data endpoints'}:\n${endpointLines.join('\n')}`
       : '',
-    'Poll math: drive bars and labels from option.percentage and votes vs totalVotes (classic share of cast votes). The host may still send heuristic capacity hints in state.meta for clustered visuals; no fixed audience-size answer is collected.',
+    isQnaKind
+      ? 'Q&A math: rank questions by votes (the host pre-sorts by upvotes then recency). Express popularity with size, order, bars, or badges driven by question.votes and question.percentage (share of all upvotes). Always show exact upvote counts in text.'
+      : 'Poll math: drive bars and labels from option.percentage and votes vs totalVotes (classic share of cast votes). The host may still send heuristic capacity hints in state.meta for clustered visuals; no fixed audience-size answer is collected.',
     runtimeRenderError ? `Latest runtime render failure: ${runtimeRenderError}` : '',
-    `User request: ${promptText || 'Build a custom artifact-style poll experience around the live data.'}`
+    `User request: ${promptText || (isQnaKind ? 'Build a custom artifact-style audience Q&A board around the live data.' : 'Build a custom artifact-style poll experience around the live data.')}`
   ]
     .filter(Boolean)
     .join('\n')

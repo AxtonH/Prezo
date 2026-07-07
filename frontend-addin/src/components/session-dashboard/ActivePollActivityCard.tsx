@@ -2,7 +2,11 @@ import { useState } from 'react'
 
 import type { Poll, PollMode } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
-import { controlModeShellVariant, FollowSlidesButton } from './ControlModeUi'
+import {
+  ConfigureActivityButton,
+  controlModeShellVariant,
+  FollowSlidesButton
+} from './ControlModeUi'
 
 export interface ActivePollActivityCardProps {
   poll: Poll
@@ -54,6 +58,13 @@ export function ActivePollActivityCard({
       mode={mode}
       title="Let the slideshow control this poll: it opens when its slide is presented and closes when the show moves on"
       onFollow={onSetMode ? () => onSetMode(poll.id, 'auto') : undefined}
+    />
+  )
+
+  const configureButton = (
+    <ConfigureActivityButton
+      title="Open Prezo editing station for this poll"
+      onConfigure={onConfigure ? () => onConfigure(poll.id) : undefined}
     />
   )
 
@@ -172,17 +183,7 @@ export function ActivePollActivityCard({
           })}
           {!closed ? (
             <div className="flex flex-wrap gap-2 pt-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onConfigure?.(poll.id)
-                }}
-                title="Open Prezo editing station for this poll"
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
-              >
-                Configure
-              </button>
+              {configureButton}
               <button
                 type="button"
                 onClick={(e) => {
@@ -224,17 +225,7 @@ export function ActivePollActivityCard({
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 pt-2">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onConfigure?.(poll.id)
-                }}
-                title="Open Prezo editing station for this poll"
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
-              >
-                Configure
-              </button>
+              {configureButton}
               <button
                 type="button"
                 onClick={(e) => {

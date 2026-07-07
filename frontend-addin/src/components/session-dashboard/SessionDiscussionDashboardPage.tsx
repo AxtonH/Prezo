@@ -19,6 +19,8 @@ export interface SessionDiscussionDashboardPageProps {
   hostDisplayName: string
   prompts: QnaPrompt[]
   questions: Question[]
+  /** Open the editing station focused on this discussion's artifact. */
+  onConfigureDiscussion?: (promptId: string) => void
   onStopDiscussion?: (promptId: string) => void | Promise<void>
   onResumeDiscussion?: (promptId: string) => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
@@ -36,6 +38,7 @@ export function SessionDiscussionDashboardPage({
   hostDisplayName,
   prompts,
   questions,
+  onConfigureDiscussion,
   onStopDiscussion,
   onResumeDiscussion,
   onDeleteDiscussion,
@@ -144,6 +147,7 @@ export function SessionDiscussionDashboardPage({
                     closedPrompts={closedPrompts}
                     questions={questions}
                     onConfigurePoll={undefined}
+                    onConfigureDiscussion={onConfigureDiscussion}
                     onStopPoll={undefined}
                     onStopQna={undefined}
                     onStopDiscussion={onStopDiscussion}

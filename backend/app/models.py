@@ -219,6 +219,9 @@ class ArtifactPackage(BaseModel):
 class SavedArtifact(BaseModel):
     id: str
     name: str
+    # Activity kind the artifact renders: "poll" | "qna" | "discussion".
+    # Pre-existing artifacts default to "poll" (they all predate the other kinds).
+    kind: str = "poll"
     html: str
     artifact_package: ArtifactPackage | None = None
     last_prompt: str | None = None
@@ -230,6 +233,10 @@ class SavedArtifact(BaseModel):
 
 
 class SavedArtifactUpsert(BaseModel):
+    # None = caller didn't say (legacy/kind-unaware clients): preserve the
+    # stored kind on update, default to "poll" on create. Never let an
+    # omitted field silently re-kind an existing artifact.
+    kind: str | None = Field(default=None, max_length=32)
     html: str = Field(default="")
     artifact_package: ArtifactPackage | None = None
     last_prompt: str | None = Field(default=None, max_length=16000)
@@ -380,6 +387,8 @@ class EmbedInstance(BaseModel):
     owner_user_id: str | None = None
     session_id: str | None = None
     poll_id: str | None = None
+    # QnaPrompt binding for discussion-kind embeds (poll_id's sibling).
+    prompt_id: str | None = None
     artifact_kind: str = "poll-game"
     artifact_name: str | None = None
     screen_mode: str | None = None
@@ -394,6 +403,7 @@ class EmbedInstanceCreate(BaseModel):
     id: str = Field(min_length=1, max_length=64)
     session_id: str | None = None
     poll_id: str | None = None
+    prompt_id: str | None = Field(default=None, max_length=64)
     artifact_kind: str = Field(default="poll-game", max_length=64)
     artifact_name: str | None = Field(default=None, max_length=64)
     screen_mode: str | None = Field(default=None, max_length=64)
@@ -404,6 +414,7 @@ class EmbedInstanceCreate(BaseModel):
 class EmbedInstanceUpdate(BaseModel):
     session_id: str | None = None
     poll_id: str | None = None
+    prompt_id: str | None = Field(default=None, max_length=64)
     artifact_kind: str | None = Field(default=None, max_length=64)
     artifact_name: str | None = Field(default=None, max_length=64)
     screen_mode: str | None = Field(default=None, max_length=64)

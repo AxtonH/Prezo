@@ -152,6 +152,9 @@ class SavedArtifactData:
     style_overrides: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+    # Activity kind ("poll" | "qna" | "discussion"); identity-level metadata,
+    # deliberately outside the version snapshot signature.
+    kind: str = "poll"
 
 
 @dataclass(slots=True)
@@ -851,6 +854,7 @@ class InMemoryStore:
         last_answers: dict[str, Any],
         theme_snapshot: dict[str, Any] | None,
         style_overrides: dict[str, Any] | None = None,
+        kind: str | None = None,
     ) -> SavedArtifact:
         async with self._lock:
             existing = self._saved_artifacts_by_user[user_id].get(name)
@@ -873,6 +877,8 @@ class InMemoryStore:
                     style_overrides=clone_optional_dict(existing.style_overrides),
                 )
                 changed = existing_signature != next_signature
+                if kind is not None:
+                    existing.kind = kind
                 existing.html = html
                 existing.artifact_package = clone_optional_dict(artifact_package)
                 existing.last_prompt = last_prompt
@@ -887,6 +893,7 @@ class InMemoryStore:
                 id=uuid.uuid4().hex,
                 user_id=user_id,
                 name=name,
+                kind=kind or "poll",
                 html=html,
                 artifact_package=clone_optional_dict(artifact_package),
                 last_prompt=last_prompt,
@@ -1091,6 +1098,7 @@ class InMemoryStore:
         return SavedArtifact(
             id=data.id,
             name=data.name,
+            kind=data.kind,
             html=data.html,
             artifact_package=clone_optional_dict(data.artifact_package),
             last_prompt=data.last_prompt,

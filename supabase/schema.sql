@@ -82,6 +82,7 @@ create table if not exists saved_poll_game_artifacts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   name text not null,
+  kind text not null default 'poll' check (kind in ('poll', 'qna', 'discussion')),
   html text not null,
   artifact_package jsonb,
   last_prompt text,
@@ -95,6 +96,10 @@ create table if not exists saved_poll_game_artifacts (
 
 alter table if exists saved_poll_game_artifacts
   add column if not exists artifact_package jsonb;
+
+alter table if exists saved_poll_game_artifacts
+  add column if not exists kind text not null default 'poll'
+  check (kind in ('poll', 'qna', 'discussion'));
 
 alter table if exists saved_poll_game_artifacts
   add column if not exists style_overrides jsonb;

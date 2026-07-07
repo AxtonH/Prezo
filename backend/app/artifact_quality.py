@@ -15,6 +15,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from .ai_prompts import artifact_activity_family, normalize_artifact_activity_kind
 from .artifact_edit_intent import resolve_artifact_edit_request_feedback
 from .artifact_package import materialize_artifact_html_from_package, sanitize_artifact_package
 
@@ -86,13 +87,43 @@ ARTIFACT_HTML_SHAPE_RE = re.compile(
     re.IGNORECASE,
 )
 
-ARTIFACT_LIVE_STATE_TOKENS = (
+ARTIFACT_POLL_LIVE_STATE_TOKENS = (
     "prezoSetPollRenderer",
     "prezoRenderPoll",
     "prezo:poll-update",
     "prezoGetPollState",
     "__PREZO_POLL_STATE",
 )
+
+ARTIFACT_QNA_LIVE_STATE_TOKENS = (
+    "prezoSetQnaRenderer",
+    "prezoRenderQna",
+    "prezo:qna-update",
+    "prezoGetQnaState",
+    "__PREZO_QNA_STATE",
+)
+
+# Union of every kind's tokens. Hook extraction/preservation uses this so a
+# live-wiring script survives edits regardless of the artifact's kind;
+# validation gates on the kind-specific set via live_state_tokens_for_activity_kind.
+ARTIFACT_LIVE_STATE_TOKENS = ARTIFACT_POLL_LIVE_STATE_TOKENS + ARTIFACT_QNA_LIVE_STATE_TOKENS
+
+
+def live_state_tokens_for_activity_kind(activity_kind: str) -> tuple[str, ...]:
+    if artifact_activity_family(activity_kind) == "qna":
+        return ARTIFACT_QNA_LIVE_STATE_TOKENS
+    return ARTIFACT_POLL_LIVE_STATE_TOKENS
+
+
+def resolve_artifact_activity_kind(context: Any) -> str:
+    """Activity kind for an AI request: context.artifact.activityKind, with a
+    top-level context.activityKind fallback. Missing/unknown → poll."""
+    if isinstance(context, dict):
+        artifact_context = context.get("artifact")
+        if isinstance(artifact_context, dict) and artifact_context.get("activityKind"):
+            return normalize_artifact_activity_kind(artifact_context.get("activityKind"))
+        return normalize_artifact_activity_kind(context.get("activityKind"))
+    return "poll"
 
 def compact_brand_facts_for_prompt(facts: Any) -> dict[str, Any]:
     """Keep artifact JSON small; colors list is the main growth vector."""
@@ -487,55 +518,106 @@ def remove_last_artifact_script_close_tag(html: str) -> str:
     last_match = matches[-1]
     return f"{html[: last_match.start()]}{html[last_match.end() :]}"
 
-def detect_append_only_option_render_issue(script_body: str) -> str | None:
+# Reconciliation idioms that prove a renderer keys or clears rows instead of
+# blindly appending. Shared by both kinds; the kind-specific tuples below add
+# the option-/question-named variants.
+_APPEND_ONLY_SHARED_RECONCILIATION_MARKERS = (
+    r"\.replaceChildren\s*\(",
+    r"\.innerHTML\s*=\s*['\"]\s*['\"]",
+    r"\.textContent\s*=\s*['\"]\s*['\"]",
+    r"data-id",
+    r"\browsById\b",
+    r"\browById\b",
+    r"\bmountedRows\b",
+    r"\bnew Map\s*\(",
+    r"while\s*\([^)]*(?:firstChild|lastChild|childNodes)",
+    r"\.forEach\s*\(\s*(?:function\s*\([^)]*\)|[^=)]+=>)\s*[^)]*\.remove\s*\(",
+    r"\bexistingRows\b",
+    r"\.children\.length",
+    r"\.childNodes\.length",
+)
+
+_APPEND_ONLY_POLL_RECONCILIATION_MARKERS = _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS + (
+    r"data-option-id",
+    r"data-prezo-option-id",
+    r"\boptionNodesById\b",
+    r"\bexistingOptions\b",
+    r"\boptionElements\b",
+    r"\boptionMap\b",
+    r"\boptionById\b",
+    r"\boptionNodes\b",
+)
+
+_APPEND_ONLY_QNA_RECONCILIATION_MARKERS = _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS + (
+    r"data-question-id",
+    r"data-prezo-question-id",
+    r"\bquestionNodesById\b",
+    r"\bexistingQuestions\b",
+    r"\bquestionElements\b",
+    r"\bquestionMap\b",
+    r"\bquestionById\b",
+    r"\bquestionNodes\b",
+)
+
+def _detect_append_only_list_render_issue(
+    script_body: str,
+    *,
+    hook_markers: tuple[str, ...],
+    list_foreach_re: str,
+    reconciliation_markers: tuple[str, ...],
+    message: str,
+) -> str | None:
     normalized = (script_body or "").strip()
     if not normalized:
         return None
     lowered = normalized.lower()
-    if "prezosetpollrenderer" not in lowered and "prezorenderpoll" not in lowered:
+    if not any(marker in lowered for marker in hook_markers):
         return None
-    if not re.search(
-        r"(?:poll\s*\.\s*options|state\s*\.\s*poll\s*\.\s*options|options)\s*\.\s*forEach\s*\(",
-        normalized,
-        re.IGNORECASE,
-    ):
+    if not re.search(list_foreach_re, normalized, re.IGNORECASE):
         return None
     if "appendChild" not in normalized or "createElement" not in normalized:
         return None
-    reconciliation_markers = (
-        r"\.replaceChildren\s*\(",
-        r"\.innerHTML\s*=\s*['\"]\s*['\"]",
-        r"\.textContent\s*=\s*['\"]\s*['\"]",
-        r"data-option-id",
-        r"data-prezo-option-id",
-        r"data-id",
-        r"\browsById\b",
-        r"\browById\b",
-        r"\boptionNodesById\b",
-        r"\bmountedRows\b",
-        r"\bnew Map\s*\(",
-        r"while\s*\([^)]*(?:firstChild|lastChild|childNodes)",
-        r"\.forEach\s*\(\s*(?:function\s*\([^)]*\)|[^=)]+=>)\s*[^)]*\.remove\s*\(",
-        r"\bexistingOptions\b",
-        r"\bexistingRows\b",
-        r"\boptionElements\b",
-        r"\boptionMap\b",
-        r"\boptionById\b",
-        r"\boptionNodes\b",
-        r"\.children\.length",
-        r"\.childNodes\.length",
-    )
     if any(
         re.search(marker, normalized, re.IGNORECASE)
         for marker in reconciliation_markers
     ):
         return None
-    return (
-        "script appears to append option rows on each render without clear keyed reconciliation; "
-        "repeated poll updates can duplicate rows."
+    return message
+
+def detect_append_only_option_render_issue(script_body: str) -> str | None:
+    return _detect_append_only_list_render_issue(
+        script_body,
+        hook_markers=("prezosetpollrenderer", "prezorenderpoll"),
+        list_foreach_re=r"(?:poll\s*\.\s*options|state\s*\.\s*poll\s*\.\s*options|options)\s*\.\s*forEach\s*\(",
+        reconciliation_markers=_APPEND_ONLY_POLL_RECONCILIATION_MARKERS,
+        message=(
+            "script appears to append option rows on each render without clear keyed reconciliation; "
+            "repeated poll updates can duplicate rows."
+        ),
     )
 
-def validate_poll_game_artifact_html(html: str) -> list[str]:
+def detect_append_only_question_render_issue(script_body: str) -> str | None:
+    """qna/discussion twin of detect_append_only_option_render_issue: renderers
+    that append question rows on every update without keying duplicate them."""
+    return _detect_append_only_list_render_issue(
+        script_body,
+        hook_markers=("prezosetqnarenderer", "prezorenderqna"),
+        list_foreach_re=r"(?:qna\s*\.\s*questions|state\s*\.\s*qna\s*\.\s*questions|questions)\s*\.\s*forEach\s*\(",
+        reconciliation_markers=_APPEND_ONLY_QNA_RECONCILIATION_MARKERS,
+        message=(
+            "script appears to append question rows on each render without clear keyed reconciliation; "
+            "repeated Q&A updates can duplicate rows."
+        ),
+    )
+
+_ARTIFACT_LIVE_STATE_ISSUE_BY_FAMILY = {
+    "poll": "artifact output does not appear to consume live poll state.",
+    "qna": "artifact output does not appear to consume live Q&A state.",
+}
+
+def validate_poll_game_artifact_html(html: str, activity_kind: str = "poll") -> list[str]:
+    kind = normalize_artifact_activity_kind(activity_kind)
+    family = artifact_activity_family(kind)
     text = (html or "").strip()
     if not text:
         return ["artifact output is empty."]
@@ -545,8 +627,10 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         issues.append("artifact output still contains markdown fences.")
     if not ARTIFACT_HTML_SHAPE_RE.search(text):
         issues.append("artifact output does not look like HTML.")
-    if not contains_artifact_live_state_token(text):
-        issues.append("artifact output does not appear to consume live poll state.")
+    if not contains_artifact_live_state_token(
+        text, tokens=live_state_tokens_for_activity_kind(kind)
+    ):
+        issues.append(_ARTIFACT_LIVE_STATE_ISSUE_BY_FAMILY[family])
     open_script_count = len(ARTIFACT_SCRIPT_OPEN_RE.findall(text))
     close_script_count = len(ARTIFACT_SCRIPT_CLOSE_RE.findall(text))
     if open_script_count != close_script_count:
@@ -568,7 +652,11 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         for pattern, message in ARTIFACT_FULL_SCENE_RESET_PATTERNS:
             if pattern.search(script_body):
                 issues.append(message)
-        append_only_issue = detect_append_only_option_render_issue(script_body)
+        append_only_issue = (
+            detect_append_only_question_render_issue(script_body)
+            if family == "qna"
+            else detect_append_only_option_render_issue(script_body)
+        )
         if append_only_issue:
             issues.append(append_only_issue)
         syntax_issue = validate_inline_script_syntax(script_body)
@@ -585,13 +673,17 @@ def validate_poll_game_artifact_html(html: str) -> list[str]:
         deduped.append(normalized)
     return deduped
 
-def contains_artifact_live_state_token(text: str) -> bool:
+def contains_artifact_live_state_token(
+    text: str, tokens: tuple[str, ...] = ARTIFACT_LIVE_STATE_TOKENS
+) -> bool:
     normalized = (text or "").strip()
     if not normalized:
         return False
-    return any(token in normalized for token in ARTIFACT_LIVE_STATE_TOKENS)
+    return any(token in normalized for token in tokens)
 
-def extract_artifact_live_hook_scripts(text: str) -> list[str]:
+def extract_artifact_live_hook_scripts(
+    text: str, tokens: tuple[str, ...] = ARTIFACT_LIVE_STATE_TOKENS
+) -> list[str]:
     normalized = (text or "").strip()
     if not normalized:
         return []
@@ -599,7 +691,7 @@ def extract_artifact_live_hook_scripts(text: str) -> list[str]:
     seen: set[str] = set()
     for script_match in ARTIFACT_SCRIPT_RE.finditer(normalized):
         script_text = script_match.group(0).strip()
-        if not script_text or not contains_artifact_live_state_token(script_text):
+        if not script_text or not contains_artifact_live_state_token(script_text, tokens=tokens):
             continue
         if script_text in seen:
             continue
@@ -611,15 +703,18 @@ def collect_context_artifact_live_hooks(context: dict[str, Any]) -> list[str]:
     artifact_context = context.get("artifact") if isinstance(context.get("artifact"), dict) else {}
     if not artifact_context:
         return []
+    # Only the request's own kind counts as live wiring: a stray token from the
+    # other kind's vocabulary must not masquerade as a preservable hook.
+    tokens = live_state_tokens_for_activity_kind(resolve_artifact_activity_kind(context))
     current_html = artifact_context.get("currentArtifactHtml")
     current_hooks = artifact_context.get("currentArtifactLiveHooks")
     hooks = extract_artifact_live_hook_scripts(
-        current_html if isinstance(current_html, str) else ""
+        current_html if isinstance(current_html, str) else "", tokens=tokens
     )
     if hooks:
         return hooks
     return extract_artifact_live_hook_scripts(
-        current_hooks if isinstance(current_hooks, str) else ""
+        current_hooks if isinstance(current_hooks, str) else "", tokens=tokens
     )
 
 def prepare_artifact_context_for_model(
@@ -875,7 +970,12 @@ def inject_artifact_live_hook_scripts(html: str, hook_scripts: list[str]) -> str
 
 def restore_artifact_live_hooks_if_missing(html: str, context: dict[str, Any]) -> str:
     normalized = (html or "").strip()
-    if not normalized or contains_artifact_live_state_token(normalized):
+    if not normalized:
+        return normalized
+    # Gate on the request's own kind so e.g. a poll artifact that lost its poll
+    # wiring is still repaired even if a stray qna token survives somewhere.
+    tokens = live_state_tokens_for_activity_kind(resolve_artifact_activity_kind(context))
+    if contains_artifact_live_state_token(normalized, tokens=tokens):
         return normalized
     hook_scripts = collect_context_artifact_live_hooks(context)
     if not hook_scripts:

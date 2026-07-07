@@ -13,6 +13,7 @@ create table if not exists public.embed_instances (
   owner_user_id uuid references auth.users(id) on delete set null,
   session_id uuid,
   poll_id uuid,
+  prompt_id uuid,
   artifact_kind text not null default 'poll-game',
   artifact_name text,
   screen_mode text,
@@ -30,6 +31,9 @@ alter table public.embed_instances
 
 alter table public.embed_instances
   add column if not exists present_mode boolean not null default false;
+
+alter table public.embed_instances
+  add column if not exists prompt_id uuid;
 
 create index if not exists embed_instances_owner_user_id_idx
   on public.embed_instances (owner_user_id);

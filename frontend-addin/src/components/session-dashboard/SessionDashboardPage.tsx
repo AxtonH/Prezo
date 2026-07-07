@@ -32,6 +32,10 @@ export interface SessionDashboardPageProps {
   audienceQuestions: Question[]
   onSetHostJoinAccess?: (allowHostJoin: boolean) => Promise<void>
   onConfigurePoll?: (pollId: string) => void
+  /** Open the editing station focused on the session Q&amp;A artifact. */
+  onConfigureQna?: () => void
+  /** Open the editing station focused on this discussion's artifact. */
+  onConfigureDiscussion?: (promptId: string) => void
   onStopPoll?: (pollId: string) => void | Promise<void>
   onStopQna?: () => void | Promise<void>
   onStopDiscussion?: (promptId: string) => void | Promise<void>
@@ -75,6 +79,8 @@ export function SessionDashboardPage({
   audienceQuestions,
   onSetHostJoinAccess,
   onConfigurePoll,
+  onConfigureQna,
+  onConfigureDiscussion,
   onStopPoll,
   onStopQna,
   onStopDiscussion,
@@ -214,6 +220,8 @@ export function SessionDashboardPage({
           closedPrompts={closedPrompts}
           questions={questions}
           onConfigurePoll={onConfigurePoll}
+          onConfigureQna={onConfigureQna}
+          onConfigureDiscussion={onConfigureDiscussion}
           onStopPoll={onStopPoll}
           onStopQna={onStopQna}
           onStopDiscussion={onStopDiscussion}

@@ -118,6 +118,7 @@
     if (defaults && typeof defaults === "object") {
       if (defaults.session_id) createBody.session_id = defaults.session_id
       if (defaults.poll_id) createBody.poll_id = defaults.poll_id
+      if (defaults.prompt_id) createBody.prompt_id = defaults.prompt_id
       if (defaults.artifact_kind) createBody.artifact_kind = defaults.artifact_kind
       if (defaults.screen_mode) createBody.screen_mode = defaults.screen_mode
       if (defaults.metadata) createBody.metadata = defaults.metadata

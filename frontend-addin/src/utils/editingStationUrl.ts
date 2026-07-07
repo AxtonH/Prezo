@@ -9,11 +9,18 @@ const HOST_BASE_URL =
  * The Editing Station (poll-game-poc) lives under the same origin as the host
  * console, so we use the host base URL as the root.
  */
+/** Which activity the editing station renders (docs/artifact-activity-kinds.md). */
+export type EditingStationActivityKind = 'poll' | 'qna' | 'discussion'
+
 export function buildEditingStationUrl(options: {
   sessionId: string
   code?: string | null
   apiBase?: string | null
   pollId?: string | null
+  /** Activity kind for the station; omitted/poll keeps the legacy poll flow. */
+  activityKind?: EditingStationActivityKind | null
+  /** QnaPrompt binding when activityKind is "discussion". */
+  promptId?: string | null
   /** Origin of the parent frame (e.g. host console) for safe postMessage targets in the embedded editor. */
   parentOrigin?: string | null
 }): string {
@@ -31,7 +38,13 @@ export function buildEditingStationUrl(options: {
     params.set('apiBase', apiBase)
   }
 
-  if (options.pollId) {
+  const activityKind = options.activityKind ?? 'poll'
+  if (activityKind !== 'poll') {
+    params.set('activityKind', activityKind)
+    if (activityKind === 'discussion' && options.promptId) {
+      params.set('promptId', options.promptId)
+    }
+  } else if (options.pollId) {
     params.set('pollId', options.pollId)
   }
 

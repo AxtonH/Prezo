@@ -30,6 +30,8 @@ export interface SessionQnaDashboardPageProps {
    */
   qnaDeletedEpoch?: number
   onOpenQna: () => Promise<void> | void
+  /** Open the editing station focused on the session Q&amp;A artifact. */
+  onConfigureQna?: () => void
   onStopQna: () => Promise<void> | void
   onResumeQna?: () => Promise<void> | void
   onDeleteQna?: () => void | Promise<void>
@@ -45,6 +47,7 @@ export function SessionQnaDashboardPage({
   questions,
   qnaDeletedEpoch = 0,
   onOpenQna,
+  onConfigureQna,
   onStopQna,
   onResumeQna,
   onDeleteQna,
@@ -207,6 +210,7 @@ export function SessionQnaDashboardPage({
                     closedPrompts={[]}
                     questions={questions}
                     onConfigurePoll={undefined}
+                    onConfigureQna={onConfigureQna}
                     onStopPoll={undefined}
                     onStopQna={() => void handleStopQna()}
                     onStopDiscussion={undefined}

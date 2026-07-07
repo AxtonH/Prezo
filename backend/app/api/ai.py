@@ -29,6 +29,10 @@ from ..ai_prompts import (  # noqa: F401  (re-exported for tests/backcompat)
     POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
     POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
     POLL_GAME_SYSTEM_INSTRUCTION,
+    build_artifact_assistant_system_instruction,
+    build_artifact_patch_system_instruction,
+    build_artifact_system_instruction,
+    normalize_artifact_activity_kind,
 )
 from ..ai_providers import (  # noqa: F401  (re-exported for tests/backcompat)
     ANTHROPIC_API_BASE,
@@ -307,6 +311,7 @@ from ..artifact_quality import (  # noqa: F401  (re-exported for tests/backcompa
     prepare_artifact_context_for_model,
     rebalance_artifact_script_tags,
     remove_last_artifact_script_close_tag,
+    resolve_artifact_activity_kind,
     resolve_artifact_followup_reserve_seconds,
     resolve_artifact_max_repair_attempts,
     restore_artifact_live_hooks_if_missing,
@@ -628,6 +633,7 @@ async def create_poll_game_artifact_intake(
 
     questions_asked = sum(1 for message in messages if message["role"] == "assistant")
     force_ready = payload.force_ready or questions_asked >= ARTIFACT_INTAKE_MAX_QUESTIONS
+    activity_kind = resolve_artifact_activity_kind(payload.context)
 
     model = resolve_anthropic_intake_model()
     text, _stop_reason = await request_anthropic_text(
@@ -638,6 +644,7 @@ async def create_poll_game_artifact_intake(
             selected_brand_profile_name=selected_brand_profile_name,
             questions_asked=questions_asked,
             force_ready=force_ready,
+            activity_kind=activity_kind,
         ),
         prompt_text=build_artifact_intake_prompt(messages, payload.context),
         temperature=0.3,
@@ -652,6 +659,7 @@ async def create_poll_game_artifact_intake(
         messages=messages,
         brand_profile_names=brand_profile_names,
         selected_brand_profile_name=selected_brand_profile_name,
+        activity_kind=activity_kind,
     )
     return PollGameArtifactIntakeResponse(
         action=reply["action"],
@@ -719,6 +727,7 @@ async def create_poll_game_artifact_build(
     )
     request_mode = str(artifact_context.get("requestMode") or "").strip().lower()
     is_initial_build = request_mode not in {"edit", "repair"}
+    activity_kind = resolve_artifact_activity_kind(request_context)
     original_edit_request = extract_artifact_original_edit_request(
         artifact_context,
         payload.prompt,
@@ -772,6 +781,7 @@ async def create_poll_game_artifact_build(
                     timeout_seconds=patch_timeout_seconds,
                     remaining_budget_seconds=remaining_budget_seconds,
                     use_anthropic_patch_planner=False,
+                    activity_kind=activity_kind,
                 )
                 if patch_html:
                     patch_html = restore_artifact_live_hooks_if_missing(
@@ -782,7 +792,9 @@ async def create_poll_game_artifact_build(
                         patch_html,
                         patch_package,
                     )
-                    patch_validation_issues = validate_poll_game_artifact_html(patch_html)
+                    patch_validation_issues = validate_poll_game_artifact_html(
+                        patch_html, activity_kind
+                    )
                     if not patch_validation_issues:
                         completion_requirements = infer_artifact_completion_requirements(
                             original_edit_request
@@ -853,6 +865,7 @@ async def create_poll_game_artifact_build(
                             timeout_seconds=patch_timeout_seconds,
                             remaining_budget_seconds=remaining_budget_seconds,
                             use_anthropic_patch_planner=True,
+                            activity_kind=activity_kind,
                         )
                     )
                     if fallback_debug:
@@ -869,7 +882,7 @@ async def create_poll_game_artifact_build(
                             fallback_package,
                         )
                         fallback_validation_issues = validate_poll_game_artifact_html(
-                            fallback_html
+                            fallback_html, activity_kind
                         )
                         if not fallback_validation_issues:
                             fallback_completion_requirements = (
@@ -962,7 +975,7 @@ async def create_poll_game_artifact_build(
         request_text, stop_reason = await request_anthropic_text(
             api_key=build_api_key,
             model=model,
-            system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+            system_instruction=build_artifact_system_instruction(activity_kind),
             prompt_text=prompt_text,
             temperature=temperature,
             max_tokens=ANTHROPIC_ARTIFACT_MAX_TOKENS,
@@ -1021,7 +1034,7 @@ async def create_poll_game_artifact_build(
         request_text, stop_reason = await request_gemini_text(
             api_key=build_api_key,
             model=model,
-            system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+            system_instruction=build_artifact_system_instruction(activity_kind),
             prompt_text=gemini_prompt_text,
             temperature=temperature,
             max_tokens=GEMINI_ARTIFACT_MAX_TOKENS,
@@ -1048,6 +1061,7 @@ async def create_poll_game_artifact_build(
             request_context=request_context,
             deadline=deadline,
             initial_model=model,
+            activity_kind=activity_kind,
         )
     )
 
@@ -1065,7 +1079,7 @@ async def create_poll_game_artifact_build(
         fallback_text, fallback_stop_reason = await request_anthropic_text(
             api_key=anthropic_api_key,
             model=fallback_model,
-            system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+            system_instruction=build_artifact_system_instruction(activity_kind),
             prompt_text=json.dumps(
                 {"prompt": payload.prompt, "context": model_context},
                 indent=2,
@@ -1091,6 +1105,7 @@ async def create_poll_game_artifact_build(
                 request_context=request_context,
                 deadline=deadline,
                 initial_model=fallback_model,
+                activity_kind=activity_kind,
             )
             if not fallback_validation_issues:
                 html = fallback_html
@@ -1156,7 +1171,9 @@ async def create_poll_game_artifact_answer(
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
-        system_instruction=POLL_GAME_ARTIFACT_ASSISTANT_SYSTEM_INSTRUCTION,
+        system_instruction=build_artifact_assistant_system_instruction(
+            resolve_artifact_activity_kind(request_context)
+        ),
         prompt_text=json.dumps(
             {"prompt": payload.prompt, "context": request_context},
             indent=2,
@@ -1188,7 +1205,9 @@ async def attempt_artifact_patch_edit(
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
     use_anthropic_patch_planner: bool = False,
+    activity_kind: str = "poll",
 ) -> tuple[str, dict[str, Any] | None, str, list[str], str]:
+    patch_system_instruction = build_artifact_patch_system_instruction(activity_kind)
     artifact_context = context.get("artifact") if isinstance(context, dict) else None
     attached_image_urls = extract_artifact_attached_image_urls(
         artifact_context if isinstance(artifact_context, dict) else {}
@@ -1225,7 +1244,7 @@ async def attempt_artifact_patch_edit(
         text, _stop_reason = await request_anthropic_text(
             api_key=api_key,
             model=model,
-            system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+            system_instruction=patch_system_instruction,
             prompt_text=patch_prompt,
             temperature=0.1,
             max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
@@ -1239,7 +1258,7 @@ async def attempt_artifact_patch_edit(
             text, _stop_reason = await request_gemini_text(
                 api_key=api_key,
                 model=model,
-                system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+                system_instruction=patch_system_instruction,
                 prompt_text=patch_prompt,
                 temperature=0.1,
                 max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
@@ -1257,7 +1276,7 @@ async def attempt_artifact_patch_edit(
             text, _stop_reason = await request_gemini_text(
                 api_key=api_key,
                 model=model,
-                system_instruction=POLL_GAME_ARTIFACT_PATCH_SYSTEM_INSTRUCTION,
+                system_instruction=patch_system_instruction,
                 prompt_text=patch_prompt,
                 temperature=0.1,
                 max_tokens=GEMINI_ARTIFACT_PATCH_MAX_TOKENS,
@@ -1379,6 +1398,7 @@ async def attempt_artifact_repair(
     validation_issues: list[str],
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
+    activity_kind: str = "poll",
 ) -> str:
     if not validation_issues or ARTIFACT_MAX_REPAIR_ATTEMPTS <= 0:
         return ""
@@ -1387,11 +1407,12 @@ async def attempt_artifact_repair(
         context=context,
         html=html,
         validation_issues=validation_issues,
+        activity_kind=activity_kind,
     )
     text, _stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
-        system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+        system_instruction=build_artifact_system_instruction(activity_kind),
         prompt_text=repair_prompt,
         temperature=0.25,
         max_tokens=GEMINI_ARTIFACT_REPAIR_MAX_TOKENS,
@@ -1412,16 +1433,18 @@ async def attempt_artifact_stable_recovery(
     validation_issues: list[str],
     timeout_seconds: float,
     remaining_budget_seconds: float | None = None,
+    activity_kind: str = "poll",
 ) -> tuple[str, str]:
     recovery_prompt = build_artifact_stable_recovery_prompt(
         original_prompt=original_prompt,
         context=context,
         validation_issues=validation_issues,
+        activity_kind=activity_kind,
     )
     text, stop_reason = await request_gemini_text(
         api_key=api_key,
         model=model,
-        system_instruction=POLL_GAME_ARTIFACT_SYSTEM_INSTRUCTION,
+        system_instruction=build_artifact_system_instruction(activity_kind),
         prompt_text=json.dumps(
             {"prompt": recovery_prompt, "context": context},
             indent=2,
@@ -1446,10 +1469,11 @@ async def validate_and_repair_artifact_html_candidate(
     request_context: dict[str, Any],
     deadline: float,
     initial_model: str,
+    activity_kind: str = "poll",
 ) -> tuple[str, list[str], str]:
     next_html = restore_artifact_live_hooks_if_missing(html, request_context)
     next_html = attempt_artifact_structural_autorepair(next_html)
-    validation_issues = validate_poll_game_artifact_html(next_html)
+    validation_issues = validate_poll_game_artifact_html(next_html, activity_kind)
 
     # In edit/repair mode, don't block on validation issues that already existed
     # in the source artifact — the user's edit shouldn't be rejected for
@@ -1462,7 +1486,7 @@ async def validate_and_repair_artifact_html_candidate(
         )
         if isinstance(source_artifact, str) and source_artifact.strip():
             pre_existing_issues = set(
-                validate_poll_game_artifact_html(source_artifact)
+                validate_poll_game_artifact_html(source_artifact, activity_kind)
             )
             if pre_existing_issues:
                 validation_issues = [
@@ -1506,6 +1530,7 @@ async def validate_and_repair_artifact_html_candidate(
             validation_issues=validation_issues,
             timeout_seconds=repair_timeout_seconds,
             remaining_budget_seconds=remaining_budget_seconds,
+            activity_kind=activity_kind,
         )
         if not repaired_html:
             break
@@ -1516,7 +1541,7 @@ async def validate_and_repair_artifact_html_candidate(
         if candidate_html.strip() == next_html.strip():
             break
         next_html = candidate_html
-        validation_issues = validate_poll_game_artifact_html(next_html)
+        validation_issues = validate_poll_game_artifact_html(next_html, activity_kind)
         repair_attempts += 1
         response_model = repair_model
 
@@ -1555,13 +1580,14 @@ async def validate_and_repair_artifact_html_candidate(
             validation_issues=validation_issues,
             timeout_seconds=recovery_timeout_seconds,
             remaining_budget_seconds=remaining_budget_seconds,
+            activity_kind=activity_kind,
         )
         if recovered_html:
             next_html = restore_artifact_live_hooks_if_missing(
                 recovered_html, request_context
             )
             next_html = attempt_artifact_structural_autorepair(next_html)
-            validation_issues = validate_poll_game_artifact_html(next_html)
+            validation_issues = validate_poll_game_artifact_html(next_html, activity_kind)
             response_model = repair_model
             if recovered_stop_reason in {"max_tokens", "model_context_window_exceeded"}:
                 validation_issues.insert(
@@ -1572,19 +1598,70 @@ async def validate_and_repair_artifact_html_candidate(
     return next_html, validation_issues, response_model
 
 
+# Kind-specific copy for the repair/recovery prompts. Poll fragments reproduce
+# the original text verbatim; qna/discussion speak in question-list terms.
+_ARTIFACT_REPAIR_KIND_FRAGMENTS: dict[str, dict[str, Any]] = {
+    "poll": {
+        "artifact_noun": "poll artifact",
+        "live_behavior": "live poll behavior",
+        "contract_line": "- Preserve or restore the live poll contract: window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), or equivalent approved host wiring.",
+        "registration_pitfall_line": "- Do not drop the live poll renderer registration.",
+        "recovery_contract_line": "- Preserve the live poll contract and renderer registration.",
+        "row_nodes_noun": "option nodes",
+        "reconciliation_fix_lines": [
+            "Reconciliation fix (CRITICAL — this is why the artifact failed):",
+            "The renderer uses options.forEach + appendChild without clearing or keying, which duplicates rows on each poll update.",
+            "You MUST use one of these two approaches inside the poll renderer function:",
+            "  Approach A — Clear before appending: Before the options.forEach loop, add:  while (container.firstChild) container.removeChild(container.firstChild);",
+            "  Approach B — Key by option id: On each option row element, set data-option-id=option.id. Before creating a new row, check if one with that id already exists and reuse it.",
+            "Do NOT use replaceChildren() or innerHTML='' on the scene root as that would destroy the whole scene.",
+            "Apply the fix to the options container element only.",
+            "",
+        ],
+    },
+    "qna": {
+        "artifact_noun": "Q&A artifact",
+        "live_behavior": "live Q&A behavior",
+        "contract_line": "- Preserve or restore the live Q&A contract: window.prezoSetQnaRenderer(fn), window.prezoRenderQna(state), or equivalent approved host wiring.",
+        "registration_pitfall_line": "- Do not drop the live Q&A renderer registration.",
+        "recovery_contract_line": "- Preserve the live Q&A contract and renderer registration.",
+        "row_nodes_noun": "question nodes",
+        "reconciliation_fix_lines": [
+            "Reconciliation fix (CRITICAL — this is why the artifact failed):",
+            "The renderer uses questions.forEach + appendChild without clearing or keying, which duplicates rows on each Q&A update.",
+            "You MUST use one of these two approaches inside the Q&A renderer function:",
+            "  Approach A — Clear before appending: Before the questions.forEach loop, add:  while (container.firstChild) container.removeChild(container.firstChild);",
+            "  Approach B — Key by question id: On each question row element, set data-question-id=question.id. Before creating a new row, check if one with that id already exists and reuse it.",
+            "Do NOT use replaceChildren() or innerHTML='' on the scene root as that would destroy the whole scene.",
+            "Apply the fix to the questions container element only.",
+            "",
+        ],
+    },
+}
+_ARTIFACT_REPAIR_KIND_FRAGMENTS["discussion"] = {
+    **_ARTIFACT_REPAIR_KIND_FRAGMENTS["qna"],
+    "artifact_noun": "discussion artifact",
+}
+
+
 def build_artifact_repair_prompt(
     *,
     original_prompt: str,
     context: dict[str, Any],
     html: str,
     validation_issues: list[str],
+    activity_kind: str = "poll",
 ) -> str:
+    kind = normalize_artifact_activity_kind(activity_kind)
+    frag = _ARTIFACT_REPAIR_KIND_FRAGMENTS[kind]
     has_truncation_issue = any(
         "truncated" in issue.lower() or "unbalanced <script>" in issue.lower()
         for issue in validation_issues
     )
     has_reconciliation_issue = any(
-        "append option rows" in issue.lower() or "keyed reconciliation" in issue.lower()
+        "append option rows" in issue.lower()
+        or "append question rows" in issue.lower()
+        or "keyed reconciliation" in issue.lower()
         for issue in validation_issues
     )
     is_background_edit = bool(
@@ -1598,13 +1675,13 @@ def build_artifact_repair_prompt(
     return "\n".join(
         [
             "Artifact repair task",
-            "You are repairing a broken HTML poll artifact that failed validation.",
+            f"You are repairing a broken HTML {frag['artifact_noun']} that failed validation.",
             "Your job is to return one complete replacement artifact that is valid, usable, and still satisfies the original request.",
             "",
             "Repair objective",
             f"- Original prompt: {original_prompt}",
             f"- Validation issues: {issue_text}",
-            "- Preserve the intended concept, layout, and live poll behavior unless one of them is the direct cause of the failure.",
+            f"- Preserve the intended concept, layout, and {frag['live_behavior']} unless one of them is the direct cause of the failure.",
             "- Prioritize correctness and usability over decorative complexity. A simpler working artifact is better than a flashy broken one.",
             "",
             "Required output contract",
@@ -1613,20 +1690,11 @@ def build_artifact_repair_prompt(
             "- Do not return markdown fences, JSON, prose, comments outside HTML, or explanation.",
             "- Close every tag, especially every <script> tag.",
             "- Inline JavaScript must be syntactically complete with closed blocks, parentheses, strings, template literals, and object literals.",
-            "- Preserve or restore the live poll contract: window.prezoSetPollRenderer(fn), window.prezoRenderPoll(state), or equivalent approved host wiring.",
+            frag["contract_line"],
             "- The artifact must render visible usable content on first load.",
             "",
             *(
-                [
-                    "Reconciliation fix (CRITICAL — this is why the artifact failed):",
-                    "The renderer uses options.forEach + appendChild without clearing or keying, which duplicates rows on each poll update.",
-                    "You MUST use one of these two approaches inside the poll renderer function:",
-                    "  Approach A — Clear before appending: Before the options.forEach loop, add:  while (container.firstChild) container.removeChild(container.firstChild);",
-                    "  Approach B — Key by option id: On each option row element, set data-option-id=option.id. Before creating a new row, check if one with that id already exists and reuse it.",
-                    "Do NOT use replaceChildren() or innerHTML='' on the scene root as that would destroy the whole scene.",
-                    "Apply the fix to the options container element only.",
-                    "",
-                ]
+                frag["reconciliation_fix_lines"]
                 if has_reconciliation_issue
                 else []
             ),
@@ -1648,7 +1716,7 @@ def build_artifact_repair_prompt(
             ),
             "",
             "Pitfalls to avoid",
-            "- Do not drop the live poll renderer registration.",
+            frag["registration_pitfall_line"],
             "- Do not output partial HTML.",
             "- Do not leave unfinished object literals, arrays, function bodies, or conditionals.",
             "- Do not emit the literal text </script> inside inline JavaScript. Use <\\/script> instead if needed.",
@@ -1669,7 +1737,10 @@ def build_artifact_stable_recovery_prompt(
     original_prompt: str,
     context: dict[str, Any],
     validation_issues: list[str],
+    activity_kind: str = "poll",
 ) -> str:
+    kind = normalize_artifact_activity_kind(activity_kind)
+    frag = _ARTIFACT_REPAIR_KIND_FRAGMENTS[kind]
     is_background_edit = bool(
         re.search(
             r"\b(?:background|backdrop|sky|sunrise|sunset|daytime|nighttime|lighting|ambient|weather|day\b|night\b)\b",
@@ -1695,13 +1766,13 @@ def build_artifact_stable_recovery_prompt(
             "Required output contract",
             "- Return raw HTML only.",
             "- Return exactly one complete HTML document.",
-            "- Preserve the live poll contract and renderer registration.",
+            frag["recovery_contract_line"],
             "- Ensure every <script> tag is closed and every JavaScript block, object, array, string, template literal, and expression is complete.",
             "- The artifact must render visible usable content on first load.",
             "",
             "Recovery strategy",
             "- Reapply the requested change conservatively to the stable artifact.",
-            "- Keep the existing scene root, option nodes, and mounted structure whenever possible.",
+            f"- Keep the existing scene root, {frag['row_nodes_noun']}, and mounted structure whenever possible.",
             "- Preserve unrelated foreground gameplay visuals, SVG art, decorative detail, labels, and motion logic unless the original request explicitly asks to change them.",
             (
                 "- This request is about background, time-of-day, lighting, or atmosphere. Modify only background/backdrop/sky/ambient layers and closely related color tokens unless the request explicitly asks to change foreground gameplay visuals too."

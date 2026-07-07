@@ -1,6 +1,10 @@
 import type { PollMode, Question } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
-import { controlModeShellVariant, FollowSlidesButton } from './ControlModeUi'
+import {
+  ConfigureActivityButton,
+  controlModeShellVariant,
+  FollowSlidesButton
+} from './ControlModeUi'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveQnaActivityCardProps {
@@ -11,6 +15,8 @@ export interface ActiveQnaActivityCardProps {
   variant?: 'active' | 'inactive'
   /** Slide-driven vs pinned control of Q&amp;A (see PollMode semantics). */
   mode?: PollMode
+  /** Open the Prezo editing station focused on the session Q&amp;A artifact. */
+  onConfigure?: () => void
   onStop?: () => void
   onResume?: () => void
   onDelete?: () => void
@@ -86,6 +92,7 @@ export function ActiveQnaActivityCard({
   approvedQuestions,
   variant = 'active',
   mode: modeProp,
+  onConfigure,
   onStop,
   onResume,
   onDelete,
@@ -111,6 +118,13 @@ export function ActiveQnaActivityCard({
       mode={mode}
       title="Let the slideshow control Q&A: it opens while a Q&A slide is presented and closes when the show moves on"
       onFollow={onSetMode ? () => onSetMode('auto') : undefined}
+    />
+  )
+
+  const configureButton = (
+    <ConfigureActivityButton
+      title="Open Prezo editing station for the session Q&A"
+      onConfigure={onConfigure}
     />
   )
 
@@ -253,6 +267,7 @@ export function ActiveQnaActivityCard({
 
         {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
+            {configureButton}
             <button
               type="button"
               onClick={(e) => {
@@ -280,6 +295,7 @@ export function ActiveQnaActivityCard({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2 pt-1">
+            {configureButton}
             <button
               type="button"
               onClick={(e) => {

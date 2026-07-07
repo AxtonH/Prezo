@@ -549,8 +549,14 @@ function HostConsole({
   )
   /** Primary area while hosting a live session (sidebar workspace tabs). */
   const [workspaceNav, setWorkspaceNav] = useState<WorkspaceNavId>('dashboard')
-  /** When opening the in-app editor from “Configure poll”, pass `pollId` into the iframe URL. */
-  const [editorFocusPollId, setEditorFocusPollId] = useState<string | null>(null)
+  /** When opening the in-app editor from a card's Configure button, the
+      activity it should focus (poll id, session Q&amp;A, or discussion prompt). */
+  const [editorFocus, setEditorFocus] = useState<
+    | { kind: 'poll'; pollId: string }
+    | { kind: 'qna' }
+    | { kind: 'discussion'; promptId: string }
+    | null
+  >(null)
   /** False until we finish trying to restore the last open session (e.g. after browser refresh). */
   const [hostRestoreComplete, setHostRestoreComplete] = useState(false)
   /** Bumped after a successful audience Q&A delete so the dashboard can clear the “inactive Q&A” ref. */
@@ -578,7 +584,7 @@ function HostConsole({
     const prev = prevWorkspaceNavRef.current
     prevWorkspaceNavRef.current = workspaceNav
     if (prev === 'editor' && workspaceNav !== 'editor') {
-      setEditorFocusPollId(null)
+      setEditorFocus(null)
     }
   }, [workspaceNav])
 
@@ -1506,12 +1512,21 @@ function HostConsole({
       })
     : null
 
-  const goToEmbeddedEditor = useCallback((pollId?: string | null) => {
-    if (pollId) {
-      setEditorFocusPollId(pollId)
-    }
-    setWorkspaceNav('editor')
-  }, [])
+  const goToEmbeddedEditor = useCallback(
+    (
+      target?:
+        | { kind: 'poll'; pollId: string }
+        | { kind: 'qna' }
+        | { kind: 'discussion'; promptId: string }
+        | null
+    ) => {
+      if (target) {
+        setEditorFocus(target)
+      }
+      setWorkspaceNav('editor')
+    },
+    []
+  )
 
   const handleBindPollWidget = useCallback(
     async (pollId: string) => {
@@ -1936,7 +1951,13 @@ function HostConsole({
                 <SessionEditorEmbed
                   sessionId={session.id}
                   code={session.code}
-                  focusPollId={editorFocusPollId}
+                  focusPollId={editorFocus?.kind === 'poll' ? editorFocus.pollId : null}
+                  focusActivityKind={
+                    editorFocus && editorFocus.kind !== 'poll' ? editorFocus.kind : null
+                  }
+                  focusPromptId={
+                    editorFocus?.kind === 'discussion' ? editorFocus.promptId : null
+                  }
                 />
               ) : workspaceNav === 'polls' ? (
                 <SessionPollsDashboardPage
@@ -1947,7 +1968,7 @@ function HostConsole({
                     if (!session) {
                       return
                     }
-                    goToEmbeddedEditor(pollId)
+                    goToEmbeddedEditor({ kind: 'poll', pollId })
                   }}
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onResumePoll={(pollId) => void openPoll(pollId)}
@@ -1962,6 +1983,12 @@ function HostConsole({
                   hostDisplayName={hostProfile.display_name?.trim() || 'Host'}
                   prompts={prompts}
                   questions={questions}
+                  onConfigureDiscussion={(promptId) => {
+                    if (!session) {
+                      return
+                    }
+                    goToEmbeddedEditor({ kind: 'discussion', promptId })
+                  }}
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
                   onResumeDiscussion={(promptId) => void openPrompt(promptId)}
                   onDeleteDiscussion={deleteDiscussionPrompt}
@@ -1982,6 +2009,12 @@ function HostConsole({
                       setError(err instanceof Error ? err.message : 'Failed to open Q&A')
                     )
                   }
+                  onConfigureQna={() => {
+                    if (!session) {
+                      return
+                    }
+                    goToEmbeddedEditor({ kind: 'qna' })
+                  }}
                   onStopQna={() => void closeQna()}
                   onResumeQna={() =>
                     openQna().catch((err) =>
@@ -2019,7 +2052,19 @@ function HostConsole({
                     if (!session) {
                       return
                     }
-                    goToEmbeddedEditor(pollId)
+                    goToEmbeddedEditor({ kind: 'poll', pollId })
+                  }}
+                  onConfigureQna={() => {
+                    if (!session) {
+                      return
+                    }
+                    goToEmbeddedEditor({ kind: 'qna' })
+                  }}
+                  onConfigureDiscussion={(promptId) => {
+                    if (!session) {
+                      return
+                    }
+                    goToEmbeddedEditor({ kind: 'discussion', promptId })
                   }}
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onStopQna={() => void closeQna()}

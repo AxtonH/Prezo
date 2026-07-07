@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .ai_prompts import normalize_artifact_activity_kind
 from .artifact_quality import extract_first_json_object, try_parse_json
 
 ARTIFACT_INTAKE_MAX_QUESTIONS = 4
@@ -72,6 +73,21 @@ def match_brand_profile_name(candidate: Any, brand_profile_names: list[str]) -> 
     return ""
 
 
+# What the artifact displays, per activity kind — the only intake copy that
+# depends on the kind; the brief shape itself is kind-neutral.
+_INTAKE_DISPLAY_NOUN = {
+    "poll": "a live poll",
+    "qna": "a live audience Q&A board (moderated audience questions with upvote counts)",
+    "discussion": "a live open-discussion board (the host's prompt with moderated audience answers and upvote counts)",
+}
+
+_INTAKE_FALLBACK_ARTIFACT_TYPE = {
+    "poll": "poll artifact",
+    "qna": "audience Q&A artifact",
+    "discussion": "open discussion artifact",
+}
+
+
 def build_artifact_intake_system_instruction(
     *,
     brand_profile_names: list[str],
@@ -79,7 +95,9 @@ def build_artifact_intake_system_instruction(
     questions_asked: int,
     max_questions: int = ARTIFACT_INTAKE_MAX_QUESTIONS,
     force_ready: bool = False,
+    activity_kind: str = "poll",
 ) -> str:
+    kind = normalize_artifact_activity_kind(activity_kind)
     remaining = max(0, max_questions - questions_asked)
 
     if selected_brand_profile_name:
@@ -105,7 +123,7 @@ def build_artifact_intake_system_instruction(
 
     lines = [
         "You are the intake assistant for Prezo's artifact editor. The user wants an",
-        "AI-generated visual scene (an \"artifact\") that displays a live poll. Your job",
+        f"AI-generated visual scene (an \"artifact\") that displays {_INTAKE_DISPLAY_NOUN[kind]}. Your job",
         "is to gather just enough creative direction for the designer model to build",
         "the best possible artifact on the first attempt.",
         "",
@@ -113,8 +131,8 @@ def build_artifact_intake_system_instruction(
         "- Ask exactly ONE short, concrete question per turn, and only when its answer",
         "  would materially change the visual design (style, mood, brand, audience,",
         "  specific elements to include or avoid).",
-        "- Never ask about poll mechanics, votes, data wiring, or technical details —",
-        "  those are already handled.",
+        "- Never ask about activity mechanics, votes, submissions, data wiring, or",
+        "  technical details — those are already handled.",
         "- Never re-ask something the user already answered, and never bundle multiple",
         "  questions into one turn.",
         f"- You may ask at most {remaining} more question(s). When nothing important",
@@ -184,12 +202,17 @@ def build_fallback_intake_brief(
     *,
     brand_profile_names: list[str],
     selected_brand_profile_name: str,
+    activity_kind: str = "poll",
 ) -> dict[str, Any]:
     """Brief assembled directly from the user's own words when the model
     fails to produce one (parse failure, or it keeps asking past the cap)."""
     user_texts = [m.get("text", "").strip() for m in messages if m.get("role") == "user"]
     user_texts = [text for text in user_texts if text]
-    artifact_type = user_texts[0] if user_texts else "poll artifact"
+    artifact_type = (
+        user_texts[0]
+        if user_texts
+        else _INTAKE_FALLBACK_ARTIFACT_TYPE[normalize_artifact_activity_kind(activity_kind)]
+    )
     extra = "\n".join(user_texts[1:])
     return {
         "artifactType": artifact_type[:ARTIFACT_INTAKE_BRIEF_TEXT_CHAR_LIMIT],
@@ -210,11 +233,13 @@ def normalize_intake_brief(
     messages: list[dict[str, str]],
     brand_profile_names: list[str],
     selected_brand_profile_name: str,
+    activity_kind: str = "poll",
 ) -> dict[str, Any]:
     fallback = build_fallback_intake_brief(
         messages,
         brand_profile_names=brand_profile_names,
         selected_brand_profile_name=selected_brand_profile_name,
+        activity_kind=activity_kind,
     )
     if not isinstance(brief, dict):
         return fallback
@@ -251,6 +276,7 @@ def normalize_artifact_intake_reply(
     messages: list[dict[str, str]],
     brand_profile_names: list[str],
     selected_brand_profile_name: str,
+    activity_kind: str = "poll",
 ) -> dict[str, Any]:
     """Turn the model's raw reply into {"action", "question", "brief"}.
 
@@ -271,6 +297,7 @@ def normalize_artifact_intake_reply(
                 messages=messages,
                 brand_profile_names=brand_profile_names,
                 selected_brand_profile_name=selected_brand_profile_name,
+                activity_kind=activity_kind,
             ),
         }
 

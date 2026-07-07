@@ -1,3 +1,4 @@
+import { normalizeArtifactActivityKind } from './poll-game-gamified-artifact-mode.js'
 import {
   buildSegmentedArtifactPackage,
   resolveArtifactHtmlFromPackage,
@@ -167,6 +168,9 @@ export function createPollGameLibraryStorage({
         ? styleOverridesInput
         : null
     return {
+      // Activity kind the artifact renders; legacy records predate the field
+      // and are all polls.
+      kind: normalizeArtifactActivityKind(asText(value.kind)),
       html: materializedHtml,
       package: artifactPackage,
       lastPrompt,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..ai_prompts import normalize_artifact_activity_kind
 from ..artifact_package import resolve_saved_artifact_html
 from ..auth import AuthUser, get_current_user, get_library_user, issue_library_sync_token
 from ..brand_context import build_brand_context, build_brand_context_from_profile
@@ -100,6 +101,7 @@ async def save_saved_artifact(
         payload.last_answers,
         payload.theme_snapshot,
         payload.style_overrides,
+        kind=normalize_artifact_activity_kind(payload.kind) if payload.kind else None,
     )
 
 

@@ -88,6 +88,7 @@ class EmbedInstancesStore:
             owner_user_id=str(row["owner_user_id"]) if row.get("owner_user_id") else None,
             session_id=str(row["session_id"]) if row.get("session_id") else None,
             poll_id=str(row["poll_id"]) if row.get("poll_id") else None,
+            prompt_id=str(row["prompt_id"]) if row.get("prompt_id") else None,
             artifact_kind=row.get("artifact_kind") or "poll-game",
             artifact_name=row.get("artifact_name"),
             screen_mode=row.get("screen_mode"),
@@ -121,6 +122,10 @@ class EmbedInstancesStore:
             "present_mode": payload.present_mode,
             "metadata": payload.metadata,
         }
+        # Only send the column when a binding exists: poll-kind embeds keep
+        # working even if the prompt_id migration hasn't run yet.
+        if payload.prompt_id:
+            body["prompt_id"] = payload.prompt_id
         response = await self._request(
             "POST",
             TABLE,
@@ -142,6 +147,8 @@ class EmbedInstancesStore:
             body["session_id"] = patch.session_id or None
         if patch.poll_id is not None:
             body["poll_id"] = patch.poll_id or None
+        if patch.prompt_id is not None:
+            body["prompt_id"] = patch.prompt_id or None
         if patch.artifact_kind is not None:
             body["artifact_kind"] = patch.artifact_kind
         if patch.artifact_name is not None:
