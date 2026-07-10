@@ -15,6 +15,10 @@ Module map (all `poll-game-gamified-*`):
 - `richtext.js` (text keys, override storage, HTML/style sanitizers) +
   `richtext-editor.js` (selection toolbar, contenteditable hosts, commands).
 - `session-feed.js` — socket/snapshot/activity selection.
+- `drag-resize.js` — canvas drag/resize engine + shared geometry helpers
+  (its dragState/resizeState/resizeProfiles come back by reference).
+- `ai-plan.js` (classic-canvas AI edit-plan applier) +
+  `override-diff.js` (artifact override staleness reconciliation).
 - `artifact-payloads.js`, `ai-transport.js`, `artifact-wizard.js`,
   `library-ui.js` — artifact pipeline + library panel.
 - Older handler modules: `artifact-bridge/-mode/-runtime/-package/-copy/

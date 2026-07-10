@@ -1,9 +1,40 @@
 # Gamified station modularization (poll-game-gamified-app.js)
 
-Status: COMPLETE — Phases 0-7 all implemented. app.js is now the composition
-root only (~8,900 lines, from 13,645). The living summary of the module map
-and rules moved to frontend-addin/CLAUDE.md; this doc remains as the
-historical record of the phase notes and gotchas.
+Status: COMPLETE — Phases 0-9 all implemented. app.js is now the composition
+root only (5,881 lines, from 13,645 — 57% extracted). The living summary of
+the module map and rules moved to frontend-addin/CLAUDE.md; this doc remains
+as the historical record of the phase notes and gotchas.
+
+Phase 8 note: the canvas drag/resize engine moved into
+poll-game-gamified-drag-resize.js as createDragResizeEngine — pointer
+move/resize for every stage object, the drag/resize profile WeakMaps, the
+resize selection box, position reset, and the shared canvas-object geometry
+helpers (applyElementOffset/BoxSize, the header/option text-flow subsystem,
+applyImageAsset, applyDeletedStaticTargets). dragState/resizeState/
+resizeProfiles are returned BY REFERENCE so the four external readers
+(ribbon guard, artifact-mode sync, unload cleanup) stayed unchanged. The
+engine mutates the live theme object in place while dragging, so ALL 110
+reads of the old currentTheme binding became getCurrentTheme() — property
+writes through the getter's returned reference preserve the
+cheap-incremental-update behavior while surviving object swaps on
+theme/artifact load.
+
+Phase 9 note: two modules. poll-game-gamified-ai-plan.js
+(createAiPlanApplier) applies the classic-canvas AI edit plan — theme
+patches, moves, box/scale resizes, text and option-label overrides, resets —
+with history capture and selection cleanup injected.
+poll-game-gamified-override-diff.js (createOverrideDiff) is the
+override-staleness reconciliation: dropOverridesAiChanged (signature/
+layout/stylesheet diffing between prior and new artifact HTML) and the
+pruneStalePollStyleOverrides pair. Also removed an orphaned doc comment left
+behind by the Phase 3 payload extraction.
+
+Post-phase-9 composition root (~5,900 lines) intentionally keeps: the state
+object + el map + factory wiring (~1,200), the render orchestrators
+(renderFromSnapshot/renderClassicOptions/artifact stage gating), the artifact
+composer/chat/attachments UI, undo-redo history, host postMessage
+integration, and the panel setup functions. Extracting these would mean
+threading dozens of callbacks for no testability gain — this is the floor.
 
 Phase 7 note: the rich-text subsystem moved in two pieces.
 **poll-game-gamified-richtext.js** holds the pure core — text-override keys
@@ -144,6 +175,8 @@ across 9 modules) and follows the same rules.
 | 6a | ✅ Theme engine: sanitize (6a-core → theme.js) + apply/update/controls/upload UI (6a-dom → theme-ui.js) | `poll-game-gamified-theme.js`, `poll-game-gamified-theme-ui.js` | ~900 |
 | 6b | ✅ Library panel UI: artifact/theme selects, save/load/delete, version history | `poll-game-gamified-library-ui.js` | ~620 |
 | 7 | ✅ Rich-text subsystem (pure core + selection editor); composition-root tidy; CLAUDE.md note | `poll-game-gamified-richtext.js`, `poll-game-gamified-richtext-editor.js` | ~1,540 |
+| 8 | ✅ Canvas drag/resize engine + shared geometry helpers | `poll-game-gamified-drag-resize.js` | ~2,080 |
+| 9 | ✅ AI edit-plan applier + artifact override reconciliation | `poll-game-gamified-ai-plan.js`, `poll-game-gamified-override-diff.js` | ~1,050 |
 
 Target end state: app.js ≈ 5-6k lines of state definition, `el` map, wiring,
 and the render orchestrators — with every subsystem importable and testable on

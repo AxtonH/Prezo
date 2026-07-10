@@ -1,20 +1,14 @@
 import {
-  AI_BOX_RESIZE_TARGETS,
   AI_CHAT_MAX_MESSAGES,
   AI_DEFAULT_MODEL,
   AI_LEGACY_MODELS,
   AI_MODEL_STORAGE_KEY,
-  AI_MOVE_TARGETS,
-  AI_SCALE_RESIZE_TARGETS,
-  AI_TARGET_ALIASES,
   ARTIFACT_LIBRARY_KEY,
   ARTIFACT_BRAND_REFERENCE_VALUE,
   DEFAULT_API_BASE,
-  DRAG_START_THRESHOLD_PX,
   HISTORY_LIMIT,
   LIBRARY_SYNC_TOKEN_KEY,
   MAX_INLINE_ATTACHMENTS,
-  MIN_RESIZE_HANDLE_SIZE_PX,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
   RIBBON_TAB_KEY,
@@ -53,9 +47,7 @@ import {
   defaultTheme,
   hexLuminance,
   normalizeColorToHex,
-  sanitizeAiThemePatch,
   sanitizeHex,
-  sanitizeOptionalDimension,
   sanitizeTheme
 
 } from './poll-game-gamified-theme.js'
@@ -83,12 +75,10 @@ import {
   clamp,
   clone,
   errorToMessage,
-  extractPlainTextFromHtml,
   fetchWithTimeout,
   normalizeApiBase,
   normalizeCode,
   normalizeThemeName,
-  normalizeWhitespace,
   parsePollSelector,
   parsePromptSelector,
   safeJsonParse,
@@ -118,14 +108,15 @@ import {
   getQuestionTextKey,
   getStatusTextKey,
   getVotesTextKey,
-  isLiveBoundTextKey,
   loadTextOverrides,
-  sanitizeRichTextHtml,
   sanitizeTextOverridesMap,
-  saveTextOverrides,
-  textToRichHtml
+  saveTextOverrides
+
 } from './poll-game-gamified-richtext.js'
 import { createRichTextEditor } from './poll-game-gamified-richtext-editor.js'
+import { createDragResizeEngine } from './poll-game-gamified-drag-resize.js'
+import { createAiPlanApplier } from './poll-game-gamified-ai-plan.js'
+import { createOverrideDiff } from './poll-game-gamified-override-diff.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
@@ -515,7 +506,7 @@ import {
       state.apiBase = apiBase
     },
     // The library panel is instantiated further down (it needs the handler
-    // instances declared below), so its methods arrive as deferred arrows —
+    // instances declared below), so its methods arrive as deferred arrows â€”
     // the sync manager only invokes them post-init, once the panel consts
     // exist.
     mergeRemoteThemeLibrary: (records) => mergeRemoteThemeLibrary(records),
@@ -742,7 +733,7 @@ import {
       // Record an undo entry only for genuine user deletes from the iframe,
       // which always carry an explicit priorHidden flag. The history re-apply
       // path (applyHistoryHiddenEntry) omits priorHidden so re-emitting an
-      // undo/redo doesn't push a fresh entry — mirrors the position/size
+      // undo/redo doesn't push a fresh entry â€” mirrors the position/size
       // handlers' priorDx/priorSx guard.
       if (!message || typeof message.priorHidden !== 'boolean') return
       artifactHistory.push({
@@ -763,14 +754,14 @@ import {
     }
   })
   // Undo/redo. Closure resolves apply* helpers at call time so they don't
-  // need to be defined before this constructor runs. Scope: per-artifact —
+  // need to be defined before this constructor runs. Scope: per-artifact â€”
   // we clear the stacks when the artifact is rebuilt or swapped.
   const artifactHistory = createArtifactHistoryHandler({
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
   })
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
   // preference, persisted in localStorage. Present mode unconditionally
-  // forces visual aids off — handled by the handler's getEffectiveConfig.
+  // forces visual aids off â€” handled by the handler's getEffectiveConfig.
   const artifactGuides = createArtifactGuidesHandler({
     onConfigChange: () => {
       pushArtifactGridConfig()
@@ -944,7 +935,7 @@ import {
   /**
    * Tell the embed parent (poll-game-content.html) what visual mode this
    * iframe is currently rendering. Called from every site that mutates
-   * currentTheme.visualMode — both the standard updateTheme path AND the
+   * currentTheme.visualMode â€” both the standard updateTheme path AND the
    * direct-assignment paths (history undo/redo, theme load, artifact preset
    * load) which bypass updateTheme. The outer embed deduplicates against its
    * own currentScreenMode, so calling here unconditionally is safe.
@@ -960,18 +951,6 @@ import {
     } catch {
       /* ignore cross-frame postMessage failures */
     }
-  }
-  const dragState = {
-    enabled: false,
-    active: null,
-    pending: null
-  }
-  const dragProfiles = new WeakMap()
-  const resizeProfiles = new WeakMap()
-  const resizeState = {
-    selectedNode: null,
-    active: null,
-    rafId: null
   }
   const artifactLayoutRefitState = {
     rafId: 0,
@@ -1000,8 +979,8 @@ import {
   // Theme editor DOM half: control bindings, updateTheme/applyTheme/
   // syncThemeControls, and the image upload UI. Instantiated after
   // historyState (updateTheme reads its `applying` flag by reference) and
-  // before init() runs. The canvas-object helpers stay in this file — the
-  // drag/resize engine shares them — and arrive as callbacks under their
+  // before init() runs. The canvas-object helpers stay in this file â€” the
+  // drag/resize engine shares them â€” and arrive as callbacks under their
   // original names. Destructured names keep every historical call site
   // unchanged.
   const themeEditor = createThemeEditor({
@@ -1084,6 +1063,93 @@ import {
     syncTextSelectOption,
     syncTextStyleControlsFromSelection
   } = richTextEditor
+
+  // Canvas drag/resize engine: pointer move/resize for every stage object,
+  // the resize selection box, position reset, and the shared canvas-object
+  // geometry helpers (also injected into the theme editor above â€” the arrows
+  // there resolve to these consts at call time). dragState/resizeState/
+  // resizeProfiles come back BY REFERENCE so the ribbon guard, artifact-mode
+  // sync, and unload cleanup read the engine's live state unchanged.
+  const dragResizeEngine = createDragResizeEngine({
+    state,
+    el,
+    getCurrentTheme: () => currentTheme,
+    updateTheme: (partialTheme, options) => updateTheme(partialTheme, options),
+    syncSingleControlValue: (themeKey, value) => syncSingleControlValue(themeKey, value),
+    saveThemeDraft,
+    recordHistoryCheckpoint: (actionLabel) => recordHistoryCheckpoint(actionLabel),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    showThemeFeedback: (text, type) => showThemeFeedback(text, type),
+    getOptionDeleteTargetKey: (optionId, part) => getOptionDeleteTargetKey(optionId, part)
+  })
+  const {
+    dragState,
+    resizeState,
+    resizeProfiles,
+    applyDeletedOptionTarget,
+    applyDeletedStaticTargets,
+    applyElementBoxSize,
+    applyElementOffset,
+    applyHeaderTextObjects,
+    applyImageAsset,
+    applyOptionBoxSize,
+    applyOptionOffsetTransform,
+    buildDefaultPositionThemePatch,
+    clearActiveResizeTarget,
+    getActiveResizeTarget,
+    handleDragPointerMove,
+    handleDragPointerRelease,
+    handleResizeHandlePointerDown,
+    handleResizePointerMove,
+    handleResizePointerRelease,
+    handleResizeSelectionPointerDown,
+    isThemeObjectDeleted,
+    registerOptionDragTarget,
+    registerOptionResizeTarget,
+    resetAllElementPositions,
+    scheduleResizeSelectionUpdate,
+    setActiveResizeTarget,
+    setDragMode,
+    setThemeObjectDeleted,
+    setupDragInteractions,
+    setupResizeInteractions
+  } = dragResizeEngine
+
+  // Classic-canvas AI edit-plan applier: theme patches, moves, resizes, and
+  // text actions from the /ai edit route. History capture and selection
+  // cleanup arrive as callbacks under their original names.
+  const aiPlanApplier = createAiPlanApplier({
+    state,
+    el,
+    getCurrentTheme: () => currentTheme,
+    updateTheme: (partialTheme, options) => updateTheme(partialTheme, options),
+    syncThemeControls: () => syncThemeControls(),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    renderInitialState: () => renderInitialState(),
+    recordHistoryCheckpoint: (actionLabel) => recordHistoryCheckpoint(actionLabel),
+    captureHistorySnapshot: () => captureHistorySnapshot(),
+    historySnapshotsEqual: (left, right) => historySnapshotsEqual(left, right),
+    buildDefaultPositionThemePatch: () => buildDefaultPositionThemePatch(),
+    scheduleResizeSelectionUpdate: () => scheduleResizeSelectionUpdate(),
+    clearCachedRichTextSelection: () => clearCachedRichTextSelection(),
+    hideSelectionToolbar: () => hideSelectionToolbar(),
+    refreshTextToolStates: () => refreshTextToolStates(),
+    syncTextStyleControlsFromSelection: () => syncTextStyleControlsFromSelection()
+  })
+  const { applyAiPlanActions, summarizeAiOutcome } = aiPlanApplier
+
+  // Artifact override reconciliation: decides which manual overrides yield
+  // to an AI rewrite of the artifact HTML and which survive.
+  const overrideDiff = createOverrideDiff({
+    state,
+    el,
+    getPendingStyleOverrides: () => pendingArtifactStyleOverrides
+  })
+  const {
+    dropOverridesAiChanged,
+    pruneStalePollStyleOverrides,
+    pruneStalePollStyleOverridesInStore
+  } = overrideDiff
 
   init()
 
@@ -1713,7 +1779,7 @@ import {
       'title',
       state.presentMode ? 'Exit present mode' : 'Enter present mode'
     )
-    el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
+    el.presentModeToggle.textContent = state.presentMode ? 'Ã—' : '+'
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(
@@ -1993,7 +2059,7 @@ import {
     }
     const g = payload?.guidelines
     if (g && typeof g === 'object' && Object.keys(g).length > 0) {
-      return `Reference image — visual guidelines (extracted):\n${JSON.stringify(g, null, 2)}`
+      return `Reference image â€” visual guidelines (extracted):\n${JSON.stringify(g, null, 2)}`
     }
     return ''
   }
@@ -2028,7 +2094,7 @@ import {
     el.artifactBrandReferencePreview.removeAttribute('title')
   }
 
-  /** × on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
+  /** Ã— on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
   function handleArtifactBrandReferenceClearClick() {
     if (el.artifactBrandReferenceClear.disabled || artifactBrandReferenceBusy) {
       return
@@ -2236,13 +2302,13 @@ import {
     )
     insertChipAtCaret(el.artifactPromptInput, chip)
     refreshComposerPlaceholder(el.artifactPromptInput)
-    el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
+    el.artifactTypeReferenceStatus.textContent = 'Uploading imageâ€¦'
     el.artifactTypeReferenceInput.value = ''
     syncArtifactComposerBusyState()
 
     void (async () => {
       // Base64 (Anthropic vision on initial build). Only for images small enough to send
-      // as vision — larger ones embed via their hosted URL only, so we skip the base64
+      // as vision â€” larger ones embed via their hosted URL only, so we skip the base64
       // read to keep the request under provider inline-data limits. Non-fatal either way.
       if (file.size <= ARTIFACT_BUILD_REFERENCE_VISION_MAX_BYTES) {
         try {
@@ -2274,7 +2340,7 @@ import {
           entry.status = 'error'
           setChipState(el.artifactPromptInput, id, { status: 'error', url: '' })
           el.artifactTypeReferenceStatus.textContent =
-            'Could not host that image for embedding — remove it and try again.'
+            'Could not host that image for embedding â€” remove it and try again.'
         }
       } finally {
         syncArtifactComposerBusyState()
@@ -2383,9 +2449,9 @@ import {
   }
 
   let artifactBrandProfilesFetchPromise = null
-  // name → up to 3 top-ranked hexes from the profile's saved brand facts,
+  // name â†’ up to 3 top-ranked hexes from the profile's saved brand facts,
   // used to paint that brand's quick-reply chip as a gradient of its
-  // identity colors. Empty/missing → default chip style.
+  // identity colors. Empty/missing â†’ default chip style.
   const artifactBrandChipColorsByName = new Map()
 
   function pickArtifactBrandChipColors(row) {
@@ -2451,7 +2517,7 @@ import {
     // no longer claim the footer's auto-margin. The pill dims while analyzing.
     showArtifactBrandReferencePreview(file, { uploading: true })
     artifactBrandReferenceBusy = true
-    el.artifactBrandReferenceStatus.textContent = 'Analyzing…'
+    el.artifactBrandReferenceStatus.textContent = 'Analyzingâ€¦'
     syncArtifactComposerBusyState()
     try {
       const formData = new FormData()
@@ -2519,7 +2585,7 @@ import {
         select.appendChild(none)
         const referenceOption = document.createElement('option')
         referenceOption.value = ARTIFACT_BRAND_REFERENCE_VALUE
-        referenceOption.textContent = 'Upload a reference image…'
+        referenceOption.textContent = 'Upload a reference imageâ€¦'
         select.appendChild(referenceOption)
         artifactBrandChipColorsByName.clear()
         for (const row of payload) {
@@ -2543,7 +2609,7 @@ import {
   // While the intake request is in flight, the wizard's bubble types out a
   // short narration of what the turn is actually doing (read the answer,
   // check brand profiles, decide what to ask) instead of a static
-  // "Thinking…" label. The provider call is not streamed, so this is a
+  // "Thinkingâ€¦" label. The provider call is not streamed, so this is a
   // local typewriter over honest pipeline descriptions, not model output.
   const ARTIFACT_INTAKE_THINKING_TICK_MS = 35
   const ARTIFACT_INTAKE_THINKING_PAUSE_TICKS = 12
@@ -2555,16 +2621,16 @@ import {
 
   function buildArtifactIntakeThinkingPhrases({ forceReady }) {
     if (forceReady) {
-      return ['Skipping ahead — pulling everything you told me into a creative brief…']
+      return ['Skipping ahead â€” pulling everything you told me into a creative briefâ€¦']
     }
     const intake = state.artifact.intake
     const userTurns = intake.messages.filter((message) => message.role === 'user').length
-    const phrases = [userTurns <= 1 ? 'Reading your idea…' : 'Reading your answer…']
+    const phrases = [userTurns <= 1 ? 'Reading your ideaâ€¦' : 'Reading your answerâ€¦']
     const chosenBrand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
     if (collectArtifactBrandProfileNames().length && !chosenBrand) {
-      phrases.push('Checking your saved brand profiles…')
+      phrases.push('Checking your saved brand profilesâ€¦')
     }
-    phrases.push('Deciding whether I have enough to build, or what to ask next…')
+    phrases.push('Deciding whether I have enough to build, or what to ask nextâ€¦')
     return phrases
   }
 
@@ -2626,7 +2692,7 @@ import {
   // Quick-reply chips replace the old labeled brand dropdown: they render
   // inside the chat log under the intake model's brand question (it labels
   // each question with a topic) and answer the turn in one click. The hidden
-  // select stays as the data store — form submits re-read its value.
+  // select stays as the data store â€” form submits re-read its value.
   function shouldShowArtifactBrandChips() {
     const intake = state.artifact.intake
     if (isArtifactConversationComplete() || intake.busy || state.artifact.busy) {
@@ -2651,7 +2717,7 @@ import {
       if (brandColors.length) {
         chip.classList.add('branded')
         // The outline's gradient is mostly the standard soft purple with a
-        // narrow band of the brand colors at 40–56% of an oversized image;
+        // narrow band of the brand colors at 40â€“56% of an oversized image;
         // the CSS animation slides that band across the ring periodically.
         const band = brandColors
           .map((hex, index) => {
@@ -2681,7 +2747,7 @@ import {
     }
     addChip('No brand', true, () => handleArtifactIntakeBrandChipClick(''))
     if (getLibraryAccessToken()) {
-      addChip('Use a reference image…', true, handleArtifactIntakeReferenceChipClick)
+      addChip('Use a reference imageâ€¦', true, handleArtifactIntakeReferenceChipClick)
     }
     return row
   }
@@ -2701,7 +2767,7 @@ import {
     select.value = name
     handleArtifactBrandProfileSelectChange()
     void submitArtifactConversationAnswer(
-      name ? `Use the "${name}" brand profile.` : 'No brand — use your judgment.'
+      name ? `Use the "${name}" brand profile.` : 'No brand â€” use your judgment.'
     )
   }
 
@@ -3065,7 +3131,7 @@ import {
       (entry) => entry.status === 'uploading'
     )
     if (hasPendingUpload) {
-      el.artifactTypeReferenceStatus.textContent = 'Wait for attached images to finish uploading…'
+      el.artifactTypeReferenceStatus.textContent = 'Wait for attached images to finish uploadingâ€¦'
       return
     }
     const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
@@ -3182,14 +3248,14 @@ import {
     }
     if (message.type === ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE) {
       // The iframe finished applying hidden (delete) overrides and the browser
-      // has had a frame to paint them. Safe to reveal the masked frame now —
+      // has had a frame to paint them. Safe to reveal the masked frame now â€”
       // deleted elements are invisible, so there's no load flicker.
       revealArtifactFrame()
       return
     }
     if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
       // Shortcut forwarded from the iframe bridge. Same arbitration as the
-      // host-side keydown listener — run undo or redo via artifactHistory.
+      // host-side keydown listener â€” run undo or redo via artifactHistory.
       if (message.action === 'redo') {
         artifactHistory.redo()
       } else if (message.action === 'undo') {
@@ -3253,7 +3319,7 @@ import {
 
   function handleArtifactRenderError(message) {
     // A failed render won't push overrides, so drop the load mask immediately
-    // rather than waiting on its safety timeout — the user should see whatever
+    // rather than waiting on its safety timeout â€” the user should see whatever
     // rendered (or the error state) without delay.
     revealArtifactFrame()
     state.artifact.renderErrorCount = Math.max(
@@ -3514,7 +3580,7 @@ import {
     const expanded = state.editorShellExpanded
     el.aiChatShell.classList.toggle('editor-shell--expanded', expanded)
     const label = expanded ? 'Show less' : 'Show history and activity'
-    const icon = expanded ? '▼' : '▲'
+    const icon = expanded ? 'â–¼' : 'â–²'
     el.aiEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
     el.aiEditorShellToggle.setAttribute('aria-label', label)
     el.aiEditorShellToggle.setAttribute('title', label)
@@ -3670,7 +3736,7 @@ import {
 
   function handleArtifactPromptInputInput() {
     // Reconcile attachment state with the DOM: a chip the user deleted with Backspace
-    // (rather than its × button) leaves an orphaned Map entry — drop it and revoke its
+    // (rather than its Ã— button) leaves an orphaned Map entry â€” drop it and revoke its
     // preview object URL so collectReadyAttachmentUrls stays in sync.
     const presentIds = new Set(
       Array.from(el.artifactPromptInput.querySelectorAll('.artifact-image-chip')).map(
@@ -3955,7 +4021,7 @@ import {
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = 'build'
       pendingArtifactCopyOverrides = {}
-      // Fresh build replaces the artifact entirely — drop any pending
+      // Fresh build replaces the artifact entirely â€” drop any pending
       // position/size drags that belonged to the prior artifact.
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
@@ -3987,7 +4053,7 @@ import {
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
     // Bake the deleted-element hide stylesheet into the srcdoc so deleted
-    // elements never paint visible on load — eliminates the flicker at the
+    // elements never paint visible on load â€” eliminates the flicker at the
     // source, no masking/wait needed. Built from saved + pending hidden
     // overrides (pending wins), matching what pushArtifactHiddenOverrides sends.
     const bakedHiddenCss = buildArtifactHiddenCss(
@@ -4031,13 +4097,13 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactDelete.clearPendingHiddenOverrides()
-      // AI edits rebuild the DOM — prior undo entries reference nodes that
+      // AI edits rebuild the DOM â€” prior undo entries reference nodes that
       // may no longer exist or whose stable ids have shifted.
       artifactHistory.clear()
       const nextOverrides = { ...merged }
       // Drop overrides whose underlying element the AI just changed. This
       // resolves the conflict where the user manually colors the title red,
-      // then asks the AI for blue — without this, the red override would
+      // then asks the AI for blue â€” without this, the red override would
       // re-apply and overwrite the AI's blue.
       const priorHtmlForDiff = asText(state.artifact.rollbackHtml || state.artifact.lastStableHtml)
       dropOverridesAiChanged(nextOverrides, priorHtmlForDiff, resolvedMarkup)
@@ -4160,330 +4226,6 @@ import {
 
 
 
-
-  function applyAiPlanActions(plan) {
-    const actions = Array.isArray(plan?.actions) ? plan.actions : []
-    const beforeSnapshot = captureHistorySnapshot()
-    const themePatch = {}
-    let themeActionCount = 0
-    let textActionCount = 0
-    const warnings = []
-
-    for (const rawAction of actions) {
-      if (!rawAction || typeof rawAction !== 'object') {
-        continue
-      }
-      const type = asText(rawAction.type).toLowerCase()
-      if (type === 'update_theme' || type === 'updatetheme') {
-        const patch = sanitizeAiThemePatch(rawAction.theme, currentTheme)
-        if (Object.keys(patch).length === 0) {
-          warnings.push('Ignored empty theme update.')
-          continue
-        }
-        Object.assign(themePatch, patch)
-        themeActionCount += 1
-        continue
-      }
-      if (type === 'set_text' || type === 'settext') {
-        if (applyAiTextAction(rawAction)) {
-          textActionCount += 1
-        } else {
-          warnings.push('Ignored invalid text action.')
-        }
-        continue
-      }
-      if (type === 'set_option_label' || type === 'setoptionlabel') {
-        if (applyAiOptionLabelAction(rawAction)) {
-          textActionCount += 1
-        } else {
-          warnings.push('Ignored invalid option label action.')
-        }
-        continue
-      }
-      if (type === 'move_element' || type === 'move') {
-        if (applyAiMoveAction(rawAction, themePatch)) {
-          themeActionCount += 1
-        } else {
-          warnings.push('Ignored invalid move action.')
-        }
-        continue
-      }
-      if (type === 'resize_element' || type === 'resize') {
-        if (applyAiResizeAction(rawAction, themePatch)) {
-          themeActionCount += 1
-        } else {
-          warnings.push('Ignored invalid resize action.')
-        }
-        continue
-      }
-      if (type === 'reset_positions' || type === 'resetpositions') {
-        Object.assign(themePatch, buildDefaultPositionThemePatch())
-        themeActionCount += 1
-        continue
-      }
-      if (type === 'reset_theme' || type === 'resettheme') {
-        Object.assign(themePatch, clone(defaultTheme))
-        themeActionCount += 1
-        continue
-      }
-      warnings.push(`Unsupported action type "${type}".`)
-    }
-
-    const hasThemePatch = Object.keys(themePatch).length > 0
-    if (hasThemePatch) {
-      updateTheme(themePatch, { recordHistory: false, historyLabel: 'AI edit' })
-      syncThemeControls()
-    }
-    if (textActionCount > 0) {
-      saveTextOverrides(state.textOverrides)
-      clearCachedRichTextSelection()
-      state.activeTextHost = null
-      state.activeInlineStyleNode = null
-      hideSelectionToolbar()
-      if (state.snapshot) {
-        renderFromSnapshot(true)
-      } else {
-        renderInitialState()
-      }
-      refreshTextToolStates()
-      syncTextStyleControlsFromSelection()
-      scheduleResizeSelectionUpdate()
-    }
-
-    const afterSnapshot = captureHistorySnapshot()
-    const changed = !historySnapshotsEqual(beforeSnapshot, afterSnapshot)
-    if (changed) {
-      recordHistoryCheckpoint('AI edit')
-    }
-
-    return {
-      changed,
-      themeActionCount,
-      textActionCount,
-      warningCount: warnings.length,
-      warnings
-    }
-  }
-
-  function summarizeAiOutcome(_plan, outcome) {
-    if (!outcome.changed) {
-      return 'No editable change was applied from that prompt.'
-    }
-    const summaryParts = []
-    if (outcome.themeActionCount > 0) {
-      summaryParts.push(`${outcome.themeActionCount} style/layout change${outcome.themeActionCount === 1 ? '' : 's'}`)
-    }
-    if (outcome.textActionCount > 0) {
-      summaryParts.push(`${outcome.textActionCount} text change${outcome.textActionCount === 1 ? '' : 's'}`)
-    }
-    if (outcome.warningCount > 0) {
-      summaryParts.push(`${outcome.warningCount} ignored action${outcome.warningCount === 1 ? '' : 's'}`)
-    }
-    return summaryParts.length > 0 ? `Applied ${summaryParts.join(', ')}.` : 'Applied edits.'
-  }
-
-  function normalizeAiTarget(rawTarget) {
-    const normalized = asText(rawTarget).replace(/[\s_-]+/g, '').toLowerCase()
-    if (!normalized) {
-      return ''
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_TARGET_ALIASES, normalized)) {
-      return AI_TARGET_ALIASES[normalized]
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_MOVE_TARGETS, rawTarget)) {
-      return rawTarget
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_BOX_RESIZE_TARGETS, rawTarget)) {
-      return rawTarget
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_SCALE_RESIZE_TARGETS, rawTarget)) {
-      return rawTarget
-    }
-    return ''
-  }
-
-  function applyAiMoveAction(action, themePatch) {
-    const target = normalizeAiTarget(action.target)
-    if (!target || !Object.prototype.hasOwnProperty.call(AI_MOVE_TARGETS, target)) {
-      return false
-    }
-    const config = AI_MOVE_TARGETS[target]
-    const baseX =
-      Object.prototype.hasOwnProperty.call(themePatch, config.xKey) &&
-      Number.isFinite(Number(themePatch[config.xKey]))
-        ? Number(themePatch[config.xKey])
-        : Number(currentTheme[config.xKey])
-    const baseY =
-      Object.prototype.hasOwnProperty.call(themePatch, config.yKey) &&
-      Number.isFinite(Number(themePatch[config.yKey]))
-        ? Number(themePatch[config.yKey])
-        : Number(currentTheme[config.yKey])
-    const hasX = Number.isFinite(Number(action.x))
-    const hasY = Number.isFinite(Number(action.y))
-    const hasDeltaX = Number.isFinite(Number(action.deltaX))
-    const hasDeltaY = Number.isFinite(Number(action.deltaY))
-    if (!hasX && !hasY && !hasDeltaX && !hasDeltaY) {
-      return false
-    }
-    const nextX = hasX ? Number(action.x) : baseX + (hasDeltaX ? Number(action.deltaX) : 0)
-    const nextY = hasY ? Number(action.y) : baseY + (hasDeltaY ? Number(action.deltaY) : 0)
-    themePatch[config.xKey] = clamp(nextX, config.minX, config.maxX, baseX)
-    themePatch[config.yKey] = clamp(nextY, config.minY, config.maxY, baseY)
-    return true
-  }
-
-  function applyAiResizeAction(action, themePatch) {
-    const target = normalizeAiTarget(action.target)
-    if (!target) {
-      return false
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_BOX_RESIZE_TARGETS, target)) {
-      const config = AI_BOX_RESIZE_TARGETS[target]
-      const widthCleared = action.width === null
-      const heightCleared = action.height === null
-      const hasWidth = Number.isFinite(Number(action.width))
-      const hasHeight = Number.isFinite(Number(action.height))
-      if (!widthCleared && !heightCleared && !hasWidth && !hasHeight) {
-        return false
-      }
-      const baseWidth =
-        Object.prototype.hasOwnProperty.call(themePatch, config.widthKey) &&
-        Number.isFinite(Number(themePatch[config.widthKey]))
-          ? Number(themePatch[config.widthKey])
-          : sanitizeOptionalDimension(
-              currentTheme[config.widthKey],
-              config.minW,
-              config.maxW,
-              null
-            )
-      const baseHeight =
-        Object.prototype.hasOwnProperty.call(themePatch, config.heightKey) &&
-        Number.isFinite(Number(themePatch[config.heightKey]))
-          ? Number(themePatch[config.heightKey])
-          : sanitizeOptionalDimension(
-              currentTheme[config.heightKey],
-              config.minH,
-              config.maxH,
-              null
-            )
-      if (widthCleared) {
-        themePatch[config.widthKey] = null
-      } else if (hasWidth) {
-        themePatch[config.widthKey] = clamp(Number(action.width), config.minW, config.maxW, baseWidth)
-      }
-      if (heightCleared) {
-        themePatch[config.heightKey] = null
-      } else if (hasHeight) {
-        themePatch[config.heightKey] = clamp(Number(action.height), config.minH, config.maxH, baseHeight)
-      }
-      return true
-    }
-    if (!Object.prototype.hasOwnProperty.call(AI_SCALE_RESIZE_TARGETS, target)) {
-      return false
-    }
-    const config = AI_SCALE_RESIZE_TARGETS[target]
-    const uniformScale = Number.isFinite(Number(action.scale)) ? Number(action.scale) : null
-    const hasScaleX = Number.isFinite(Number(action.scaleX))
-    const hasScaleY = Number.isFinite(Number(action.scaleY))
-    if (uniformScale == null && !hasScaleX && !hasScaleY) {
-      return false
-    }
-    const baseScaleX =
-      Object.prototype.hasOwnProperty.call(themePatch, config.xKey) &&
-      Number.isFinite(Number(themePatch[config.xKey]))
-        ? Number(themePatch[config.xKey])
-        : Number(currentTheme[config.xKey])
-    const baseScaleY =
-      Object.prototype.hasOwnProperty.call(themePatch, config.yKey) &&
-      Number.isFinite(Number(themePatch[config.yKey]))
-        ? Number(themePatch[config.yKey])
-        : Number(currentTheme[config.yKey])
-    const rawScaleX = hasScaleX ? Number(action.scaleX) : uniformScale != null ? uniformScale : baseScaleX
-    const rawScaleY = hasScaleY ? Number(action.scaleY) : uniformScale != null ? uniformScale : baseScaleY
-    themePatch[config.xKey] = clamp(rawScaleX, config.minX, config.maxX, baseScaleX)
-    themePatch[config.yKey] = clamp(rawScaleY, config.minY, config.maxY, baseScaleY)
-    return true
-  }
-
-  function applyAiTextAction(action) {
-    const target = normalizeAiTarget(action.target)
-    if (!target) {
-      return false
-    }
-    const hasHtml = typeof action.html === 'string'
-    const hasValue = hasHtml || typeof action.value === 'string' || typeof action.value === 'number'
-    if (!hasValue) {
-      return false
-    }
-    const rawValue = hasHtml ? action.html : String(action.value)
-    if (target === 'question') {
-      const textKey =
-        asText(el.question.dataset.textKey) ||
-        (state.currentPoll ? getQuestionTextKey(state.currentPoll) : getQuestionStateTextKey('manual'))
-      return applyTextOverride(textKey, rawValue, hasHtml || action.asHtml === true)
-    }
-    if (target === 'eyebrow') {
-      return applyTextOverride(getEyebrowTextKey(), rawValue, hasHtml || action.asHtml === true)
-    }
-    return false
-  }
-
-  function applyAiOptionLabelAction(action) {
-    const resolved = resolveOptionFromAction(action)
-    if (!resolved) {
-      return false
-    }
-    const hasHtml = typeof action.html === 'string'
-    const hasValue = hasHtml || typeof action.value === 'string' || typeof action.value === 'number'
-    if (!hasValue) {
-      return false
-    }
-    const rawValue = hasHtml ? action.html : String(action.value)
-    const textKey = getOptionTextKey(state.currentPoll, resolved.option, resolved.index)
-    return applyTextOverride(textKey, rawValue, hasHtml || action.asHtml === true)
-  }
-
-  function resolveOptionFromAction(action) {
-    if (!state.currentPoll || !Array.isArray(state.currentPoll.options)) {
-      return null
-    }
-    const options = state.currentPoll.options
-    const optionId = asText(action.optionId)
-    if (optionId) {
-      const byIdIndex = options.findIndex((option) => asText(option?.id) === optionId)
-      if (byIdIndex >= 0) {
-        return { index: byIdIndex, option: options[byIdIndex] }
-      }
-    }
-    const optionIndex = Number.isFinite(Number(action.optionIndex)) ? Number(action.optionIndex) : NaN
-    if (Number.isInteger(optionIndex) && optionIndex >= 0 && optionIndex < options.length) {
-      return { index: optionIndex, option: options[optionIndex] }
-    }
-    const optionLabel = asText(action.optionLabel).toLowerCase()
-    if (optionLabel) {
-      const byLabelIndex = options.findIndex(
-        (option) => asText(option?.label).toLowerCase() === optionLabel
-      )
-      if (byLabelIndex >= 0) {
-        return { index: byLabelIndex, option: options[byLabelIndex] }
-      }
-    }
-    return null
-  }
-
-  function applyTextOverride(textKey, value, treatAsHtml = false) {
-    const key = asText(textKey)
-    if (!key || isLiveBoundTextKey(key)) {
-      return false
-    }
-    const rawInput = typeof value === 'string' ? value : String(value ?? '')
-    const nextHtml = treatAsHtml ? sanitizeRichTextHtml(rawInput) : textToRichHtml(rawInput)
-    if (!Object.prototype.hasOwnProperty.call(state.textOverrides, key) || state.textOverrides[key] !== nextHtml) {
-      state.textOverrides[key] = nextHtml
-      return true
-    }
-    return false
-  }
 
   function setupHistoryControls() {
     el.historyUndo.addEventListener('click', () => {
@@ -4874,7 +4616,7 @@ import {
     return true
   }
 
-  // ── Artifact iframe text style toolbar ──────────────────────────
+  // â”€â”€ Artifact iframe text style toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   let artifactToolbarInteractionUntil = 0
 
@@ -5049,7 +4791,7 @@ import {
 
   /**
    * Called by the text-edit handler when a subtitle or footer field is edited.
-   * Stores the copy locally — no force push needed because:
+   * Stores the copy locally â€” no force push needed because:
    *  - The user's typed text is already visible in the DOM.
    *  - The copy will be included in `meta.artifactCopy` on the next natural
    *    payload push (vote update, etc.) and reapplied after that render.
@@ -5120,7 +4862,7 @@ import {
       // Suppress further history recording when we re-emit via the handler.
       // The position handler doesn't currently re-fire onPositionChange for
       // history entries (priorDx/priorDy unset so the host filter drops
-      // them) — so this is implicit, but make the intent explicit:
+      // them) â€” so this is implicit, but make the intent explicit:
       priorDx: undefined,
       priorDy: undefined
     })
@@ -5163,7 +4905,7 @@ import {
     const field = target.field
     const optionId = target.optionId || ''
     const text = typeof target.text === 'string' ? target.text : ''
-    // Copy / generic text — route through the same persistence shape
+    // Copy / generic text â€” route through the same persistence shape
     // handleArtifactCopyEdit uses.
     if (field === 'subtitle' || field === 'footer') {
       handleArtifactCopyEdit(field, text)
@@ -5174,7 +4916,7 @@ import {
       handleArtifactCopyEdit('text', text, { stableId: optionId })
       return
     }
-    // Poll fields: question / option-label — PATCH the poll so the change
+    // Poll fields: question / option-label â€” PATCH the poll so the change
     // broadcasts to audience like a fresh edit. Use the existing textedit
     // handler's apply* helpers indirectly by re-sending a synthetic
     // prezo-text-edit message into it (no priorText so we don't loop).
@@ -5219,737 +4961,6 @@ import {
     }
   }
 
-  /**
-   * Build the merged copy object from saved + pending overrides for inclusion
-   * in the artifact payload's `meta.artifactCopy`.
-   */
-
-
-  /**
-   * Drop question / option-label override entries whose embedded plain text no longer
-   * matches the live poll (same rules everywhere we merge or persist overrides).
-   *
-   * @param {Record<string, unknown>} store
-   * @param {object | null | undefined} poll
-   */
-  function pruneStalePollStyleOverridesInStore(store, poll) {
-    if (!poll || typeof poll !== 'object') {
-      return
-    }
-    if (!store || typeof store !== 'object') {
-      return
-    }
-    const expectedQuestion = normalizeWhitespace(asText(poll.question)).toLowerCase()
-    const options = Array.isArray(poll.options) ? poll.options : []
-    const optionById = new Map(
-      options.map((opt) => [asText(opt?.id), opt]).filter(([id]) => Boolean(id))
-    )
-
-    const qHtml = store.question
-    if (typeof qHtml === 'string' && qHtml.trim()) {
-      const got = normalizeWhitespace(extractPlainTextFromHtml(qHtml)).toLowerCase()
-      if (got !== expectedQuestion) {
-        delete store.question
-      }
-    }
-    for (const key of Object.keys(store)) {
-      if (!key.startsWith('option-label:')) {
-        continue
-      }
-      const optionId = key.slice('option-label:'.length)
-      const opt = optionById.get(optionId)
-      const html = store[key]
-      if (typeof html !== 'string' || !html.trim()) {
-        continue
-      }
-      if (!opt) {
-        delete store[key]
-        continue
-      }
-      const got = normalizeWhitespace(extractPlainTextFromHtml(html)).toLowerCase()
-      const want = normalizeWhitespace(asText(opt.label)).toLowerCase()
-      if (got !== want) {
-        delete store[key]
-      }
-    }
-  }
-
-  /**
-   * Drop overrides whose underlying element the AI just changed.
-   *
-   * Context: the user can manually edit text (color it red), drag elements,
-   * and otherwise produce overrides that live in style_overrides. We
-   * preserve those overrides through AI edits so a drag survives a styling
-   * tweak. But when the AI INTENTIONALLY changes the same thing the
-   * override was about (user asks 'make the title blue' after coloring it
-   * red manually), the override should yield to the AI's new value.
-   *
-   * Detection: for each override key, locate the corresponding element in
-   * both the prior HTML (what the artifact looked like before this AI
-   * edit) and the new HTML (the AI's output). If the element's stable
-   * signature differs between the two, the AI changed it — drop the
-   * override. Conservative on uncertainty: an override we can't locate
-   * in BOTH HTMLs is kept (preserves drags on decorative children, etc).
-   *
-   * Only the question / option-label / option-* / position override kinds
-   * have a reliable locator in arbitrary AI HTML. Copy and generic text
-   * overrides depend on stable DOM-path ids that don't survive AI
-   * restructures — those are pruned elsewhere (pruneStalePollStyleOverridesInStore).
-   *
-   * @param {Record<string, unknown>} store
-   * @param {string} priorHtml
-   * @param {string} newHtml
-   */
-  function dropOverridesAiChanged(store, priorHtml, newHtml) {
-    if (!store || typeof store !== 'object') return
-    const prior = asText(priorHtml)
-    const next = asText(newHtml)
-    if (!prior || !next || prior === next) return
-    let priorDoc, nextDoc
-    try {
-      const parser = new DOMParser()
-      priorDoc = parser.parseFromString(prior, 'text/html')
-      nextDoc = parser.parseFromString(next, 'text/html')
-    } catch {
-      return
-    }
-    if (!priorDoc || !nextDoc) return
-
-    for (const key of Object.keys(store)) {
-      if (key === 'question') {
-        const target = locateQuestionInDoc(priorDoc)
-        const aiTarget = locateQuestionInDoc(nextDoc)
-        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
-          delete store[key]
-        }
-        continue
-      }
-      if (key.startsWith('option-label:')) {
-        const optionId = key.slice('option-label:'.length)
-        const target = locateOptionLabelInDoc(priorDoc, optionId)
-        const aiTarget = locateOptionLabelInDoc(nextDoc, optionId)
-        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
-          delete store[key]
-        }
-        continue
-      }
-      if (
-        key.startsWith('option-votes:') ||
-        key.startsWith('option-percentage:') ||
-        key.startsWith('option-rank:')
-      ) {
-        // Stat fields: the renderer rewrites their text every vote, so the
-        // diff signal we care about is whether the AI changed the
-        // ENCLOSING option row's structure. If the row itself changed,
-        // the stat field's prior styling is no longer meaningful.
-        const colonIdx = key.indexOf(':')
-        const optionId = key.slice(colonIdx + 1)
-        const target = locateOptionRowInDoc(priorDoc, optionId)
-        const aiTarget = locateOptionRowInDoc(nextDoc, optionId)
-        if (target && aiTarget && signaturesDiffer(target, aiTarget)) {
-          delete store[key]
-        }
-        continue
-      }
-      if (key.startsWith('__prezo_pos:')) {
-        // Position overrides need careful handling because AI edits can
-        // affect different elements than the user dragged:
-        //   - User drags element A, asks AI to change A's position → AI
-        //     moves A. We need to DROP A's override so the bridge doesn't
-        //     re-apply the old drag on top of the AI's new position.
-        //   - User drags element A, asks AI to change B → AI rewrites the
-        //     whole artifact and may strip A's inline transform as a
-        //     side-effect. We need to KEEP A's override so the bridge
-        //     re-applies the drag on render. A's position is preserved.
-        //
-        // Detection: drop ONLY when the AI explicitly took control of
-        // THIS element's position. Signals:
-        //   - element has its own inline `transform:` in the AI's HTML
-        //   - element has its own inline absolute/fixed positioning
-        //   - element's parent layout changed meaningfully (parent class,
-        //     parent inline style, sibling index)
-        // Otherwise keep the override — the AI didn't move this element,
-        // it just rewrote unrelated parts of the artifact.
-        const stableId = key.slice('__prezo_pos:'.length)
-        const parsed = safeParseJSON(store[key])
-        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
-        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
-        const label = parsed && typeof parsed.label === 'string' ? parsed.label : ''
-        const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label, anchor)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label, anchor)
-        // Diagnostic logging — remove once override-after-AI is verified
-        // stable. Helps explain why a particular position override was
-        // dropped on the user's machine.
-        const diag = {
-          key, role, optionId,
-          priorFound: !!target,
-          nextFound: !!aiTarget,
-          aiInlineStyle: aiTarget ? (aiTarget.getAttribute('style') || '') : '',
-          priorParentStyle: target && target.parentElement ? (target.parentElement.getAttribute('style') || '') : '',
-          nextParentStyle: aiTarget && aiTarget.parentElement ? (aiTarget.parentElement.getAttribute('style') || '') : '',
-          priorParentId: target && target.parentElement ? (target.parentElement.id || '') : '',
-          nextParentId: aiTarget && aiTarget.parentElement ? (aiTarget.parentElement.id || '') : ''
-        }
-        // Diagnostic: stash every decision into window.__prezoDebug for
-        // inspection. Remove once the override-after-AI behavior is stable.
-        const recordDecision = (verdict, reason) => {
-          try {
-            window.__prezoDebug = window.__prezoDebug || {}
-            window.__prezoDebug.overrideDecisions = window.__prezoDebug.overrideDecisions || []
-            window.__prezoDebug.overrideDecisions.push({
-              ts: Date.now(), verdict, reason, ...diag
-            })
-            console.log(`[prezo-position-override] ${verdict} (${reason})`, diag)
-          } catch (e) {}
-        }
-        // Runtime-rendered case: the element is created by the artifact's
-        // renderer at runtime (e.g. option rows built from poll data via
-        // JS in <script>), so it doesn't appear in the parsed static HTML
-        // on either side. We can still detect AI moves that ride on
-        // stylesheet rules — the AI typically adds/edits a rule that
-        // targets the row's container or class selector (e.g.
-        // `.tower-col:nth-child(1) { order: 99 }`) and those rules ARE
-        // present in the parsed <style>.
-        if (!target && !aiTarget) {
-          const runtimeSelectors = runtimeRenderedSelectors(priorDoc, nextDoc, role)
-          if (runtimeSelectors.length) {
-            const priorRules = extractLayoutRulesForSelectors(priorDoc, runtimeSelectors)
-            const nextRules = extractLayoutRulesForSelectors(nextDoc, runtimeSelectors)
-            if (priorRules !== nextRules) {
-              recordDecision('DROP', 'stylesheet rules changed (runtime-rendered)')
-              delete store[key]
-              continue
-            }
-          }
-          recordDecision('KEEP', 'runtime-rendered (not in static HTML)')
-          continue
-        }
-        if (!aiTarget) {
-          // Element existed in prior static HTML but the AI removed it.
-          recordDecision('DROP', 'element removed by AI')
-          delete store[key]
-          continue
-        }
-        if (hasExplicitPositioning(aiTarget)) {
-          recordDecision('DROP', 'AI explicit positioning')
-          delete store[key]
-          continue
-        }
-        if (target && parentLayoutChanged(target, aiTarget)) {
-          recordDecision('DROP', 'parent layout changed')
-          delete store[key]
-          continue
-        }
-        // Detect AI moves made via CSS rules in <style> rather than inline
-        // styles. The AI often rewrites a stylesheet rule like
-        // `#poll-question { position: absolute; top: 0; right: 0 }` while
-        // leaving the element's tag/class/inline-style unchanged. Without
-        // this check, signaturesDiffer + parentLayoutChanged both miss it.
-        if (target && stylesheetRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
-          recordDecision('DROP', 'stylesheet rules changed for this element')
-          delete store[key]
-          continue
-        }
-        recordDecision('KEEP', 'AI did not move this element')
-        // Keep override — bridge will re-apply on render.
-        continue
-      }
-      if (key.startsWith('__prezo_size:')) {
-        // Symmetric to the position branch above. Drop only when the AI
-        // explicitly took control of THIS element's size (inline width/
-        // height/transform:scale, or a stylesheet rule that touches any
-        // of the size-affecting properties on this element's selectors).
-        // Otherwise keep — the user's manual resize survives an AI edit
-        // that targeted a different element.
-        const stableId = key.slice('__prezo_size:'.length)
-        const parsed = safeParseJSON(store[key])
-        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
-        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
-        const label = parsed && typeof parsed.label === 'string' ? parsed.label : ''
-        const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId, label, anchor)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label, anchor)
-        const recordSizeDecision = (verdict, reason) => {
-          try {
-            window.__prezoDebug = window.__prezoDebug || {}
-            window.__prezoDebug.overrideDecisions = window.__prezoDebug.overrideDecisions || []
-            window.__prezoDebug.overrideDecisions.push({
-              ts: Date.now(), verdict, reason, key, role, optionId,
-              priorFound: !!target, nextFound: !!aiTarget,
-              aiInlineStyle: aiTarget ? (aiTarget.getAttribute('style') || '') : ''
-            })
-            console.log(`[prezo-size-override] ${verdict} (${reason})`, { key, role })
-          } catch (e) {}
-        }
-        if (!target && !aiTarget) {
-          // Runtime-rendered or otherwise untraceable in static HTML.
-          // Without a target to diff, the safe default is KEEP so user
-          // intent survives. The bridge's re-match fallback (label,
-          // anchor) handles re-attaching at render time.
-          const runtimeSelectors = runtimeRenderedSelectors(priorDoc, nextDoc, role)
-          if (runtimeSelectors.length) {
-            const priorRules = extractSizeRulesForSelectors(priorDoc, runtimeSelectors)
-            const nextRules = extractSizeRulesForSelectors(nextDoc, runtimeSelectors)
-            if (priorRules !== nextRules) {
-              recordSizeDecision('DROP', 'stylesheet size rules changed (runtime-rendered)')
-              delete store[key]
-              continue
-            }
-          }
-          recordSizeDecision('KEEP', 'runtime-rendered (not in static HTML)')
-          continue
-        }
-        if (!aiTarget) {
-          recordSizeDecision('DROP', 'element removed by AI')
-          delete store[key]
-          continue
-        }
-        if (hasExplicitSizing(aiTarget)) {
-          recordSizeDecision('DROP', 'AI explicit sizing')
-          delete store[key]
-          continue
-        }
-        if (target && stylesheetSizeRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
-          recordSizeDecision('DROP', 'stylesheet size rules changed for this element')
-          delete store[key]
-          continue
-        }
-        recordSizeDecision('KEEP', 'AI did not resize this element')
-        continue
-      }
-      // Other keys (subtitle, footer, generic text) — left alone here.
-      // They're handled by pruneStalePollStyleOverridesInStore against the
-      // live poll data, and by the bridge's own re-match fallback.
-    }
-  }
-
-  function safeParseJSON(value) {
-    if (typeof value !== 'string') return null
-    try { return JSON.parse(value) } catch { return null }
-  }
-
-  function locateQuestionInDoc(doc) {
-    if (!doc) return null
-    // 1) The bridge-tagged attribute (only present at runtime, but cheap to try).
-    // 2) Common ids/classes the AI tends to emit.
-    // 3) Attribute-pattern fallback for ids/classes that contain "question"
-    //    or "title" but don't match the hardcoded list (e.g. #question-text,
-    //    #question-area, .pollQuestionWrap). Excludes #total-votes so a
-    //    "total" id doesn't fall in here.
-    const direct =
-      doc.querySelector(attrEqI('data-prezo-editable', 'question')) ||
-      doc.querySelector(
-        '#poll-question, #pollQuestion, #question, #poll-title, #pollTitle, ' +
-        '#question-text, #questionText, #question-area, #questionArea, ' +
-        '#poll-heading, #poll-headline, #pollHeading, #pollHeadline'
-      ) ||
-      doc.querySelector('.poll-question, .poll-q, .poll-title, .poll-heading, .poll-headline')
-    if (direct) return direct
-    return findByIdOrClassPattern(doc, /(^|[-_])(question|q\-text|q\-area|title|heading|headline)([-_]|$)/i, {
-      excludeIdPattern: /total|vote/i,
-      excludeClassPattern: /total|vote/i
-    })
-  }
-
-  // Walk every element in `doc` and return the first whose id or any class
-  // matches `pattern`. Skips elements whose id/class also matches an exclude
-  // pattern (so #total-votes doesn't get picked up by a "title" search).
-  function findByIdOrClassPattern(doc, pattern, options = {}) {
-    if (!doc || !doc.body) return null
-    const all = doc.body.querySelectorAll('*')
-    const excludeId = options.excludeIdPattern || null
-    const excludeClass = options.excludeClassPattern || null
-    for (let i = 0; i < all.length; i++) {
-      const el = all[i]
-      const id = (el.id || '')
-      if (id && pattern.test(id)) {
-        if (excludeId && excludeId.test(id)) continue
-        return el
-      }
-      const cls = (el.getAttribute('class') || '')
-      if (cls) {
-        const tokens = cls.split(/\s+/)
-        for (const token of tokens) {
-          if (!token) continue
-          if (!pattern.test(token)) continue
-          if (excludeClass && excludeClass.test(token)) { continue }
-          return el
-        }
-      }
-    }
-    return null
-  }
-
-  function locatePositionTarget(doc, stableId, role, optionId, label, anchor) {
-    if (!doc) return null
-    if (stableId) {
-      const direct = doc.querySelector(attrEqI('data-prezo-pos-id', stableId)) ||
-        doc.querySelector(attrEqI('data-prezo-text-id', stableId))
-      if (direct) return direct
-    }
-    if (role === 'option-row' && optionId) return locateOptionRowInDoc(doc, optionId)
-    if (role === 'poll-question') return locateQuestionInDoc(doc)
-    if (role === 'poll-footer') {
-      const footerDirect =
-        doc.querySelector(attrEqI('data-prezo-editable', 'footer')) ||
-        doc.querySelector(
-          '#total-votes-text, #total-votes-display, #total-votes, #totalVotes, ' +
-          '#vote-counter, #pollFooter, #poll-footer, #footer, #vote-count, ' +
-          '#total-vote-count, #pollTotal, #poll-total'
-        ) ||
-        doc.querySelector('.total-votes, .vote-counter, .poll-footer, .poll-total, .vote-count, .poll-vote-count')
-      if (footerDirect) return footerDirect
-      return findByIdOrClassPattern(doc, /(^|[-_])(footer|total[-_]?vote|vote[-_]?count|vote[-_]?counter)([-_]|$)/i)
-    }
-    if (role === 'poll-subtitle') {
-      const subtitleDirect =
-        doc.querySelector(attrEqI('data-prezo-editable', 'subtitle')) ||
-        doc.querySelector('#poll-subtitle, #pollSubtitle, #subtitle, #poll-sub, #pollSub') ||
-        doc.querySelector('.poll-subtitle, .subtitle, .sub-title, .poll-sub, .eyebrow')
-      if (subtitleDirect) return subtitleDirect
-      return findByIdOrClassPattern(doc, /(^|[-_])(subtitle|sub[-_]?title|eyebrow)([-_]|$)/i)
-    }
-    if (role === 'background') return doc.querySelector('[data-prezo-background-layer]')
-    if (role === 'foreground') return doc.querySelector('[data-prezo-foreground-layer]')
-    // Generic-element rescue: the in-iframe bridge saves a CSS-selector-shaped
-    // label ("tag#id" / "tag.class" / "tag") for arbitrary selectables. Use
-    // it as the locator on both sides of the diff so dropOverridesAiChanged
-    // can decide DROP vs KEEP via stylesheetRulesChangedForElement instead of
-    // falling through to the "runtime-rendered (KEEP)" default.
-    if (role === 'element') {
-      return locateLabelSelectorInDoc(doc, label, anchor)
-    }
-    return null
-  }
-
-  function locateLabelSelectorInDoc(doc, label, anchor) {
-    if (!doc || !doc.body) return null
-    const selector = typeof label === 'string' ? label.trim() : ''
-    if (!selector) return null
-    const anchorSel = typeof anchor === 'string' ? anchor.trim() : ''
-    if (anchorSel) {
-      try {
-        const anchorEl = doc.body.querySelector(anchorSel)
-        if (anchorEl) {
-          const scoped = anchorEl.querySelector(selector)
-          if (scoped) return scoped
-        }
-      } catch {}
-    }
-    try {
-      return doc.body.querySelector(selector)
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * The AI took explicit control of THIS element's position. Signals are
-   * limited to inline style attributes because that's the only thing we
-   * can read from a parsed HTML string (computed styles need a live DOM).
-   *
-   *   transform: translate(...)
-   *   position: absolute|fixed (with top/left/right/bottom)
-   *   margin: <something> auto or auto on horizontal sides
-   *
-   * Returns true if any of these positioning intents appear inline on
-   * the element. Stylesheet-driven moves are NOT detected here — those
-   * are caught by parentLayoutChanged.
-   */
-  function hasExplicitPositioning(el) {
-    if (!el) return false
-    const style = (el.getAttribute('style') || '').toLowerCase()
-    if (!style) return false
-    if (/\btransform\s*:[^;]*\btranslate/i.test(style)) return true
-    if (/\bposition\s*:\s*(absolute|fixed)/i.test(style)) {
-      // With absolute/fixed we'd expect top/left/right/bottom alongside.
-      if (/\b(top|left|right|bottom)\s*:/i.test(style)) return true
-    }
-    return false
-  }
-
-  /**
-   * The AI changed the element's PARENT in a way that affects rendered
-   * position. We look at:
-   *   - the parent itself swapped to a different element (id changed)
-   *   - the parent gained or lost layout-affecting inline style (display,
-   *     justify-content, align-items, flex-direction, text-align)
-   *
-   * We deliberately do NOT trip on arbitrary parent class changes — the
-   * AI often renames classes during rewrites without actually changing
-   * layout, and we don't want to drop overrides on those.
-   */
-  function parentLayoutChanged(prior, next) {
-    if (!prior || !next) return false
-    const pa = prior.parentElement
-    const na = next.parentElement
-    if (!pa && !na) return false
-    if (!pa || !na) return true
-    if (pa.id !== na.id) return true
-    const paStyle = (pa.getAttribute('style') || '').toLowerCase()
-    const naStyle = (na.getAttribute('style') || '').toLowerCase()
-    const LAYOUT_PROPS = /(display|justify-content|align-items|align-content|flex-direction|flex-wrap|text-align|grid-template|gap|column-gap|row-gap)\s*:/g
-    const paLayout = (paStyle.match(LAYOUT_PROPS) || []).sort().join('|')
-    const naLayout = (naStyle.match(LAYOUT_PROPS) || []).sort().join('|')
-    if (paLayout !== naLayout) return true
-    // Compare the actual layout property VALUES, not just presence.
-    for (const prop of ['display', 'justify-content', 'align-items', 'align-content', 'flex-direction', 'text-align']) {
-      if (extractInlineProp(paStyle, prop) !== extractInlineProp(naStyle, prop)) return true
-    }
-    return false
-  }
-
-  function extractInlineProp(styleText, prop) {
-    if (!styleText) return ''
-    const re = new RegExp(`\\b${prop}\\s*:\\s*([^;]+)`, 'i')
-    const m = styleText.match(re)
-    return m ? m[1].trim().toLowerCase() : ''
-  }
-
-  /**
-   * Detect AI-driven position changes that happen via stylesheet rules
-   * inside <style> blocks (rather than inline element attributes).
-   *
-   * The AI often "moves" an element by rewriting its CSS rule, e.g.:
-   *
-   *   #poll-question { position: absolute; top: 20px; right: 20px; }
-   *
-   * The element's own tag/class/inline-style stays identical, so
-   * signaturesDiffer and parentLayoutChanged both miss the change. This
-   * helper extracts all <style> text from both docs, picks out the rules
-   * that target THIS element (by id selector or class selector), and
-   * compares the LAYOUT-relevant declarations between prior and new.
-   *
-   * Heuristic; not a full CSS parser. Tracks the properties that actually
-   * affect rendered position: position, top/left/right/bottom, margin,
-   * transform, display, justify-content, align-items, text-align.
-   */
-  function stylesheetRulesChangedForElement(priorDoc, nextDoc, priorEl, nextEl) {
-    if (!priorEl || !nextEl) return false
-    const selectors = candidateSelectorsForElement(priorEl, nextEl)
-    if (!selectors.length) return false
-    const priorRules = extractLayoutRulesForSelectors(priorDoc, selectors)
-    const nextRules = extractLayoutRulesForSelectors(nextDoc, selectors)
-    return priorRules !== nextRules
-  }
-
-  // For elements that the artifact renders at runtime (option rows, etc.)
-  // we can't pull selectors from a parsed DOM node — the node doesn't exist
-  // on either side. Synthesize a selector set from the known container ids
-  // for the role plus the well-known option-row class fragments. The
-  // extractor only keeps rules whose body actually carries layout decls,
-  // so adding extra selectors here is safe.
-  function runtimeRenderedSelectors(priorDoc, nextDoc, role) {
-    const out = new Set()
-    if (role !== 'option-row' && role !== 'option-label' && role !== 'option-bar') {
-      return Array.from(out)
-    }
-    out.add('#options-container')
-    out.add('#options')
-    out.add('#poll-options')
-    out.add('#poll-options-container')
-    // Common class fragments used across artifacts for option rows.
-    const knownClasses = [
-      'tower-col', 'option-row', 'option-item', 'option', 'opt',
-      'poll-option', 'choice', 'choice-row', 'answer', 'answer-row',
-      'lane', 'lane-row', 'bar-row', 'option-bar'
-    ]
-    for (const c of knownClasses) out.add('.' + c)
-    // Also harvest selectors from the existing stylesheet text that target
-    // any of the well-known container ids — covers AI rewrites that
-    // introduced a child-targeting rule like `.tower-col:nth-child(1)`.
-    return Array.from(out)
-  }
-
-  function candidateSelectorsForElement(priorEl, nextEl) {
-    const out = new Set()
-    // Include the element itself plus a few ancestor levels. The AI can move
-    // an element by changing the container's text-align / align-items /
-    // justify-content rather than the element's own rule; without ancestor
-    // coverage those moves slip past the override-drop check.
-    collectSelectorsFromChain(priorEl, out, 4)
-    collectSelectorsFromChain(nextEl, out, 4)
-    return Array.from(out)
-  }
-
-  function collectSelectorsFromChain(el, out, maxDepth) {
-    let cur = el
-    let depth = 0
-    while (cur && cur.nodeType === 1 && depth <= maxDepth) {
-      const id = cur.id || ''
-      if (id) out.add('#' + id)
-      const classes = (cur.getAttribute && (cur.getAttribute('class') || '')).split(/\s+/).filter(Boolean)
-      for (const c of classes) out.add('.' + c)
-      cur = cur.parentElement
-      depth += 1
-    }
-  }
-
-  function getAllStyleText(doc) {
-    if (!doc) return ''
-    let combined = ''
-    try {
-      const styleEls = doc.querySelectorAll('style')
-      if (styleEls && styleEls.length) {
-        for (let i = 0; i < styleEls.length; i++) {
-          combined += (styleEls[i].textContent || '') + '\n'
-        }
-      }
-    } catch {}
-    return combined
-  }
-
-  // Layout properties whose value-changes affect rendered position.
-  const LAYOUT_PROP_PATTERN = /(position|top|left|right|bottom|margin(?:-[a-z]+)?|transform|display|justify-content|align-items|align-self|text-align|float|inset|order|grid-column|grid-row|grid-area|flex-direction|flex-wrap)\s*:\s*([^;}]+)/gi
-
-  // Size properties whose value-changes affect rendered dimensions. Used by
-  // the size-override AI-edit reconciliation path: when these change for
-  // the resized element, the manual scale override is dropped so the AI's
-  // intent wins; otherwise the override is kept.
-  const SIZE_PROP_PATTERN = /(width|height|min-width|min-height|max-width|max-height|transform|scale|flex|flex-basis|flex-grow|flex-shrink|font-size|aspect-ratio|zoom)\s*:\s*([^;}]+)/gi
-
-  /**
-   * Extract the layout-relevant declarations from all CSS rules that
-   * mention any of the supplied selectors. Returns a normalised string
-   * for direct equality comparison between prior and new docs.
-   */
-  function extractLayoutRulesForSelectors(doc, selectors) {
-    return extractCssDeclsForSelectors(doc, selectors, LAYOUT_PROP_PATTERN)
-  }
-
-  function extractSizeRulesForSelectors(doc, selectors) {
-    return extractCssDeclsForSelectors(doc, selectors, SIZE_PROP_PATTERN)
-  }
-
-  function extractCssDeclsForSelectors(doc, selectors, propPattern) {
-    const text = getAllStyleText(doc)
-    if (!text || !selectors.length) return ''
-    const cleaned = text.replace(/\/\*[\s\S]*?\*\//g, '')
-    const collected = []
-    const ruleRegex = /([^{}]+)\{([^{}]*)\}/g
-    let m
-    while ((m = ruleRegex.exec(cleaned)) !== null) {
-      const selectorText = m[1].trim().toLowerCase()
-      const body = m[2]
-      if (!selectorText) continue
-      let referenced = false
-      for (const sel of selectors) {
-        const needle = sel.toLowerCase()
-        const tokenRe = new RegExp(`(^|[^a-z0-9_-])${escapeRegexp(needle)}([^a-z0-9_-]|$)`, 'i')
-        if (tokenRe.test(selectorText)) { referenced = true; break }
-      }
-      if (!referenced) continue
-      const decls = []
-      let d
-      const propRe = new RegExp(propPattern.source, 'gi')
-      while ((d = propRe.exec(body)) !== null) {
-        const prop = d[1].toLowerCase().trim()
-        const val = d[2].replace(/\s+/g, ' ').trim().toLowerCase()
-        decls.push(`${prop}:${val}`)
-      }
-      if (decls.length) {
-        decls.sort()
-        collected.push(`${selectorText}{${decls.join(';')}}`)
-      }
-    }
-    collected.sort()
-    return collected.join('|')
-  }
-
-  function stylesheetSizeRulesChangedForElement(priorDoc, nextDoc, priorEl, nextEl) {
-    if (!priorEl || !nextEl) return false
-    const selectors = candidateSelectorsForElement(priorEl, nextEl)
-    if (!selectors.length) return false
-    return extractSizeRulesForSelectors(priorDoc, selectors) !== extractSizeRulesForSelectors(nextDoc, selectors)
-  }
-
-  // Same shape as `hasExplicitPositioning` but for size: did the AI emit
-  // an inline width/height/transform-scale on this element?
-  function hasExplicitSizing(el) {
-    if (!el) return false
-    const style = (el.getAttribute('style') || '').toLowerCase()
-    if (!style) return false
-    if (/\btransform\s*:[^;]*\bscale\b/i.test(style)) return true
-    if (/\b(?:width|height|min-width|min-height|max-width|max-height|font-size)\s*:\s*[^;]+/i.test(style)) return true
-    return false
-  }
-
-  function escapeRegexp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  }
-
-  function locateOptionRowInDoc(doc, optionId) {
-    if (!doc || !optionId) return null
-    return (
-      doc.querySelector(attrEqI('data-option-id', optionId)) ||
-      doc.querySelector(attrEqI('data-prezo-option-id', optionId)) ||
-      doc.querySelector(attrEqI('data-opt-id', optionId)) ||
-      doc.querySelector(attrEqI('data-poll-option-id', optionId)) ||
-      doc.querySelector(attrEqI('data-lane-id', optionId))
-    )
-  }
-
-  function locateOptionLabelInDoc(doc, optionId) {
-    const row = locateOptionRowInDoc(doc, optionId)
-    if (!row) return null
-    return (
-      row.querySelector(attrEqI('data-prezo-editable', 'option-label')) ||
-      row.querySelector('.option-label, .opt-label, .lane-label, .bar-label, .choice-label, .answer-label, .label')
-    )
-  }
-
-  function cssAttrEscape(value) {
-    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-  }
-
-  // Case-insensitive attribute-value matcher. The AI rebuild may re-emit
-  // attribute values with different casing than the manual-edit pipeline
-  // recorded (e.g. a stableId or option id round-tripped through a JSON
-  // serializer or rewritten by the model). Without the `i` flag the
-  // querySelector silently misses and the caller falls into "element not
-  // found" branches — see the override-not-cleared bug where the user moved
-  // the title, the AI moved it too, but the override re-applied on top.
-  function attrEqI(name, value) {
-    return `[${name}="${cssAttrEscape(value)}" i]`
-  }
-
-  /**
-   * Compute a signature for an element capturing the visual presentation
-   * the user would care about: inline style, classes, tag, and a normalised
-   * text fingerprint. Two elements with identical signatures are treated
-   * as "the AI didn't change this" for override-pruning purposes.
-   */
-  function signatureFor(el) {
-    if (!el) return ''
-    const tag = (el.tagName || '').toLowerCase()
-    const style = (el.getAttribute('style') || '').replace(/\s+/g, ' ').trim()
-    const cls = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean).sort().join(' ')
-    const id = el.id || ''
-    // Text fingerprint: strip whitespace; cap length so a long content
-    // change registers but minor whitespace tweaks don't.
-    const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)
-    return `${tag}|${id}|${cls}|${style}|${text}`
-  }
-
-  function signaturesDiffer(a, b) {
-    return signatureFor(a) !== signatureFor(b)
-  }
-
-  /**
-   * Saved style overrides embed full HTML for question / option labels. When the same
-   * artifact is used for another poll, those keys still hold the previous poll's copy;
-   * applyArtifactStyleOverrides would overwrite the renderer's correct text until the
-   * next vote (payload churn). Drop mismatched keys from saved + pending so we only
-   * reapply styling when the underlying copy still matches the live poll.
-   *
-   * @param {object | null | undefined} poll
-   */
-  function pruneStalePollStyleOverrides(poll) {
-    pruneStalePollStyleOverridesInStore(state.artifact.savedStyleOverrides, poll)
-    pruneStalePollStyleOverridesInStore(pendingArtifactStyleOverrides, poll)
-  }
-
   function pushArtifactStyleOverrides() {
     const frameWindow = el.artifactFrame.contentWindow
     if (!frameWindow) return
@@ -5990,7 +5001,7 @@ import {
   }
 
   /**
-   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
+   * Sibling of pushArtifactPositionOverrides â€” pushes the merged saved +
    * pending size overrides into the iframe so resized elements appear at
    * their scaled dimensions immediately on load. Called from the same
    * lifecycle points as the position push.
@@ -6013,7 +5024,7 @@ import {
   }
 
   /**
-   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
+   * Sibling of pushArtifactPositionOverrides â€” pushes the merged saved +
    * pending hidden (delete) overrides into the iframe so deleted elements
    * stay hidden immediately on load. Called from the same lifecycle points
    * as the position/size pushes.
@@ -6034,7 +5045,7 @@ import {
     )
   }
 
-  // ── Override-load masking (anti-snap) ────────────────────────────────
+  // â”€â”€ Override-load masking (anti-snap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The override push messages land ~250-300ms after the artifact first
   // paints, so without masking the user sees the un-edited artifact "snap"
   // into the edited one. We hide the frame the moment we inject an artifact
@@ -6044,7 +5055,7 @@ import {
   let artifactRevealTimerId = 0
 
   /**
-   * True when the artifact carries manual edits worth masking for — any
+   * True when the artifact carries manual edits worth masking for â€” any
    * position / size / hidden / text-style / copy override. A clean artifact
    * has nothing to snap, so we don't mask it (no needless blank frame).
    */
@@ -6062,7 +5073,7 @@ import {
   /**
    * Hide the frame ahead of the override push so the un-edited paint is never
    * shown. No-op (and immediate reveal) when there's nothing to apply.
-   * `maxMaskMs` is the safety ceiling — the frame always reveals by then even
+   * `maxMaskMs` is the safety ceiling â€” the frame always reveals by then even
    * if the reveal call is somehow missed.
    */
   function maskArtifactFrameForOverrides() {
@@ -6117,1786 +5128,6 @@ import {
       },
       '*'
     )
-  }
-
-  function setupDragInteractions() {
-    setDragMode(true, { announce: false })
-
-    window.addEventListener('pointermove', handleDragPointerMove)
-    window.addEventListener('pointerup', handleDragPointerRelease)
-    window.addEventListener('pointercancel', handleDragPointerRelease)
-
-    const panelDragSpec = {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false,
-      requireDirectTarget: true
-    }
-    registerDragTarget(el.panelBgDrag, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragTop, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragRight, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragBottom, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragLeft, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragTl, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragTr, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragBr, 'panelX', 'panelY', panelDragSpec)
-    registerDragTarget(el.panelDragBl, 'panelX', 'panelY', panelDragSpec)
-    for (const panelNode of [
-      el.panelBgDrag,
-      el.panelDragTop,
-      el.panelDragRight,
-      el.panelDragBottom,
-      el.panelDragLeft,
-      el.panelDragTl,
-      el.panelDragTr,
-      el.panelDragBr,
-      el.panelDragBl
-    ]) {
-      panelNode.addEventListener('pointerdown', () => {
-        setActiveResizeTarget(el.panelBgDrag)
-      })
-    }
-
-    registerDragTarget(el.customLogo, 'logoX', 'logoY', {
-      unit: 'percent',
-      minX: -40,
-      maxX: 140,
-      minY: -40,
-      maxY: 140,
-      skipWhenHidden: true
-    })
-    registerDragTarget(el.customAsset, 'assetX', 'assetY', {
-      unit: 'percent',
-      minX: -40,
-      maxX: 140,
-      minY: -40,
-      maxY: 140,
-      skipWhenHidden: true
-    })
-
-    registerDragTarget(el.bgImage, 'bgImageX', 'bgImageY', {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false
-    })
-    registerDragTarget(el.bgOverlay, 'bgOverlayX', 'bgOverlayY', {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false
-    })
-    registerDragTarget(el.gridBg, 'gridX', 'gridY', {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false
-    })
-    registerDragTarget(el.eyebrow, 'eyebrowX', 'eyebrowY', {
-      unit: 'px',
-      minX: -1600,
-      maxX: 1600,
-      minY: -1200,
-      maxY: 1200,
-      skipWhenHidden: false,
-      edgeGrabPadding: 18
-    })
-    registerDragTarget(el.question, 'questionX', 'questionY', {
-      unit: 'px',
-      minX: -1600,
-      maxX: 1600,
-      minY: -1200,
-      maxY: 1200,
-      skipWhenHidden: false,
-      edgeGrabPadding: 22
-    })
-    registerDragTarget(el.metaBar, 'metaX', 'metaY', {
-      unit: 'px',
-      minX: -1600,
-      maxX: 1600,
-      minY: -1200,
-      maxY: 1200,
-      skipWhenHidden: false
-    })
-    registerDragTarget(el.footer, 'footerX', 'footerY', {
-      unit: 'px',
-      minX: -1600,
-      maxX: 1600,
-      minY: -1200,
-      maxY: 1200,
-      skipWhenHidden: false,
-      edgeGrabPadding: 22
-    })
-
-    registerResizeTarget(
-      el.panelBgDrag,
-      createThemeResizeProfile({
-        xKey: 'panelX',
-        yKey: 'panelY',
-        scaleXKey: 'panelScaleX',
-        scaleYKey: 'panelScaleY',
-        minScaleX: 0.35,
-        maxScaleX: 2.8,
-        minScaleY: 0.35,
-        maxScaleY: 2.8,
-        apply: () => {
-          const root = document.documentElement.style
-          root.setProperty('--panel-offset-x', `${clamp(currentTheme.panelX, -2400, 2400, 0)}px`)
-          root.setProperty('--panel-offset-y', `${clamp(currentTheme.panelY, -2400, 2400, 0)}px`)
-          root.setProperty(
-            '--panel-scale-x',
-            `${clamp(currentTheme.panelScaleX, 0.35, 2.8, 1)}`
-          )
-          root.setProperty(
-            '--panel-scale-y',
-            `${clamp(currentTheme.panelScaleY, 0.35, 2.8, 1)}`
-          )
-        }
-      })
-    )
-    registerResizeTarget(
-      el.bgImage,
-      createThemeResizeProfile({
-        xKey: 'bgImageX',
-        yKey: 'bgImageY',
-        scaleXKey: 'bgImageScaleX',
-        scaleYKey: 'bgImageScaleY',
-        minScaleX: 0.35,
-        maxScaleX: 3.5,
-        minScaleY: 0.35,
-        maxScaleY: 3.5,
-        apply: () => {
-          applyElementOffset(
-            el.bgImage,
-            currentTheme.bgImageX,
-            currentTheme.bgImageY,
-            currentTheme.bgImageScaleX,
-            currentTheme.bgImageScaleY
-          )
-        }
-      })
-    )
-    registerResizeTarget(
-      el.bgOverlay,
-      createThemeResizeProfile({
-        xKey: 'bgOverlayX',
-        yKey: 'bgOverlayY',
-        scaleXKey: 'bgOverlayScaleX',
-        scaleYKey: 'bgOverlayScaleY',
-        minScaleX: 0.35,
-        maxScaleX: 3.5,
-        minScaleY: 0.35,
-        maxScaleY: 3.5,
-        apply: () => {
-          applyElementOffset(
-            el.bgOverlay,
-            currentTheme.bgOverlayX,
-            currentTheme.bgOverlayY,
-            currentTheme.bgOverlayScaleX,
-            currentTheme.bgOverlayScaleY
-          )
-        }
-      })
-    )
-    registerResizeTarget(
-      el.gridBg,
-      createThemeResizeProfile({
-        xKey: 'gridX',
-        yKey: 'gridY',
-        scaleXKey: 'gridScaleX',
-        scaleYKey: 'gridScaleY',
-        minScaleX: 0.35,
-        maxScaleX: 3.5,
-        minScaleY: 0.35,
-        maxScaleY: 3.5,
-        apply: () => {
-          applyElementOffset(
-            el.gridBg,
-            currentTheme.gridX,
-            currentTheme.gridY,
-            currentTheme.gridScaleX,
-            currentTheme.gridScaleY
-          )
-        }
-      })
-    )
-    registerResizeTarget(
-      el.eyebrow,
-      createThemeBoxResizeProfile({
-        xKey: 'eyebrowX',
-        yKey: 'eyebrowY',
-        widthKey: 'eyebrowBoxWidth',
-        heightKey: 'eyebrowBoxHeight',
-        minWidth: 60,
-        maxWidth: 1800,
-        minHeight: 14,
-        maxHeight: 420,
-        apply: () => {
-          applyHeaderTextObjects()
-        }
-      })
-    )
-    registerResizeTarget(
-      el.question,
-      createThemeBoxResizeProfile({
-        xKey: 'questionX',
-        yKey: 'questionY',
-        widthKey: 'questionBoxWidth',
-        heightKey: 'questionBoxHeight',
-        minWidth: 120,
-        maxWidth: 2200,
-        minHeight: 40,
-        maxHeight: 1400,
-        apply: () => {
-          applyHeaderTextObjects()
-        }
-      })
-    )
-    registerResizeTarget(
-      el.metaBar,
-      createThemeBoxResizeProfile({
-        xKey: 'metaX',
-        yKey: 'metaY',
-        widthKey: 'metaBoxWidth',
-        heightKey: 'metaBoxHeight',
-        minWidth: 90,
-        maxWidth: 1000,
-        minHeight: 28,
-        maxHeight: 220,
-        apply: () => {
-          applyElementOffset(el.metaBar, currentTheme.metaX, currentTheme.metaY, 1, 1)
-          applyElementBoxSize(el.metaBar, currentTheme.metaBoxWidth, currentTheme.metaBoxHeight)
-        }
-      })
-    )
-    registerResizeTarget(
-      el.footer,
-      createThemeBoxResizeProfile({
-        xKey: 'footerX',
-        yKey: 'footerY',
-        widthKey: 'footerBoxWidth',
-        heightKey: 'footerBoxHeight',
-        minWidth: 120,
-        maxWidth: 2200,
-        minHeight: 18,
-        maxHeight: 420,
-        apply: () => {
-          applyElementOffset(el.footer, currentTheme.footerX, currentTheme.footerY, 1, 1)
-          applyElementBoxSize(el.footer, currentTheme.footerBoxWidth, currentTheme.footerBoxHeight)
-        }
-      })
-    )
-    registerResizeTarget(
-      el.customLogo,
-      createThemeResizeProfile({
-        xKey: 'logoX',
-        yKey: 'logoY',
-        scaleXKey: 'logoScaleX',
-        scaleYKey: 'logoScaleY',
-        unit: 'percent',
-        minScaleX: 0.25,
-        maxScaleX: 5,
-        minScaleY: 0.25,
-        maxScaleY: 5,
-        keepAspectByDefault: true,
-        apply: () => {
-          el.customLogo.style.left = `${currentTheme.logoX}%`
-          el.customLogo.style.top = `${currentTheme.logoY}%`
-          el.customLogo.style.transform = `translate(-50%, -50%) scale(${clamp(
-            currentTheme.logoScaleX,
-            0.25,
-            5,
-            1
-          )}, ${clamp(currentTheme.logoScaleY, 0.25, 5, 1)})`
-        }
-      })
-    )
-    registerResizeTarget(
-      el.customAsset,
-      createThemeResizeProfile({
-        xKey: 'assetX',
-        yKey: 'assetY',
-        scaleXKey: 'assetScaleX',
-        scaleYKey: 'assetScaleY',
-        unit: 'percent',
-        minScaleX: 0.25,
-        maxScaleX: 5,
-        minScaleY: 0.25,
-        maxScaleY: 5,
-        keepAspectByDefault: true,
-        apply: () => {
-          el.customAsset.style.left = `${currentTheme.assetX}%`
-          el.customAsset.style.top = `${currentTheme.assetY}%`
-          el.customAsset.style.transform = `translate(-50%, -50%) scale(${clamp(
-            currentTheme.assetScaleX,
-            0.25,
-            5,
-            1
-          )}, ${clamp(currentTheme.assetScaleY, 0.25, 5, 1)})`
-        }
-      })
-    )
-  }
-
-  function setupResizeInteractions() {
-    for (const handle of el.resizeHandles) {
-      handle.addEventListener('pointerdown', handleResizeHandlePointerDown)
-    }
-    window.addEventListener('pointermove', handleResizePointerMove)
-    window.addEventListener('pointerup', handleResizePointerRelease)
-    window.addEventListener('pointercancel', handleResizePointerRelease)
-    document.addEventListener('pointerdown', handleResizeSelectionPointerDown, true)
-    window.addEventListener('resize', scheduleResizeSelectionUpdate)
-    window.addEventListener('scroll', scheduleResizeSelectionUpdate, true)
-    scheduleResizeSelectionUpdate()
-  }
-
-  function createThemeResizeProfile(options = {}) {
-    const xKey = asText(options.xKey)
-    const yKey = asText(options.yKey)
-    const scaleXKey = asText(options.scaleXKey)
-    const scaleYKey = asText(options.scaleYKey)
-    const unit = options.unit === 'percent' ? 'percent' : 'px'
-    const minX = Number.isFinite(options.minX) ? Number(options.minX) : unit === 'percent' ? 0 : -2400
-    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : unit === 'percent' ? 100 : 2400
-    const minY = Number.isFinite(options.minY) ? Number(options.minY) : unit === 'percent' ? 0 : -2400
-    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : unit === 'percent' ? 100 : 2400
-    const minScaleX = Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.25
-    const maxScaleX = Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5
-    const minScaleY = Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.25
-    const maxScaleY = Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5
-    const apply = typeof options.apply === 'function' ? options.apply : () => {}
-
-    return {
-      unit,
-      minX,
-      maxX,
-      minY,
-      maxY,
-      minScaleX,
-      maxScaleX,
-      minScaleY,
-      maxScaleY,
-      keepAspectByDefault: options.keepAspectByDefault === true,
-      adjustPositionOnResize: options.adjustPositionOnResize !== false,
-      getPosition: () => ({
-        x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
-        y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
-      }),
-      setPosition: (x, y) => {
-        if (xKey) {
-          currentTheme[xKey] = clamp(x, minX, maxX, currentTheme[xKey])
-        }
-        if (yKey) {
-          currentTheme[yKey] = clamp(y, minY, maxY, currentTheme[yKey])
-        }
-        apply()
-      },
-      getScale: () => ({
-        x: scaleXKey ? clamp(currentTheme[scaleXKey], minScaleX, maxScaleX, 1) : 1,
-        y: scaleYKey ? clamp(currentTheme[scaleYKey], minScaleY, maxScaleY, 1) : 1
-      }),
-      setScale: (scaleX, scaleY) => {
-        if (scaleXKey) {
-          currentTheme[scaleXKey] = clamp(scaleX, minScaleX, maxScaleX, currentTheme[scaleXKey])
-        }
-        if (scaleYKey) {
-          currentTheme[scaleYKey] = clamp(scaleY, minScaleY, maxScaleY, currentTheme[scaleYKey])
-        }
-        apply()
-      }
-    }
-  }
-
-  function createThemeBoxResizeProfile(options = {}) {
-    const xKey = asText(options.xKey)
-    const yKey = asText(options.yKey)
-    const widthKey = asText(options.widthKey)
-    const heightKey = asText(options.heightKey)
-    const unit = options.unit === 'percent' ? 'percent' : 'px'
-    const minX = Number.isFinite(options.minX) ? Number(options.minX) : unit === 'percent' ? 0 : -2400
-    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : unit === 'percent' ? 100 : 2400
-    const minY = Number.isFinite(options.minY) ? Number(options.minY) : unit === 'percent' ? 0 : -2400
-    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : unit === 'percent' ? 100 : 2400
-    const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : 60
-    const maxWidth = Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 2600
-    const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : 24
-    const maxHeight = Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 1800
-    const apply = typeof options.apply === 'function' ? options.apply : () => {}
-
-    return {
-      unit,
-      minX,
-      maxX,
-      minY,
-      maxY,
-      resizeMode: 'box',
-      minWidth,
-      maxWidth,
-      minHeight,
-      maxHeight,
-      keepAspectByDefault: options.keepAspectByDefault === true,
-      adjustPositionOnResize: options.adjustPositionOnResize !== false,
-      getPosition: () => ({
-        x: xKey ? clamp(currentTheme[xKey], minX, maxX, 0) : 0,
-        y: yKey ? clamp(currentTheme[yKey], minY, maxY, 0) : 0
-      }),
-      setPosition: (x, y) => {
-        if (xKey) {
-          currentTheme[xKey] = clamp(x, minX, maxX, currentTheme[xKey])
-        }
-        if (yKey) {
-          currentTheme[yKey] = clamp(y, minY, maxY, currentTheme[yKey])
-        }
-        apply()
-      },
-      getSize: () => ({
-        width: widthKey
-          ? sanitizeOptionalDimension(currentTheme[widthKey], minWidth, maxWidth, null)
-          : null,
-        height: heightKey
-          ? sanitizeOptionalDimension(currentTheme[heightKey], minHeight, maxHeight, null)
-          : null
-      }),
-      setSize: (width, height) => {
-        if (widthKey) {
-          currentTheme[widthKey] = sanitizeOptionalDimension(width, minWidth, maxWidth, null)
-        }
-        if (heightKey) {
-          currentTheme[heightKey] = sanitizeOptionalDimension(height, minHeight, maxHeight, null)
-        }
-        apply()
-      }
-    }
-  }
-
-  function registerResizeTarget(node, options = {}) {
-    if (!node) {
-      return
-    }
-
-    const dragProfile = dragProfiles.get(node)
-    const unit =
-      options.unit === 'percent' || options.unit === 'px'
-        ? options.unit
-        : dragProfile?.unit === 'percent'
-          ? 'percent'
-          : 'px'
-    const minX = Number.isFinite(options.minX)
-      ? Number(options.minX)
-      : Number.isFinite(dragProfile?.minX)
-        ? Number(dragProfile.minX)
-        : unit === 'percent'
-          ? 0
-          : -2400
-    const maxX = Number.isFinite(options.maxX)
-      ? Number(options.maxX)
-      : Number.isFinite(dragProfile?.maxX)
-        ? Number(dragProfile.maxX)
-        : unit === 'percent'
-          ? 100
-          : 2400
-    const minY = Number.isFinite(options.minY)
-      ? Number(options.minY)
-      : Number.isFinite(dragProfile?.minY)
-        ? Number(dragProfile.minY)
-        : unit === 'percent'
-          ? 0
-          : -2400
-    const maxY = Number.isFinite(options.maxY)
-      ? Number(options.maxY)
-      : Number.isFinite(dragProfile?.maxY)
-        ? Number(dragProfile.maxY)
-        : unit === 'percent'
-          ? 100
-          : 2400
-    const minScaleX = Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.25
-    const maxScaleX = Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5
-    const minScaleY = Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.25
-    const maxScaleY = Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5
-    const resizeMode = options.resizeMode === 'box' ? 'box' : 'scale'
-    const minWidth = Number.isFinite(options.minWidth) ? Number(options.minWidth) : MIN_RESIZE_HANDLE_SIZE_PX
-    const maxWidth = Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 4000
-    const minHeight = Number.isFinite(options.minHeight) ? Number(options.minHeight) : MIN_RESIZE_HANDLE_SIZE_PX
-    const maxHeight = Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 4000
-    const getPosition =
-      typeof options.getPosition === 'function'
-        ? options.getPosition
-        : typeof dragProfile?.getPosition === 'function'
-          ? dragProfile.getPosition
-          : dragProfile?.xKey && dragProfile?.yKey
-            ? () => ({
-                x: clamp(currentTheme[dragProfile.xKey], minX, maxX, 0),
-                y: clamp(currentTheme[dragProfile.yKey], minY, maxY, 0)
-              })
-            : null
-    const setPosition =
-      typeof options.setPosition === 'function'
-        ? options.setPosition
-        : typeof dragProfile?.setPosition === 'function'
-          ? dragProfile.setPosition
-          : dragProfile?.xKey && dragProfile?.yKey
-            ? (x, y) => applyLiveDragThemePosition(dragProfile.xKey, dragProfile.yKey, x, y)
-            : null
-    const getScale =
-      typeof options.getScale === 'function' ? options.getScale : () => ({ x: 1, y: 1 })
-    const setScale = typeof options.setScale === 'function' ? options.setScale : () => {}
-    const getSize =
-      typeof options.getSize === 'function' ? options.getSize : () => ({ width: null, height: null })
-    const setSize = typeof options.setSize === 'function' ? options.setSize : () => {}
-    const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
-
-    node.classList.add('resizable-target')
-    resizeProfiles.set(node, {
-      unit,
-      minX,
-      maxX,
-      minY,
-      maxY,
-      minScaleX,
-      maxScaleX,
-      minScaleY,
-      maxScaleY,
-      resizeMode,
-      minWidth,
-      maxWidth,
-      minHeight,
-      maxHeight,
-      keepAspectByDefault: options.keepAspectByDefault === true,
-      adjustPositionOnResize: options.adjustPositionOnResize !== false,
-      getPosition,
-      setPosition,
-      getScale,
-      setScale,
-      getSize,
-      setSize,
-      onCommit
-    })
-  }
-
-  function handleResizeSelectionPointerDown(event) {
-    const target = event.target
-    if (!(target instanceof Element)) {
-      return
-    }
-    // Keep object selection while interacting with editor UI controls (PowerPoint-style).
-    if (
-      target.closest('#settings-ribbon') ||
-      target.closest('#settings-minimized') ||
-      target.closest('#artifact-composer') ||
-      target.closest('#artifact-composer-fab') ||
-      target.closest('#ai-chat-shell') ||
-      target.closest('#reset-positions-modal')
-    ) {
-      return
-    }
-    if (target.closest('#resize-selection') || target.closest('#selection-toolbar')) {
-      return
-    }
-    const nextNode = target.closest('.resizable-target')
-    if (nextNode && resizeProfiles.has(nextNode)) {
-      setActiveResizeTarget(nextNode)
-      return
-    }
-    if (target.closest('[data-text-control="true"]')) {
-      return
-    }
-    clearActiveResizeTarget()
-  }
-
-  function handleResizeHandlePointerDown(event) {
-    const handle = event.currentTarget
-    if (!(handle instanceof HTMLElement)) {
-      return
-    }
-    const direction = asText(handle.dataset.resizeHandle).toLowerCase()
-    if (!direction) {
-      return
-    }
-    const node = getActiveResizeTarget()
-    if (!node) {
-      return
-    }
-    const profile = resizeProfiles.get(node)
-    if (!profile) {
-      return
-    }
-    const startRect = getNodeLocalRect(node)
-    if (!startRect || startRect.width <= 0 || startRect.height <= 0) {
-      return
-    }
-    const startSize = profile.getSize()
-    const startScale = profile.getScale()
-    const startPosition =
-      typeof profile.getPosition === 'function' ? profile.getPosition() : null
-
-    event.preventDefault()
-    event.stopPropagation()
-    if (dragState.pending) {
-      dragState.pending = null
-    }
-    if (dragState.active) {
-      dragState.active.node.classList.remove('dragging')
-      dragState.active = null
-    }
-
-    resizeState.active = {
-      pointerId: event.pointerId,
-      handle,
-      direction,
-      node,
-      profile,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startRect,
-      startSize,
-      startScale,
-      startPosition,
-      changed: false
-    }
-    node.classList.add('dragging')
-    try {
-      handle.setPointerCapture(event.pointerId)
-    } catch {}
-    scheduleResizeSelectionUpdate()
-  }
-
-  function handleResizePointerMove(event) {
-    const active = resizeState.active
-    if (!active || active.pointerId !== event.pointerId) {
-      return
-    }
-    if (event.cancelable) {
-      event.preventDefault()
-    }
-    event.stopPropagation()
-
-    const canvasScale = getCanvasScaleFactor()
-    const dx = (event.clientX - active.startClientX) / canvasScale
-    const dy = (event.clientY - active.startClientY) / canvasScale
-    const direction = active.direction
-    const moveEast = direction.includes('e')
-    const moveWest = direction.includes('w')
-    const moveSouth = direction.includes('s')
-    const moveNorth = direction.includes('n')
-    const hasHorizontal = moveEast || moveWest
-    const hasVertical = moveNorth || moveSouth
-
-    let nextWidth = active.startRect.width
-    let nextHeight = active.startRect.height
-    if (moveEast) {
-      nextWidth = active.startRect.width + dx
-    } else if (moveWest) {
-      nextWidth = active.startRect.width - dx
-    }
-    if (moveSouth) {
-      nextHeight = active.startRect.height + dy
-    } else if (moveNorth) {
-      nextHeight = active.startRect.height - dy
-    }
-
-    const profile = active.profile
-    const keepAspect =
-      hasHorizontal && hasVertical && (profile.keepAspectByDefault || event.shiftKey)
-    if (keepAspect) {
-      const ratio = active.startRect.width / Math.max(1, active.startRect.height)
-      const widthFromHeight = nextHeight * ratio
-      const heightFromWidth = nextWidth / Math.max(0.01, ratio)
-      const widthDeltaRatio =
-        Math.abs(nextWidth - active.startRect.width) / Math.max(1, active.startRect.width)
-      const heightDeltaRatio =
-        Math.abs(nextHeight - active.startRect.height) / Math.max(1, active.startRect.height)
-      if (widthDeltaRatio >= heightDeltaRatio) {
-        nextHeight = heightFromWidth
-      } else {
-        nextWidth = widthFromHeight
-      }
-    }
-
-    nextWidth = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextWidth)
-    nextHeight = Math.max(MIN_RESIZE_HANDLE_SIZE_PX, nextHeight)
-
-    let appliedWidth = nextWidth
-    let appliedHeight = nextHeight
-    if (profile.resizeMode === 'box') {
-      const startBoxWidth = sanitizeOptionalDimension(
-        active.startSize?.width,
-        profile.minWidth,
-        profile.maxWidth,
-        active.startRect.width
-      )
-      const startBoxHeight = sanitizeOptionalDimension(
-        active.startSize?.height,
-        profile.minHeight,
-        profile.maxHeight,
-        active.startRect.height
-      )
-      const widthScale = nextWidth / Math.max(1, active.startRect.width)
-      const heightScale = nextHeight / Math.max(1, active.startRect.height)
-      appliedWidth = clamp(
-        startBoxWidth * widthScale,
-        profile.minWidth,
-        profile.maxWidth,
-        startBoxWidth
-      )
-      appliedHeight = clamp(
-        startBoxHeight * heightScale,
-        profile.minHeight,
-        profile.maxHeight,
-        startBoxHeight
-      )
-      profile.setSize(appliedWidth, appliedHeight)
-    } else {
-      const baseWidth = active.startRect.width / Math.max(0.01, active.startScale.x)
-      const baseHeight = active.startRect.height / Math.max(0.01, active.startScale.y)
-      let nextScaleX = nextWidth / Math.max(1, baseWidth)
-      let nextScaleY = nextHeight / Math.max(1, baseHeight)
-      nextScaleX = clamp(nextScaleX, profile.minScaleX, profile.maxScaleX, active.startScale.x)
-      nextScaleY = clamp(nextScaleY, profile.minScaleY, profile.maxScaleY, active.startScale.y)
-      appliedWidth = baseWidth * nextScaleX
-      appliedHeight = baseHeight * nextScaleY
-      profile.setScale(nextScaleX, nextScaleY)
-    }
-
-    const deltaWidth = appliedWidth - active.startRect.width
-    const deltaHeight = appliedHeight - active.startRect.height
-
-    let centerShiftX = 0
-    let centerShiftY = 0
-    const keepCenter = event.ctrlKey || event.metaKey
-    if (profile.adjustPositionOnResize) {
-      if (profile.resizeMode === 'box') {
-        if (keepCenter) {
-          if (hasHorizontal) {
-            centerShiftX = -deltaWidth / 2
-          }
-          if (hasVertical) {
-            centerShiftY = -deltaHeight / 2
-          }
-        } else {
-          if (moveWest && !moveEast) {
-            centerShiftX = -deltaWidth
-          }
-          if (moveNorth && !moveSouth) {
-            centerShiftY = -deltaHeight
-          }
-        }
-      } else if (!keepCenter) {
-        if (moveEast && !moveWest) {
-          centerShiftX = deltaWidth / 2
-        } else if (moveWest && !moveEast) {
-          centerShiftX = -deltaWidth / 2
-        }
-        if (moveSouth && !moveNorth) {
-          centerShiftY = deltaHeight / 2
-        } else if (moveNorth && !moveSouth) {
-          centerShiftY = -deltaHeight / 2
-        }
-      }
-    }
-
-    if (
-      profile.adjustPositionOnResize &&
-      active.startPosition &&
-      typeof profile.setPosition === 'function'
-    ) {
-      const wrapRect = getWrapRect()
-      const wrapLocalWidth = wrapRect ? wrapRect.width / canvasScale : 0
-      const wrapLocalHeight = wrapRect ? wrapRect.height / canvasScale : 0
-      const deltaPosX =
-        profile.unit === 'percent'
-          ? wrapLocalWidth > 0
-            ? (centerShiftX / wrapLocalWidth) * 100
-            : 0
-          : centerShiftX
-      const deltaPosY =
-        profile.unit === 'percent'
-          ? wrapLocalHeight > 0
-            ? (centerShiftY / wrapLocalHeight) * 100
-            : 0
-          : centerShiftY
-      const nextPosX = clamp(
-        active.startPosition.x + deltaPosX,
-        profile.minX,
-        profile.maxX,
-        active.startPosition.x
-      )
-      const nextPosY = clamp(
-        active.startPosition.y + deltaPosY,
-        profile.minY,
-        profile.maxY,
-        active.startPosition.y
-      )
-      profile.setPosition(nextPosX, nextPosY)
-    }
-    active.changed = true
-    scheduleResizeSelectionUpdate()
-  }
-
-  function handleResizePointerRelease(event) {
-    const active = resizeState.active
-    if (!active || active.pointerId !== event.pointerId) {
-      return
-    }
-
-    resizeState.active = null
-    active.node.classList.remove('dragging')
-    try {
-      active.handle.releasePointerCapture(event.pointerId)
-    } catch {}
-
-    if (active.changed) {
-      if (active.profile.onCommit) {
-        active.profile.onCommit()
-      } else {
-        saveThemeDraft(currentTheme)
-        recordHistoryCheckpoint('Resize object')
-      }
-      showThemeFeedback('Object resized.', 'success')
-    }
-    scheduleResizeSelectionUpdate()
-  }
-
-  function getActiveResizeTarget() {
-    const node = resizeState.selectedNode
-    if (!node || !node.isConnected || !resizeProfiles.has(node) || node.classList.contains('hidden')) {
-      return null
-    }
-    return node
-  }
-
-  function setActiveResizeTarget(node) {
-    if (!node || !resizeProfiles.has(node)) {
-      return
-    }
-    if (resizeState.selectedNode === node) {
-      scheduleResizeSelectionUpdate()
-      return
-    }
-    resizeState.selectedNode = node
-    scheduleResizeSelectionUpdate()
-  }
-
-  function clearActiveResizeTarget() {
-    if (!resizeState.selectedNode) {
-      return
-    }
-    resizeState.selectedNode = null
-    hideResizeSelectionBox()
-  }
-
-  function scheduleResizeSelectionUpdate() {
-    if (resizeState.rafId != null) {
-      return
-    }
-    resizeState.rafId = requestAnimationFrame(() => {
-      resizeState.rafId = null
-      updateResizeSelectionUi()
-    })
-  }
-
-  function updateResizeSelectionUi() {
-    const activeDragNode =
-      dragState.active?.node && resizeProfiles.has(dragState.active.node)
-        ? dragState.active.node
-        : null
-    const activeResizeNode = resizeState.active?.node
-    const selectedNode = getActiveResizeTarget()
-    const node = activeResizeNode || selectedNode || activeDragNode
-    if (!node) {
-      hideResizeSelectionBox()
-      return
-    }
-    if (!node.isConnected || node.classList.contains('hidden')) {
-      clearActiveResizeTarget()
-      hideResizeSelectionBox()
-      return
-    }
-    const rect = getNodeLocalRect(node)
-    if (!rect || rect.width <= 0 || rect.height <= 0) {
-      hideResizeSelectionBox()
-      return
-    }
-
-    el.resizeSelection.classList.remove('hidden')
-    el.resizeSelection.setAttribute('aria-hidden', 'false')
-    el.resizeSelection.style.left = `${rect.left}px`
-    el.resizeSelection.style.top = `${rect.top}px`
-    el.resizeSelection.style.width = `${rect.width}px`
-    el.resizeSelection.style.height = `${rect.height}px`
-  }
-
-  function hideResizeSelectionBox() {
-    el.resizeSelection.classList.add('hidden')
-    el.resizeSelection.setAttribute('aria-hidden', 'true')
-  }
-
-  function getNodeLocalRect(node) {
-    if (!(node instanceof HTMLElement)) {
-      return null
-    }
-    const wrapRect = getWrapRect()
-    if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
-      return null
-    }
-    const nodeRect = node.getBoundingClientRect()
-    if (!nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0) {
-      return null
-    }
-    const scale = getCanvasScaleFactor()
-    return {
-      left: (nodeRect.left - wrapRect.left) / scale,
-      top: (nodeRect.top - wrapRect.top) / scale,
-      width: nodeRect.width / scale,
-      height: nodeRect.height / scale
-    }
-  }
-
-  function setDragMode(enabled, options = {}) {
-    const announce = options.announce !== false
-    dragState.enabled = Boolean(enabled)
-    document.body.classList.toggle('drag-mode', dragState.enabled)
-    if (!dragState.enabled && dragState.active) {
-      dragState.active.node.classList.remove('dragging')
-      dragState.active = null
-    }
-    if (!dragState.enabled && dragState.pending) {
-      dragState.pending = null
-    }
-    if (!dragState.enabled) {
-      clearActiveResizeTarget()
-    } else {
-      scheduleResizeSelectionUpdate()
-    }
-    if (announce) {
-      showThemeFeedback(
-        dragState.enabled
-          ? 'Drag and resize are enabled. Use object handles to resize like PowerPoint.'
-          : 'Drag is disabled.',
-        'success'
-      )
-    }
-  }
-
-  function registerDragTarget(node, xKey, yKey, options = {}) {
-    if (!node) {
-      return
-    }
-    node.classList.add('drag-target')
-    attachDragBehavior(node, xKey, yKey, options)
-  }
-
-  function attachDragBehavior(node, xKey, yKey, options = {}) {
-    const unit = options.unit === 'px' ? 'px' : 'percent'
-    const minX = Number.isFinite(options.minX) ? Number(options.minX) : 0
-    const maxX = Number.isFinite(options.maxX) ? Number(options.maxX) : 100
-    const minY = Number.isFinite(options.minY) ? Number(options.minY) : 0
-    const maxY = Number.isFinite(options.maxY) ? Number(options.maxY) : 100
-    const defaultX = Number.isFinite(options.defaultX) ? Number(options.defaultX) : 0
-    const defaultY = Number.isFinite(options.defaultY) ? Number(options.defaultY) : 0
-    const skipWhenHidden = options.skipWhenHidden !== false
-    const requireDirectTarget = options.requireDirectTarget === true
-    const edgeGrabPadding = Number.isFinite(options.edgeGrabPadding)
-      ? Math.max(0, Number(options.edgeGrabPadding))
-      : 0
-    const getPosition = typeof options.getPosition === 'function' ? options.getPosition : null
-    const setPosition = typeof options.setPosition === 'function' ? options.setPosition : null
-    const onCommit = typeof options.onCommit === 'function' ? options.onCommit : null
-    dragProfiles.set(node, {
-      unit,
-      minX,
-      maxX,
-      minY,
-      maxY,
-      defaultX,
-      defaultY,
-      xKey,
-      yKey,
-      getPosition,
-      setPosition,
-      onCommit
-    })
-
-    node.addEventListener('pointerdown', (event) => {
-      if (!dragState.enabled || (skipWhenHidden && node.classList.contains('hidden'))) {
-        return
-      }
-      const targetElement = event.target instanceof Element ? event.target : null
-      const richTextTarget = targetElement ? targetElement.closest('.rich-text-editable') : null
-      if (richTextTarget && node.contains(richTextTarget)) {
-        // PowerPoint-style: text click enters text editing, dragging uses object shell.
-        if (!isPointerNearNodeEdge(node, event, edgeGrabPadding)) {
-          return
-        }
-      }
-      if (requireDirectTarget && event.target !== node) {
-        return
-      }
-      if (event.pointerType === 'mouse' && event.button !== 0) {
-        return
-      }
-      if (resizeProfiles.has(node)) {
-        setActiveResizeTarget(node)
-      }
-      const wrapRect = getWrapRect()
-      if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
-        return
-      }
-
-      const startPosition = getPosition ? getPosition() : null
-      const dragDescriptor = {
-        node,
-        xKey,
-        yKey,
-        unit,
-        pointerId: event.pointerId,
-        startClientX: event.clientX,
-        startClientY: event.clientY,
-        minX,
-        maxX,
-        minY,
-        maxY,
-        startX: clamp(startPosition?.x ?? currentTheme[xKey], minX, maxX, defaultX),
-        startY: clamp(startPosition?.y ?? currentTheme[yKey], minY, maxY, defaultY),
-        setPosition,
-        onCommit,
-        suppressNativePointerBehavior: !(richTextTarget && node.contains(richTextTarget))
-      }
-
-      if (dragState.pending && dragState.pending.pointerId !== event.pointerId) {
-        dragState.pending = null
-      }
-      if (dragDescriptor.suppressNativePointerBehavior) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      dragState.pending = dragDescriptor
-    })
-  }
-
-  function handleDragPointerMove(event) {
-    if (resizeState.active) {
-      return
-    }
-    let active = dragState.active
-    if (!active) {
-      const pending = dragState.pending
-      if (!pending || pending.pointerId !== event.pointerId) {
-        return
-      }
-      const distance = Math.hypot(
-        event.clientX - pending.startClientX,
-        event.clientY - pending.startClientY
-      )
-      if (distance < DRAG_START_THRESHOLD_PX) {
-        return
-      }
-      if (event.cancelable) {
-        event.preventDefault()
-      }
-      if (pending.suppressNativePointerBehavior) {
-        event.stopPropagation()
-      }
-      activateDragTarget(pending, event)
-      dragState.pending = null
-      active = dragState.active
-    }
-    if (!active || active.pointerId !== event.pointerId) {
-      return
-    }
-    const wrapRect = getWrapRect()
-    if (!wrapRect || wrapRect.width <= 0 || wrapRect.height <= 0) {
-      return
-    }
-
-    if (event.cancelable) {
-      event.preventDefault()
-    }
-    const canvasScale = getCanvasScaleFactor()
-    const deltaX =
-      active.unit === 'px'
-        ? (event.clientX - active.startClientX) / canvasScale
-        : ((event.clientX - active.startClientX) / wrapRect.width) * 100
-    const deltaY =
-      active.unit === 'px'
-        ? (event.clientY - active.startClientY) / canvasScale
-        : ((event.clientY - active.startClientY) / wrapRect.height) * 100
-    const nextX = clamp(active.startX + deltaX, active.minX, active.maxX, active.startX)
-    const nextY = clamp(active.startY + deltaY, active.minY, active.maxY, active.startY)
-
-    if (active.setPosition) {
-      active.setPosition(nextX, nextY)
-      scheduleResizeSelectionUpdate()
-      return
-    }
-
-    if (active.xKey && active.yKey) {
-      applyLiveDragThemePosition(active.xKey, active.yKey, nextX, nextY)
-      syncSingleControlValue(active.xKey, nextX)
-      syncSingleControlValue(active.yKey, nextY)
-      scheduleResizeSelectionUpdate()
-    }
-  }
-
-  function handleDragPointerRelease(event) {
-    const active = dragState.active
-    if (!active || active.pointerId !== event.pointerId) {
-      const pending = dragState.pending
-      if (pending && pending.pointerId === event.pointerId) {
-        dragState.pending = null
-      }
-      return
-    }
-
-    active.node.classList.remove('dragging')
-    try {
-      active.node.releasePointerCapture(event.pointerId)
-    } catch {}
-    dragState.active = null
-    if (active.onCommit) {
-      active.onCommit()
-      scheduleResizeSelectionUpdate()
-      return
-    }
-    saveThemeDraft(currentTheme)
-    recordHistoryCheckpoint('Move object')
-    showThemeFeedback('Object position updated. Save theme to keep it in a named preset.', 'success')
-    scheduleResizeSelectionUpdate()
-  }
-
-  function activateDragTarget(descriptor, event) {
-    if (!descriptor) {
-      return
-    }
-    dragState.active = descriptor
-    descriptor.node.classList.add('dragging')
-    try {
-      descriptor.node.setPointerCapture(event.pointerId)
-    } catch {}
-  }
-
-  function getCanvasScaleFactor() {
-    const rootStyle = window.getComputedStyle(document.documentElement)
-    const raw = Number.parseFloat(rootStyle.getPropertyValue('--canvas-scale'))
-    if (!Number.isFinite(raw) || raw <= 0) {
-      return 1
-    }
-    return raw
-  }
-
-  function applyLiveDragThemePosition(xKey, yKey, xValue, yValue) {
-    currentTheme[xKey] = xValue
-    currentTheme[yKey] = yValue
-
-    if (xKey === 'panelX' && yKey === 'panelY') {
-      const root = document.documentElement.style
-      root.setProperty('--panel-offset-x', `${xValue}px`)
-      root.setProperty('--panel-offset-y', `${yValue}px`)
-      return
-    }
-    if (xKey === 'bgImageX' && yKey === 'bgImageY') {
-      applyElementOffset(
-        el.bgImage,
-        xValue,
-        yValue,
-        currentTheme.bgImageScaleX,
-        currentTheme.bgImageScaleY
-      )
-      return
-    }
-    if (xKey === 'bgOverlayX' && yKey === 'bgOverlayY') {
-      applyElementOffset(
-        el.bgOverlay,
-        xValue,
-        yValue,
-        currentTheme.bgOverlayScaleX,
-        currentTheme.bgOverlayScaleY
-      )
-      return
-    }
-    if (xKey === 'gridX' && yKey === 'gridY') {
-      applyElementOffset(
-        el.gridBg,
-        xValue,
-        yValue,
-        currentTheme.gridScaleX,
-        currentTheme.gridScaleY
-      )
-      return
-    }
-    if (xKey === 'eyebrowX' && yKey === 'eyebrowY') {
-      applyHeaderTextObjects()
-      return
-    }
-    if (xKey === 'questionX' && yKey === 'questionY') {
-      applyHeaderTextObjects()
-      return
-    }
-    if (xKey === 'metaX' && yKey === 'metaY') {
-      applyElementOffset(el.metaBar, xValue, yValue, 1, 1)
-      applyElementBoxSize(el.metaBar, currentTheme.metaBoxWidth, currentTheme.metaBoxHeight)
-      return
-    }
-    if (xKey === 'footerX' && yKey === 'footerY') {
-      applyElementOffset(el.footer, xValue, yValue, 1, 1)
-      applyElementBoxSize(el.footer, currentTheme.footerBoxWidth, currentTheme.footerBoxHeight)
-      return
-    }
-    if (xKey === 'logoX' && yKey === 'logoY') {
-      el.customLogo.style.left = `${xValue}%`
-      el.customLogo.style.top = `${yValue}%`
-      el.customLogo.style.transform = `translate(-50%, -50%) scale(${clamp(
-        currentTheme.logoScaleX,
-        0.25,
-        5,
-        1
-      )}, ${clamp(currentTheme.logoScaleY, 0.25, 5, 1)})`
-      return
-    }
-    if (xKey === 'assetX' && yKey === 'assetY') {
-      el.customAsset.style.left = `${xValue}%`
-      el.customAsset.style.top = `${yValue}%`
-      el.customAsset.style.transform = `translate(-50%, -50%) scale(${clamp(
-        currentTheme.assetScaleX,
-        0.25,
-        5,
-        1
-      )}, ${clamp(currentTheme.assetScaleY, 0.25, 5, 1)})`
-      return
-    }
-
-    updateTheme(
-      {
-        [xKey]: xValue,
-        [yKey]: yValue
-      },
-      { persist: false, recordHistory: false }
-    )
-  }
-
-  function ensureDeletedObjectsMap() {
-    if (!currentTheme.deletedObjects || typeof currentTheme.deletedObjects !== 'object') {
-      currentTheme.deletedObjects = {}
-    }
-    return currentTheme.deletedObjects
-  }
-
-  function isThemeObjectDeleted(targetKey) {
-    const key = asText(targetKey)
-    if (!key) {
-      return false
-    }
-    const map = ensureDeletedObjectsMap()
-    return Boolean(map[key])
-  }
-
-  function setThemeObjectDeleted(targetKey, deleted = true) {
-    const key = asText(targetKey)
-    if (!key) {
-      return
-    }
-    const map = ensureDeletedObjectsMap()
-    if (deleted) {
-      map[key] = true
-      return
-    }
-    delete map[key]
-  }
-
-  function applyDeletedStaticTargets(theme) {
-    const deletedObjects =
-      theme && typeof theme.deletedObjects === 'object' ? theme.deletedObjects : {}
-    const isDeleted = (targetKey) => Boolean(deletedObjects[targetKey])
-
-    el.bgImage.classList.toggle('hidden', isDeleted('bgImage'))
-    el.bgOverlay.classList.toggle('hidden', isDeleted('overlay'))
-    el.gridBg.classList.toggle('hidden', isDeleted('grid'))
-    el.eyebrow.classList.toggle('hidden', isDeleted('eyebrow'))
-    el.question.classList.toggle('hidden', isDeleted('question'))
-    el.metaBar.classList.toggle('hidden', isDeleted('meta'))
-    el.options.classList.toggle('hidden', isDeleted('options'))
-    el.footer.classList.toggle('hidden', isDeleted('footer'))
-
-    if (isDeleted('logo')) {
-      el.customLogo.classList.add('hidden')
-    }
-    if (isDeleted('asset')) {
-      el.customAsset.classList.add('hidden')
-    }
-
-    const panelDeleted = isDeleted('panel')
-    el.panelBgDrag.classList.toggle('hidden', panelDeleted)
-    for (const handle of [
-      el.panelDragTop,
-      el.panelDragRight,
-      el.panelDragBottom,
-      el.panelDragLeft,
-      el.panelDragTl,
-      el.panelDragTr,
-      el.panelDragBr,
-      el.panelDragBl
-    ]) {
-      handle.classList.toggle('hidden', panelDeleted)
-    }
-    el.wrap.classList.toggle('panel-deleted', panelDeleted)
-  }
-
-  function applyDeletedOptionTarget(node, poll, optionId, part = 'row') {
-    if (!(node instanceof HTMLElement)) {
-      return
-    }
-    const key = getOptionDeleteTargetKey(poll, optionId, part)
-    node.classList.toggle('hidden', Boolean(key && isThemeObjectDeleted(key)))
-  }
-
-  function ensureOptionOffsets() {
-    if (!currentTheme.optionOffsets || typeof currentTheme.optionOffsets !== 'object') {
-      currentTheme.optionOffsets = {}
-    }
-    return currentTheme.optionOffsets
-  }
-
-  function ensureOptionScales() {
-    if (!currentTheme.optionScales || typeof currentTheme.optionScales !== 'object') {
-      currentTheme.optionScales = {}
-    }
-    return currentTheme.optionScales
-  }
-
-  function ensureOptionSizes() {
-    if (!currentTheme.optionSizes || typeof currentTheme.optionSizes !== 'object') {
-      currentTheme.optionSizes = {}
-    }
-    return currentTheme.optionSizes
-  }
-
-  function ensureOptionAnchors() {
-    if (!currentTheme.optionAnchors || typeof currentTheme.optionAnchors !== 'object') {
-      currentTheme.optionAnchors = {}
-    }
-    return currentTheme.optionAnchors
-  }
-
-  function getOptionOffsetKey(optionId, part = 'row') {
-    const safeId = asText(optionId)
-    if (!safeId) {
-      return ''
-    }
-    const safePart = asText(part).toLowerCase()
-    if (!safePart || safePart === 'row') {
-      return safeId
-    }
-    return `${safeId}::${safePart}`
-  }
-
-  function getOptionDragOffset(optionId, part = 'row') {
-    const map = ensureOptionOffsets()
-    const key = getOptionOffsetKey(optionId, part)
-    const entry = key ? map[key] : null
-    if (!entry || typeof entry !== 'object') {
-      return { x: 0, y: 0 }
-    }
-    return {
-      x: clamp(entry.x, -2400, 2400, 0),
-      y: clamp(entry.y, -2400, 2400, 0)
-    }
-  }
-
-  function setOptionDragOffset(optionId, x, y, part = 'row') {
-    const key = getOptionOffsetKey(optionId, part)
-    if (!key) {
-      return
-    }
-    const map = ensureOptionOffsets()
-    map[key] = {
-      x: clamp(x, -2400, 2400, 0),
-      y: clamp(y, -2400, 2400, 0)
-    }
-  }
-
-  function getOptionDragScale(optionId, part = 'row') {
-    const map = ensureOptionScales()
-    const key = getOptionOffsetKey(optionId, part)
-    const entry = key ? map[key] : null
-    if (!entry || typeof entry !== 'object') {
-      return { x: 1, y: 1 }
-    }
-    return {
-      x: clamp(entry.x, 0.25, 5, 1),
-      y: clamp(entry.y, 0.25, 5, 1)
-    }
-  }
-
-  function setOptionDragScale(optionId, x, y, part = 'row') {
-    const key = getOptionOffsetKey(optionId, part)
-    if (!key) {
-      return
-    }
-    const map = ensureOptionScales()
-    map[key] = {
-      x: clamp(x, 0.25, 5, 1),
-      y: clamp(y, 0.25, 5, 1)
-    }
-  }
-
-  function getOptionBoxSize(optionId, part = 'row') {
-    const map = ensureOptionSizes()
-    const key = getOptionOffsetKey(optionId, part)
-    const entry = key ? map[key] : null
-    if (!entry || typeof entry !== 'object') {
-      return { width: null, height: null }
-    }
-    return {
-      width: sanitizeOptionalDimension(entry.width, 24, 2600, null),
-      height: sanitizeOptionalDimension(entry.height, 18, 1400, null)
-    }
-  }
-
-  function setOptionBoxSize(optionId, width, height, part = 'row') {
-    const key = getOptionOffsetKey(optionId, part)
-    if (!key) {
-      return
-    }
-    const map = ensureOptionSizes()
-    map[key] = {
-      width: sanitizeOptionalDimension(width, 24, 2600, null),
-      height: sanitizeOptionalDimension(height, 18, 1400, null)
-    }
-  }
-
-  function getOptionTextAnchor(optionId, part = 'row') {
-    const map = ensureOptionAnchors()
-    const key = getOptionOffsetKey(optionId, part)
-    const entry = key ? map[key] : null
-    if (!entry || typeof entry !== 'object') {
-      return { x: null, y: null }
-    }
-    return {
-      x: Number.isFinite(entry.x) ? clamp(entry.x, -2400, 2400, 0) : null,
-      y: Number.isFinite(entry.y) ? clamp(entry.y, -2400, 2400, 0) : null
-    }
-  }
-
-  function setOptionTextAnchor(optionId, x, y, part = 'row') {
-    const key = getOptionOffsetKey(optionId, part)
-    if (!key) {
-      return
-    }
-    const map = ensureOptionAnchors()
-    map[key] = {
-      x: Number.isFinite(x) ? clamp(x, -2400, 2400, 0) : null,
-      y: Number.isFinite(y) ? clamp(y, -2400, 2400, 0) : null
-    }
-  }
-
-  function clearOptionTextAnchor(optionId, part = 'row') {
-    const key = getOptionOffsetKey(optionId, part)
-    if (!key) {
-      return
-    }
-    const map = ensureOptionAnchors()
-    delete map[key]
-  }
-
-  function isOptionTextPart(part = 'row') {
-    const normalized = asText(part).toLowerCase()
-    return normalized === 'label' || normalized === 'stats'
-  }
-
-  function hasCustomOptionTextSize(optionId, part = 'row') {
-    if (!isOptionTextPart(part)) {
-      return false
-    }
-    const size = getOptionBoxSize(optionId, part)
-    return Number.isFinite(size.width) || Number.isFinite(size.height)
-  }
-
-  function lockOptionLabelRowHeight(row, rowRectOverride = null) {
-    if (!(row instanceof HTMLElement) || row.dataset.optionRowFlowLocked === '1') {
-      return
-    }
-    const scale = getCanvasScaleFactor()
-    const rowRect = rowRectOverride || row.getBoundingClientRect()
-    const lockedHeight = Math.max(24, rowRect.height / Math.max(0.01, scale))
-    row.style.minHeight = `${lockedHeight}px`
-    row.dataset.optionRowFlowLocked = '1'
-  }
-
-  function updateOptionLabelRowLockState(row) {
-    if (!(row instanceof HTMLElement)) {
-      return
-    }
-    const hasDetachedText = Boolean(row.querySelector('[data-option-detached-flow="1"]'))
-    if (hasDetachedText) {
-      return
-    }
-    row.style.removeProperty('min-height')
-    row.dataset.optionRowFlowLocked = '0'
-  }
-
-  function isRectLike(value) {
-    return Boolean(
-      value &&
-        Number.isFinite(value.left) &&
-        Number.isFinite(value.top) &&
-        Number.isFinite(value.width) &&
-        Number.isFinite(value.height)
-    )
-  }
-
-  function detachOptionTextFromFlow(node, optionId, part = 'row', geometry = null) {
-    if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
-      return
-    }
-    const row = node.closest('.label-row')
-    if (!(row instanceof HTMLElement)) {
-      return
-    }
-
-    if (node.dataset.optionDetachedFlow !== '1') {
-      const storedAnchor = getOptionTextAnchor(optionId, part)
-      let baseLeft = storedAnchor.x
-      let baseTop = storedAnchor.y
-      if (!Number.isFinite(baseLeft) || !Number.isFinite(baseTop)) {
-        const scale = getCanvasScaleFactor()
-        const rowRect = isRectLike(geometry?.rowRect) ? geometry.rowRect : row.getBoundingClientRect()
-        const nodeRect = isRectLike(geometry?.nodeRect) ? geometry.nodeRect : node.getBoundingClientRect()
-        const offset = getOptionDragOffset(optionId, part)
-        baseLeft =
-          rowRect.width > 0 && nodeRect.width > 0
-            ? (nodeRect.left - rowRect.left) / Math.max(0.01, scale) - offset.x
-            : 0
-        baseTop =
-          rowRect.height > 0 && nodeRect.height > 0
-            ? (nodeRect.top - rowRect.top) / Math.max(0.01, scale) - offset.y
-            : 0
-        setOptionTextAnchor(optionId, baseLeft, baseTop, part)
-      }
-      node.style.left = `${baseLeft}px`
-      node.style.top = `${baseTop}px`
-      node.dataset.optionDetachedFlow = '1'
-    }
-
-    node.style.position = 'absolute'
-    node.style.margin = '0'
-    node.style.display = 'inline-block'
-    node.style.maxWidth = 'none'
-  }
-
-  function restoreOptionTextFlow(node, part = 'row', optionId = '') {
-    if (!(node instanceof HTMLElement) || !isOptionTextPart(part)) {
-      return
-    }
-    const row = node.closest('.label-row')
-    node.style.removeProperty('position')
-    node.style.removeProperty('left')
-    node.style.removeProperty('top')
-    node.style.removeProperty('margin')
-    node.style.removeProperty('display')
-    node.style.removeProperty('max-width')
-    delete node.dataset.optionDetachedFlow
-    if (optionId) {
-      clearOptionTextAnchor(optionId, part)
-    }
-    updateOptionLabelRowLockState(row)
-  }
-
-  function syncOptionTextPairFlow(node, optionId) {
-    if (!(node instanceof HTMLElement)) {
-      return
-    }
-    const row = node.closest('.label-row')
-    if (!(row instanceof HTMLElement)) {
-      return
-    }
-    const label = row.querySelector('.label')
-    const stats = row.querySelector('.stats')
-    if (!(label instanceof HTMLElement) || !(stats instanceof HTMLElement)) {
-      return
-    }
-
-    const shouldDetach =
-      hasCustomOptionTextSize(optionId, 'label') || hasCustomOptionTextSize(optionId, 'stats')
-    if (!shouldDetach) {
-      restoreOptionTextFlow(label, 'label', optionId)
-      restoreOptionTextFlow(stats, 'stats', optionId)
-      return
-    }
-
-    if (label.dataset.optionDetachedFlow === '1' && stats.dataset.optionDetachedFlow === '1') {
-      return
-    }
-
-    const rowRect = row.getBoundingClientRect()
-    const labelRect = label.getBoundingClientRect()
-    const statsRect = stats.getBoundingClientRect()
-    lockOptionLabelRowHeight(row, rowRect)
-    detachOptionTextFromFlow(label, optionId, 'label', { rowRect, nodeRect: labelRect })
-    detachOptionTextFromFlow(stats, optionId, 'stats', { rowRect, nodeRect: statsRect })
-  }
-
-  function applyOptionBoxSize(node, optionId, part = 'row') {
-    if (!node) {
-      return
-    }
-    const size = getOptionBoxSize(optionId, part)
-    if (isOptionTextPart(part)) {
-      syncOptionTextPairFlow(node, optionId)
-    }
-    if (Number.isFinite(size.width)) {
-      node.style.width = `${size.width}px`
-      if (node instanceof HTMLSpanElement) {
-        node.style.display = 'inline-block'
-      }
-    } else {
-      node.style.removeProperty('width')
-    }
-    if (Number.isFinite(size.height)) {
-      node.style.height = `${size.height}px`
-      if (node instanceof HTMLSpanElement) {
-        node.style.display = 'inline-block'
-      }
-    } else {
-      node.style.removeProperty('height')
-    }
-  }
-
-  function shouldScaleOptionPart(part = 'row') {
-    const normalized = asText(part).toLowerCase()
-    return normalized === 'row' || normalized === 'bar'
-  }
-
-  function applyOptionOffsetTransform(node, optionId, part = 'row') {
-    const offset = getOptionDragOffset(optionId, part)
-    if (shouldScaleOptionPart(part)) {
-      const scale = getOptionDragScale(optionId, part)
-      node.style.transform = `translate(${offset.x}px, ${offset.y}px) scale(${scale.x}, ${scale.y})`
-      return
-    }
-    node.style.transform = `translate(${offset.x}px, ${offset.y}px)`
-  }
-
-  function registerOptionDragTarget(node, optionId, part = 'row', options = {}) {
-    const edgeGrabPadding = Number.isFinite(options.edgeGrabPadding)
-      ? Math.max(0, Number(options.edgeGrabPadding))
-      : 0
-    if (!node || !optionId || node.dataset.dragRegistered === '1') {
-      return
-    }
-    node.dataset.dragRegistered = '1'
-    node.dataset.optionDragPart = part
-    node.classList.add('drag-target')
-    attachDragBehavior(node, null, null, {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      skipWhenHidden: false,
-      edgeGrabPadding,
-      getPosition: () => getOptionDragOffset(optionId, part),
-      setPosition: (x, y) => {
-        setOptionDragOffset(optionId, x, y, part)
-        applyOptionOffsetTransform(node, optionId, part)
-      }
-    })
-  }
-
-  function registerOptionResizeTarget(node, optionId, part = 'row', options = {}) {
-    if (!node || !optionId) {
-      return
-    }
-    const resizeMode = asText(options.resizeMode).toLowerCase() === 'box' ? 'box' : 'scale'
-    if (resizeMode === 'box') {
-      registerResizeTarget(node, {
-        unit: 'px',
-        minX: -2400,
-        maxX: 2400,
-        minY: -2400,
-        maxY: 2400,
-        resizeMode: 'box',
-        minWidth: Number.isFinite(options.minWidth) ? Number(options.minWidth) : 40,
-        maxWidth: Number.isFinite(options.maxWidth) ? Number(options.maxWidth) : 2200,
-        minHeight: Number.isFinite(options.minHeight) ? Number(options.minHeight) : 20,
-        maxHeight: Number.isFinite(options.maxHeight) ? Number(options.maxHeight) : 900,
-        keepAspectByDefault: options.keepAspectByDefault === true,
-        adjustPositionOnResize: options.adjustPositionOnResize !== false,
-        getPosition: () => getOptionDragOffset(optionId, part),
-        setPosition: (x, y) => {
-          setOptionDragOffset(optionId, x, y, part)
-          applyOptionOffsetTransform(node, optionId, part)
-        },
-        getSize: () => getOptionBoxSize(optionId, part),
-        setSize: (width, height) => {
-          setOptionBoxSize(optionId, width, height, part)
-          applyOptionBoxSize(node, optionId, part)
-        }
-      })
-      return
-    }
-    registerResizeTarget(node, {
-      unit: 'px',
-      minX: -2400,
-      maxX: 2400,
-      minY: -2400,
-      maxY: 2400,
-      minScaleX: Number.isFinite(options.minScaleX) ? Number(options.minScaleX) : 0.35,
-      maxScaleX: Number.isFinite(options.maxScaleX) ? Number(options.maxScaleX) : 5,
-      minScaleY: Number.isFinite(options.minScaleY) ? Number(options.minScaleY) : 0.35,
-      maxScaleY: Number.isFinite(options.maxScaleY) ? Number(options.maxScaleY) : 5,
-      keepAspectByDefault: options.keepAspectByDefault === true,
-      getPosition: () => getOptionDragOffset(optionId, part),
-      setPosition: (x, y) => {
-        setOptionDragOffset(optionId, x, y, part)
-        applyOptionOffsetTransform(node, optionId, part)
-      },
-      getScale: () => getOptionDragScale(optionId, part),
-      setScale: (x, y) => {
-        setOptionDragScale(optionId, x, y, part)
-        applyOptionOffsetTransform(node, optionId, part)
-      }
-    })
-  }
-
-  function isPointerNearNodeEdge(node, event, edgePadding = 0) {
-    if (!(node instanceof Element)) {
-      return false
-    }
-    const padding = Math.max(0, Number(edgePadding) || 0)
-    if (padding <= 0) {
-      return false
-    }
-    const rect = node.getBoundingClientRect()
-    if (rect.width <= 0 || rect.height <= 0) {
-      return false
-    }
-    // Keep a guaranteed center area for text editing on small boxes.
-    const minSide = Math.max(1, Math.min(rect.width, rect.height))
-    const maxBySize = Math.max(6, Math.floor(minSide * 0.25))
-    const effectivePadding = Math.min(padding, maxBySize)
-    const x = Number(event.clientX)
-    const y = Number(event.clientY)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return false
-    }
-    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-      return false
-    }
-    const edgeDistance = Math.min(x - rect.left, rect.right - x, y - rect.top, rect.bottom - y)
-    return edgeDistance <= effectivePadding
-  }
-
-  function getWrapRect() {
-    return el.wrap.getBoundingClientRect()
   }
 
   function renderInitialState() {
@@ -8527,291 +5758,6 @@ import {
   function acceptResetPositions() {
     closeResetPositionsModal()
     resetAllElementPositions()
-  }
-
-  function buildDefaultPositionThemePatch() {
-    return {
-      panelX: defaultTheme.panelX,
-      panelY: defaultTheme.panelY,
-      panelScaleX: defaultTheme.panelScaleX,
-      panelScaleY: defaultTheme.panelScaleY,
-      bgImageX: defaultTheme.bgImageX,
-      bgImageY: defaultTheme.bgImageY,
-      bgImageScaleX: defaultTheme.bgImageScaleX,
-      bgImageScaleY: defaultTheme.bgImageScaleY,
-      bgOverlayX: defaultTheme.bgOverlayX,
-      bgOverlayY: defaultTheme.bgOverlayY,
-      bgOverlayScaleX: defaultTheme.bgOverlayScaleX,
-      bgOverlayScaleY: defaultTheme.bgOverlayScaleY,
-      gridX: defaultTheme.gridX,
-      gridY: defaultTheme.gridY,
-      gridScaleX: defaultTheme.gridScaleX,
-      gridScaleY: defaultTheme.gridScaleY,
-      eyebrowX: defaultTheme.eyebrowX,
-      eyebrowY: defaultTheme.eyebrowY,
-      eyebrowBoxWidth: defaultTheme.eyebrowBoxWidth,
-      eyebrowBoxHeight: defaultTheme.eyebrowBoxHeight,
-      questionX: defaultTheme.questionX,
-      questionY: defaultTheme.questionY,
-      questionBoxWidth: defaultTheme.questionBoxWidth,
-      questionBoxHeight: defaultTheme.questionBoxHeight,
-      metaX: defaultTheme.metaX,
-      metaY: defaultTheme.metaY,
-      metaBoxWidth: defaultTheme.metaBoxWidth,
-      metaBoxHeight: defaultTheme.metaBoxHeight,
-      metaScaleX: defaultTheme.metaScaleX,
-      metaScaleY: defaultTheme.metaScaleY,
-      optionsX: defaultTheme.optionsX,
-      optionsY: defaultTheme.optionsY,
-      footerX: defaultTheme.footerX,
-      footerY: defaultTheme.footerY,
-      footerBoxWidth: defaultTheme.footerBoxWidth,
-      footerBoxHeight: defaultTheme.footerBoxHeight,
-      footerScaleX: defaultTheme.footerScaleX,
-      footerScaleY: defaultTheme.footerScaleY,
-      logoX: defaultTheme.logoX,
-      logoY: defaultTheme.logoY,
-      logoScaleX: defaultTheme.logoScaleX,
-      logoScaleY: defaultTheme.logoScaleY,
-      assetX: defaultTheme.assetX,
-      assetY: defaultTheme.assetY,
-      assetScaleX: defaultTheme.assetScaleX,
-      assetScaleY: defaultTheme.assetScaleY,
-      optionOffsets: clone(defaultTheme.optionOffsets),
-      optionSizes: clone(defaultTheme.optionSizes),
-      optionScales: clone(defaultTheme.optionScales),
-      optionAnchors: clone(defaultTheme.optionAnchors)
-    }
-  }
-
-  function resetAllElementPositions() {
-    if (dragState.active) {
-      dragState.active.node.classList.remove('dragging')
-      dragState.active = null
-    }
-
-    updateTheme(buildDefaultPositionThemePatch(), { historyLabel: 'Reset positions' })
-
-    if (state.snapshot) {
-      renderFromSnapshot(true)
-    } else {
-      for (const labelRow of el.options.querySelectorAll('.option .label-row')) {
-        if (labelRow instanceof HTMLElement) {
-          labelRow.style.transform = 'translate(0px, 0px)'
-        }
-      }
-      for (const track of el.options.querySelectorAll('.option .track')) {
-        if (track instanceof HTMLElement) {
-          track.style.transform = 'translate(0px, 0px)'
-        }
-      }
-      for (const textNode of el.options.querySelectorAll('.option .label, .option .stats')) {
-        if (textNode instanceof HTMLElement) {
-          textNode.style.removeProperty('width')
-          textNode.style.removeProperty('height')
-          textNode.style.removeProperty('position')
-          textNode.style.removeProperty('left')
-          textNode.style.removeProperty('top')
-          textNode.style.removeProperty('margin')
-          textNode.style.removeProperty('display')
-          textNode.style.removeProperty('max-width')
-          delete textNode.dataset.optionDetachedFlow
-        }
-      }
-      for (const labelRow of el.options.querySelectorAll('.option .label-row')) {
-        if (labelRow instanceof HTMLElement) {
-          labelRow.style.removeProperty('min-height')
-          labelRow.dataset.optionRowFlowLocked = '0'
-        }
-      }
-    }
-    showThemeFeedback('All object positions reset to defaults.', 'success')
-  }
-
-  function applyElementOffset(node, offsetX, offsetY, scaleX = 1, scaleY = 1) {
-    if (!node) {
-      return
-    }
-    const safeX = clamp(offsetX, -2400, 2400, 0)
-    const safeY = clamp(offsetY, -2400, 2400, 0)
-    const safeScaleX = clamp(scaleX, 0.2, 8, 1)
-    const safeScaleY = clamp(scaleY, 0.2, 8, 1)
-    node.style.transform = `translate(${safeX}px, ${safeY}px) scale(${safeScaleX}, ${safeScaleY})`
-  }
-
-  function applyElementBoxSize(node, width, height) {
-    if (!node) {
-      return
-    }
-    const safeWidth = sanitizeOptionalDimension(width, 24, 4000, null)
-    const safeHeight = sanitizeOptionalDimension(height, 18, 2400, null)
-    if (Number.isFinite(safeWidth)) {
-      node.style.width = `${safeWidth}px`
-    } else {
-      node.style.removeProperty('width')
-    }
-    if (Number.isFinite(safeHeight)) {
-      node.style.height = `${safeHeight}px`
-    } else {
-      node.style.removeProperty('height')
-    }
-  }
-
-  function hasCustomHeaderTextSize(widthKey, heightKey) {
-    const width = sanitizeOptionalDimension(currentTheme[widthKey], 24, 4000, null)
-    const height = sanitizeOptionalDimension(currentTheme[heightKey], 18, 2400, null)
-    return Number.isFinite(width) || Number.isFinite(height)
-  }
-
-  function lockHeaderTextContainerFlow(containerRectOverride = null) {
-    if (!(el.headLeft instanceof HTMLElement) || el.headLeft.dataset.headerFlowLocked === '1') {
-      return
-    }
-    const scale = getCanvasScaleFactor()
-    const containerRect =
-      containerRectOverride && isRectLike(containerRectOverride)
-        ? containerRectOverride
-        : el.headLeft.getBoundingClientRect()
-    const lockedHeight = Math.max(24, containerRect.height / Math.max(0.01, scale))
-    el.headLeft.style.minHeight = `${lockedHeight}px`
-    el.headLeft.dataset.headerFlowLocked = '1'
-  }
-
-  function updateHeaderTextContainerLockState() {
-    if (!(el.headLeft instanceof HTMLElement)) {
-      return
-    }
-    const hasDetachedText = Boolean(
-      el.headLeft.querySelector('[data-header-detached-flow="1"]')
-    )
-    if (hasDetachedText) {
-      return
-    }
-    el.headLeft.style.removeProperty('min-height')
-    el.headLeft.dataset.headerFlowLocked = '0'
-  }
-
-  function detachHeaderTextFromFlow(node, offsetX, offsetY, geometry = null) {
-    if (!(node instanceof HTMLElement) || !(el.headLeft instanceof HTMLElement)) {
-      return
-    }
-
-    if (node.dataset.headerDetachedFlow !== '1') {
-      const scale = getCanvasScaleFactor()
-      const containerRect = isRectLike(geometry?.containerRect)
-        ? geometry.containerRect
-        : el.headLeft.getBoundingClientRect()
-      const nodeRect = isRectLike(geometry?.nodeRect)
-        ? geometry.nodeRect
-        : node.getBoundingClientRect()
-      const baseLeft =
-        containerRect.width > 0 && nodeRect.width > 0
-          ? (nodeRect.left - containerRect.left) / Math.max(0.01, scale) - offsetX
-          : 0
-      const baseTop =
-        containerRect.height > 0 && nodeRect.height > 0
-          ? (nodeRect.top - containerRect.top) / Math.max(0.01, scale) - offsetY
-          : 0
-      node.style.left = `${baseLeft}px`
-      node.style.top = `${baseTop}px`
-      node.dataset.headerDetachedFlow = '1'
-    }
-
-    node.style.position = 'absolute'
-    node.style.margin = '0'
-    node.style.maxWidth = 'none'
-  }
-
-  function restoreHeaderTextFlow(node) {
-    if (!(node instanceof HTMLElement)) {
-      return
-    }
-    node.style.removeProperty('position')
-    node.style.removeProperty('left')
-    node.style.removeProperty('top')
-    node.style.removeProperty('margin')
-    node.style.removeProperty('max-width')
-    delete node.dataset.headerDetachedFlow
-    updateHeaderTextContainerLockState()
-  }
-
-  function syncHeaderTextFlow() {
-    if (!(el.eyebrow instanceof HTMLElement) || !(el.question instanceof HTMLElement)) {
-      return
-    }
-    const shouldDetach =
-      hasCustomHeaderTextSize('eyebrowBoxWidth', 'eyebrowBoxHeight') ||
-      hasCustomHeaderTextSize('questionBoxWidth', 'questionBoxHeight')
-
-    if (!shouldDetach) {
-      restoreHeaderTextFlow(el.eyebrow)
-      restoreHeaderTextFlow(el.question)
-      return
-    }
-
-    const containerRect = el.headLeft.getBoundingClientRect()
-    const eyebrowRect = el.eyebrow.getBoundingClientRect()
-    const questionRect = el.question.getBoundingClientRect()
-    lockHeaderTextContainerFlow(containerRect)
-    detachHeaderTextFromFlow(
-      el.eyebrow,
-      clamp(currentTheme.eyebrowX, -2400, 2400, 0),
-      clamp(currentTheme.eyebrowY, -2400, 2400, 0),
-      { containerRect, nodeRect: eyebrowRect }
-    )
-    detachHeaderTextFromFlow(
-      el.question,
-      clamp(currentTheme.questionX, -2400, 2400, 0),
-      clamp(currentTheme.questionY, -2400, 2400, 0),
-      { containerRect, nodeRect: questionRect }
-    )
-  }
-
-  function applyHeaderTextObjects() {
-    applyElementOffset(
-      el.eyebrow,
-      clamp(currentTheme.eyebrowX, -2400, 2400, 0),
-      clamp(currentTheme.eyebrowY, -2400, 2400, 0),
-      1,
-      1
-    )
-    applyElementOffset(
-      el.question,
-      clamp(currentTheme.questionX, -2400, 2400, 0),
-      clamp(currentTheme.questionY, -2400, 2400, 0),
-      1,
-      1
-    )
-    syncHeaderTextFlow()
-    applyElementBoxSize(el.eyebrow, currentTheme.eyebrowBoxWidth, currentTheme.eyebrowBoxHeight)
-    applyElementBoxSize(el.question, currentTheme.questionBoxWidth, currentTheme.questionBoxHeight)
-  }
-
-  function applyImageAsset(node, options) {
-    if (!options.url) {
-      node.classList.add('hidden')
-      node.removeAttribute('src')
-      return
-    }
-    if (node.getAttribute('src') !== options.url) {
-      node.setAttribute('src', options.url)
-    }
-    node.classList.remove('hidden')
-    if (options.width) {
-      node.style.width = options.width
-    }
-    if (options.opacity) {
-      node.style.opacity = options.opacity
-    }
-    if (options.left) {
-      node.style.left = options.left
-    }
-    if (options.top) {
-      node.style.top = options.top
-    }
-    const scaleX = clamp(options.scaleX, 0.25, 5, 1)
-    const scaleY = clamp(options.scaleY, 0.25, 5, 1)
-    node.style.transform = `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`
   }
 
   function must(id) {
