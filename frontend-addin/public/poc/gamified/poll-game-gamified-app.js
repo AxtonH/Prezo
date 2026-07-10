@@ -155,6 +155,7 @@ import {
   const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
   const ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
   const ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE = 'prezo-history-shortcut'
+  const ARTIFACT_ESCAPE_MESSAGE_TYPE = 'prezo-artifact-escape'
   const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   const LIBRARY_SYNC_MESSAGE_TYPE = 'prezo:library-sync'
   const LIBRARY_SYNC_REQUEST_MESSAGE_TYPE = 'prezo:request-library-sync'
@@ -3229,7 +3230,8 @@ import {
       message.type === ARTIFACT_POSITION_CHANGED_MESSAGE_TYPE ||
       message.type === ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE ||
       message.type === ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE ||
-      message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE
+      message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE ||
+      message.type === ARTIFACT_ESCAPE_MESSAGE_TYPE
     if (isArtifactFrameMessage && Number(message.instanceId) !== state.artifact.instanceId) {
       return
     }
@@ -3283,6 +3285,15 @@ import {
         artifactHistory.redo()
       } else if (message.action === 'undo') {
         artifactHistory.undo()
+      }
+      return
+    }
+    if (message.type === ARTIFACT_ESCAPE_MESSAGE_TYPE) {
+      // Escape forwarded from the iframe bridge. In present mode the
+      // artifact covers the whole stage, so keyboard focus lives inside
+      // the sandboxed iframe and this window's own keydown never fires.
+      if (state.presentMode) {
+        void setPresentMode(false)
       }
       return
     }

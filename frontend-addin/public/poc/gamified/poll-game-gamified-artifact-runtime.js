@@ -25,6 +25,7 @@ const ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
 const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
 const ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
 const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
+const ARTIFACT_ESCAPE_MESSAGE_TYPE = 'prezo-artifact-escape'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -228,6 +229,7 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     `  var SIZE_CHANGED_MESSAGE_TYPE = '${ARTIFACT_SIZE_CHANGED_MESSAGE_TYPE}'`,
     `  var SIZE_INIT_MESSAGE_TYPE = '${ARTIFACT_SIZE_INIT_MESSAGE_TYPE}'`,
     `  var ELEMENT_DELETED_MESSAGE_TYPE = '${ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE}'`,
+    `  var ESCAPE_MESSAGE_TYPE = '${ARTIFACT_ESCAPE_MESSAGE_TYPE}'`,
     `  var HIDDEN_INIT_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE}'`,
     `  var HIDDEN_APPLIED_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE}'`,
     `  var GRID_CONFIG_MESSAGE_TYPE = '${ARTIFACT_GRID_CONFIG_MESSAGE_TYPE}'`,
@@ -2176,6 +2178,16 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     '  window.addEventListener("resize", function () {',
     '    scheduleResizeResponse()',
     '  })',
+    // In present mode the artifact iframe covers the whole stage, so
+    // keyboard focus usually lives HERE — the host station never hears
+    // Escape on its own window. Forward it up (same pattern as the
+    // undo/redo history-shortcut forwarding); the host only acts on it
+    // while present mode is active.
+    '  window.addEventListener("keydown", function (event) {',
+    '    if (event && event.key === "Escape") {',
+    '      postParentMessage(ESCAPE_MESSAGE_TYPE)',
+    '    }',
+    '  }, true)',
     '  if (typeof MutationObserver === "function") {',
     '    var observer = new MutationObserver(function () {',
     '      if (pendingRenderPayload) {',
