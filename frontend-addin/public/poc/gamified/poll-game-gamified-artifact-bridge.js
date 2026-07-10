@@ -1,3 +1,53 @@
+// Fixed reference resolution (see applyFrameFit). In present mode the
+// reference HEIGHT adapts to the real stage aspect within these bounds, so
+// the responsive artifact reflows to fill the embed shape instead of
+// letterboxing on black whenever the PowerPoint shape drifts off 16:9.
+// Outside the bounds (very tall / very wide shapes) we clamp and letterbox —
+// degenerate viewports would break artifact layouts worse than bars do.
+const ARTIFACT_REFERENCE_WIDTH = 1920
+const ARTIFACT_REFERENCE_HEIGHT = 1080
+const ARTIFACT_PRESENT_MIN_ASPECT = 4 / 3
+const ARTIFACT_PRESENT_MAX_ASPECT = 21 / 9
+
+/**
+ * Pure fit math for the artifact iframe: given the stage's box, return the
+ * reference viewport the iframe should render at, the uniform scale that
+ * fits it into the stage, and the centring offsets. Edit mode always uses
+ * the fixed 16:9 reference (the stage is CSS-locked to 16:9, WYSIWYG);
+ * present mode adapts the reference to the stage aspect within the clamp
+ * range so the artifact fills the shape.
+ */
+export function computeArtifactFrameFit(stageWidth, stageHeight, presentMode = false) {
+  if (!Number.isFinite(stageWidth) || !Number.isFinite(stageHeight) || stageWidth <= 0 || stageHeight <= 0) {
+    return null
+  }
+  let referenceWidth = ARTIFACT_REFERENCE_WIDTH
+  let referenceHeight = ARTIFACT_REFERENCE_HEIGHT
+  if (presentMode) {
+    const stageAspect = stageWidth / stageHeight
+    const targetAspect = Math.min(
+      ARTIFACT_PRESENT_MAX_ASPECT,
+      Math.max(ARTIFACT_PRESENT_MIN_ASPECT, stageAspect)
+    )
+    referenceHeight = Math.round(referenceWidth / targetAspect)
+  }
+  const scale = Math.min(stageWidth / referenceWidth, stageHeight / referenceHeight)
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return null
+  }
+  const scaledWidth = referenceWidth * scale
+  const scaledHeight = referenceHeight * scale
+  return {
+    referenceWidth,
+    referenceHeight,
+    scale,
+    scaledWidth,
+    scaledHeight,
+    offsetX: Math.max(0, (stageWidth - scaledWidth) / 2),
+    offsetY: Math.max(0, (stageHeight - scaledHeight) / 2)
+  }
+}
+
 export function createPollGameArtifactBridge({
   windowObj = window,
   artifactState,
@@ -157,17 +207,6 @@ export function createPollGameArtifactBridge({
     }
   }
 
-  // Fixed reference resolution. The iframe is always sized to exactly these
-  // pixel dimensions internally; we then apply a CSS transform: scale() to fit
-  // the stage. This keeps `vh`/`vw`/`clamp()` units inside the artifact stable
-  // across all stage sizes — edit-mode, windowed present mode, and PowerPoint
-  // fullscreen all render the same internal pixel canvas, just scaled.
-  //
-  // Designers see WYSIWYG: a 1920×1080 design renders at scale-down in edit
-  // mode and scale-up in present mode, but the inner layout is byte-identical.
-  const ARTIFACT_REFERENCE_WIDTH = 1920
-  const ARTIFACT_REFERENCE_HEIGHT = 1080
-
   function clearInlineFrameSizing() {
     stageEl.style.height = ''
     frameEl.style.width = ''
@@ -213,55 +252,53 @@ export function createPollGameArtifactBridge({
     setFrameHeight(artifactState.frameHeight, { force: true })
   }
 
+  // Refit whenever the stage's actual box changes. Office webviews resize
+  // the embed without reliably firing window `resize` (or fire it before
+  // layout settles), which left a stale fit — intermittent letterbox bars
+  // after resizing the PowerPoint shape. ResizeObserver is layout-driven,
+  // so it always sees the final box. Convergence: setFrameHeight's <1px
+  // guard stops the re-fire loop after the stage height write settles.
+  let stageResizeObserver = null
+  if (typeof windowObj.ResizeObserver === 'function') {
+    stageResizeObserver = new windowObj.ResizeObserver(() => {
+      handleViewportResize()
+    })
+    stageResizeObserver.observe(stageEl)
+  }
+
   /**
    * Fit the iframe inside the visible stage by applying a uniform scale to a
-   * fixed 1920×1080 reference. The iframe's internal viewport is ALWAYS
-   * 1920×1080, regardless of the host stage's pixel size or present-mode
-   * state, so `vh`/`vw`/`clamp()` inside the artifact compute identically in
-   * every context.
-   *
-   * In edit mode the stage is aspect-locked to 16:9 by CSS, so the scaled
-   * iframe fills the stage exactly. In present mode the stage spans the
-   * whole viewport (no aspect lock); the iframe is centred and the smaller
-   * dimension of the viewport drives the scale, leaving black bars on the
-   * surplus axis.
+   * reference viewport (see computeArtifactFrameFit). In edit mode the
+   * reference is ALWAYS 1920×1080 and the stage is CSS-locked to 16:9, so
+   * the scaled iframe fills the stage exactly and designers see WYSIWYG. In
+   * present mode the stage spans the whole viewport (no aspect lock) and the
+   * reference HEIGHT adapts to the stage aspect within a clamp range, so the
+   * responsive artifact reflows to fill the shape; beyond the range the
+   * iframe is centred and letterboxed.
    *
    * Earlier implementations avoided `transform: scale()` because they tried
    * to fit measured *child content* size, which created a feedback loop
    * (iframe dims → child layout → measured size → new scale). Here we scale
-   * a CONSTANT reference, so there's no feedback.
+   * a reference derived only from the STAGE box, so there's no feedback.
    */
   function applyFrameFit() {
     const stageSize = readStageLayoutSize()
-    const stageWidth = stageSize.width
-    const stageHeight = stageSize.height
-    if (stageWidth <= 0 || stageHeight <= 0) {
-      return
-    }
-    // Scale by the limiting axis so the entire 1920×1080 reference fits
-    // inside the stage without cropping.
-    const scaleX = stageWidth / ARTIFACT_REFERENCE_WIDTH
-    const scaleY = stageHeight / ARTIFACT_REFERENCE_HEIGHT
-    const scale = Math.min(scaleX, scaleY)
-    if (!Number.isFinite(scale) || scale <= 0) {
+    const fit = computeArtifactFrameFit(stageSize.width, stageSize.height, getIsPresentMode())
+    if (!fit) {
       return
     }
     // Centre the post-scale iframe inside the stage. `transform-origin: top
     // left` means scale keeps the iframe's top-left at the stage's top-left;
     // the translate then shifts the visual box to the centre. Transform
     // operations apply right-to-left, so order is `translate(...) scale(...)`.
-    const scaledW = ARTIFACT_REFERENCE_WIDTH * scale
-    const scaledH = ARTIFACT_REFERENCE_HEIGHT * scale
-    const offsetX = Math.max(0, (stageWidth - scaledW) / 2)
-    const offsetY = Math.max(0, (stageHeight - scaledH) / 2)
-    frameEl.style.width = `${ARTIFACT_REFERENCE_WIDTH}px`
-    frameEl.style.height = `${ARTIFACT_REFERENCE_HEIGHT}px`
+    frameEl.style.width = `${fit.referenceWidth}px`
+    frameEl.style.height = `${fit.referenceHeight}px`
     frameEl.style.transformOrigin = 'top left'
-    frameEl.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`
+    frameEl.style.transform = `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`
     // Reported content dims reflect the rendered (post-scale) size that the
     // overlay / pointer code expects.
-    artifactState.reportedContentWidth = Math.round(scaledW)
-    artifactState.reportedContentHeight = Math.round(scaledH)
+    artifactState.reportedContentWidth = Math.round(fit.scaledWidth)
+    artifactState.reportedContentHeight = Math.round(fit.scaledHeight)
   }
 
   function clearRenderWatchdog() {
@@ -322,6 +359,10 @@ export function createPollGameArtifactBridge({
     clearPendingPayloadTimer()
     clearPostLoadReplays()
     clearRenderWatchdog()
+    if (stageResizeObserver) {
+      stageResizeObserver.disconnect()
+      stageResizeObserver = null
+    }
   }
 
   return {
