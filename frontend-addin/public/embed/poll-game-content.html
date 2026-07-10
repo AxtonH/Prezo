@@ -1803,6 +1803,26 @@
         frame.addEventListener("load", () => {
           postLibrarySyncToFrame()
         })
+        // Present-mode escape hatch. The inner station only hears Escape
+        // when keyboard focus is inside ITS iframe. After an auto-restored
+        // present mode (file reopen -> ?presentMode=1) focus sits on this
+        // wrapper document instead, and that restore path is CSS-only (no
+        // fullscreen, so no native browser Escape handling either) — the
+        // user was stuck. Forward the exit via postMessage, which needs no
+        // focus; the station exits and posts prezo:present-mode back, which
+        // also corrects the persisted embed state above.
+        window.addEventListener("keydown", (event) => {
+          if (event.key !== "Escape" || !currentPresentMode) {
+            return
+          }
+          event.preventDefault()
+          try {
+            frame.contentWindow?.postMessage(
+              { type: "prezo:set-present-mode", active: false },
+              window.location.origin
+            )
+          } catch {}
+        })
         window.addEventListener("message", async (event) => {
           if (event.origin && event.origin !== window.location.origin) {
             return

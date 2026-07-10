@@ -1666,6 +1666,29 @@ import {
     el.presentModeToggle.addEventListener('click', handlePresentModeToggleClick)
     document.addEventListener('fullscreenchange', handlePresentModeFullscreenChange)
     document.addEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
+    window.addEventListener('message', handlePresentModeMessage)
+  }
+
+  /**
+   * Present-mode exit forwarded by the outer embed. Needed because the
+   * auto-restored present mode (file reopen -> ?presentMode=1) is CSS-only:
+   * requestFullscreen needs a user gesture, so there is no fullscreen for
+   * the browser's native Escape handling to exit, and this iframe's own
+   * keydown listener never fires while keyboard focus still sits on the
+   * wrapper document. postMessage delivery does not depend on focus.
+   */
+  function handlePresentModeMessage(event) {
+    const message = event?.data
+    if (!message || typeof message !== 'object' || message.type !== 'prezo:set-present-mode') {
+      return
+    }
+    if (event.origin && event.origin !== window.location.origin) {
+      return
+    }
+    if (event.source !== window.parent) {
+      return
+    }
+    void setPresentMode(Boolean(message.active))
   }
 
   /**
@@ -5803,6 +5826,7 @@ import {
     el.presentModeToggle.removeEventListener('click', handlePresentModeToggleClick)
     document.removeEventListener('fullscreenchange', handlePresentModeFullscreenChange)
     document.removeEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
+    window.removeEventListener('message', handlePresentModeMessage)
     el.aiChatForm.removeEventListener('submit', handleAiChatFormSubmit)
     el.aiChatInput.removeEventListener('keydown', handleAiChatInputKeydown)
     el.aiChatShell.removeEventListener('transitionend', handleEditorDockShellTransitionEnd)
