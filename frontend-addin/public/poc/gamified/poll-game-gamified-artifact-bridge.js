@@ -267,34 +267,73 @@ export function createPollGameArtifactBridge({
   }
 
   /**
-   * Fit the iframe inside the visible stage by applying a uniform scale to a
-   * reference viewport (see computeArtifactFrameFit). In edit mode the
-   * reference is ALWAYS 1920×1080 and the stage is CSS-locked to 16:9, so
-   * the scaled iframe fills the stage exactly and designers see WYSIWYG. In
-   * present mode the stage spans the whole viewport (no aspect lock) and the
-   * reference HEIGHT adapts to the stage aspect within a clamp range, so the
-   * responsive artifact reflows to fill the shape; beyond the range the
-   * iframe is centred and letterboxed.
+   * Push the present-mode document zoom into the artifact iframe. The
+   * injected runtime bridge applies it as `documentElement.style.zoom`, so
+   * the artifact rasterizes at NATIVE resolution instead of being painted at
+   * the 1920-wide reference and bitmap-resampled by the compositor (and then
+   * resampled again by PowerPoint's slideshow scaler) — that double resample
+   * was the visible grain, and painting ~5× more pixels than displayed on
+   * every animation frame was the present-mode lag. Zoom scales px lengths
+   * while viewport units keep resolving against the real viewport, which is
+   * exactly the same geometry the reference+scale path produces.
+   */
+  function postViewportZoom(zoom) {
+    const normalized = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
+    if (artifactState.lastViewportZoom === normalized) {
+      return
+    }
+    if (!frameEl.contentWindow) {
+      return
+    }
+    artifactState.lastViewportZoom = normalized
+    try {
+      frameEl.contentWindow.postMessage(
+        { type: 'prezo-viewport-zoom', zoom: normalized, instanceId: artifactState.instanceId },
+        '*'
+      )
+    } catch {}
+  }
+
+  /**
+   * Fit the iframe inside the visible stage (see computeArtifactFrameFit).
+   *
+   * Edit mode: the iframe renders the fixed 1920×1080 reference and is
+   * `transform: scale()`d into the CSS-aspect-locked stage — designers see
+   * WYSIWYG and the pointer/overlay math keeps a constant reference space.
+   *
+   * Present mode: the iframe is sized to the FITTED BOX at native
+   * resolution and the document inside is zoomed by the reference scale
+   * (see postViewportZoom). Same visual geometry, no bitmap resampling.
    *
    * Earlier implementations avoided `transform: scale()` because they tried
    * to fit measured *child content* size, which created a feedback loop
-   * (iframe dims → child layout → measured size → new scale). Here we scale
-   * a reference derived only from the STAGE box, so there's no feedback.
+   * (iframe dims → child layout → measured size → new scale). Both paths
+   * here derive only from the STAGE box, so there's no feedback.
    */
   function applyFrameFit() {
     const stageSize = readStageLayoutSize()
-    const fit = computeArtifactFrameFit(stageSize.width, stageSize.height, getIsPresentMode())
+    const presentMode = getIsPresentMode()
+    const fit = computeArtifactFrameFit(stageSize.width, stageSize.height, presentMode)
     if (!fit) {
       return
     }
-    // Centre the post-scale iframe inside the stage. `transform-origin: top
-    // left` means scale keeps the iframe's top-left at the stage's top-left;
-    // the translate then shifts the visual box to the centre. Transform
-    // operations apply right-to-left, so order is `translate(...) scale(...)`.
-    frameEl.style.width = `${fit.referenceWidth}px`
-    frameEl.style.height = `${fit.referenceHeight}px`
     frameEl.style.transformOrigin = 'top left'
-    frameEl.style.transform = `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`
+    if (presentMode) {
+      frameEl.style.width = `${Math.round(fit.scaledWidth)}px`
+      frameEl.style.height = `${Math.round(fit.scaledHeight)}px`
+      frameEl.style.transform = `translate(${fit.offsetX}px, ${fit.offsetY}px)`
+      postViewportZoom(fit.scale)
+    } else {
+      // Centre the post-scale iframe inside the stage. `transform-origin:
+      // top left` means scale keeps the iframe's top-left at the stage's
+      // top-left; the translate then shifts the visual box to the centre.
+      // Transform operations apply right-to-left, so order is
+      // `translate(...) scale(...)`.
+      frameEl.style.width = `${fit.referenceWidth}px`
+      frameEl.style.height = `${fit.referenceHeight}px`
+      frameEl.style.transform = `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`
+      postViewportZoom(1)
+    }
     // Reported content dims reflect the rendered (post-scale) size that the
     // overlay / pointer code expects.
     artifactState.reportedContentWidth = Math.round(fit.scaledWidth)
@@ -335,6 +374,9 @@ export function createPollGameArtifactBridge({
     artifactState.frameReady = true
     artifactState.renderErrorCount = 0
     artifactState.lastPayloadKey = ''
+    // The fresh document lost any previously applied viewport zoom; clear
+    // the dedupe so the setFrameHeight below re-sends it.
+    artifactState.lastViewportZoom = null
     setFrameHeight(artifactState.frameHeight, { force: true })
     scheduleRenderWatchdog()
     const currentPayload = getCurrentPollPayload()

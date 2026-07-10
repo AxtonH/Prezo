@@ -26,6 +26,7 @@ const ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
 const ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
 const ARTIFACT_GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
 const ARTIFACT_ESCAPE_MESSAGE_TYPE = 'prezo-artifact-escape'
+const ARTIFACT_VIEWPORT_ZOOM_MESSAGE_TYPE = 'prezo-viewport-zoom'
 
 export function normalizeArtifactMarkup(rawValue) {
   const raw = asText(rawValue).trim()
@@ -230,6 +231,7 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     `  var SIZE_INIT_MESSAGE_TYPE = '${ARTIFACT_SIZE_INIT_MESSAGE_TYPE}'`,
     `  var ELEMENT_DELETED_MESSAGE_TYPE = '${ARTIFACT_ELEMENT_DELETED_MESSAGE_TYPE}'`,
     `  var ESCAPE_MESSAGE_TYPE = '${ARTIFACT_ESCAPE_MESSAGE_TYPE}'`,
+    `  var VIEWPORT_ZOOM_MESSAGE_TYPE = '${ARTIFACT_VIEWPORT_ZOOM_MESSAGE_TYPE}'`,
     `  var HIDDEN_INIT_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_INIT_MESSAGE_TYPE}'`,
     `  var HIDDEN_APPLIED_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE}'`,
     `  var GRID_CONFIG_MESSAGE_TYPE = '${ARTIFACT_GRID_CONFIG_MESSAGE_TYPE}'`,
@@ -2171,6 +2173,22 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     '    if (message.type === MESSAGE_TYPE) {',
     '      hasReceivedHostState = true',
     '      animateStateTransition(message.payload, false)',
+    '      return',
+    '    }',
+    // Present-mode native-resolution rendering: the host sizes this iframe
+    // to the fitted stage box and zooms the document instead of
+    // texture-scaling the frame (see artifact-bridge applyFrameFit). Zoom
+    // scales px lengths while viewport units keep resolving against the
+    // real viewport — the same geometry the reference produces, minus the
+    // bitmap resampling.
+    '    if (message.type === VIEWPORT_ZOOM_MESSAGE_TYPE) {',
+    '      var zoomValue = Number(message.zoom)',
+    '      if (!document.documentElement) return',
+    '      if (Number.isFinite(zoomValue) && zoomValue > 0 && zoomValue !== 1) {',
+    '        document.documentElement.style.zoom = String(zoomValue)',
+    '      } else {',
+    '        document.documentElement.style.zoom = ""',
+    '      }',
     '      return',
     '    }',
     '  })',

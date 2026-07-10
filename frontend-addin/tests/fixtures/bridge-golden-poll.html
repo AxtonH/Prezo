@@ -18,6 +18,7 @@
   var SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
   var ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
   var ESCAPE_MESSAGE_TYPE = 'prezo-artifact-escape'
+  var VIEWPORT_ZOOM_MESSAGE_TYPE = 'prezo-viewport-zoom'
   var HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
   var HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
   var GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
@@ -1712,6 +1713,16 @@
     if (message.type === MESSAGE_TYPE) {
       hasReceivedHostState = true
       animateStateTransition(message.payload, false)
+      return
+    }
+    if (message.type === VIEWPORT_ZOOM_MESSAGE_TYPE) {
+      var zoomValue = Number(message.zoom)
+      if (!document.documentElement) return
+      if (Number.isFinite(zoomValue) && zoomValue > 0 && zoomValue !== 1) {
+        document.documentElement.style.zoom = String(zoomValue)
+      } else {
+        document.documentElement.style.zoom = ""
+      }
       return
     }
   })
