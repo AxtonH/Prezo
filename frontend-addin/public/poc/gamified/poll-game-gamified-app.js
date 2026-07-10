@@ -7,23 +7,19 @@ import {
   AI_MOVE_TARGETS,
   AI_SCALE_RESIZE_TARGETS,
   AI_TARGET_ALIASES,
-  AI_THEME_ALLOWED_KEYS,
-  AI_THEME_COLOR_KEYS,
-  AI_THEME_NUMBER_RANGES,
   ARTIFACT_LIBRARY_KEY,
   ARTIFACT_BRAND_REFERENCE_VALUE,
   DEFAULT_API_BASE,
-  DEFAULT_POLL_SELECTOR,
   DRAG_START_THRESHOLD_PX,
   HISTORY_LIMIT,
   LIBRARY_SYNC_TOKEN_KEY,
+  MAX_INLINE_ATTACHMENTS,
   MIN_RESIZE_HANDLE_SIZE_PX,
   RIBBON_COLLAPSED_KEY,
   RIBBON_HIDDEN_KEY,
   RIBBON_TAB_KEY,
   TEXT_FONT_FAMILIES,
   TEXT_FONT_SIZES,
-  TEXT_OVERRIDES_KEY,
   THEME_DRAFT_KEY,
   THEME_LIBRARY_KEY,
   AI_CHAT_OPEN_KEY,
@@ -34,41 +30,102 @@ import {
   ARTIFACT_CONVERSATION_STEPS,
   ARTIFACT_DEFAULT_PLACEHOLDER,
   ARTIFACT_EDIT_PLACEHOLDER,
-  ARTIFACT_LAYOUT_HORIZONTAL,
   ARTIFACT_VISUAL_MODE,
-  buildArtifactConversationPrompt,
-  buildArtifactEditPrompt,
-  buildArtifactRepairPrompt,
   buildArtifactAiPrompt,
+  cloneArtifactConversationAnswers,
   createEmptyArtifactAnswers,
   mergeArtifactDesignGuidelines,
-  normalizeArtifactActivityKind,
-  sanitizeArtifactLayout
+  normalizeArtifactActivityKind
+
 } from './poll-game-gamified-artifact-mode.js'
+import {
+  buildArtifactPayloadKey,
+  buildArtifactQnaPayloadKey,
+  createArtifactPayloadBuilders
+} from './poll-game-gamified-artifact-payloads.js'
+import { createAiTransport } from './poll-game-gamified-ai-transport.js'
+import {
+  buildArtifactRenderHealthErrorMessage,
+  createArtifactWizard,
+  shouldRejectArtifactRenderHealth
+} from './poll-game-gamified-artifact-wizard.js'
+import {
+  defaultTheme,
+  hexLuminance,
+  normalizeColorToHex,
+  sanitizeAiThemePatch,
+  sanitizeHex,
+  sanitizeOptionalDimension,
+  sanitizeTheme
+
+} from './poll-game-gamified-theme.js'
 import {
   buildArtifactSrcDoc,
   normalizeArtifactMarkup
 } from './poll-game-gamified-artifact-runtime.js'
 import {
   buildSegmentedArtifactPackage,
-  buildSingleFileArtifactPackage,
   resolveArtifactHtmlFromPackage,
   sanitizeArtifactPackage
 } from './poll-game-gamified-artifact-package.js'
 import {
   clearComposer,
-  composerIsEmpty,
   createInlineImageChip,
   insertChipAtCaret,
   refreshComposerPlaceholder,
   removeChipNode,
   serializeComposer,
-  setChipState,
-  setComposerText
+  setChipState
+
 } from './poll-game-gamified-inline-attachments.js'
+import {
+  asText,
+  clamp,
+  clone,
+  errorToMessage,
+  extractPlainTextFromHtml,
+  fetchWithTimeout,
+  normalizeApiBase,
+  normalizeCode,
+  normalizeThemeName,
+  normalizeWhitespace,
+  parsePollSelector,
+  parsePromptSelector,
+  safeJsonParse,
+  safeStorageGet,
+  toInt
+
+} from './poll-game-gamified-utils.js'
+import {
+  SOCKET_RECONNECT_INITIAL_DELAY_MS,
+  createSessionFeed,
+  getQnaTotalVotes,
+  getTotalVotes,
+  qnaViewAsPollShape
+} from './poll-game-gamified-session-feed.js'
 import { createPollGameArtifactBridge } from './poll-game-gamified-artifact-bridge.js'
 import { createPollGameLibraryStorage } from './poll-game-gamified-library-storage.js'
 import { createPollGameLibrarySyncManager } from './poll-game-gamified-library-sync.js'
+import { createLibraryPanel } from './poll-game-gamified-library-ui.js'
+import { createThemeEditor } from './poll-game-gamified-theme-ui.js'
+import {
+  getEyebrowTextKey,
+  getFooterTextKey,
+  getOptionStatsTextKey,
+  getOptionTextKey,
+  getOptionsStateTextKey,
+  getQuestionStateTextKey,
+  getQuestionTextKey,
+  getStatusTextKey,
+  getVotesTextKey,
+  isLiveBoundTextKey,
+  loadTextOverrides,
+  sanitizeRichTextHtml,
+  sanitizeTextOverridesMap,
+  saveTextOverrides,
+  textToRichHtml
+} from './poll-game-gamified-richtext.js'
+import { createRichTextEditor } from './poll-game-gamified-richtext-editor.js'
 import { createArtifactTextEditHandler } from './poll-game-gamified-artifact-textedit.js'
 import { createArtifactSelectionHandler } from './poll-game-gamified-artifact-select.js'
 import { createArtifactPositionHandler } from './poll-game-gamified-artifact-position.js'
@@ -76,16 +133,14 @@ import { createArtifactSizeHandler } from './poll-game-gamified-artifact-size.js
 import { createArtifactDeleteHandler } from './poll-game-gamified-artifact-delete.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
 import {
-  createArtifactGuidesHandler,
-  DESIGNER_TOOLS_ALLOWED_SPACINGS
+  createArtifactGuidesHandler
+
 } from './poll-game-gamified-artifact-guides.js'
 import {
   isArtifactCopyField,
   normalizeFooterTextToSuffix,
   extractCopyFromStyleOverrides,
   mergeCopyIntoStyleOverrides,
-  isArtifactTextField,
-  getArtifactTextFieldId,
   buildArtifactHiddenCss
 } from './poll-game-gamified-artifact-copy.js'
 
@@ -116,9 +171,7 @@ import {
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
-  const ARTIFACT_BUILD_TIMEOUT_MS = 300000
   // One intake turn is a short Haiku call (a question or a small JSON brief).
-  const ARTIFACT_INTAKE_TIMEOUT_MS = 45000
   // Hard cap on an attached image; matches the backend upload + reference ceilings.
   const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 10 * 1024 * 1024
   // Images at or under this size are also sent as base64 vision (the model SEES them).
@@ -126,7 +179,6 @@ import {
   // under provider inline-data limits (mirrors ARTIFACT_REFERENCE_IMAGE_MAX_VISION_BYTES
   // in backend/app/api/ai.py).
   const ARTIFACT_BUILD_REFERENCE_VISION_MAX_BYTES = 5 * 1024 * 1024
-  const LIVE_SNAPSHOT_RENDER_BATCH_MS = 70
   const ARTIFACT_STATE_PUSH_BATCH_MS = 90
   const ARTIFACT_EDIT_RENDER_CONFIRM_TIMEOUT_MS = 5000
   const ARTIFACT_LAYOUT_REFIT_DELAY_MS = 220
@@ -136,15 +188,6 @@ import {
   const ARTIFACT_LOADER_SIZE_PX = 120
   const ARTIFACT_LOADER_COLOR = '#3f7cff'
   const ARTIFACT_LOADER_RING_COUNT = 4
-  const SOCKET_RECONNECT_INITIAL_DELAY_MS = 2800
-  const SOCKET_RECONNECT_MAX_DELAY_MS = 20000
-  const SNAPSHOT_POLL_DISCONNECTED_MS = 15000
-  // Initial paint prefers the WebSocket's first-message snapshot push (no
-  // HTTP round trip). If the socket hasn't delivered within this grace
-  // window — usually because the WS handshake is unusually slow or the
-  // connection failed — fall back to a one-shot HTTP /snapshot fetch so the
-  // user isn't stuck on the skeleton until the 15s disconnected-poll tick.
-  const INITIAL_SNAPSHOT_FALLBACK_MS = 800
 
   const query = new URLSearchParams(window.location.search)
 
@@ -181,37 +224,8 @@ import {
   /** Per-chip object URLs (for preview thumbnails), keyed by attachment id, so each can
       be revoked when its chip is removed or the composer is cleared. */
   const attachmentObjectUrls = new Map()
-  const MAX_INLINE_ATTACHMENTS = 6
-
-  const parsePollSelector = (raw) => {
-    const value = asText(raw)
-    if (!value) {
-      return { mode: 'latestOpen', descriptor: DEFAULT_POLL_SELECTOR, explicitId: '' }
-    }
-    const lower = value.toLowerCase()
-    if (lower === 'latest/open' || lower === 'open/latest' || lower === 'latestopen') {
-      return { mode: 'latestOpen', descriptor: 'latest/open', explicitId: '' }
-    }
-    if (lower === 'latest') {
-      return { mode: 'latest', descriptor: 'latest', explicitId: '' }
-    }
-    if (lower === 'open') {
-      return { mode: 'open', descriptor: 'open', explicitId: '' }
-    }
-    return { mode: 'id', descriptor: value, explicitId: value }
-  }
 
   const pollSelector = parsePollSelector(query.get('pollId'))
-
-  // Discussion binding mirrors the poll selector: an explicit prompt id, or
-  // latest-open fallback when the embed has not been configured yet.
-  const parsePromptSelector = (raw) => {
-    const value = asText(raw)
-    if (!value) {
-      return { mode: 'latestOpen', descriptor: 'latest/open', explicitId: '' }
-    }
-    return { mode: 'id', descriptor: value, explicitId: value }
-  }
 
   // Which activity this station instance renders: 'poll' (default), 'qna'
   // (session-level audience Q&A), or 'discussion' (a QnaPrompt the host
@@ -463,127 +477,6 @@ import {
   const ribbonTabs = [...document.querySelectorAll('.ribbon-tab')]
   const ribbonPanes = [...document.querySelectorAll('.ribbon-pane')]
 
-  const defaultTheme = Object.freeze({
-    bgImageUrl: '',
-    bgImageOpacity: 0,
-    bgA: '#f4f8ff',
-    bgB: '#dff0ff',
-    overlayColor: '#eef5ff',
-    overlayOpacity: 0.22,
-    gridOpacity: 0.1,
-    panelColor: '#ffffff',
-    panelOpacity: 0.82,
-    panelBorder: '#9bc5ef',
-    textMain: '#16375e',
-    textSub: '#55769d',
-    trackColor: '#c7d8ea',
-    trackOpacity: 0.58,
-    fillA: '#64c8ff',
-    fillB: '#4a89ff',
-    barHeight: 24,
-    barRadius: 999,
-    questionSize: 62,
-    labelSize: 24,
-    visualMode: ARTIFACT_VISUAL_MODE,
-    artifactLayout: ARTIFACT_LAYOUT_HORIZONTAL,
-    logoUrl: '',
-    logoWidth: 140,
-    logoOpacity: 1,
-    logoX: 88,
-    logoY: 10,
-    assetUrl: '',
-    assetWidth: 320,
-    assetOpacity: 0.38,
-    assetX: 50,
-    assetY: 50,
-    panelX: 0,
-    panelY: 0,
-    panelScaleX: 1,
-    panelScaleY: 1,
-    bgImageX: 0,
-    bgImageY: 0,
-    bgOverlayX: 0,
-    bgOverlayY: 0,
-    gridX: 0,
-    gridY: 0,
-    bgImageScaleX: 1,
-    bgImageScaleY: 1,
-    bgOverlayScaleX: 1,
-    bgOverlayScaleY: 1,
-    gridScaleX: 1,
-    gridScaleY: 1,
-    eyebrowX: 0,
-    eyebrowY: 0,
-    eyebrowBoxWidth: null,
-    eyebrowBoxHeight: null,
-    questionX: 0,
-    questionY: 0,
-    questionBoxWidth: null,
-    questionBoxHeight: null,
-    metaX: 0,
-    metaY: 0,
-    metaBoxWidth: null,
-    metaBoxHeight: null,
-    metaScaleX: 1,
-    metaScaleY: 1,
-    optionsX: 0,
-    optionsY: 0,
-    footerX: 0,
-    footerY: 0,
-    footerBoxWidth: null,
-    footerBoxHeight: null,
-    footerScaleX: 1,
-    footerScaleY: 1,
-    logoScaleX: 1,
-    logoScaleY: 1,
-    assetScaleX: 1,
-    assetScaleY: 1,
-    optionOffsets: {},
-    optionSizes: {},
-    optionScales: {},
-    optionAnchors: {},
-    deletedObjects: {},
-    fontFamily: '"Inter", "Segoe UI", "Trebuchet MS", sans-serif'
-  })
-
-  const themeControls = [
-    { id: 'theme-bg-a', key: 'bgA', type: 'color' },
-    { id: 'theme-bg-b', key: 'bgB', type: 'color' },
-    { id: 'theme-overlay-color', key: 'overlayColor', type: 'color' },
-    { id: 'theme-bg-image-opacity', key: 'bgImageOpacity', type: 'number' },
-    { id: 'theme-overlay-opacity', key: 'overlayOpacity', type: 'number' },
-    { id: 'theme-grid-opacity', key: 'gridOpacity', type: 'number' },
-    { id: 'theme-panel-color', key: 'panelColor', type: 'color' },
-    { id: 'theme-panel-opacity', key: 'panelOpacity', type: 'number' },
-    { id: 'theme-panel-border', key: 'panelBorder', type: 'color' },
-    { id: 'theme-text-main', key: 'textMain', type: 'color' },
-    { id: 'theme-text-sub', key: 'textSub', type: 'color' },
-    { id: 'theme-track-color', key: 'trackColor', type: 'color' },
-    { id: 'theme-track-opacity', key: 'trackOpacity', type: 'number' },
-    { id: 'theme-fill-a', key: 'fillA', type: 'color' },
-    { id: 'theme-fill-b', key: 'fillB', type: 'color' },
-    { id: 'theme-bar-height', key: 'barHeight', type: 'number' },
-    { id: 'theme-bar-radius', key: 'barRadius', type: 'number' },
-    { id: 'theme-question-size', key: 'questionSize', type: 'number' },
-    { id: 'theme-label-size', key: 'labelSize', type: 'number' },
-    { id: 'theme-visual-mode', key: 'visualMode', type: 'select' },
-    { id: 'theme-logo-url', key: 'logoUrl', type: 'text' },
-    { id: 'theme-logo-width', key: 'logoWidth', type: 'number' },
-    { id: 'theme-logo-opacity', key: 'logoOpacity', type: 'number' },
-    { id: 'theme-logo-x', key: 'logoX', type: 'number' },
-    { id: 'theme-logo-y', key: 'logoY', type: 'number' },
-    { id: 'theme-asset-url', key: 'assetUrl', type: 'text' },
-    { id: 'theme-asset-width', key: 'assetWidth', type: 'number' },
-    { id: 'theme-asset-opacity', key: 'assetOpacity', type: 'number' },
-    { id: 'theme-asset-x', key: 'assetX', type: 'number' },
-    { id: 'theme-asset-y', key: 'assetY', type: 'number' },
-    { id: 'theme-font-family', key: 'fontFamily', type: 'text' }
-  ]
-
-  const controlElements = Object.fromEntries(
-    themeControls.map((spec) => [spec.id, document.getElementById(spec.id)])
-  )
-
   const libraryStorage = createPollGameLibraryStorage({
     themeLibraryKey: THEME_LIBRARY_KEY,
     artifactLibraryKey: ARTIFACT_LIBRARY_KEY,
@@ -621,10 +514,14 @@ import {
     setApiBase: (apiBase) => {
       state.apiBase = apiBase
     },
-    mergeRemoteThemeLibrary,
-    mergeRemoteArtifactLibrary,
-    setStatus: setLibrarySyncStatus,
-    showArtifactFeedback
+    // The library panel is instantiated further down (it needs the handler
+    // instances declared below), so its methods arrive as deferred arrows —
+    // the sync manager only invokes them post-init, once the panel consts
+    // exist.
+    mergeRemoteThemeLibrary: (records) => mergeRemoteThemeLibrary(records),
+    mergeRemoteArtifactLibrary: (records) => mergeRemoteArtifactLibrary(records),
+    setStatus: (type, text, detail) => setLibrarySyncStatus(type, text, detail),
+    showArtifactFeedback: (text, type) => showArtifactFeedback(text, type)
   })
   const {
     hydrateSavedLibraries,
@@ -640,6 +537,21 @@ import {
     getLibraryAccessToken,
     dispose: disposeLibrarySyncManager
   } = librarySyncManager
+  // Backend /ai route transport. Auth + brand-dropdown reads arrive as
+  // callbacks; the destructured names keep every historical call site
+  // unchanged.
+  const aiTransport = createAiTransport({
+    state,
+    getLibraryAccessToken: () => getLibraryAccessToken(),
+    collectArtifactBrandProfileNames: () => collectArtifactBrandProfileNames()
+  })
+  const {
+    libraryAuthHeaders,
+    requestAiEditPlan,
+    requestAiArtifactBuild,
+    requestAiArtifactIntake,
+    requestAiArtifactAnswer
+  } = aiTransport
   const artifactBridge = createPollGameArtifactBridge({
     artifactState: state.artifact,
     stageEl: el.artifactStage,
@@ -693,6 +605,25 @@ import {
       })
     }
   })
+  // Data layer: socket + snapshot + activity selection. Rendering and status
+  // chrome stay in this file and arrive as callbacks; the destructured names
+  // keep every historical call site unchanged.
+  const sessionFeed = createSessionFeed({
+    state,
+    onRenderSnapshot: (force) => renderFromSnapshot(force),
+    onSocketStatusChange: () => updateCurrentActivityMeta(),
+    onMissingSession: () => renderMissingSession(),
+    onError: (message) => renderError(message),
+    isTextEditing: () => artifactTextEdit.isEditing()
+  })
+  const {
+    startSessionFeed,
+    disconnectSocket,
+    stopSnapshotPolling,
+    selectPoll,
+    buildQnaActivityView
+  } = sessionFeed
+
   const artifactSelection = createArtifactSelectionHandler({
     onSelectionChange: (selection) => {
       // For now we only log; future iterations will drive a host-side
@@ -749,6 +680,62 @@ import {
       }
     }
   })
+  // Payload + AI-context builders: the live state pushed into the artifact
+  // iframe and the model-facing build/edit context. Mutable closure bindings
+  // (currentTheme, pending override maps) and DOM reads arrive as getters.
+  const artifactPayloads = createArtifactPayloadBuilders({
+    state,
+    getCurrentTheme: () => currentTheme,
+    artifactPosition,
+    artifactSize,
+    getPendingStyleOverrides: () => pendingArtifactStyleOverrides,
+    getPendingCopyOverrides: () => pendingArtifactCopyOverrides,
+    getEyebrowHtml: () => el.eyebrow.innerHTML,
+    getQuestionHtml: () => el.question.innerHTML
+  })
+  const {
+    buildArtifactPollPayload,
+    buildArtifactQnaPayload,
+    buildArtifactContext,
+    buildAiEditorContext
+  } = artifactPayloads
+
+  // Wizard + edit queue orchestration. All DOM work (composer, chat log,
+  // thinking animation, queue chips, stage) and the build orchestrator stay
+  // in this file and arrive as callbacks under their original names.
+  const artifactWizard = createArtifactWizard({
+    state,
+    requestAiArtifactIntake,
+    requestAiArtifactBuild,
+    requestAiArtifactAnswer,
+    buildArtifactContext,
+    buildAiEditorContext,
+    submitArtifactPrompt: (prompt, options) => submitArtifactPrompt(prompt, options),
+    appendArtifactEditMessage: (role, text) => appendArtifactEditMessage(role, text),
+    clearPromptInput: () => clearComposer(el.artifactPromptInput),
+    serializePromptInput: () => serializeComposer(el.artifactPromptInput),
+    clearArtifactBuildReferenceUi: () => clearArtifactBuildReferenceUi(),
+    renderArtifactPromptQueue: () => renderArtifactPromptQueue(),
+    syncArtifactComposerBusyState: () => syncArtifactComposerBusyState(),
+    syncArtifactConversationUi: () => syncArtifactConversationUi(),
+    startArtifactIntakeThinking: (options) => startArtifactIntakeThinking(options),
+    stopArtifactIntakeThinking: () => stopArtifactIntakeThinking(),
+    setEditorShellExpanded: (expanded) => setEditorShellExpanded(expanded),
+    ensureArtifactBrandProfilesLoaded: () => ensureArtifactBrandProfilesLoaded(),
+    collectReferenceImagePayloads: () => collectReferenceImagePayloads(),
+    collectReadyAttachmentUrls: () => collectReadyAttachmentUrls(),
+    isArtifactConversationComplete: () => isArtifactConversationComplete(),
+    applyArtifactMarkup: (html, options) => applyArtifactMarkup(html, options),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    showArtifactStageFrame: () => showArtifactStageFrame()
+  })
+  const {
+    submitArtifactConversationAnswer,
+    handleArtifactIntakeBuildNowClick,
+    enqueueArtifactEditPrompt,
+    submitArtifactRuntimeRepairRequest
+  } = artifactWizard
+
   const artifactDelete = createArtifactDeleteHandler({
     onDelete: (stableId, override, message) => {
       console.log('[prezo-element-deleted]', stableId, override)
@@ -792,16 +779,88 @@ import {
   })
   let themeLibrary = loadThemeLibrary()
   let artifactLibrary = loadArtifactLibrary()
-  const artifactVersionState = {
-    selectedName: '',
-    versions: [],
-    loading: false
-  }
   let currentTheme = loadInitialTheme(themeLibrary)
   const visualModeFromQuery = asText(query.get('visualMode')).trim()
   if (visualModeFromQuery) {
     currentTheme = sanitizeTheme({ ...currentTheme, visualMode: visualModeFromQuery })
   }
+
+  // Library panel: theme/artifact selects, save/load/delete flows, account
+  // version history, theme import/export, sync status pill, and the panel's
+  // feedback lines. The panel owns its DOM (the shared el map moves with it);
+  // reassignable closure bindings (currentTheme, the pending override maps)
+  // arrive as accessors, and app callbacks keep their original closure names
+  // so the moved bodies read unchanged. The destructured names keep every
+  // historical call site unchanged.
+  const libraryPanel = createLibraryPanel({
+    state,
+    el,
+    themeLibrary,
+    artifactLibrary,
+    getCurrentTheme: () => currentTheme,
+    setCurrentTheme: (nextTheme) => {
+      currentTheme = nextTheme
+    },
+    getPendingStyleOverrides: () => pendingArtifactStyleOverrides,
+    getPendingCopyOverrides: () => pendingArtifactCopyOverrides,
+    clearPendingArtifactOverrides: () => {
+      pendingArtifactStyleOverrides = {}
+      pendingArtifactCopyOverrides = {}
+    },
+    saveThemeLibrary,
+    saveArtifactLibrary,
+    saveThemeDraft,
+    sanitizeSavedArtifactRecord,
+    persistThemeToAccount,
+    deleteThemeFromAccount,
+    persistArtifactToAccount,
+    deleteArtifactFromAccount,
+    listArtifactVersionsFromAccount,
+    restoreArtifactVersionInAccount,
+    reflectLibrarySyncResult,
+    artifactPosition,
+    artifactSize,
+    artifactDelete,
+    artifactHistory,
+    updateTheme: (partialTheme, options) => updateTheme(partialTheme, options),
+    applyTheme: (theme) => applyTheme(theme),
+    syncThemeControls: () => syncThemeControls(),
+    postVisualModeToParent: (reason) => postVisualModeToParent(reason),
+    postActiveArtifactToParent: (reason) => postActiveArtifactToParent(reason),
+    recordHistoryCheckpoint: (actionLabel) => recordHistoryCheckpoint(actionLabel),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    applyArtifactMarkup: (html, options) => applyArtifactMarkup(html, options),
+    clearArtifactMarkup: () => clearArtifactMarkup(),
+    resetArtifactConversation: (options) => resetArtifactConversation(options),
+    hideArtifactStage: () => hideArtifactStage(),
+    showArtifactStagePlaceholder: (text, type) => showArtifactStagePlaceholder(text, type),
+    showArtifactStageFrame: () => showArtifactStageFrame(),
+    clearArtifactEditPromptQueue: () => clearArtifactEditPromptQueue(),
+    syncArtifactConversationUi: () => syncArtifactConversationUi()
+  })
+  const {
+    setLibrarySyncStatus,
+    mergeRemoteThemeLibrary,
+    mergeRemoteArtifactLibrary,
+    saveTheme,
+    loadThemeFromSelect,
+    deleteThemeFromSelect,
+    startNewArtifact,
+    saveArtifactToLibrary,
+    applyArtifactLibraryRecord,
+    loadArtifactFromSelect,
+    deleteArtifactFromSelect,
+    handleArtifactSelectChange,
+    refreshArtifactVersionHistory,
+    restoreArtifactFromVersionHistory,
+    exportCurrentTheme,
+    importThemeFromFile,
+    resetThemeDraft,
+    refreshThemeSelect,
+    refreshArtifactSelect,
+    showThemeFeedback,
+    showArtifactFeedback
+  } = libraryPanel
 
   const artifactNameFromQuery = asText(query.get('artifactName')).trim()
   const presentModeFromQuery = asText(query.get('presentMode')).trim() === '1'
@@ -937,6 +996,94 @@ import {
     hidden: false,
     advanced: false
   }
+
+  // Theme editor DOM half: control bindings, updateTheme/applyTheme/
+  // syncThemeControls, and the image upload UI. Instantiated after
+  // historyState (updateTheme reads its `applying` flag by reference) and
+  // before init() runs. The canvas-object helpers stay in this file — the
+  // drag/resize engine shares them — and arrive as callbacks under their
+  // original names. Destructured names keep every historical call site
+  // unchanged.
+  const themeEditor = createThemeEditor({
+    state,
+    el,
+    historyState,
+    getCurrentTheme: () => currentTheme,
+    setCurrentTheme: (nextTheme) => {
+      currentTheme = nextTheme
+    },
+    saveThemeDraft,
+    recordHistoryCheckpoint: (actionLabel) => recordHistoryCheckpoint(actionLabel),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    postVisualModeToParent: (reason) => postVisualModeToParent(reason),
+    clearArtifactMarkup: () => clearArtifactMarkup(),
+    resetArtifactConversation: (options) => resetArtifactConversation(options),
+    hideArtifactStage: () => hideArtifactStage(),
+    showThemeFeedback: (text, type) => showThemeFeedback(text, type),
+    applyElementOffset: (node, offsetX, offsetY, scaleX, scaleY) =>
+      applyElementOffset(node, offsetX, offsetY, scaleX, scaleY),
+    applyElementBoxSize: (node, width, height) => applyElementBoxSize(node, width, height),
+    applyHeaderTextObjects: () => applyHeaderTextObjects(),
+    applyImageAsset: (node, options) => applyImageAsset(node, options),
+    applyDeletedStaticTargets: (theme) => applyDeletedStaticTargets(theme),
+    syncArtifactComposerVisibility: () => syncArtifactComposerVisibility(),
+    scheduleResizeSelectionUpdate: () => scheduleResizeSelectionUpdate()
+  })
+  const {
+    bindThemeControls,
+    updateTheme,
+    applyTheme,
+    syncThemeControls,
+    syncSingleControlValue,
+    bindImageUpload,
+    setupBackgroundDropzone
+  } = themeEditor
+
+  // Rich-text selection editor: contenteditable hosts, the floating
+  // selection toolbar, ribbon text-style controls, and the cached-selection
+  // machinery. The artifact iframe text toolbar stays in this file (it edits
+  // through the bridge, not station hosts) and is invoked via the callback;
+  // it reaches back into the editor for the shared select helpers.
+  // Destructured names keep every historical call site unchanged.
+  const richTextEditor = createRichTextEditor({
+    state,
+    el,
+    historyState,
+    getCurrentTheme: () => currentTheme,
+    recordHistoryCheckpoint: (actionLabel) => recordHistoryCheckpoint(actionLabel),
+    renderFromSnapshot: (force) => renderFromSnapshot(force),
+    scheduleTypingHistoryCheckpoint: () => scheduleTypingHistoryCheckpoint(),
+    setupArtifactTextToolbar: () => setupArtifactTextToolbar()
+  })
+  const {
+    clearCachedRichTextSelection,
+    extractFontFamilyName,
+    fillSelectOptions,
+    flushRichTextHostsToOverrides,
+    getActiveRichTextHost,
+    getEditingRichTextHost,
+    getRichTextHost,
+    handleRichTextFocusIn,
+    handleRichTextFocusOut,
+    handleRichTextInput,
+    handleRichTextKeydown,
+    handleRichTextPaste,
+    handleRichTextPointerDown,
+    handleRichTextSelectionChange,
+    hideSelectionToolbar,
+    isRichTextEditingActive,
+    isTextControlElement,
+    normalizeFontFamilyChoice,
+    normalizeFontSizeChoice,
+    normalizeFontSizeCss,
+    pxToPoints,
+    refreshTextToolStates,
+    renderRichText,
+    scheduleSelectionToolbarUpdate,
+    setupRichTextEditor,
+    syncTextSelectOption,
+    syncTextStyleControlsFromSelection
+  } = richTextEditor
 
   init()
 
@@ -1380,24 +1527,7 @@ import {
   }
 
   function setupThemeEditor() {
-    for (const spec of themeControls) {
-      const input = controlElements[spec.id]
-      if (!input) {
-        continue
-      }
-      const eventName =
-        spec.type === 'checkbox' || spec.type === 'select' ? 'change' : 'input'
-      input.addEventListener(eventName, () => {
-        const value = readControlValue(input, spec.type)
-        updateTheme({ [spec.key]: value }, { historyLabel: 'Update design' })
-        if (
-          state.snapshot &&
-          spec.key === 'visualMode'
-        ) {
-          renderFromSnapshot(true)
-        }
-      })
-    }
+    bindThemeControls()
 
     el.saveTheme.addEventListener('click', saveTheme)
     el.loadTheme.addEventListener('click', loadThemeFromSelect)
@@ -2022,15 +2152,6 @@ import {
     return validateReferenceImagePayload(mediaType, b64)
   }
 
-  function readFileAsDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
   function syncArtifactTypeReferenceRow() {
     // Show the attach-image affordance during the whole intake conversation AND
     // in edit mode (an artifact already exists), so users can attach an image
@@ -2266,18 +2387,6 @@ import {
   // used to paint that brand's quick-reply chip as a gradient of its
   // identity colors. Empty/missing → default chip style.
   const artifactBrandChipColorsByName = new Map()
-
-  function hexLuminance(hex) {
-    const clean = sanitizeHex(hex, '').replace('#', '')
-    if (!clean) {
-      return null
-    }
-    const full = clean.length === 3 ? clean.split('').map((ch) => `${ch}${ch}`).join('') : clean
-    const r = parseInt(full.slice(0, 2), 16) / 255
-    const g = parseInt(full.slice(2, 4), 16) / 255
-    const b = parseInt(full.slice(4, 6), 16) / 255
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-  }
 
   function pickArtifactBrandChipColors(row) {
     const candidates = []
@@ -2737,16 +2846,7 @@ import {
     )
   }
 
-  function cloneArtifactConversationAnswers(answers) {
-    return {
-      artifactType: asText(answers?.artifactType),
-      designGuidelines: asText(answers?.designGuidelines),
-      brandProfileName: asText(answers?.brandProfileName),
-      referenceImageGuidelines: asText(answers?.referenceImageGuidelines),
-      /** Legacy: older saved artifacts may still include this; no longer collected in the wizard. */
-      audienceSize: asText(answers?.audienceSize)
-    }
-  }
+
 
   function buildArtifactConversationSummary(answers) {
     const artifactType = asText(answers?.artifactType).trim()
@@ -3111,7 +3211,7 @@ import {
       renderHealth && typeof renderHealth === 'object' ? renderHealth : null
     if (
       state.artifact.pendingRequestKind === 'edit' &&
-      shouldRejectArtifactRenderHealth(normalizedRenderHealth)
+      shouldRejectArtifactRenderHealth(normalizedRenderHealth, state.artifact.activeEditRequest)
     ) {
       artifactBridge.clearRenderWatchdog()
       handleArtifactRenderError({
@@ -3221,281 +3321,6 @@ import {
     )
   }
 
-  async function submitArtifactRuntimeRepairRequest({
-    request,
-    runtimeError,
-    failedArtifactHtml,
-    failedArtifactPackage,
-    baseArtifactHtml,
-    baseArtifactPackage
-  }) {
-    const normalizedRequest = asText(request).trim()
-    if (!normalizedRequest) {
-      state.artifact.autoRepairInFlight = false
-      return
-    }
-
-    state.artifact.busy = true
-    syncArtifactComposerBusyState()
-
-    try {
-      const context = buildAiEditorContext()
-      const repairPrompt = buildArtifactRepairPrompt(
-        normalizedRequest,
-        runtimeError,
-        state.artifact.lastAnswers,
-        state.activityKind
-      )
-      context.artifact = buildArtifactContext(
-        {
-          prompt: repairPrompt,
-          answers: state.artifact.lastAnswers,
-          mode: 'repair',
-          originalEditRequest: normalizedRequest,
-          runtimeRenderError: runtimeError,
-          failedMarkup: failedArtifactHtml,
-          failedPackage: failedArtifactPackage,
-          baseMarkup: baseArtifactHtml,
-          basePackage: baseArtifactPackage
-        },
-        context.poll
-      )
-      const buildResult = await requestAiArtifactBuild(repairPrompt, context)
-      const applied = applyArtifactMarkup(buildResult.html, {
-        requestKind: 'edit',
-        artifactPackage: buildResult.package || null
-      })
-      if (!applied) {
-        const message =
-          'Artifact repair failed because the AI returned empty markup. The previous working artifact was kept.'
-        appendArtifactEditMessage('assistant', message)
-        return
-      }
-      renderFromSnapshot(true)
-      showArtifactStageFrame()
-      const statusMessage = 'Artifact updated.'
-      state.artifact.pendingSuccessMessage = statusMessage
-    } catch (error) {
-      const message = `Artifact repair failed: ${errorToMessage(error)}`
-      state.artifact.pendingSuccessMessage = ''
-      appendArtifactEditMessage('assistant', message)
-    } finally {
-      state.artifact.busy = false
-      state.artifact.autoRepairInFlight = false
-      syncArtifactComposerBusyState()
-    }
-  }
-
-  function shouldRejectArtifactRenderHealth(renderHealth) {
-    if (!renderHealth || typeof renderHealth !== 'object') {
-      return false
-    }
-    if (Boolean(renderHealth.likelyBlank)) {
-      return true
-    }
-    if (
-      Boolean(renderHealth.likelyWashedOut) &&
-      !artifactEditAllowsPaleBackground(state.artifact.activeEditRequest)
-    ) {
-      return true
-    }
-    if (!hasMeaningfulArtifactScene(renderHealth)) {
-      return true
-    }
-    return false
-  }
-
-  function hasMeaningfulArtifactScene(renderHealth) {
-    const visibleElementCount = Math.max(0, toInt(renderHealth?.visibleElementCount))
-    const largeVisibleElementCount = Math.max(0, toInt(renderHealth?.largeVisibleElementCount))
-    const mediaCount = Math.max(0, toInt(renderHealth?.mediaCount))
-    const textLength = Math.max(0, toInt(renderHealth?.textLength))
-    return (
-      visibleElementCount >= 24 ||
-      largeVisibleElementCount >= 7 ||
-      mediaCount > 0 ||
-      textLength >= 130
-    )
-  }
-
-  function artifactEditAllowsPaleBackground(request) {
-    const text = asText(request).toLowerCase()
-    if (!text) {
-      return false
-    }
-    return /\b(?:white|minimal|airy|pale|soft white|foggy|washed|monochrome|snow)\b/.test(text)
-  }
-
-  function buildArtifactRenderHealthErrorMessage(renderHealth) {
-    const visibleElementCount = Math.max(0, toInt(renderHealth?.visibleElementCount))
-    const mediaCount = Math.max(0, toInt(renderHealth?.mediaCount))
-    const textLength = Math.max(0, toInt(renderHealth?.textLength))
-    const darkCoverCount = Math.max(0, toInt(renderHealth?.largeDarkCoverCount))
-    const paleCoverCount = Math.max(0, toInt(renderHealth?.largePaleCoverCount))
-    if (Boolean(renderHealth?.likelyWashedOut)) {
-      return (
-        'The updated artifact rendered a washed-out light frame instead of a meaningful scene. ' +
-        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
-        `Text length: ${textLength}. Pale full-frame layers: ${paleCoverCount}.`
-      )
-    }
-    if (!hasMeaningfulArtifactScene(renderHealth)) {
-      return (
-        'The updated artifact rendered without meaningful content (no poll labels, options, or media). ' +
-        `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
-        `Text length: ${textLength}.`
-      )
-    }
-    return (
-      'The updated artifact rendered a near-empty dark frame instead of the expected scene. ' +
-      `Visible elements: ${visibleElementCount}. Media elements: ${mediaCount}. ` +
-      `Text length: ${textLength}. Dark full-frame layers: ${darkCoverCount}.`
-    )
-  }
-
-  async function submitArtifactConversationAnswer(answer) {
-    const intake = state.artifact.intake
-    if (intake.busy || isArtifactConversationComplete()) {
-      return
-    }
-    // An empty submit is allowed when the user answered by picking from the
-    // brand dropdown (the legacy designGuidelines validation lets it through);
-    // surface that choice as their answer so the transcript stays coherent.
-    let text = asText(answer).trim()
-    if (!text) {
-      const brand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
-      const refText = asText(state.artifact.conversationAnswers?.referenceImageGuidelines).trim()
-      text = brand && brand !== ARTIFACT_BRAND_REFERENCE_VALUE
-        ? `Use the "${brand}" brand profile.`
-        : refText
-          ? 'Use the reference image I uploaded for the look.'
-          : 'No preference — use your judgment.'
-    }
-    // The answer text already carries any inline `[attached image: <url>]` markers.
-    // Attachments accumulate in state.artifact.attachments across intake turns and
-    // are read at build submit in applyArtifactIntakeBrief below.
-    intake.messages.push({ role: 'user', text })
-    clearComposer(el.artifactPromptInput)
-    await runArtifactIntakeTurn({ forceReady: false })
-  }
-
-  async function runArtifactIntakeTurn({ forceReady }) {
-    const intake = state.artifact.intake
-    intake.busy = true
-    startArtifactIntakeThinking({ forceReady })
-    syncArtifactConversationUi()
-    // Make sure the saved brand profile names are in the dropdown before the
-    // call — they ride along so the intake model can offer them to the user.
-    try {
-      await ensureArtifactBrandProfilesLoaded()
-    } catch {}
-    let reply = null
-    try {
-      reply = await requestAiArtifactIntake(intake.messages, { forceReady })
-    } catch (error) {
-      intake.busy = false
-      stopArtifactIntakeThinking()
-      const detail = asText(error?.message).trim()
-      intake.messages.push({
-        role: 'assistant',
-        text: detail
-          ? `I hit a problem (${detail}). Send your answer again, or use the lightning bolt below to build now.`
-          : 'I hit a problem. Send your answer again, or use the lightning bolt below to build now.'
-      })
-      syncArtifactConversationUi()
-      return
-    }
-    intake.busy = false
-    stopArtifactIntakeThinking()
-    if (reply.action === 'ask' && reply.question) {
-      intake.messages.push({ role: 'assistant', text: reply.question, topic: reply.topic })
-      syncArtifactConversationUi()
-      if (asText(reply.topic).trim().toLowerCase() === 'brand') {
-        // Make sure the chat log (and its brand chips) is actually visible.
-        setEditorShellExpanded(true)
-      }
-      return
-    }
-    await applyArtifactIntakeBrief(reply.brief || {})
-  }
-
-  /** Map the intake model's creative brief onto the legacy conversationAnswers
-   *  shape and hand off to the unchanged build flow. */
-  async function applyArtifactIntakeBrief(brief) {
-    const intake = state.artifact.intake
-    const answers = state.artifact.conversationAnswers
-    const artifactType = asText(brief?.artifactType).trim()
-    if (artifactType) {
-      answers.artifactType = artifactType
-    } else if (!asText(answers.artifactType).trim()) {
-      const firstUser = intake.messages.find((message) => message.role === 'user')
-      answers.artifactType = asText(firstUser?.text).trim() || 'poll artifact'
-    }
-
-    const guidelineParts = []
-    const designGuidelines = asText(brief?.designGuidelines).trim()
-    if (designGuidelines) {
-      guidelineParts.push(designGuidelines)
-    }
-    const audience = asText(brief?.audience).trim()
-    if (audience) {
-      guidelineParts.push(`Audience: ${audience}`)
-    }
-    const mustHaves = Array.isArray(brief?.mustHaves)
-      ? brief.mustHaves.map((item) => asText(item).trim()).filter(Boolean)
-      : []
-    if (mustHaves.length) {
-      guidelineParts.push(`Must include: ${mustHaves.join('; ')}`)
-    }
-    const avoid = Array.isArray(brief?.avoid)
-      ? brief.avoid.map((item) => asText(item).trim()).filter(Boolean)
-      : []
-    if (avoid.length) {
-      guidelineParts.push(`Avoid: ${avoid.join('; ')}`)
-    }
-    if (guidelineParts.length) {
-      answers.designGuidelines = guidelineParts.join('\n')
-    }
-
-    // The backend already validated the brief's brand name against the saved
-    // profiles and gave an explicit dropdown selection precedence, so a
-    // non-empty value here is safe to adopt; an empty one keeps the dropdown's.
-    const briefBrand = asText(brief?.brandProfileName).trim()
-    if (briefBrand) {
-      answers.brandProfileName = briefBrand
-    }
-
-    intake.done = true
-    state.artifact.conversationStepIndex = ARTIFACT_CONVERSATION_STEPS.length
-    syncArtifactConversationUi()
-
-    const conversationAnswers = cloneArtifactConversationAnswers(state.artifact.conversationAnswers)
-    const prompt = buildArtifactConversationPrompt(conversationAnswers)
-    await submitArtifactPrompt(prompt, {
-      conversationAnswers,
-      referenceImages: collectReferenceImagePayloads(),
-      attachedImageUrls: collectReadyAttachmentUrls()
-    })
-  }
-
-  function handleArtifactIntakeBuildNowClick() {
-    const intake = state.artifact.intake
-    if (intake.busy || state.artifact.busy || isArtifactConversationComplete()) {
-      return
-    }
-    const submission = serializeComposer(el.artifactPromptInput)
-    const answer = asText(submission.text).trim()
-    if (answer) {
-      intake.messages.push({ role: 'user', text: answer })
-      clearComposer(el.artifactPromptInput)
-    }
-    if (!intake.messages.some((message) => message.role === 'user')) {
-      appendArtifactEditMessage('assistant', 'Tell me what kind of artifact you want first.')
-      return
-    }
-    void runArtifactIntakeTurn({ forceReady: true })
-  }
-
   function collectArtifactBrandProfileNames() {
     return Array.from(el.artifactBrandProfileSelect.options)
       .map((option) => asText(option.value).trim())
@@ -3537,132 +3362,6 @@ import {
       el.artifactPromptQueue.appendChild(chip)
     }
     setEditorShellExpanded(true)
-  }
-
-  async function enqueueArtifactEditPrompt(raw, attachmentUrls = []) {
-    const normalizedRequest = asText(raw).trim()
-    if (!normalizedRequest) {
-      return
-    }
-    // Hosted URLs of the images attached inline to this edit. The request text already
-    // carries the `[attached image: <url>]` markers; this list rides in attachedImageUrls
-    // so the backend can re-fetch them as vision for style-matching on the edit.
-    const editAttachmentUrls = (Array.isArray(attachmentUrls) ? attachmentUrls : [])
-      .map((url) => asText(url).trim())
-      .filter(Boolean)
-    if (isArtifactQuestionRequest(normalizedRequest)) {
-      const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
-      state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
-      state.artifact.autoRepairInFlight = false
-      state.artifact.repairAttemptCount = 0
-      state.artifact.lastRuntimeError = ''
-      appendArtifactEditMessage('user', normalizedRequest)
-      clearComposer(el.artifactPromptInput)
-      clearArtifactBuildReferenceUi()
-      state.artifact.activeEditRequest = ''
-      await submitArtifactQuestionRequest(normalizedRequest)
-      return
-    }
-    if (state.artifact.editPromptQueue.length >= 12) {
-      appendArtifactEditMessage(
-        'assistant',
-        'Artifact edit queue is full. Wait for pending edits to finish.'
-      )
-      return
-    }
-    state.artifact.editQueueSeq += 1
-    state.artifact.editPromptQueue.push({
-      id: state.artifact.editQueueSeq,
-      prompt: normalizedRequest,
-      attachedImageUrls: editAttachmentUrls
-    })
-    // Each submission consumes its attachments; clear chips + state so the next edit
-    // starts fresh.
-    clearArtifactBuildReferenceUi()
-    appendArtifactEditMessage('user', normalizedRequest)
-    clearComposer(el.artifactPromptInput)
-    renderArtifactPromptQueue()
-    syncArtifactComposerBusyState()
-    void processArtifactEditPromptQueue()
-  }
-
-  async function runQueuedArtifactEdit(normalizedRequest, attachedImageUrls = []) {
-    const resolvedRequest = resolveArtifactEditRequest(normalizedRequest)
-    state.artifact.activeEditRequest = resolvedRequest || normalizedRequest
-    state.artifact.autoRepairInFlight = false
-    state.artifact.repairAttemptCount = 0
-    state.artifact.lastRuntimeError = ''
-    const prompt = buildArtifactEditPrompt(
-      resolvedRequest || normalizedRequest,
-      state.artifact.lastAnswers,
-      state.activityKind
-    )
-    await submitArtifactPrompt(prompt, {
-      conversationAnswers: state.artifact.lastAnswers,
-      requestKind: 'edit',
-      originalEditRequest: resolvedRequest || normalizedRequest,
-      attachedImageUrls: Array.isArray(attachedImageUrls) ? attachedImageUrls : []
-    })
-  }
-
-  async function processArtifactEditPromptQueue() {
-    if (state.artifact.busy || state.artifact.editPromptQueue.length === 0 || state.isUnloading) {
-      return
-    }
-    const next = state.artifact.editPromptQueue.shift()
-    if (!next) {
-      renderArtifactPromptQueue()
-      syncArtifactComposerBusyState()
-      return
-    }
-    state.artifact.editQueueActivePrompt = next.prompt
-    renderArtifactPromptQueue()
-    syncArtifactComposerBusyState()
-    try {
-      await runQueuedArtifactEdit(next.prompt, next.attachedImageUrls || [])
-    } finally {
-      state.artifact.editQueueActivePrompt = ''
-      renderArtifactPromptQueue()
-      syncArtifactComposerBusyState()
-      if (state.artifact.editPromptQueue.length > 0) {
-        window.setTimeout(() => {
-          void processArtifactEditPromptQueue()
-        }, 0)
-      }
-    }
-  }
-
-  async function submitArtifactQuestionRequest(request) {
-    if (state.artifact.busy) {
-      appendArtifactEditMessage(
-        'assistant',
-        'Artifact request is already running. Wait for it to finish.'
-      )
-      return
-    }
-
-    state.artifact.busy = true
-    syncArtifactComposerBusyState()
-
-    try {
-      const context = buildAiEditorContext()
-      context.artifact = buildArtifactContext(
-        {
-          prompt: request,
-          answers: state.artifact.lastAnswers,
-          mode: 'question'
-        },
-        context.poll
-      )
-      const answer = await requestAiArtifactAnswer(request, context)
-      appendArtifactEditMessage('assistant', answer.text)
-    } catch (error) {
-      const message = `Artifact question failed: ${errorToMessage(error)}`
-      appendArtifactEditMessage('assistant', message)
-    } finally {
-      state.artifact.busy = false
-      syncArtifactComposerBusyState()
-    }
   }
 
   async function submitArtifactPrompt(prompt, options = {}) {
@@ -3759,437 +3458,19 @@ import {
     }
   }
 
-  function buildArtifactContext(artifactInput, pollContext = null) {
-    const sessionId = asText(state.sessionId)
-    const code = asText(state.code)
-    const apiBase = asText(state.apiBase)
-    const encodedSession = sessionId ? encodeURIComponent(sessionId) : '{session_id}'
-    const encodedCode = code ? encodeURIComponent(code) : '{code}'
-    const wsBase = toWsBase(apiBase)
-    const prompt =
-      typeof artifactInput === 'string' ? artifactInput : asText(artifactInput?.prompt)
-    const answers =
-      artifactInput && typeof artifactInput === 'object'
-        ? cloneArtifactConversationAnswers(artifactInput.answers)
-        : createEmptyArtifactAnswers()
-    const requestMode =
-      artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.mode) : ''
-    const baseArtifactMarkupInput =
-      artifactInput && typeof artifactInput === 'object'
-        ? asText(artifactInput.baseMarkup) || state.artifact.html
-        : state.artifact.html
-    const baseArtifactPackageInput =
-      artifactInput && typeof artifactInput === 'object'
-        ? artifactInput.basePackage || state.artifact.package
-        : state.artifact.package
-    const baseArtifactPackage = buildSegmentedArtifactPackage(
-      sanitizeArtifactPackage(baseArtifactPackageInput, baseArtifactMarkupInput) || baseArtifactMarkupInput
-    )
-    const baseArtifactMarkup =
-      resolveArtifactHtmlFromPackage(baseArtifactPackage) || normalizeArtifactMarkup(baseArtifactMarkupInput)
-    const failedArtifactMarkupInput =
-      artifactInput && typeof artifactInput === 'object' ? asText(artifactInput.failedMarkup) : ''
-    const failedArtifactPackageInput =
-      artifactInput && typeof artifactInput === 'object' ? artifactInput.failedPackage : null
-    const failedArtifactPackage = buildSegmentedArtifactPackage(
-      sanitizeArtifactPackage(failedArtifactPackageInput, failedArtifactMarkupInput) ||
-        failedArtifactMarkupInput
-    )
-    const failedArtifactMarkup =
-      resolveArtifactHtmlFromPackage(failedArtifactPackage) ||
-      normalizeArtifactMarkup(failedArtifactMarkupInput)
-    const runtimeRenderError =
-      artifactInput && typeof artifactInput === 'object'
-        ? asText(artifactInput.runtimeRenderError)
-        : ''
-    const originalEditRequest =
-      artifactInput && typeof artifactInput === 'object'
-        ? asText(artifactInput.originalEditRequest)
-        : ''
-    const voteCapacity = estimateArtifactVoteCapacity(pollContext || state.currentPoll, answers)
-    const savedOverridesView = extractCopyFromStyleOverrides(state.artifact.savedStyleOverrides || {})
-    const savedPositionOverrides = savedOverridesView.positionOverrides || {}
-    const savedSizeOverrides = savedOverridesView.sizeOverrides || {}
-    const aiPositionOverrides = artifactPosition.buildAiPositionContext(
-      artifactPosition.getMergedPositionOverrides(savedPositionOverrides)
-    )
-    const aiSizeOverrides = artifactSize.buildAiSizeContext(
-      artifactSize.getMergedSizeOverrides(savedSizeOverrides)
-    )
-    // Bake transforms into the HTML the AI sees so the model perceives the
-    // moved layout directly. The runtime DOM keeps overrides off the saved
-    // HTML — this is only done for the model-facing copy.
-    const baseArtifactMarkupForAi = bakePositionOverridesIntoHtml(baseArtifactMarkup, aiPositionOverrides)
 
-    return {
-      enabled: true,
-      lastPrompt: prompt,
-      requestMode: requestMode || (state.artifact.html ? 'edit' : 'build'),
-      hasExistingArtifact: Boolean(baseArtifactMarkup),
-      currentArtifactFullHtml: asText(baseArtifactMarkupForAi).trim(),
-      currentArtifactHtml: buildArtifactEditContextMarkup(baseArtifactMarkupForAi),
-      currentArtifactPackage: baseArtifactPackage,
-      currentArtifactLiveHooks: buildArtifactLiveHookContext(baseArtifactMarkup),
-      failedArtifactHtml: buildArtifactEditContextMarkup(failedArtifactMarkup),
-      failedArtifactPackage: failedArtifactPackage,
-      runtimeRenderError,
-      originalEditRequest: originalEditRequest || prompt,
-      recentEditRequests: buildArtifactRecentEditRequests(state.artifact.editHistory),
-      // Only stamp the kind for the new kinds: poll requests stay
-      // byte-identical to the pre-kind era (the backend defaults to poll).
-      ...(state.activityKind !== 'poll' ? { activityKind: state.activityKind } : {}),
-      runtimeApi:
-        state.activityKind !== 'poll'
-          ? {
-              setRenderer: 'window.prezoSetQnaRenderer(fn)',
-              renderHook: 'window.prezoRenderQna(state)',
-              getState: 'window.prezoGetQnaState()'
-            }
-          : {
-              setRenderer: 'window.prezoSetPollRenderer(fn)',
-              renderHook: 'window.prezoRenderPoll(state)',
-              getState: 'window.prezoGetPollState()'
-            },
-      pollTitle:
-        state.activityKind === 'poll'
-          ? asText(state.currentPoll?.question) || asText(pollContext?.question) || ''
-          : '',
-      pollSelector: state.activityKind === 'poll' ? asText(state.pollSelector?.descriptor) : '',
-      qnaTitle: state.activityKind !== 'poll' ? asText(state.currentQnaView?.title) : '',
-      activitySelector:
-        state.activityKind === 'discussion'
-          ? asText(state.promptSelector?.descriptor)
-          : state.activityKind === 'qna'
-            ? 'session'
-            : '',
-      artifactType: answers.artifactType,
-      brandProfileName: asText(answers?.brandProfileName).trim() || undefined,
-      designGuidelines: mergeArtifactDesignGuidelines(answers),
-      ...(state.activityKind === 'poll'
-        ? {
-            expectedMaxVotes: voteCapacity.expectedMaxVotes,
-            recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
-            recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
-            avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
-          }
-        : buildArtifactQnaCapacityMeta(state.currentQnaView)),
-      dataEndpoints:
-        state.activityKind !== 'poll'
-          ? {
-              sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
-              sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
-              questionsList: `${apiBase}/sessions/${encodedSession}/questions`,
-              liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
-            }
-          : {
-              sessionByCode: `${apiBase}/sessions/code/${encodedCode}`,
-              sessionSnapshot: `${apiBase}/sessions/${encodedSession}/snapshot`,
-              pollsList: `${apiBase}/sessions/${encodedSession}/polls`,
-              pollOpen: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/open`,
-              pollClose: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/close`,
-              pollVote: `${apiBase}/sessions/${encodedSession}/polls/{poll_id}/vote`,
-              liveSocket: wsBase ? `${wsBase}/ws/sessions/${encodedSession}` : ''
-            },
-      /** Merged saved + pending; backend turns this into styleOverridesSummary for the model. */
-      styleOverrides: (() => {
-        const merged = {
-          ...(state.artifact.savedStyleOverrides || {}),
-          ...pendingArtifactStyleOverrides
-        }
-        return Object.keys(merged).length > 0 ? merged : undefined
-      })(),
-      /**
-       * Saved + pending element positions, surfaced to the AI so subsequent
-       * edits preserve the user's layout. Each entry is {stableId, dx, dy,
-       * label, role, optionId}. The backend should include these in the
-       * system prompt as a "Do not revert these positions" clause and is
-       * already reflected in currentArtifactFullHtml via inline transforms.
-       */
-      positionOverrides: aiPositionOverrides.length > 0 ? aiPositionOverrides : undefined,
-      /**
-       * Saved + pending element sizes (scale factors). Each entry is
-       * {stableId, sx, sy, label?, role?, optionId?}. The backend should
-       * preserve these unless the user prompt explicitly asks to resize
-       * the affected element.
-       */
-      sizeOverrides: aiSizeOverrides.length > 0 ? aiSizeOverrides : undefined
-    }
-  }
 
-  /**
-   * Inject inline `style="transform: translate(...)"` into the HTML for
-   * elements identified by saved position overrides. Best-effort: matches
-   * are made via the override's role + optionId hints because the saved
-   * HTML doesn't yet carry the runtime data-prezo-pos-id attribute.
-   *
-   * Used to feed the AI a representation of the artifact that REFLECTS the
-   * user's manual position adjustments, so the model doesn't "fix" them
-   * back to the original layout.
-   *
-   * @param {string} html
-   * @param {Array<{stableId: string, dx: number, dy: number, role?: string, optionId?: string, label?: string}>} overrides
-   * @returns {string}
-   */
-  function bakePositionOverridesIntoHtml(html, overrides) {
-    let out = asText(html)
-    if (!out || !Array.isArray(overrides) || overrides.length === 0) return out
-    for (const ov of overrides) {
-      if (!ov || typeof ov !== 'object') continue
-      const dx = Number(ov.dx)
-      const dy = Number(ov.dy)
-      if (!Number.isFinite(dx) || !Number.isFinite(dy)) continue
-      if (dx === 0 && dy === 0) continue
-      const transformPart = `transform: translate(${dx}px, ${dy}px);`
-      out = injectInlineStyleByHint(out, ov, transformPart)
-    }
-    return out
-  }
 
-  /**
-   * Inject an inline style fragment into the first element whose attributes
-   * best match the override's hint. Returns the modified HTML, or the
-   * original if no match was found.
-   */
-  function injectInlineStyleByHint(html, override, stylePart) {
-    const role = asText(override?.role).toLowerCase()
-    const optionId = asText(override?.optionId)
-    const stableId = asText(override?.stableId)
-    const matchers = []
-    if (role === 'option-row' && optionId) {
-      matchers.push(new RegExp(`(<[a-z][^>]*?\\bdata-(?:option|opt|poll-option|lane|choice|answer)-id=\\"${escapeRegExp(optionId)}\\"[^>]*?)>`, 'i'))
-    }
-    if (role === 'poll-question') {
-      matchers.push(/(<[a-z][^>]*?\bid=\"(?:poll-?question|question-?text|pollQ|question)\"[^>]*?)>/i)
-      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?\bpoll-question\b[^\"]*?\"[^>]*?)>/i)
-    }
-    if (role === 'poll-footer') {
-      matchers.push(/(<[a-z][^>]*?\bid=\"(?:total-?votes(?:-?(?:display|text|bar))?|vote-?counter|poll-?footer)\"[^>]*?)>/i)
-      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?(?:total-?votes|vote-?counter|poll-?footer)[^\"]*?\"[^>]*?)>/i)
-    }
-    if (role === 'poll-subtitle') {
-      matchers.push(/(<[a-z][^>]*?\bid=\"(?:poll-?subtitle|subtitle|sub-?title)\"[^>]*?)>/i)
-      matchers.push(/(<[a-z][^>]*?\bclass=\"[^\"]*?\bsubtitle\b[^\"]*?\"[^>]*?)>/i)
-    }
-    if (role === 'background') {
-      matchers.push(/(<[a-z][^>]*?\bdata-prezo-background-layer=\"true\"[^>]*?)>/i)
-    }
-    if (role === 'foreground') {
-      matchers.push(/(<[a-z][^>]*?\bdata-prezo-foreground-layer=\"true\"[^>]*?)>/i)
-    }
-    if (stableId) {
-      matchers.push(new RegExp(`(<[a-z][^>]*?\\bdata-prezo-text-id=\\"${escapeRegExp(stableId)}\\"[^>]*?)>`, 'i'))
-    }
-    for (const re of matchers) {
-      const next = html.replace(re, (full, openTag) => `${appendInlineStyleToOpenTag(openTag, stylePart)}>`)
-      if (next !== html) return next
-    }
-    return html
-  }
 
-  function appendInlineStyleToOpenTag(openTag, stylePart) {
-    if (/\bstyle=\"[^\"]*\"/i.test(openTag)) {
-      return openTag.replace(/\bstyle=\"([^\"]*)\"/i, (m, existing) => {
-        const trimmed = (existing || '').trim()
-        const sep = trimmed && !trimmed.endsWith(';') ? '; ' : (trimmed ? ' ' : '')
-        return `style="${trimmed}${sep}${stylePart}"`
-      })
-    }
-    return `${openTag} style="${stylePart}"`
-  }
 
-  function escapeRegExp(value) {
-    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  }
 
-  function buildArtifactEditContextMarkup(markup) {
-    const text = asText(markup)
-    if (!text) {
-      return ''
-    }
-    const normalized = text.trim()
-    if (normalized.length <= 40000) {
-      return normalized
-    }
-    const scriptMatches = [...normalized.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
-    const hookScripts = scriptMatches
-      .map((match) => asText(match?.[0]))
-      .filter(
-        (scriptText) =>
-          scriptText.includes('prezoSetPollRenderer') ||
-          scriptText.includes('prezoRenderPoll') ||
-          scriptText.includes('prezo:poll-update') ||
-          scriptText.includes('__PREZO_POLL_STATE') ||
-          scriptText.includes('prezoGetPollState')
-      )
-      .join('\n\n')
-    const head = normalized.slice(0, 18000)
-    const tail = normalized.slice(-6000)
-    const combined = [head, hookScripts, tail].filter(Boolean).join('\n\n<!-- artifact-context-cut -->\n\n')
-    return combined.length > 52000 ? `${combined.slice(0, 52000)}...` : combined
-  }
 
-  function buildArtifactLiveHookContext(markup) {
-    const text = asText(markup)
-    if (!text) {
-      return ''
-    }
-    const scriptMatches = [...text.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)]
-    const hookScripts = scriptMatches
-      .map((match) => asText(match?.[0]).trim())
-      .filter(
-        (scriptText) =>
-          scriptText.includes('prezoSetPollRenderer') ||
-          scriptText.includes('prezoRenderPoll') ||
-          scriptText.includes('prezo:poll-update') ||
-          scriptText.includes('__PREZO_POLL_STATE') ||
-          scriptText.includes('prezoGetPollState')
-      )
-    if (hookScripts.length === 0) {
-      return ''
-    }
-    return hookScripts.join('\n\n')
-  }
 
-  function buildArtifactRecentEditRequests(history) {
-    if (!Array.isArray(history)) {
-      return []
-    }
-    return history
-      .filter((entry) => entry && typeof entry === 'object' && asText(entry.tone) === 'user')
-      .slice(-6)
-      .map((entry) => asText(entry.text).trim())
-      .filter(Boolean)
-  }
 
-  function isArtifactBackgroundEditRequest(value) {
-    const text = asText(value).trim().toLowerCase()
-    if (!text) {
-      return false
-    }
-    return /\b(?:background|backdrop|sky|track|road|ground|terrain|landscape|sunrise|sunset|daytime|nighttime|lighting|light|ambient|weather|day\b|night\b|city|cityscape|urban|skyline|downtown|building|buildings|skyscraper)\b/.test(
-      text
-    )
-  }
 
-  function isArtifactFeedbackFollowupRequest(value) {
-    const text = asText(value).trim().toLowerCase()
-    if (!text) {
-      return false
-    }
-    return /\b(?:nothing changed|no change|still white|still blank|still the same|didn't work|didnt work|not a city|not a skyline|isn't a city|isnt a city|too white|too blank|can't see|cant see|background didn't change|background didnt change)\b/.test(
-      text
-    )
-  }
 
-  function findPreviousArtifactTargetedRequest(history, currentRequest) {
-    if (!Array.isArray(history)) {
-      return ''
-    }
-    const normalizedCurrent = asText(currentRequest).trim()
-    for (let index = history.length - 1; index >= 0; index -= 1) {
-      const entry = history[index]
-      if (!entry || typeof entry !== 'object' || asText(entry.tone) !== 'user') {
-        continue
-      }
-      const text = asText(entry.text).trim()
-      if (!text || text === normalizedCurrent || isArtifactFeedbackFollowupRequest(text)) {
-        continue
-      }
-      return text
-    }
-    return ''
-  }
 
-  function resolveArtifactEditRequest(request) {
-    const normalized = asText(request).trim()
-    if (!normalized || !isArtifactFeedbackFollowupRequest(normalized)) {
-      return normalized
-    }
-    const previousRequest = findPreviousArtifactTargetedRequest(
-      state.artifact.editHistory,
-      normalized
-    )
-    if (!previousRequest) {
-      return normalized
-    }
-    if (isArtifactBackgroundEditRequest(previousRequest)) {
-      return [
-        'Retry the previous background-only edit more strongly.',
-        `Previous request: ${previousRequest}.`,
-        `User feedback on the last attempt: ${normalized}.`,
-        'Keep cars, labels, layout, vote visuals, and foreground gameplay art unchanged.',
-        'The background change must be clearly visible across the full scene and must not result in a pale, blank, or nearly white background.'
-      ].join(' ')
-    }
-    return [
-      'Retry the previous targeted edit more faithfully.',
-      `Previous request: ${previousRequest}.`,
-      `User feedback on the last attempt: ${normalized}.`,
-      'Keep unrelated visuals unchanged.'
-    ].join(' ')
-  }
 
-  function isArtifactQuestionRequest(value) {
-    const text = asText(value).trim().toLowerCase()
-    if (!text) {
-      return false
-    }
-    const looksLikeEditRequest = /\b(?:change|make|update|edit|set|use|swap|replace|turn|move|resize|add|remove|background|backdrop|image|photo|picture|logo|asset|color|layout|spacing|animation|font)\b/.test(
-      text
-    )
-    if (looksLikeEditRequest && /^(can|could|would|should|please)\b/.test(text)) {
-      return false
-    }
-    if (text.endsWith('?')) {
-      return true
-    }
-    return /^(what|why|how|when|where|which|who|can|could|would|should|does|do|did|is|are|was|were|tell me|explain)\b/.test(
-      text
-    )
-  }
-
-  function estimateArtifactVoteCapacity(poll, answers = null) {
-    const options = Array.isArray(poll?.options) ? poll.options : []
-    const optionCount = Math.max(2, options.length || 0)
-    const totalVotes = options.reduce((sum, option) => sum + toInt(option?.votes), 0)
-    const explicitAudienceSize = parseArtifactAudienceSize(answers?.audienceSize)
-    const expectedMaxVotes =
-      explicitAudienceSize > 0
-        ? explicitAudienceSize
-        : roundArtifactCapacityUp(Math.max(100, optionCount * 20, totalVotes * 2))
-    const recommendedVisibleUnits =
-      expectedMaxVotes <= 10 ? expectedMaxVotes : expectedMaxVotes <= 40 ? 10 : expectedMaxVotes <= 100 ? 20 : 25
-    const recommendedVotesPerUnit = Math.max(
-      1,
-      Math.ceil(expectedMaxVotes / recommendedVisibleUnits)
-    )
-
-    return {
-      expectedMaxVotes,
-      recommendedVisibleUnits,
-      recommendedVotesPerUnit,
-      avoidOneToOneVoteObjects: expectedMaxVotes > 24
-    }
-  }
-
-  function parseArtifactAudienceSize(value) {
-    const digits = asText(value).match(/\d+/)
-    if (!digits) {
-      return 0
-    }
-    return clamp(Number(digits[0]), 0, 100000, 0)
-  }
-
-  function roundArtifactCapacityUp(value) {
-    const numeric = Math.max(1, toInt(value))
-    const steps = [10, 20, 25, 50, 100, 200, 500, 1000, 2000, 5000]
-    for (const step of steps) {
-      if (numeric <= step) {
-        return step
-      }
-    }
-    return Math.ceil(numeric / 1000) * 1000
-  }
 
   function resolveAiModel() {
     const queryModel =
@@ -4626,206 +3907,9 @@ import {
     })
   }
 
-  async function requestAiEditPlan(prompt, context) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
-    const endpoint = `${state.apiBase}/ai/poll-game-edit-plan`
-    const body = {
-      prompt,
-      context,
-      model
-    }
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message =
-        asText(payload?.detail) ||
-        asText(payload?.error?.message) ||
-        `Request failed (${response.status})`
-      throw new Error(message)
-    }
-    const text = asText(payload?.text) || extractGeminiText(payload)
-    if (!text) {
-      throw new Error('AI service returned an empty response.')
-    }
-    return parseAiJsonResponse(text)
-  }
 
-  function libraryAuthHeaders() {
-    const token = getLibraryAccessToken()
-    if (!token) {
-      return {}
-    }
-    return { Authorization: `Bearer ${token}` }
-  }
 
-  async function requestAiArtifactBuild(prompt, context, options = {}) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
-    const endpoint = `${state.apiBase}/ai/poll-game-artifact-build`
-    const brandProfileName = asText(state.artifact.lastAnswers?.brandProfileName).trim()
-    const body = {
-      prompt,
-      context,
-      model
-    }
-    if (brandProfileName) {
-      body.brand_profile_name = brandProfileName
-    }
-    // Keep these caps in lockstep with the backend (ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS /
-    // ARTIFACT_ATTACHED_IMAGE_URL_LIMIT in backend/app/api/ai.py).
-    const refImages = options.referenceImages
-    if (Array.isArray(refImages) && refImages.length > 0) {
-      body.reference_images = refImages.slice(0, MAX_INLINE_ATTACHMENTS).map((item) => ({
-        media_type: asText(item?.media_type) || 'image/png',
-        data: asText(item?.data)
-      }))
-    }
-    // Hosted reference image URLs ride inside context.artifact (where the backend reads
-    // them) so the AI can embed them or fetch them for style-matching.
-    const attachedImageUrls = options.attachedImageUrls
-    if (Array.isArray(attachedImageUrls) && attachedImageUrls.length > 0) {
-      const urls = attachedImageUrls
-        .map((item) => asText(item).trim())
-        .filter((item) => item.startsWith('http://') || item.startsWith('https://'))
-        .slice(0, MAX_INLINE_ATTACHMENTS)
-      if (urls.length > 0 && body.context && typeof body.context === 'object') {
-        if (!body.context.artifact || typeof body.context.artifact !== 'object') {
-          body.context.artifact = {}
-        }
-        body.context.artifact.attachedImageUrls = urls
-      }
-    }
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...libraryAuthHeaders()
-      },
-      body: JSON.stringify(body)
-    }, ARTIFACT_BUILD_TIMEOUT_MS)
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message = extractApiErrorMessage(payload, response.status)
-      throw new Error(message)
-    }
 
-    const html = normalizeArtifactMarkup(asText(payload?.html) || asText(payload?.text))
-    if (!html) {
-      throw new Error('AI service returned empty artifact markup.')
-    }
-    const artifactPackage = buildSegmentedArtifactPackage(
-      sanitizeArtifactPackage(payload?.artifact_package || payload?.artifactPackage, html) || html
-    )
-    const resolvedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
-    return {
-      html: resolvedHtml,
-      package: artifactPackage,
-      assistantMessage: asText(payload?.assistantMessage),
-      model: asText(payload?.model),
-      debugPatchPlan: asText(payload?.debugPatchPlan)
-    }
-  }
-
-  async function requestAiArtifactIntake(messages, options = {}) {
-    const endpoint = `${state.apiBase}/ai/poll-game-artifact-intake`
-    const body = {
-      messages: messages.map((message) => ({
-        role: message.role === 'user' ? 'user' : 'assistant',
-        text: asText(message.text).slice(0, 2000)
-      })),
-      force_ready: Boolean(options.forceReady)
-    }
-    if (state.activityKind !== 'poll') {
-      body.context = {
-        activityKind: state.activityKind,
-        qna: {
-          title: asText(state.currentQnaView?.title),
-          status: asText(state.currentQnaView?.status),
-          approvedQuestionCount: state.currentQnaView?.questions?.length || 0
-        }
-      }
-    } else {
-      const poll = state.currentPoll
-      if (poll) {
-        body.context = {
-          poll: {
-            question: asText(poll.question),
-            options: Array.isArray(poll.options)
-              ? poll.options.map((option) => asText(option?.label)).filter(Boolean)
-              : []
-          }
-        }
-      }
-    }
-    const brandNames = collectArtifactBrandProfileNames()
-    if (brandNames.length) {
-      body.brand_profile_names = brandNames
-    }
-    const selectedBrand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
-    if (selectedBrand && selectedBrand !== ARTIFACT_BRAND_REFERENCE_VALUE) {
-      body.selected_brand_profile_name = selectedBrand
-    }
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...libraryAuthHeaders()
-        },
-        body: JSON.stringify(body)
-      },
-      ARTIFACT_INTAKE_TIMEOUT_MS
-    )
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message = extractApiErrorMessage(payload, response.status)
-      throw new Error(message)
-    }
-    const action = asText(payload?.action).trim().toLowerCase()
-    return {
-      action: action === 'ask' ? 'ask' : 'ready',
-      question: asText(payload?.question).trim(),
-      topic: asText(payload?.topic).trim().toLowerCase() || 'other',
-      brief: payload?.brief && typeof payload.brief === 'object' ? payload.brief : null
-    }
-  }
-
-  async function requestAiArtifactAnswer(prompt, context) {
-    const model = asText(state.ai.model) || AI_DEFAULT_MODEL
-    const endpoint = `${state.apiBase}/ai/poll-game-artifact-answer`
-    const body = {
-      prompt,
-      context,
-      model
-    }
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...libraryAuthHeaders()
-      },
-      body: JSON.stringify(body)
-    })
-    const payload = await response.json().catch(() => null)
-    if (!response.ok) {
-      const message = extractApiErrorMessage(payload, response.status)
-      throw new Error(message)
-    }
-    const text = asText(payload?.text)
-    if (!text) {
-      throw new Error('Artifact assistant returned an empty answer.')
-    }
-    return {
-      text,
-      assistantMessage: text
-    }
-  }
 
   function applyArtifactMarkup(markup, options = {}) {
     const normalized = normalizeArtifactMarkup(markup)
@@ -5035,166 +4119,15 @@ import {
     setTimeout(pushArtifactGridConfig, 160)
   }
 
-  function buildArtifactPollPayload(poll, totalVotes) {
-    const voteCapacity = estimateArtifactVoteCapacity(poll, state.artifact.lastAnswers)
-    const options = Array.isArray(poll?.options)
-      ? poll.options.map((option, index) => {
-          const votes = toInt(option?.votes)
-          const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
-          return {
-            id: asText(option?.id) || `option-${index}`,
-            label: asText(option?.label) || `Option ${index + 1}`,
-            votes,
-            percentage
-          }
-        })
-      : []
 
-    const meta = {
-      sessionId: asText(state.sessionId),
-      code: asText(state.code),
-      selector: asText(state.pollSelector?.descriptor),
-      socketStatus: asText(state.socketStatus),
-      expectedMaxVotes: voteCapacity.expectedMaxVotes,
-      recommendedVisibleUnits: voteCapacity.recommendedVisibleUnits,
-      recommendedVotesPerUnit: voteCapacity.recommendedVotesPerUnit,
-      avoidOneToOneVoteObjects: voteCapacity.avoidOneToOneVoteObjects
-    }
-    const artifactCopy = getMergedArtifactCopyForPayload()
-    if (artifactCopy) {
-      meta.artifactCopy = artifactCopy
-    }
-    return {
-      poll: {
-        id: asText(poll?.id),
-        question: asText(poll?.question),
-        status: asText(poll?.status),
-        options
-      },
-      totalVotes,
-      meta
-    }
-  }
 
-  function buildArtifactPayloadKey(payload) {
-    const poll = payload && typeof payload === 'object' ? payload.poll : {}
-    const options = Array.isArray(poll?.options) ? poll.options : []
-    const meta = payload && typeof payload.meta === 'object' ? payload.meta : {}
-    const copy = meta.artifactCopy && typeof meta.artifactCopy === 'object' ? meta.artifactCopy : {}
-    const stable = {
-      poll: {
-        id: asText(poll?.id),
-        question: asText(poll?.question),
-        status: asText(poll?.status),
-        options: options.map((option, index) => ({
-          id: asText(option?.id) || `option-${index}`,
-          label: asText(option?.label),
-          votes: toInt(option?.votes),
-          percentage: toInt(option?.percentage)
-        }))
-      },
-      totalVotes: toInt(payload?.totalVotes),
-      artifactCopy: {
-        subtitle: copy.subtitle || '',
-        footerSuffix: copy.footerSuffix || '',
-        textOverrides: copy.textOverrides && typeof copy.textOverrides === 'object' ? copy.textOverrides : null
-      }
-    }
-    return JSON.stringify(stable)
-  }
 
-  /** How many question rows a 16:9 artifact board can show comfortably; the
-      generation prompt tells the model to cap the visible list around this
-      and express the rest as an overflow count. */
-  const ARTIFACT_QNA_RECOMMENDED_VISIBLE_QUESTIONS = 6
-  /** Ceiling on questions shipped in a state payload. Boards render a top-N
-      list anyway; totalQuestions still reports the real count so overflow
-      indicators stay honest, and the runtime's per-frame interpolation stays
-      bounded on very active sessions. */
-  const ARTIFACT_QNA_MAX_PAYLOAD_QUESTIONS = 60
 
-  /** Single source of the qna sizing hints shared by the generation context
-      (design-time) and the live state payload (runtime) — they must agree or
-      the model designs overflow around numbers the artifact never receives. */
-  function buildArtifactQnaCapacityMeta(view) {
-    const totalQuestions = Array.isArray(view?.questions) ? view.questions.length : 0
-    return {
-      recommendedVisibleQuestions: ARTIFACT_QNA_RECOMMENDED_VISIBLE_QUESTIONS,
-      expectedMaxQuestions: Math.max(20, totalQuestions * 2)
-    }
-  }
 
-  function buildArtifactQnaPayload(view) {
-    const source = Array.isArray(view?.questions) ? view.questions : []
-    const totalVotes = source.reduce((sum, question) => sum + toInt(question?.votes), 0)
-    const questions = source
-      .slice(0, ARTIFACT_QNA_MAX_PAYLOAD_QUESTIONS)
-      .map((question, index) => {
-        const votes = toInt(question?.votes)
-        return {
-          id: asText(question?.id) || `question-${index}`,
-          text: asText(question?.text),
-          votes,
-          percentage: totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0,
-          rank: index + 1
-        }
-      })
-    const meta = {
-      sessionId: asText(state.sessionId),
-      code: asText(state.code),
-      activityKind: state.activityKind,
-      selector:
-        state.activityKind === 'discussion' ? asText(state.promptSelector?.descriptor) : 'session',
-      socketStatus: asText(state.socketStatus),
-      ...buildArtifactQnaCapacityMeta(view)
-    }
-    const artifactCopy = getMergedArtifactCopyForPayload()
-    if (artifactCopy) {
-      meta.artifactCopy = artifactCopy
-    }
-    return {
-      kind: state.activityKind,
-      qna: {
-        id: asText(view?.id),
-        title: asText(view?.title),
-        prompt: asText(view?.title),
-        status: asText(view?.status),
-        questions,
-        totalQuestions: source.length,
-        totalVotes
-      },
-      totalQuestions: source.length,
-      totalVotes,
-      meta
-    }
-  }
 
-  function buildArtifactQnaPayloadKey(payload) {
-    const qna = payload && typeof payload === 'object' ? payload.qna : {}
-    const questions = Array.isArray(qna?.questions) ? qna.questions : []
-    const meta = payload && typeof payload.meta === 'object' ? payload.meta : {}
-    const copy = meta.artifactCopy && typeof meta.artifactCopy === 'object' ? meta.artifactCopy : {}
-    const stable = {
-      kind: asText(payload?.kind),
-      qna: {
-        id: asText(qna?.id),
-        title: asText(qna?.title),
-        status: asText(qna?.status),
-        questions: questions.map((question, index) => ({
-          id: asText(question?.id) || `question-${index}`,
-          text: asText(question?.text),
-          votes: toInt(question?.votes)
-        }))
-      },
-      totalVotes: toInt(payload?.totalVotes),
-      artifactCopy: {
-        subtitle: copy.subtitle || '',
-        footerSuffix: copy.footerSuffix || '',
-        textOverrides: copy.textOverrides && typeof copy.textOverrides === 'object' ? copy.textOverrides : null
-      }
-    }
-    return JSON.stringify(stable)
-  }
+
+
+
 
   function pushArtifactQnaState(view, options = {}) {
     if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE || !view) {
@@ -5220,140 +4153,13 @@ import {
     setTimeout(pushArtifactGridConfig, 160)
   }
 
-  function buildAiEditorContext() {
-    const poll = state.activityKind === 'poll' ? state.currentPoll : null
-    const options = Array.isArray(poll?.options)
-      ? poll.options.map((option, index) => ({
-          index,
-          id: asText(option?.id) || `index-${index}`,
-          label: asText(option?.label) || '',
-          votes: toInt(option?.votes)
-        }))
-      : []
-    const qnaView = state.activityKind !== 'poll' ? state.currentQnaView : null
-    return {
-      ...(state.activityKind !== 'poll' ? { activityKind: state.activityKind } : {}),
-      qna: qnaView
-        ? {
-            id: asText(qnaView.id),
-            title: asText(qnaView.title),
-            status: asText(qnaView.status),
-            totalQuestions: qnaView.questions.length,
-            // Capped sample for design context; the artifact receives the
-            // full live list at runtime through the qna state channel.
-            questions: qnaView.questions.slice(0, 12).map((question) => ({
-              id: question.id,
-              text: question.text,
-              votes: question.votes
-            }))
-          }
-        : undefined,
-      visualMode: currentTheme.visualMode,
-      artifact:
-        currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-          ? buildArtifactContext(
-              {
-                prompt: state.artifact.lastPrompt || '',
-                answers: state.artifact.lastAnswers
-              },
-              poll
-            )
-          : { enabled: false },
-      currentText: {
-        eyebrow: extractPlainTextFromHtml(el.eyebrow.innerHTML),
-        question: extractPlainTextFromHtml(el.question.innerHTML)
-      },
-      poll: poll
-        ? {
-            id: asText(poll.id),
-            question: asText(poll.question),
-            options
-          }
-        : null,
-      theme: {
-        bgA: currentTheme.bgA,
-        bgB: currentTheme.bgB,
-        panelColor: currentTheme.panelColor,
-        textMain: currentTheme.textMain,
-        textSub: currentTheme.textSub,
-        fillA: currentTheme.fillA,
-        fillB: currentTheme.fillB,
-        barHeight: currentTheme.barHeight,
-        questionSize: currentTheme.questionSize,
-        labelSize: currentTheme.labelSize,
-        fontFamily: currentTheme.fontFamily
-      }
-    }
-  }
 
-  function extractGeminiText(payload) {
-    const parts = payload?.candidates?.[0]?.content?.parts
-    if (!Array.isArray(parts) || parts.length === 0) {
-      return ''
-    }
-    return parts.map((part) => asText(part?.text)).filter(Boolean).join('\n')
-  }
 
-  function parseAiJsonResponse(rawText) {
-    const direct = safeJsonParse(rawText)
-    if (direct && typeof direct === 'object') {
-      return normalizeAiPlanResponse(direct, rawText)
-    }
 
-    const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(rawText)
-    if (fenced && fenced[1]) {
-      const parsed = safeJsonParse(fenced[1])
-      if (parsed && typeof parsed === 'object') {
-        return normalizeAiPlanResponse(parsed, rawText)
-      }
-    }
 
-    const start = rawText.indexOf('{')
-    const end = rawText.lastIndexOf('}')
-    if (start >= 0 && end > start) {
-      const sliced = rawText.slice(start, end + 1)
-      const parsed = safeJsonParse(sliced)
-      if (parsed && typeof parsed === 'object') {
-        return normalizeAiPlanResponse(parsed, rawText)
-      }
-    }
-    return normalizeAiPlanResponse(null, rawText)
-  }
 
-  function normalizeAiPlanResponse(value, rawText = '') {
-    if (Array.isArray(value)) {
-      return {
-        assistantMessage: 'Applied parsed action list.',
-        actions: value.filter((item) => item && typeof item === 'object')
-      }
-    }
 
-    if (!value || typeof value !== 'object') {
-      return {
-        assistantMessage:
-          'AI response was not valid JSON. No structured actions were applied.',
-        actions: []
-      }
-    }
 
-    const assistantMessage =
-      asText(value.assistantMessage) ||
-      asText(value.message) ||
-      asText(rawText).slice(0, 220) ||
-      'AI response parsed.'
-    const actionCandidates = Array.isArray(value.actions)
-      ? value.actions
-      : Array.isArray(value.edits)
-        ? value.edits
-        : Array.isArray(value.operations)
-          ? value.operations
-          : []
-
-    return {
-      assistantMessage,
-      actions: actionCandidates.filter((item) => item && typeof item === 'object')
-    }
-  }
 
   function applyAiPlanActions(plan) {
     const actions = Array.isArray(plan?.actions) ? plan.actions : []
@@ -5369,7 +4175,7 @@ import {
       }
       const type = asText(rawAction.type).toLowerCase()
       if (type === 'update_theme' || type === 'updatetheme') {
-        const patch = sanitizeAiThemePatch(rawAction.theme)
+        const patch = sanitizeAiThemePatch(rawAction.theme, currentTheme)
         if (Object.keys(patch).length === 0) {
           warnings.push('Ignored empty theme update.')
           continue
@@ -5474,48 +4280,6 @@ import {
       summaryParts.push(`${outcome.warningCount} ignored action${outcome.warningCount === 1 ? '' : 's'}`)
     }
     return summaryParts.length > 0 ? `Applied ${summaryParts.join(', ')}.` : 'Applied edits.'
-  }
-
-  function sanitizeAiThemePatch(rawTheme) {
-    if (!rawTheme || typeof rawTheme !== 'object') {
-      return {}
-    }
-    const patch = {}
-    for (const [rawKey, rawValue] of Object.entries(rawTheme)) {
-      const key = asText(rawKey)
-      if (!AI_THEME_ALLOWED_KEYS.has(key)) {
-        continue
-      }
-      const normalized = sanitizeAiThemeValue(key, rawValue)
-      if (normalized == null && normalized !== 0 && normalized !== false) {
-        continue
-      }
-      patch[key] = normalized
-    }
-    return patch
-  }
-
-  function sanitizeAiThemeValue(key, value) {
-    if (AI_THEME_COLOR_KEYS.has(key)) {
-      return sanitizeHex(asText(value), currentTheme[key])
-    }
-    if (Object.prototype.hasOwnProperty.call(AI_THEME_NUMBER_RANGES, key)) {
-      const [min, max] = AI_THEME_NUMBER_RANGES[key]
-      return clamp(value, min, max, currentTheme[key])
-    }
-    if (key === 'visualMode') {
-      return sanitizeVisualMode(value, currentTheme.visualMode)
-    }
-    if (key === 'artifactLayout') {
-      return sanitizeArtifactLayout(value, currentTheme.artifactLayout)
-    }
-    if (key === 'fontFamily') {
-      return sanitizeFontFamily(value, currentTheme.fontFamily)
-    }
-    if (key === 'bgImageUrl' || key === 'logoUrl' || key === 'assetUrl') {
-      return sanitizeUrl(value, currentTheme[key])
-    }
-    return null
   }
 
   function normalizeAiTarget(rawTarget) {
@@ -5719,26 +4483,6 @@ import {
       return true
     }
     return false
-  }
-
-  async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
-    const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => {
-      controller.abort()
-    }, timeoutMs)
-    try {
-      return await fetch(url, {
-        ...options,
-        signal: controller.signal
-      })
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new Error(`Request timed out for ${url}.`)
-      }
-      throw new Error(`Unable to reach ${url}: ${errorToMessage(error)}`)
-    } finally {
-      window.clearTimeout(timeoutId)
-    }
   }
 
   function setupHistoryControls() {
@@ -6130,43 +4874,6 @@ import {
     return true
   }
 
-  function setupRichTextEditor() {
-    const textToolButtons = [
-      el.textToolBold,
-      el.textToolItalic,
-      el.textToolUnderline,
-      el.textToolClear,
-      el.miniTextToolBold,
-      el.miniTextToolItalic,
-      el.miniTextToolUnderline,
-      el.miniTextToolClear
-    ]
-    for (const button of textToolButtons) {
-      button.addEventListener('mousedown', (event) => {
-        event.preventDefault()
-      })
-    }
-
-    setupRichTextStyleControls()
-    setupArtifactTextToolbar()
-    bindRichTextCommandButtons([el.textToolBold, el.miniTextToolBold], 'bold')
-    bindRichTextCommandButtons([el.textToolItalic, el.miniTextToolItalic], 'italic')
-    bindRichTextCommandButtons([el.textToolUnderline, el.miniTextToolUnderline], 'underline')
-    bindRichTextCommandButtons([el.textToolClear, el.miniTextToolClear], 'removeFormat')
-
-    el.wrap.addEventListener('focusin', handleRichTextFocusIn)
-    el.wrap.addEventListener('focusout', handleRichTextFocusOut)
-    el.wrap.addEventListener('input', handleRichTextInput)
-    el.wrap.addEventListener('paste', handleRichTextPaste)
-    el.wrap.addEventListener('keydown', handleRichTextKeydown)
-    document.addEventListener('selectionchange', handleRichTextSelectionChange)
-    document.addEventListener('pointerdown', handleRichTextPointerDown, true)
-    window.addEventListener('resize', scheduleSelectionToolbarUpdate)
-    window.addEventListener('scroll', scheduleSelectionToolbarUpdate, true)
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-  }
-
   // ── Artifact iframe text style toolbar ──────────────────────────
 
   let artifactToolbarInteractionUntil = 0
@@ -6516,23 +5223,7 @@ import {
    * Build the merged copy object from saved + pending overrides for inclusion
    * in the artifact payload's `meta.artifactCopy`.
    */
-  function getMergedArtifactCopyForPayload() {
-    const savedOverrides = state.artifact.savedStyleOverrides || {}
-    const saved = extractCopyFromStyleOverrides(savedOverrides)
-    const subtitle = pendingArtifactCopyOverrides.subtitle ?? saved.subtitle
-    const footerSuffix = pendingArtifactCopyOverrides.footerSuffix ?? saved.footerSuffix
-    const mergedTextOverrides = {
-      ...(saved.textOverrides || {}),
-      ...(pendingArtifactCopyOverrides.textOverrides || {})
-    }
-    const hasTextOverrides = Object.keys(mergedTextOverrides).length > 0
-    if (subtitle === undefined && footerSuffix === undefined && !hasTextOverrides) return null
-    const result = {}
-    if (subtitle !== undefined) result.subtitle = subtitle
-    if (footerSuffix !== undefined) result.footerSuffix = footerSuffix
-    if (hasTextOverrides) result.textOverrides = mergedTextOverrides
-    return result
-  }
+
 
   /**
    * Drop question / option-label override entries whose embedded plain text no longer
@@ -7426,1263 +6117,6 @@ import {
       },
       '*'
     )
-  }
-
-  function setupRichTextStyleControls() {
-    fillSelectOptions(
-      [el.textFontFamily, el.miniTextFontFamily],
-      TEXT_FONT_FAMILIES.map((fontName) => ({
-        label: fontName,
-        value: fontName,
-        style: `font-family: "${fontName}", sans-serif`
-      }))
-    )
-    fillSelectOptions(
-      [el.textFontSize, el.miniTextFontSize],
-      TEXT_FONT_SIZES.map((fontSize) => ({
-        label: String(fontSize),
-        value: String(fontSize)
-      }))
-    )
-
-    for (const control of [el.textFontFamily, el.miniTextFontFamily]) {
-      bindTextControlFocusLock(control)
-      control.addEventListener('change', () => {
-        if (state.isSyncingTextStyleControls) {
-          return
-        }
-        const selectedFont = normalizeFontFamilyChoice(control.value)
-        setLinkedControlValues([el.textFontFamily, el.miniTextFontFamily], selectedFont)
-        if (!selectedFont) {
-          return
-        }
-        if (applyRichTextInlineStyle({ fontFamily: selectedFont })) {
-          showTextEditFeedback(`Font changed to ${selectedFont}.`, 'success')
-          return
-        }
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      })
-    }
-
-    for (const control of [el.textFontSize, el.miniTextFontSize]) {
-      bindTextControlFocusLock(control)
-      control.addEventListener('change', () => {
-        if (state.isSyncingTextStyleControls) {
-          return
-        }
-        const selectedSize = normalizeFontSizeChoice(control.value)
-        setLinkedControlValues([el.textFontSize, el.miniTextFontSize], selectedSize)
-        if (!selectedSize) {
-          return
-        }
-        if (applyRichTextInlineStyle({ fontSize: selectedSize })) {
-          showTextEditFeedback(`Font size changed to ${selectedSize}.`, 'success')
-          return
-        }
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      })
-    }
-
-    for (const control of [el.textFontColor, el.miniTextFontColor]) {
-      bindTextControlFocusLock(control)
-      control.addEventListener('input', () => {
-        if (state.isSyncingTextStyleControls) {
-          return
-        }
-        markTextControlInteractionActive(getTextControlLockMs(control))
-        const selectedColor = sanitizeHex(control.value, '#16375e')
-        setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
-        applyRichTextInlineStyle({ color: selectedColor })
-      })
-      control.addEventListener('change', () => {
-        if (state.isSyncingTextStyleControls) {
-          return
-        }
-        markTextControlInteractionActive(getTextControlLockMs(control))
-        const selectedColor = sanitizeHex(control.value, '#16375e')
-        setLinkedControlValues([el.textFontColor, el.miniTextFontColor], selectedColor)
-        if (applyRichTextInlineStyle({ color: selectedColor })) {
-          showTextEditFeedback('Text color updated.', 'success')
-          releaseTextControlInteractionSoon()
-          return
-        }
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-        releaseTextControlInteractionSoon()
-      })
-    }
-  }
-
-  function bindTextControlFocusLock(control) {
-    control.addEventListener('focus', () => {
-      cacheRichTextSelection()
-      markTextControlInteractionActive(getTextControlLockMs(control))
-    })
-    control.addEventListener('blur', () => {
-      if (isColorTextControl(control)) {
-        // Native color dialogs may blur the input while still actively selecting colors.
-        markTextControlInteractionActive(getTextControlLockMs(control))
-        return
-      }
-      state.textControlInteractionLocked = false
-      state.textControlInteractionUntil = Date.now() + 600
-    })
-  }
-
-  function getTextControlLockMs(control) {
-    return isColorTextControl(control) ? 120000 : 15000
-  }
-
-  function isColorTextControl(control) {
-    return control instanceof HTMLInputElement && control.type === 'color'
-  }
-
-  function markTextControlInteractionActive(durationMs = 15000) {
-    state.textControlInteractionLocked = true
-    state.textControlInteractionUntil = Date.now() + durationMs
-  }
-
-  function releaseTextControlInteractionSoon(delayMs = 600) {
-    state.textControlInteractionLocked = false
-    state.textControlInteractionUntil = Date.now() + delayMs
-  }
-
-  function fillSelectOptions(selectNodes, options) {
-    const seen = new Set()
-    const normalizedOptions = []
-    for (const option of options) {
-      const value = asText(option.value)
-      if (!value || seen.has(value.toLowerCase())) {
-        continue
-      }
-      seen.add(value.toLowerCase())
-      normalizedOptions.push(option)
-    }
-
-    for (const select of selectNodes) {
-      select.innerHTML = ''
-      for (const option of normalizedOptions) {
-        const node = document.createElement('option')
-        node.value = option.value
-        node.textContent = option.label
-        if (option.style) {
-          node.style.cssText = option.style
-        }
-        select.appendChild(node)
-      }
-    }
-  }
-
-  function setLinkedControlValues(controls, value) {
-    for (const control of controls) {
-      if (control.value === value) {
-        continue
-      }
-      control.value = value
-    }
-  }
-
-  function bindRichTextCommandButtons(buttons, command) {
-    for (const button of buttons) {
-      button.addEventListener('click', () => {
-        if (applyRichTextCommand(command)) {
-          return
-        }
-        showTextEditFeedback('Select text in the question or options first.', 'error')
-      })
-    }
-  }
-
-  function handleRichTextSelectionChange() {
-    cacheRichTextSelection()
-    const selectionHost = getSelectionRichTextHost()
-    if (selectionHost) {
-      if (!isTextControlElement(document.activeElement) && !isTextControlInteractionActive()) {
-        state.textControlInteractionUntil = 0
-        state.textControlInteractionLocked = false
-      }
-      syncActiveInlineStyleNodeWithSelection(selectionHost)
-      if (!isTextControlInteractionActive()) {
-        state.activeInlineStyleNode = null
-      }
-    }
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    scheduleSelectionToolbarUpdate()
-  }
-
-  function handleRichTextPointerDown(event) {
-    const target = event.target
-    const interactionLocked = state.textControlInteractionLocked
-
-    if (!(target instanceof Element)) {
-      if (interactionLocked) {
-        return
-      }
-      hideSelectionToolbar()
-      clearCachedRichTextSelection()
-      state.textControlInteractionLocked = false
-      state.textControlInteractionUntil = 0
-      state.activeInlineStyleNode = null
-      return
-    }
-    const textControl = target.closest('[data-text-control="true"]')
-    if (textControl) {
-      cacheRichTextSelection()
-      if (isPersistentTextControlElement(textControl)) {
-        markTextControlInteractionActive(120000)
-      } else {
-        releaseTextControlInteractionSoon()
-      }
-      return
-    }
-    if (target.closest('#resize-selection')) {
-      return
-    }
-    if (interactionLocked && !target.closest('.rich-text-editable')) {
-      // Native color pickers can emit pointer events outside the page DOM.
-      return
-    }
-    if (target.closest('.rich-text-editable')) {
-      state.textControlInteractionLocked = false
-      state.textControlInteractionUntil = 0
-      state.activeInlineStyleNode = null
-      return
-    }
-    hideSelectionToolbar()
-    clearCachedRichTextSelection()
-    state.textControlInteractionLocked = false
-    state.textControlInteractionUntil = 0
-    state.activeInlineStyleNode = null
-  }
-
-  function isPersistentTextControlElement(node) {
-    if (!(node instanceof Element)) {
-      return false
-    }
-    if (node instanceof HTMLSelectElement) {
-      return true
-    }
-    return isColorTextControl(node)
-  }
-
-  function scheduleSelectionToolbarUpdate() {
-    if (state.selectionToolbarRafId != null) {
-      return
-    }
-    state.selectionToolbarRafId = requestAnimationFrame(() => {
-      state.selectionToolbarRafId = null
-      updateSelectionToolbar()
-    })
-  }
-
-  function updateSelectionToolbar() {
-    const selection = window.getSelection()
-    const host = getSelectionRichTextHost()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !host) {
-      hideSelectionToolbar()
-      return
-    }
-
-    const selectionRect = getSelectionRect(selection.getRangeAt(0))
-    if (!selectionRect) {
-      hideSelectionToolbar()
-      return
-    }
-    placeSelectionToolbar(selectionRect)
-    showSelectionToolbar()
-  }
-
-  function getSelectionRect(range) {
-    const box = range.getBoundingClientRect()
-    if (box && box.width > 0 && box.height > 0) {
-      return box
-    }
-    const boxes = range.getClientRects()
-    for (const rect of boxes) {
-      if (rect.width > 0 && rect.height > 0) {
-        return rect
-      }
-    }
-    return null
-  }
-
-  function placeSelectionToolbar(selectionRect) {
-    const toolbar = el.selectionToolbar
-    const margin = 10
-    const screenPad = 8
-
-    const toolbarRect = toolbar.getBoundingClientRect()
-    const toolbarWidth = toolbarRect.width || 170
-    const toolbarHeight = toolbarRect.height || 42
-
-    let left = selectionRect.right + margin
-    let top = selectionRect.top + selectionRect.height / 2 - toolbarHeight / 2
-
-    if (left + toolbarWidth > window.innerWidth - screenPad) {
-      left = selectionRect.left - toolbarWidth - margin
-    }
-    if (left < screenPad) {
-      left = selectionRect.left + selectionRect.width / 2 - toolbarWidth / 2
-      top = selectionRect.top - toolbarHeight - margin
-    }
-
-    const maxLeft = Math.max(screenPad, window.innerWidth - toolbarWidth - screenPad)
-    const maxTop = Math.max(screenPad, window.innerHeight - toolbarHeight - screenPad)
-    left = clamp(left, screenPad, maxLeft, screenPad)
-    top = clamp(top, screenPad, maxTop, screenPad)
-
-    toolbar.style.left = `${left}px`
-    toolbar.style.top = `${top}px`
-  }
-
-  function showSelectionToolbar() {
-    el.selectionToolbar.classList.add('visible')
-    el.selectionToolbar.setAttribute('aria-hidden', 'false')
-  }
-
-  function hideSelectionToolbar() {
-    el.selectionToolbar.classList.remove('visible')
-    el.selectionToolbar.setAttribute('aria-hidden', 'true')
-  }
-
-  function handleRichTextFocusIn(event) {
-    const host = getRichTextHost(event.target)
-    if (!host) {
-      return
-    }
-    state.activeTextHost = host
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    scheduleSelectionToolbarUpdate()
-  }
-
-  function handleRichTextFocusOut(event) {
-    const host = getRichTextHost(event.target)
-    if (!host) {
-      return
-    }
-    const nextHost = getRichTextHost(event.relatedTarget)
-    const preservingSelectionForControl =
-      isTextControlElement(event.relatedTarget) || isTextControlInteractionActive()
-    commitRichTextHost(host, {
-      normalizeDom: !preservingSelectionForControl,
-      recordHistory: false
-    })
-    if (nextHost) {
-      state.activeTextHost = nextHost
-      refreshTextToolStates()
-      syncTextStyleControlsFromSelection()
-      scheduleSelectionToolbarUpdate()
-      return
-    }
-    if (preservingSelectionForControl) {
-      state.activeTextHost = host
-      refreshTextToolStates()
-      syncTextStyleControlsFromSelection()
-      scheduleSelectionToolbarUpdate()
-      return
-    }
-    state.activeTextHost = null
-    state.activeInlineStyleNode = null
-    if (!getSelectionRichTextHost()) {
-      clearCachedRichTextSelection()
-    }
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    hideSelectionToolbar()
-    if (state.snapshot) {
-      window.setTimeout(() => {
-        if (isRichTextEditingActive()) {
-          return
-        }
-        renderFromSnapshot(true)
-      }, 0)
-    }
-  }
-
-  function handleRichTextInput(event) {
-    const host = getRichTextHost(event.target)
-    if (!host) {
-      return
-    }
-    commitRichTextHost(host, { historyMode: 'typing' })
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    scheduleSelectionToolbarUpdate()
-  }
-
-  function handleRichTextPaste(event) {
-    const host = getRichTextHost(event.target)
-    if (!host) {
-      return
-    }
-    event.preventDefault()
-    const clipboard = event.clipboardData
-    const pastedText = clipboard ? clipboard.getData('text/plain') : ''
-    if (!pastedText) {
-      return
-    }
-    host.focus()
-    const normalized = pastedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    const html = escapeHtml(normalized).replace(/\n/g, '<br>')
-    try {
-      document.execCommand('insertHTML', false, html)
-    } catch {
-      document.execCommand('insertText', false, normalized)
-    }
-    commitRichTextHost(host, { historyLabel: 'Paste text' })
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    scheduleSelectionToolbarUpdate()
-  }
-
-  function handleRichTextKeydown(event) {
-    const host = getRichTextHost(event.target)
-    if (!host) {
-      return
-    }
-    if (!(event.ctrlKey || event.metaKey) || event.altKey) {
-      return
-    }
-    const key = event.key.toLowerCase()
-    if (key === 'b') {
-      event.preventDefault()
-      applyRichTextCommand('bold')
-      return
-    }
-    if (key === 'i') {
-      event.preventDefault()
-      applyRichTextCommand('italic')
-      return
-    }
-    if (key === 'u') {
-      event.preventDefault()
-      applyRichTextCommand('underline')
-    }
-    scheduleSelectionToolbarUpdate()
-  }
-
-  function isTextControlElement(node) {
-    return node instanceof Element && Boolean(node.closest('[data-text-control="true"]'))
-  }
-
-  function isTextControlInteractionActive() {
-    return state.textControlInteractionLocked || Date.now() <= state.textControlInteractionUntil
-  }
-
-  function applyRichTextCommand(command) {
-    const host =
-      getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
-    if (!host) {
-      return false
-    }
-
-    const hasLiveSelection = hasNonCollapsedSelectionInHost(host)
-    if (!hasLiveSelection) {
-      if (document.activeElement !== host) {
-        host.focus({ preventScroll: true })
-      }
-      if (!restoreCachedRichTextSelection(host)) {
-        return false
-      }
-    }
-
-    try {
-      document.execCommand('styleWithCSS', false, false)
-    } catch {}
-    let applied = false
-    try {
-      applied = document.execCommand(command, false, null)
-    } catch {}
-    state.activeInlineStyleNode = null
-    releaseTextControlInteractionSoon()
-    commitRichTextHost(host, { historyLabel: 'Format text' })
-    cacheRichTextSelection()
-    refreshTextToolStates()
-    scheduleSelectionToolbarUpdate()
-    if (applied !== false) {
-      showTextEditFeedback('Formatting updated.', 'success')
-      return true
-    }
-    return false
-  }
-
-  function applyRichTextInlineStyle(styleProps) {
-    const context = resolveExpandedRichTextSelection()
-    if (!context) {
-      return false
-    }
-    const { host, selection, range } = context
-
-    const reusableNode = getReusableInlineStyleNode(host, range)
-    if (reusableNode && applyStylesToElement(reusableNode, styleProps)) {
-      updateCachedRangeFromNode(reusableNode, host)
-      state.activeTextHost = host
-      commitRichTextHost(host, { normalizeDom: false, historyLabel: 'Format text' })
-      refreshTextToolStates()
-      syncTextStyleControlsFromSelection()
-      scheduleSelectionToolbarUpdate()
-      return true
-    }
-
-    const wrapper = document.createElement('span')
-    if (!applyStylesToElement(wrapper, styleProps)) {
-      return false
-    }
-
-    const fragment = range.extractContents()
-    if (!fragment || fragment.childNodes.length === 0) {
-      return false
-    }
-    stripConflictingInlineStyles(fragment, styleProps)
-    wrapper.appendChild(fragment)
-    range.insertNode(wrapper)
-
-    const nextRange = document.createRange()
-    nextRange.selectNodeContents(wrapper)
-    if (selection && (!isTextControlInteractionActive() || document.activeElement === host)) {
-      try {
-        selection.removeAllRanges()
-        selection.addRange(nextRange)
-      } catch {}
-    }
-
-    state.activeInlineStyleNode = wrapper
-    updateCachedRangeFromNode(wrapper, host)
-    state.activeTextHost = host
-    commitRichTextHost(host, { normalizeDom: false, historyLabel: 'Format text' })
-    refreshTextToolStates()
-    syncTextStyleControlsFromSelection()
-    scheduleSelectionToolbarUpdate()
-    return true
-  }
-
-  function applyStylesToElement(node, styleProps) {
-    let appliedAnyStyle = false
-    if (styleProps.fontFamily) {
-      const family = normalizeFontFamilyChoice(styleProps.fontFamily)
-      if (family) {
-        node.style.fontFamily = family
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.fontSize) {
-      const size = normalizeFontSizeCss(styleProps.fontSize)
-      if (size) {
-        node.style.fontSize = size
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.color) {
-      const color = sanitizeHex(styleProps.color, '')
-      if (color) {
-        node.style.color = color
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.fontWeight) {
-      const weight = sanitizeFontWeightValue(asText(styleProps.fontWeight).toLowerCase())
-      if (weight) {
-        node.style.fontWeight = weight
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.fontStyle) {
-      const fontStyle = sanitizeFontStyleValue(asText(styleProps.fontStyle).toLowerCase())
-      if (fontStyle) {
-        node.style.fontStyle = fontStyle
-        appliedAnyStyle = true
-      }
-    }
-    if (styleProps.textDecoration) {
-      const decoration = sanitizeTextDecorationValue(asText(styleProps.textDecoration).toLowerCase())
-      if (decoration) {
-        node.style.textDecoration = decoration
-        appliedAnyStyle = true
-      }
-    }
-    return appliedAnyStyle
-  }
-
-  function getReusableInlineStyleNode(host, range = null) {
-    const node = state.activeInlineStyleNode
-    if (!node || !node.isConnected) {
-      state.activeInlineStyleNode = null
-      return null
-    }
-    if (!host.contains(node)) {
-      state.activeInlineStyleNode = null
-      return null
-    }
-    if (range && !isRangeInsideNode(node, range)) {
-      state.activeInlineStyleNode = null
-      return null
-    }
-    return node
-  }
-
-  function updateCachedRangeFromNode(node, host) {
-    if (!node || !node.isConnected || !host.contains(node)) {
-      cacheRichTextSelection()
-      return
-    }
-    try {
-      const nextRange = document.createRange()
-      nextRange.selectNodeContents(node)
-      state.cachedTextSelectionRange = nextRange.cloneRange()
-      state.cachedTextSelectionHost = host
-    } catch {
-      cacheRichTextSelection()
-    }
-  }
-
-  function syncActiveInlineStyleNodeWithSelection(host) {
-    const node = state.activeInlineStyleNode
-    if (!node) {
-      return
-    }
-    if (!node.isConnected || !host.contains(node)) {
-      state.activeInlineStyleNode = null
-      return
-    }
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      return
-    }
-    const range = selection.getRangeAt(0)
-    if (!isRangeInsideNode(node, range)) {
-      state.activeInlineStyleNode = null
-    }
-  }
-
-  function isRangeInsideNode(node, range) {
-    if (!(node instanceof Element) || !range) {
-      return false
-    }
-    return isNodeInsideHost(node, range.startContainer) && isNodeInsideHost(node, range.endContainer)
-  }
-
-  function stripConflictingInlineStyles(rootNode, styleProps) {
-    const keysToClear = []
-    if (styleProps.fontFamily) {
-      keysToClear.push('fontFamily')
-    }
-    if (styleProps.fontSize) {
-      keysToClear.push('fontSize')
-    }
-    if (styleProps.color) {
-      keysToClear.push('color')
-    }
-    if (styleProps.fontWeight) {
-      keysToClear.push('fontWeight')
-    }
-    if (styleProps.fontStyle) {
-      keysToClear.push('fontStyle')
-    }
-    if (styleProps.textDecoration) {
-      keysToClear.push('textDecoration')
-    }
-    if (keysToClear.length === 0) {
-      return
-    }
-
-    const stack = [rootNode]
-    while (stack.length > 0) {
-      const node = stack.pop()
-      if (!node) {
-        continue
-      }
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const element = node
-        for (const key of keysToClear) {
-          if (key === 'textDecoration') {
-            element.style.textDecoration = ''
-            element.style.textDecorationLine = ''
-            continue
-          }
-          element.style[key] = ''
-        }
-        if (!element.getAttribute('style') || !asText(element.getAttribute('style'))) {
-          element.removeAttribute('style')
-        }
-      }
-      for (const child of [...node.childNodes]) {
-        stack.push(child)
-      }
-    }
-  }
-
-  function resolveExpandedRichTextSelection() {
-    const host =
-      getSelectionRichTextHost() ||
-      getActiveRichTextHost() ||
-      getCachedRichTextSelectionHost() ||
-      getInlineStyleNodeHost()
-    if (!host) {
-      return null
-    }
-
-    const selection = window.getSelection()
-    if (selection && selection.rangeCount > 0 && !selection.isCollapsed && getSelectionRichTextHost() === host) {
-      return { host, selection, range: selection.getRangeAt(0) }
-    }
-
-    const cachedRange = getCachedRichTextSelectionRangeClone(host)
-    if (cachedRange) {
-      return { host, selection, range: cachedRange }
-    }
-
-    if (isTextControlInteractionActive()) {
-      const reusableNode = getReusableInlineStyleNode(host)
-      if (reusableNode) {
-        try {
-          const nodeRange = document.createRange()
-          nodeRange.selectNodeContents(reusableNode)
-          return { host, selection, range: nodeRange }
-        } catch {}
-      }
-    }
-
-    if (!isTextControlInteractionActive()) {
-      if (document.activeElement !== host) {
-        host.focus({ preventScroll: true })
-      }
-      if (restoreCachedRichTextSelection(host)) {
-        const restored = window.getSelection()
-        if (
-          restored &&
-          restored.rangeCount > 0 &&
-          !restored.isCollapsed &&
-          getSelectionRichTextHost() === host
-        ) {
-          return { host, selection: restored, range: restored.getRangeAt(0) }
-        }
-      }
-    }
-    return null
-  }
-
-  function getCachedRichTextSelectionRangeClone(host) {
-    const cachedHost = getCachedRichTextSelectionHost()
-    const range = state.cachedTextSelectionRange
-    if (!cachedHost || cachedHost !== host || !range) {
-      return null
-    }
-    try {
-      return range.cloneRange()
-    } catch {
-      return null
-    }
-  }
-
-  function getInlineStyleNodeHost() {
-    const node = state.activeInlineStyleNode
-    if (!node || !node.isConnected) {
-      return null
-    }
-    return getRichTextHost(node) || (node.parentElement ? node.parentElement.closest('.rich-text-editable') : null)
-  }
-
-  function syncTextStyleControlsFromSelection() {
-    const snapshot = getCurrentTextStyleSnapshot()
-    const fontFamily =
-      snapshot?.fontFamily ||
-      (isTextControlInteractionActive() ? normalizeFontFamilyChoice(el.textFontFamily.value) : '') ||
-      normalizeFontFamilyChoice(currentTheme.fontFamily)
-    const fontSize =
-      snapshot?.fontSize ||
-      (isTextControlInteractionActive() ? normalizeFontSizeChoice(el.textFontSize.value) : '') ||
-      '24'
-    const fontColor =
-      snapshot?.color ||
-      (isTextControlInteractionActive() ? sanitizeHex(el.textFontColor.value, '') : '') ||
-      sanitizeHex(currentTheme.textMain, '#16375e')
-
-    state.isSyncingTextStyleControls = true
-    try {
-      syncTextSelectOption([el.textFontFamily, el.miniTextFontFamily], fontFamily)
-      syncTextSelectOption([el.textFontSize, el.miniTextFontSize], fontSize)
-      setLinkedControlValues([el.textFontColor, el.miniTextFontColor], fontColor)
-    } finally {
-      state.isSyncingTextStyleControls = false
-    }
-  }
-
-  function syncTextSelectOption(selects, value) {
-    if (!value) {
-      return
-    }
-    for (const select of selects) {
-      ensureSelectOption(select, value)
-      select.value = value
-    }
-  }
-
-  function ensureSelectOption(select, value) {
-    const normalized = String(value)
-    for (const option of select.options) {
-      if (option.value === normalized) {
-        return
-      }
-    }
-    const option = document.createElement('option')
-    option.value = normalized
-    option.textContent = normalized
-    select.appendChild(option)
-  }
-
-  function getCurrentTextStyleSnapshot() {
-    const host =
-      getSelectionRichTextHost() || getCachedRichTextSelectionHost() || getActiveRichTextHost()
-    if (!host) {
-      return null
-    }
-
-    const probe = getTextStyleProbeNode(host)
-    if (!probe) {
-      return null
-    }
-    const probeElement =
-      probe instanceof Element
-        ? probe
-        : probe instanceof Node && probe.parentElement
-          ? probe.parentElement
-          : host
-    const computed = window.getComputedStyle(probeElement)
-
-    return {
-      fontFamily: normalizeFontFamilyChoice(extractFontFamilyName(computed.fontFamily)),
-      fontSize: normalizeFontSizeChoice(String(pxToPoints(computed.fontSize))),
-      color: normalizeColorToHex(computed.color)
-    }
-  }
-
-  function getTextStyleProbeNode(host) {
-    const liveSelection = window.getSelection()
-    if (liveSelection && liveSelection.rangeCount > 0) {
-      const liveHost = getSelectionRichTextHost()
-      if (liveHost && liveHost === host) {
-        const range = liveSelection.getRangeAt(0)
-        return range.startContainer
-      }
-    }
-
-    const cachedHost = getCachedRichTextSelectionHost()
-    if (cachedHost && cachedHost === host && state.cachedTextSelectionRange) {
-      return state.cachedTextSelectionRange.startContainer
-    }
-    return null
-  }
-
-  function normalizeFontFamilyChoice(value) {
-    const name = extractFontFamilyName(value)
-    if (!name) {
-      return ''
-    }
-    const lower = name.toLowerCase()
-    for (const option of TEXT_FONT_FAMILIES) {
-      if (option.toLowerCase() === lower) {
-        return option
-      }
-    }
-    return name
-  }
-
-  function extractFontFamilyName(value) {
-    const text = asText(value)
-    if (!text) {
-      return ''
-    }
-    const primary = text.split(',')[0]?.trim().replace(/^["']|["']$/g, '') || ''
-    return primary
-  }
-
-  function normalizeFontSizeChoice(value) {
-    const num = Number(value)
-    if (!Number.isFinite(num)) {
-      return ''
-    }
-    let closest = TEXT_FONT_SIZES[0]
-    let closestDelta = Math.abs(num - closest)
-    for (const option of TEXT_FONT_SIZES) {
-      const delta = Math.abs(num - option)
-      if (delta < closestDelta) {
-        closest = option
-        closestDelta = delta
-      }
-    }
-    return String(closest)
-  }
-
-  function normalizeFontSizeCss(value) {
-    const text = asText(value).toLowerCase()
-    if (!text) {
-      return ''
-    }
-    const withUnit = /^([0-9]+(?:\.[0-9]+)?)(pt|px|em|rem|%)$/.exec(text)
-    const rawNumber = withUnit ? Number(withUnit[1]) : Number(text)
-    const unit = withUnit ? withUnit[2] : 'pt'
-    if (!Number.isFinite(rawNumber) || rawNumber <= 0) {
-      return ''
-    }
-    const clamped = Math.min(300, Math.max(4, rawNumber))
-    const printable = Number.isInteger(clamped) ? String(clamped) : String(clamped)
-    return `${printable}${unit}`
-  }
-
-  function pxToPoints(pxText) {
-    const px = Number.parseFloat(pxText)
-    if (!Number.isFinite(px) || px <= 0) {
-      return 24
-    }
-    return (px * 72) / 96
-  }
-
-  function normalizeColorToHex(colorText) {
-    const directHex = sanitizeHex(colorText, '')
-    if (directHex) {
-      return directHex.toLowerCase()
-    }
-    const rgbMatch = /rgba?\(([^)]+)\)/i.exec(asText(colorText))
-    if (!rgbMatch) {
-      return '#16375e'
-    }
-    const channels = rgbMatch[1]
-      .split(',')
-      .map((entry) => Number.parseFloat(entry.trim()))
-      .filter((entry, index) => Number.isFinite(entry) && index < 3)
-    if (channels.length < 3) {
-      return '#16375e'
-    }
-    const r = clamp(Math.round(channels[0]), 0, 255, 0)
-    const g = clamp(Math.round(channels[1]), 0, 255, 0)
-    const b = clamp(Math.round(channels[2]), 0, 255, 0)
-    return `#${toHexByte(r)}${toHexByte(g)}${toHexByte(b)}`
-  }
-
-  function toHexByte(value) {
-    return Number(value).toString(16).padStart(2, '0')
-  }
-
-  function refreshTextToolStates() {
-    const hasEditableSelection = Boolean(
-      getSelectionRichTextHost() || getCachedRichTextSelectionHost() || getActiveRichTextHost()
-    )
-    const hasExpandedSelection = Boolean(
-      getSelectionRichTextHost() || getCachedRichTextSelectionHost()
-    )
-    const commandState = getCurrentTextCommandState()
-    setTextToolState(el.textToolBold, hasEditableSelection, commandState.bold)
-    setTextToolState(el.miniTextToolBold, hasEditableSelection, commandState.bold)
-    setTextToolState(el.textToolItalic, hasEditableSelection, commandState.italic)
-    setTextToolState(el.miniTextToolItalic, hasEditableSelection, commandState.italic)
-    setTextToolState(el.textToolUnderline, hasEditableSelection, commandState.underline)
-    setTextToolState(el.miniTextToolUnderline, hasEditableSelection, commandState.underline)
-    el.textToolClear.disabled = !hasEditableSelection
-    el.miniTextToolClear.disabled = !hasEditableSelection
-    el.textFontFamily.disabled = !hasExpandedSelection
-    el.miniTextFontFamily.disabled = !hasExpandedSelection
-    el.textFontSize.disabled = !hasExpandedSelection
-    el.miniTextFontSize.disabled = !hasExpandedSelection
-    el.textFontColor.disabled = !hasExpandedSelection
-    el.miniTextFontColor.disabled = !hasExpandedSelection
-  }
-
-  function setTextToolState(button, enabled, active) {
-    button.disabled = !enabled
-    button.classList.toggle('is-active', Boolean(enabled && active))
-  }
-
-  function getCurrentTextCommandState() {
-    const host =
-      getSelectionRichTextHost() ||
-      getCachedRichTextSelectionHost() ||
-      getActiveRichTextHost() ||
-      getInlineStyleNodeHost()
-    if (!host) {
-      return { bold: false, italic: false, underline: false }
-    }
-
-    const probe = getTextStyleProbeNode(host) || getReusableInlineStyleNode(host) || host
-    const probeElement =
-      probe instanceof Element
-        ? probe
-        : probe instanceof Node && probe.parentElement
-          ? probe.parentElement
-          : host
-
-    let computed
-    try {
-      computed = window.getComputedStyle(probeElement)
-    } catch {
-      return { bold: false, italic: false, underline: false }
-    }
-
-    const weightText = asText(computed.fontWeight).toLowerCase()
-    const numericWeight = Number.parseInt(weightText, 10)
-    const bold =
-      weightText === 'bold' || (Number.isFinite(numericWeight) && numericWeight >= 600)
-    const italic = asText(computed.fontStyle).toLowerCase().includes('italic')
-    const decorationText =
-      `${asText(computed.textDecorationLine)} ${asText(computed.textDecoration)}`.toLowerCase()
-    const underline = decorationText.includes('underline')
-
-    return { bold, italic, underline }
-  }
-
-  function getSelectionRichTextHost() {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) {
-      return null
-    }
-    const anchorHost = getRichTextHost(selection.anchorNode)
-    const focusHost = getRichTextHost(selection.focusNode)
-    if (!anchorHost || anchorHost !== focusHost) {
-      return null
-    }
-    return anchorHost
-  }
-
-  function getEditingRichTextHost() {
-    return getSelectionRichTextHost() || getActiveRichTextHost() || getCachedRichTextSelectionHost()
-  }
-
-  function hasNonCollapsedSelectionInHost(host) {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      return false
-    }
-    return getSelectionRichTextHost() === host
-  }
-
-  function cacheRichTextSelection() {
-    const selection = window.getSelection()
-    const host = getSelectionRichTextHost()
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !host) {
-      return
-    }
-    try {
-      state.cachedTextSelectionRange = selection.getRangeAt(0).cloneRange()
-      state.cachedTextSelectionHost = host
-    } catch {}
-  }
-
-  function clearCachedRichTextSelection() {
-    state.cachedTextSelectionRange = null
-    state.cachedTextSelectionHost = null
-    state.activeInlineStyleNode = null
-  }
-
-  function getCachedRichTextSelectionHost() {
-    const host = state.cachedTextSelectionHost
-    const range = state.cachedTextSelectionRange
-    if (!host || !range) {
-      return null
-    }
-    if (!host.isConnected) {
-      clearCachedRichTextSelection()
-      return null
-    }
-    if (!isNodeInsideHost(host, range.startContainer) || !isNodeInsideHost(host, range.endContainer)) {
-      clearCachedRichTextSelection()
-      return null
-    }
-    return host
-  }
-
-  function restoreCachedRichTextSelection(host) {
-    const cachedHost = getCachedRichTextSelectionHost()
-    const range = state.cachedTextSelectionRange
-    if (!cachedHost || cachedHost !== host || !range) {
-      return false
-    }
-    const selection = window.getSelection()
-    if (!selection) {
-      return false
-    }
-    try {
-      selection.removeAllRanges()
-      selection.addRange(range)
-      return !selection.isCollapsed
-    } catch {
-      return false
-    }
-  }
-
-  function isNodeInsideHost(host, node) {
-    if (!node) {
-      return false
-    }
-    if (node === host) {
-      return true
-    }
-    if (node instanceof Element) {
-      return host.contains(node)
-    }
-    return node.parentElement ? host.contains(node.parentElement) : false
-  }
-
-  function getRichTextHost(node) {
-    if (!node) {
-      return null
-    }
-    if (node instanceof HTMLElement && node.classList.contains('rich-text-editable')) {
-      return node
-    }
-    const element =
-      node instanceof Element
-        ? node
-        : node.parentElement instanceof Element
-          ? node.parentElement
-          : null
-    if (!element) {
-      return null
-    }
-    const host = element.closest('.rich-text-editable')
-    return host instanceof HTMLElement ? host : null
-  }
-
-  function getActiveRichTextHost() {
-    const host = state.activeTextHost
-    if (!host) {
-      return null
-    }
-    if (!host.isConnected) {
-      state.activeTextHost = null
-      return null
-    }
-    return host
-  }
-
-  function commitRichTextHost(host, options = {}) {
-    const textKey = asText(host.dataset.textKey)
-    if (!textKey) {
-      return
-    }
-    if (isLiveBoundTextKey(textKey)) {
-      host.dataset.richTextHtml = sanitizeRichTextHtml(host.innerHTML)
-      return
-    }
-    const normalizeDom = options.normalizeDom === true
-    const recordHistory = options.recordHistory !== false && !historyState.applying
-    const historyMode = asText(options.historyMode).toLowerCase()
-    const historyLabel = asText(options.historyLabel) || 'Edit text'
-    const sanitized = sanitizeRichTextHtml(host.innerHTML)
-    if (normalizeDom && host.innerHTML !== sanitized) {
-      host.innerHTML = sanitized
-    }
-    const hadValue = Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
-    if (!hadValue || state.textOverrides[textKey] !== sanitized) {
-      state.textOverrides[textKey] = sanitized
-      saveTextOverrides(state.textOverrides)
-      if (recordHistory) {
-        if (historyMode === 'typing') {
-          scheduleTypingHistoryCheckpoint()
-        } else {
-          recordHistoryCheckpoint(historyLabel)
-        }
-      }
-    }
-    host.dataset.richTextHtml = sanitized
-  }
-
-  function renderRichText(node, textKey, fallbackText) {
-    const fallbackHtml = textToRichHtml(fallbackText)
-    const allowOverrides = !isLiveBoundTextKey(textKey)
-    const hadOverride =
-      allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)
-    let hasOverride = hadOverride
-    if (
-      hasOverride &&
-      isPollQuestionTextKey(textKey) &&
-      isStaleQuestionOverride(state.textOverrides[textKey])
-    ) {
-      delete state.textOverrides[textKey]
-      saveTextOverrides(state.textOverrides)
-      hasOverride = false
-    }
-    const nextHtml = hasOverride ? state.textOverrides[textKey] : fallbackHtml
-    if (!allowOverrides && Object.prototype.hasOwnProperty.call(state.textOverrides, textKey)) {
-      delete state.textOverrides[textKey]
-      saveTextOverrides(state.textOverrides)
-    }
-
-    node.classList.add('rich-text-editable')
-    node.setAttribute('contenteditable', 'true')
-    node.setAttribute('spellcheck', 'true')
-    const previousTextKey = asText(node.dataset.textKey)
-    node.dataset.textKey = textKey
-
-    if (
-      state.activeTextHost === node &&
-      document.activeElement === node &&
-      previousTextKey === textKey
-    ) {
-      return
-    }
-    if (node.dataset.richTextHtml !== nextHtml) {
-      node.innerHTML = nextHtml
-      node.dataset.richTextHtml = nextHtml
-    }
-  }
-
-  function isLiveBoundTextKey(textKey) {
-    const key = asText(textKey)
-    if (!key) {
-      return false
-    }
-    if (key === 'chrome:status' || key === 'chrome:votes' || key === 'chrome:footer') {
-      return true
-    }
-    return /^poll:[^:]+:option:[^:]+:stats$/i.test(key)
-  }
-
-  function isPollQuestionTextKey(textKey) {
-    return /^poll:[^:]+:question$/i.test(asText(textKey))
-  }
-
-  function isStaleQuestionOverride(html) {
-    const plain = normalizeWhitespace(extractPlainTextFromHtml(html)).toLowerCase()
-    return (
-      plain === 'waiting for poll data...' ||
-      plain === 'missing required query param' ||
-      plain === 'unable to load poll data'
-    )
-  }
-
-  function extractPlainTextFromHtml(html) {
-    const container = document.createElement('div')
-    container.innerHTML = typeof html === 'string' ? html : ''
-    return container.textContent || ''
-  }
-
-  function normalizeWhitespace(text) {
-    return asText(text).replace(/\s+/g, ' ')
-  }
-
-  function isRichTextEditingActive() {
-    const host = getActiveRichTextHost()
-    const inlineHost = getInlineStyleNodeHost()
-    const resolvedHost = host || inlineHost
-    if (!resolvedHost) {
-      return false
-    }
-    if (document.activeElement === resolvedHost) {
-      return true
-    }
-    if (isTextControlElement(document.activeElement) && getCachedRichTextSelectionHost() === resolvedHost) {
-      return true
-    }
-    if (state.activeInlineStyleNode && state.activeInlineStyleNode.isConnected && resolvedHost.contains(state.activeInlineStyleNode)) {
-      return true
-    }
-    if (isTextControlInteractionActive()) {
-      const cachedHost = getCachedRichTextSelectionHost()
-      if (cachedHost && cachedHost === resolvedHost) {
-        return true
-      }
-    }
-    return false
   }
 
   function setupDragInteractions() {
@@ -10494,369 +7928,39 @@ import {
     scheduleResizeSelectionUpdate()
   }
 
-  async function startSessionFeed() {
-    if (!state.sessionId && !state.code) {
-      renderMissingSession()
-      return
-    }
 
-    try {
-      if (!state.sessionId && state.code) {
-        const resolvedSession = await fetchJson(
-          `/sessions/code/${encodeURIComponent(state.code)}`
-        )
-        state.sessionId = asText(resolvedSession.id)
-        state.code = normalizeCode(resolvedSession.code) || state.code
-      }
 
-      if (!state.sessionId) {
-        renderError('Unable to resolve session.')
-        return
-      }
 
-      // Cache-first paint: if the host taskpane's prefetcher has warmed
-      // either localStorage or document.settings for this session, render
-      // immediately from the cached snapshot. WS still opens and replaces
-      // any stale numbers within ~1s — see broadcast.ts and prefetcher.ts
-      // for the writer side. Cold cache (no prior prefetch, or fresh
-      // device opening a shared deck without bundled settings) is a no-op.
-      await hydrateFromEmbedCache(state.sessionId)
 
-      // Open the WebSocket; the server pushes a session_snapshot on
-      // connect (see backend/app/main.py) which becomes our authoritative
-      // paint. The HTTP /snapshot fetch is no longer awaited inline because
-      // it duplicates the WS-delivered payload and adds a full round trip
-      // to initial render. scheduleInitialSnapshotFallback() is the safety
-      // net for when WS is slow or fails before delivering anything.
-      connectSocket()
-      scheduleInitialSnapshotFallback()
-      startSnapshotPolling()
-    } catch (error) {
-      renderError(errorToMessage(error))
-    }
-  }
 
-  async function hydrateFromEmbedCache(sessionId) {
-    // Fail-soft on every code path: a missing reader, a cache miss, or a
-    // malformed payload should never prevent the WebSocket flow from
-    // running. The reader exists only when /embed/prezo-embed-cache.js
-    // loaded successfully; older browsers or sandboxed contexts without
-    // it just skip this fast path.
-    if (!sessionId || !window.PrezoEmbedCache) {
-      return
-    }
-    try {
-      const entry = await window.PrezoEmbedCache.readFreshest(sessionId)
-      const cached = entry?.payload
-      if (!cached || typeof cached !== 'object') {
-        return
-      }
-      state.snapshot = cached
-      const cachedCode =
-        cached.session && typeof cached.session === 'object'
-          ? cached.session.code
-          : null
-      if (cachedCode) {
-        state.code = normalizeCode(cachedCode) || state.code
-      }
-      // Force a synchronous render so the first paint reflects the cached
-      // snapshot before WS opens. Subsequent WS messages will overwrite
-      // state.snapshot via the existing handleSocketMessage path.
-      renderFromSnapshot(true)
-    } catch {
-      // Cache read failures are non-fatal; the WS path still runs.
-    }
-  }
 
-  function scheduleInitialSnapshotFallback() {
-    window.setTimeout(() => {
-      // If the socket has already populated state.snapshot, the WS path won
-      // and the HTTP fetch is unnecessary. We also bail when the user
-      // navigated away (state.isUnloading) so we don't kick off a doomed
-      // request during teardown.
-      if (state.snapshot || state.isUnloading) {
-        return
-      }
-      void refreshSnapshot(true)
-    }, INITIAL_SNAPSHOT_FALLBACK_MS)
-  }
 
-  function startSnapshotPolling() {
-    stopSnapshotPolling()
-    state.pollTimer = window.setInterval(() => {
-      if (state.socketStatus === 'connected') {
-        return
-      }
-      void refreshSnapshot(false)
-    }, SNAPSHOT_POLL_DISCONNECTED_MS)
-  }
 
-  function stopSnapshotPolling() {
-    if (state.pollTimer) {
-      window.clearInterval(state.pollTimer)
-      state.pollTimer = null
-    }
-  }
 
-  async function refreshSnapshot(forceRender) {
-    if (!state.sessionId) {
-      return null
-    }
-    if (state.fetchPromise) {
-      return state.fetchPromise
-    }
 
-    state.fetchPromise = fetchJson(`/sessions/${encodeURIComponent(state.sessionId)}/snapshot`)
-      .then((snapshot) => {
-        state.snapshot = snapshot
-        if (snapshot?.session?.code) {
-          state.code = normalizeCode(snapshot.session.code) || state.code
-        }
-        if (forceRender) {
-          renderFromSnapshot(true)
-        } else {
-          scheduleSnapshotRender()
-        }
-        return snapshot
-      })
-      .catch((error) => {
-        if (!state.snapshot) {
-          throw error
-        }
-      })
-      .finally(() => {
-        state.fetchPromise = null
-      })
 
-    return state.fetchPromise
-  }
 
-  function scheduleSnapshotRender() {
-    if (state.snapshotRenderTimer) {
-      return
-    }
-    state.snapshotRenderTimer = window.setTimeout(() => {
-      state.snapshotRenderTimer = null
-      renderFromSnapshot(false)
-    }, LIVE_SNAPSHOT_RENDER_BATCH_MS)
-  }
 
-  function connectSocket() {
-    if (!state.sessionId) {
-      return
-    }
 
-    disconnectSocket()
-    state.socketStatus = 'connecting'
-    updateCurrentActivityMeta()
 
-    const url = `${toWsBase(state.apiBase)}/ws/sessions/${encodeURIComponent(state.sessionId)}`
-    let socket
-    try {
-      socket = new WebSocket(url)
-    } catch {
-      state.socketStatus = 'error'
-      updateCurrentActivityMeta()
-      return
-    }
 
-    state.socket = socket
-    socket.addEventListener('open', () => {
-      if (state.socket !== socket) {
-        return
-      }
-      state.socketStatus = 'connected'
-      state.reconnectDelayMs = SOCKET_RECONNECT_INITIAL_DELAY_MS
-      updateCurrentActivityMeta()
-    })
 
-    socket.addEventListener('message', (event) => {
-      handleSocketMessage(event.data)
-    })
 
-    socket.addEventListener('close', () => {
-      if (state.socket !== socket) {
-        return
-      }
-      state.socket = null
-      if (state.isUnloading) {
-        return
-      }
-      state.socketStatus = 'disconnected'
-      updateCurrentActivityMeta()
-      scheduleReconnect()
-    })
 
-    socket.addEventListener('error', () => {
-      if (state.socket !== socket) {
-        return
-      }
-      state.socketStatus = 'error'
-      updateCurrentActivityMeta()
-    })
-  }
 
-  function scheduleReconnect() {
-    if (state.reconnectTimer || state.isUnloading) {
-      return
-    }
-    const delay = Math.min(
-      Number.isFinite(state.reconnectDelayMs) ? state.reconnectDelayMs : SOCKET_RECONNECT_INITIAL_DELAY_MS,
-      SOCKET_RECONNECT_MAX_DELAY_MS
-    )
-    state.reconnectTimer = window.setTimeout(() => {
-      state.reconnectTimer = null
-      connectSocket()
-    }, delay)
-    state.reconnectDelayMs = Math.min(delay * 2, SOCKET_RECONNECT_MAX_DELAY_MS)
-  }
 
-  function disconnectSocket() {
-    if (!state.socket) {
-      return
-    }
-    const activeSocket = state.socket
-    state.socket = null
-    try {
-      activeSocket.close()
-    } catch {}
-  }
 
-  function handleSocketMessage(raw) {
-    let payload
-    try {
-      payload = JSON.parse(raw)
-    } catch {
-      return
-    }
-    if (!payload || typeof payload !== 'object') {
-      return
-    }
 
-    const eventPayload = payload.payload && typeof payload.payload === 'object' ? payload.payload : {}
-    if (payload.type === 'session_snapshot' && eventPayload.snapshot) {
-      state.snapshot = eventPayload.snapshot
-      if (state.snapshot?.session?.code) {
-        state.code = normalizeCode(state.snapshot.session.code) || state.code
-      }
-      scheduleSnapshotRender()
-      return
-    }
-
-    let hasPatch = false
-    if (eventPayload.session && typeof eventPayload.session === 'object') {
-      ensureSnapshotContainer()
-      state.snapshot.session = eventPayload.session
-      if (eventPayload.session.code) {
-        state.code = normalizeCode(eventPayload.session.code) || state.code
-      }
-      hasPatch = true
-    }
-    let isPollPatch = false
-    let isQnaPatch = false
-    if (eventPayload.poll && typeof eventPayload.poll === 'object') {
-      ensureSnapshotContainer()
-      mergePoll(eventPayload.poll)
-      hasPatch = true
-      isPollPatch = true
-    }
-    if (eventPayload.question && typeof eventPayload.question === 'object') {
-      ensureSnapshotContainer()
-      mergeQuestion(eventPayload.question)
-      hasPatch = true
-      isQnaPatch = true
-    }
-    if (eventPayload.prompt && typeof eventPayload.prompt === 'object') {
-      ensureSnapshotContainer()
-      mergePrompt(eventPayload.prompt)
-      hasPatch = true
-      isQnaPatch = true
-    }
-    if (payload.type === 'qna_prompt_deleted' && eventPayload.prompt_id) {
-      ensureSnapshotContainer()
-      state.snapshot.prompts = (Array.isArray(state.snapshot.prompts) ? state.snapshot.prompts : []).filter(
-        (prompt) => asText(prompt?.id) !== asText(eventPayload.prompt_id)
-      )
-      hasPatch = true
-      isQnaPatch = true
-    }
-    if (payload.type === 'audience_questions_deleted' && Array.isArray(eventPayload.question_ids)) {
-      ensureSnapshotContainer()
-      const removed = new Set(eventPayload.question_ids.map((id) => asText(id)))
-      state.snapshot.questions = (Array.isArray(state.snapshot.questions) ? state.snapshot.questions : []).filter(
-        (question) => !removed.has(asText(question?.id))
-      )
-      hasPatch = true
-      isQnaPatch = true
-    }
-
-    if (hasPatch) {
-      // When an inline text edit is in progress, skip the render so the
-      // echo from our own PATCH broadcast doesn't cause the artifact to
-      // flutter between old and new text.  The data is already merged
-      // into the snapshot — the next render after editing ends will
-      // pick it up.
-      if (isPollPatch && artifactTextEdit.isEditing()) {
-        return
-      }
-      // The patch is merged into the snapshot either way; only spend a
-      // render when the event can affect this station's activity view
-      // (session patches affect all kinds — qna_open lives on the session).
-      const renderRelevant =
-        Boolean(eventPayload.session) ||
-        (state.activityKind === 'poll' ? isPollPatch : isQnaPatch)
-      if (!renderRelevant) {
-        return
-      }
-      scheduleSnapshotRender()
-      return
-    }
-
-    void refreshSnapshot(false)
-  }
-
-  function ensureSnapshotContainer() {
-    if (state.snapshot) {
-      return
-    }
-    state.snapshot = {
-      session: {
-        id: state.sessionId || '',
-        code: state.code || '',
-        status: 'active'
-      },
-      questions: [],
-      polls: [],
-      prompts: []
-    }
-  }
 
   /** Upsert-by-id into a snapshot collection (shared by poll, question, and
       prompt socket patches). */
-  function upsertSnapshotItem(collectionKey, item) {
-    if (!Array.isArray(state.snapshot[collectionKey])) {
-      state.snapshot[collectionKey] = []
-    }
-    const list = state.snapshot[collectionKey]
-    const index = list.findIndex((entry) => entry.id === item.id)
-    if (index >= 0) {
-      list[index] = item
-      return
-    }
-    list.push(item)
-  }
 
-  function mergePoll(nextPoll) {
-    upsertSnapshotItem('polls', nextPoll)
-  }
 
-  function mergeQuestion(nextQuestion) {
-    upsertSnapshotItem('questions', nextQuestion)
-  }
 
-  function mergePrompt(nextPrompt) {
-    upsertSnapshotItem('prompts', nextPrompt)
-  }
+
+
+
+
 
   function hideInitialSkeleton() {
     // Idempotent: classList.add is a no-op once the class is present.
@@ -10920,19 +8024,6 @@ import {
     updateMeta(poll, totalVotes)
     updateFooter()
     scheduleResizeSelectionUpdate()
-  }
-
-  function flushRichTextHostsToOverrides() {
-    if (historyState.applying) {
-      return
-    }
-    const hosts = el.wrap.querySelectorAll('.rich-text-editable[data-text-key]')
-    for (const host of hosts) {
-      if (!(host instanceof HTMLElement)) {
-        continue
-      }
-      commitRichTextHost(host, { normalizeDom: false, recordHistory: false })
-    }
   }
 
   function hasArtifactPrompt() {
@@ -11025,98 +8116,20 @@ import {
     scheduleResizeSelectionUpdate()
   }
 
-  function buildQnaActivityView() {
-    const questions = Array.isArray(state.snapshot?.questions) ? state.snapshot.questions : []
-    if (state.activityKind === 'discussion') {
-      const prompts = Array.isArray(state.snapshot?.prompts) ? state.snapshot.prompts : []
-      const prompt = selectPrompt(prompts)
-      if (!prompt) {
-        return null
-      }
-      return {
-        id: asText(prompt.id),
-        title: asText(prompt.prompt) || 'Open discussion',
-        status: asText(prompt.status) || 'closed',
-        questions: sortQnaQuestions(
-          questions.filter(
-            (question) =>
-              question?.status === 'approved' && asText(question?.prompt_id) === asText(prompt.id)
-          )
-        )
-      }
-    }
-    const session = state.snapshot?.session
-    if (!session || typeof session !== 'object') {
-      return null
-    }
-    return {
-      id: asText(session.id) || asText(state.sessionId),
-      title: asText(session.qna_prompt) || 'Audience Q&A',
-      status: session.qna_open ? 'open' : 'closed',
-      questions: sortQnaQuestions(
-        questions.filter((question) => question?.status === 'approved' && !question?.prompt_id)
-      )
-    }
-  }
+
 
   /** Approved questions ranked the way the audience app ranks them:
       upvotes first, then newest. Timestamps are parsed once up front so the
       comparator stays allocation- and parse-free. */
-  function sortQnaQuestions(list) {
-    return list
-      .map((question) => ({
-        id: asText(question?.id),
-        text: asText(question?.text),
-        votes: toInt(question?.votes),
-        createdAtMs: Date.parse(asText(question?.created_at)) || 0
-      }))
-      .sort((a, b) => {
-        if (b.votes !== a.votes) {
-          return b.votes - a.votes
-        }
-        return b.createdAtMs - a.createdAtMs
-      })
-  }
 
-  function selectPrompt(prompts) {
-    if (!Array.isArray(prompts) || prompts.length === 0) {
-      return null
-    }
-    const sorted = [...prompts].sort((a, b) => {
-      const left = Date.parse(asText(a.created_at)) || 0
-      const right = Date.parse(asText(b.created_at)) || 0
-      return right - left
-    })
-    if (state.promptSelector.mode === 'id') {
-      return sorted.find((prompt) => prompt.id === state.promptSelector.explicitId) || null
-    }
-    return sorted.find((prompt) => prompt.status === 'open') || sorted[0] || null
-  }
+
+
 
   /** Poll-shaped projection of a qna view so the shared chrome (meta, classic
       option rows, vote counter) renders ranked questions without new code. */
-  function qnaViewAsPollShape(view) {
-    if (!view) {
-      return null
-    }
-    return {
-      id: view.id,
-      question: view.title,
-      status: view.status,
-      options: view.questions.map((question) => ({
-        id: question.id,
-        label: question.text,
-        votes: question.votes
-      }))
-    }
-  }
 
-  function getQnaTotalVotes(view) {
-    if (!view || !Array.isArray(view.questions)) {
-      return 0
-    }
-    return view.questions.reduce((sum, question) => sum + toInt(question.votes), 0)
-  }
+
+
 
   function getQnaTitleTextKey(view) {
     return `${state.activityKind}:${asText(view?.id) || 'unknown'}:title`
@@ -11419,70 +8432,7 @@ import {
     el.dot.style.animation = 'pulse 1.8s infinite'
   }
 
-  function selectPoll(polls) {
-    if (!Array.isArray(polls) || polls.length === 0) {
-      return null
-    }
-    const sorted = [...polls].sort((a, b) => {
-      const left = Date.parse(asText(a.created_at)) || 0
-      const right = Date.parse(asText(b.created_at)) || 0
-      return right - left
-    })
 
-    if (state.pollSelector.mode === 'id') {
-      return sorted.find((poll) => poll.id === state.pollSelector.explicitId) || null
-    }
-    if (state.pollSelector.mode === 'open') {
-      return sorted.find((poll) => poll.status === 'open') || null
-    }
-    if (state.pollSelector.mode === 'latest') {
-      return sorted[0] || null
-    }
-    return sorted.find((poll) => poll.status === 'open') || sorted[0] || null
-  }
-
-  function getQuestionTextKey(poll) {
-    const pollId = asText(poll?.id) || 'unknown'
-    return `poll:${pollId}:question`
-  }
-
-  function getQuestionStateTextKey(stateKey) {
-    const normalizedStateKey = asText(stateKey) || 'default'
-    return `chrome:question-state:${normalizedStateKey}`
-  }
-
-  function getEyebrowTextKey() {
-    return 'chrome:eyebrow'
-  }
-
-  function getStatusTextKey() {
-    return 'chrome:status'
-  }
-
-  function getVotesTextKey() {
-    return 'chrome:votes'
-  }
-
-  function getFooterTextKey() {
-    return 'chrome:footer'
-  }
-
-  function getOptionTextKey(poll, option, index) {
-    const pollId = asText(poll?.id) || 'unknown'
-    const optionId = asText(option?.id) || `index-${index}`
-    return `poll:${pollId}:option:${optionId}`
-  }
-
-  function getOptionStatsTextKey(poll, option, index) {
-    const pollId = asText(poll?.id) || 'unknown'
-    const optionId = asText(option?.id) || `index-${index}`
-    return `poll:${pollId}:option:${optionId}:stats`
-  }
-
-  function getOptionsStateTextKey(stateKey) {
-    const normalizedStateKey = asText(stateKey) || 'default'
-    return `chrome:options-state:${normalizedStateKey}`
-  }
 
   function getRenderKey(poll) {
     if (!poll) {
@@ -11500,28 +8450,9 @@ import {
     })
   }
 
-  function getTotalVotes(poll) {
-    if (!poll || !Array.isArray(poll.options)) {
-      return 0
-    }
-    return poll.options.reduce((sum, option) => sum + toInt(option.votes), 0)
-  }
 
-  async function fetchJson(path) {
-    let response
-    try {
-      response = await fetch(`${state.apiBase}${path}`)
-    } catch (error) {
-      const message = errorToMessage(error)
-      throw new Error(`Unable to reach API base ${state.apiBase}: ${message}`)
-    }
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const detail = typeof body?.detail === 'string' ? body.detail : `Request failed (${response.status})`
-      throw new Error(`${detail} [API ${state.apiBase}]`)
-    }
-    return response.json()
-  }
+
+
 
   function getSupabaseAccessToken() {
     try {
@@ -11552,600 +8483,6 @@ import {
       return null
     }
     return null
-  }
-
-  function setLibrarySyncStatus(type, text, detail = '') {
-    state.library.status = type
-    state.library.detail = detail
-    el.librarySyncStatus.classList.remove('status-pending', 'status-success', 'status-warning', 'status-error')
-    el.librarySyncStatus.classList.add(
-      type === 'success'
-        ? 'status-success'
-        : type === 'warning'
-          ? 'status-warning'
-          : type === 'error'
-            ? 'status-error'
-            : 'status-pending'
-    )
-    el.librarySyncStatusText.textContent = text
-    el.librarySyncStatus.title = detail || text
-  }
-
-  function mergeRemoteThemeLibrary(records) {
-    if (!Array.isArray(records)) {
-      return
-    }
-    for (const record of records) {
-      const name = normalizeThemeName(record?.name)
-      if (!name || !record || typeof record.theme !== 'object' || !record.theme) {
-        continue
-      }
-      themeLibrary.themes[name] = sanitizeTheme(record.theme)
-    }
-    saveThemeLibrary(themeLibrary)
-    refreshThemeSelect(themeLibrary.activeName)
-  }
-
-  function mergeRemoteArtifactLibrary(records) {
-    if (!Array.isArray(records)) {
-      return
-    }
-    for (const record of records) {
-      const name = normalizeThemeName(record?.name)
-      const normalizedRecord = sanitizeSavedArtifactRecord(record)
-      if (!name || !normalizedRecord) {
-        continue
-      }
-      artifactLibrary.artifacts[name] = normalizedRecord
-    }
-    saveArtifactLibrary(artifactLibrary)
-    refreshArtifactSelect(artifactLibrary.activeName)
-    void refreshArtifactVersionHistory()
-  }
-
-  function bindImageUpload(inputId, themeKey, successText) {
-    const input = document.getElementById(inputId)
-    if (!input) {
-      return
-    }
-    input.addEventListener('change', async (event) => {
-      const target = event.target
-      const file = target?.files?.[0]
-      if (!file) {
-        return
-      }
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        updateTheme({ [themeKey]: dataUrl }, { historyLabel: 'Update image asset' })
-        showThemeFeedback(successText, 'success')
-      } catch {
-        showThemeFeedback('File upload failed.', 'error')
-      } finally {
-        input.value = ''
-      }
-    })
-  }
-
-  function syncBgDropzoneUi() {
-    const zone = document.getElementById('theme-bg-image-dropzone')
-    const clearBtn = document.getElementById('theme-bg-image-clear')
-    if (!zone) {
-      return
-    }
-    const url = asText(currentTheme.bgImageUrl)
-    const has = Boolean(url)
-    zone.classList.toggle('theme-bg-dropzone--has-image', has)
-    if (has) {
-      const safe = url.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-      zone.style.backgroundImage = `url("${safe}")`
-    } else {
-      zone.style.backgroundImage = ''
-    }
-    const label = zone.querySelector('.theme-bg-dropzone-label')
-    const hint = zone.querySelector('.theme-bg-dropzone-hint')
-    if (label) {
-      label.textContent = has
-        ? 'Image applied — drop or click to replace'
-        : 'Drop an image here, or click to browse'
-    }
-    if (hint) {
-      if (has) {
-        hint.style.display = 'none'
-      } else {
-        hint.style.display = 'block'
-        hint.textContent = 'PNG, JPG, WebP, GIF, SVG'
-      }
-    }
-    if (clearBtn) {
-      clearBtn.hidden = !has
-    }
-  }
-
-  function setupBackgroundDropzone() {
-    const zone = document.getElementById('theme-bg-image-dropzone')
-    const input = document.getElementById('theme-bg-image-upload')
-    const clearBtn = document.getElementById('theme-bg-image-clear')
-    if (!zone || !input) {
-      return
-    }
-    const prevent = (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-    }
-    ;['dragenter', 'dragover'].forEach((eventName) => {
-      zone.addEventListener(eventName, (event) => {
-        prevent(event)
-        zone.classList.add('theme-bg-dropzone--drag')
-      })
-    })
-    zone.addEventListener('dragleave', (event) => {
-      prevent(event)
-      zone.classList.remove('theme-bg-dropzone--drag')
-    })
-    zone.addEventListener('drop', async (event) => {
-      prevent(event)
-      zone.classList.remove('theme-bg-dropzone--drag')
-      const file = event.dataTransfer?.files?.[0]
-      if (!file || !file.type.startsWith('image/')) {
-        showThemeFeedback('Drop an image file.', 'error')
-        return
-      }
-      try {
-        const dataUrl = await readFileAsDataUrl(file)
-        updateTheme({ bgImageUrl: dataUrl }, { historyLabel: 'Update design' })
-        showThemeFeedback('Background image applied.', 'success')
-      } catch {
-        showThemeFeedback('Could not read that image.', 'error')
-      }
-    })
-    zone.addEventListener('click', (event) => {
-      if (event.target === clearBtn || (clearBtn && clearBtn.contains(event.target))) {
-        return
-      }
-      input.click()
-    })
-    zone.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault()
-        input.click()
-      }
-    })
-    if (clearBtn) {
-      clearBtn.addEventListener('click', (event) => {
-        event.stopPropagation()
-        event.preventDefault()
-        updateTheme({ bgImageUrl: '' }, { historyLabel: 'Clear background image' })
-        showThemeFeedback('Background image removed.', 'success')
-      })
-    }
-  }
-
-  async function saveTheme() {
-    const name = normalizeThemeName(el.themeName.value)
-    if (!name) {
-      showThemeFeedback('Theme name is required.', 'error')
-      return
-    }
-    themeLibrary.themes[name] = clone(currentTheme)
-    themeLibrary.activeName = name
-    saveThemeLibrary(themeLibrary)
-    saveThemeDraft(currentTheme)
-    refreshThemeSelect(name)
-    el.themeName.value = name
-    const syncResult = await persistThemeToAccount(name, currentTheme)
-    showThemeFeedback(syncResult.message || `Theme "${name}" saved.`, syncResult.type)
-    reflectLibrarySyncResult(syncResult)
-  }
-
-  function loadThemeFromSelect() {
-    const name = asText(el.themeSelect.value)
-    if (!name || !themeLibrary.themes[name]) {
-      showThemeFeedback('Select a saved theme first.', 'error')
-      return
-    }
-    currentTheme = sanitizeTheme(themeLibrary.themes[name])
-    applyTheme(currentTheme)
-    postVisualModeToParent('theme-load')
-    syncThemeControls()
-    themeLibrary.activeName = name
-    saveThemeLibrary(themeLibrary)
-    saveThemeDraft(currentTheme)
-    el.themeName.value = name
-    if (state.snapshot) {
-      renderFromSnapshot(true)
-    }
-    recordHistoryCheckpoint('Load theme')
-    showThemeFeedback(`Theme "${name}" loaded.`, 'success')
-  }
-
-  async function deleteThemeFromSelect() {
-    const name = asText(el.themeSelect.value)
-    if (!name || !themeLibrary.themes[name]) {
-      showThemeFeedback('Nothing selected to delete.', 'error')
-      return
-    }
-    delete themeLibrary.themes[name]
-    if (themeLibrary.activeName === name) {
-      themeLibrary.activeName = null
-    }
-    saveThemeLibrary(themeLibrary)
-    refreshThemeSelect(themeLibrary.activeName)
-    const syncResult = await deleteThemeFromAccount(name)
-    showThemeFeedback(syncResult.message || `Theme "${name}" deleted.`, syncResult.type)
-    reflectLibrarySyncResult(syncResult)
-  }
-
-  function startNewArtifact() {
-    if (state.artifact.busy) {
-      return
-    }
-    if (currentTheme.visualMode !== ARTIFACT_VISUAL_MODE) {
-      updateTheme({ visualMode: ARTIFACT_VISUAL_MODE }, { historyLabel: 'New artifact' })
-      return
-    }
-    state.artifact.lastPrompt = ''
-    state.artifact.lastAnswers = createEmptyArtifactAnswers()
-    state.artifact.activeEditRequest = ''
-    state.artifact.autoRepairInFlight = false
-    state.artifact.repairAttemptCount = 0
-    state.artifact.lastRuntimeError = ''
-    clearArtifactMarkup()
-    resetArtifactConversation({ preserveInput: false })
-    hideArtifactStage()
-    showArtifactStagePlaceholder(
-      'Artifact wizard is ready. Answer the questions to generate your artifact.',
-      'pending'
-    )
-    el.artifactName.value = ''
-  }
-
-  async function saveArtifactToLibrary() {
-    const name = normalizeThemeName(el.artifactName.value)
-    if (!name) {
-      showArtifactFeedback('Artifact name is required.', 'error')
-      return
-    }
-    const artifactRecord = buildSavedArtifactRecord()
-    if (!artifactRecord) {
-      showArtifactFeedback('Generate an artifact before saving it.', 'error')
-      return
-    }
-    artifactLibrary.artifacts[name] = artifactRecord
-    artifactLibrary.activeName = name
-    state.artifact.savedStyleOverrides = artifactRecord.styleOverrides || {}
-    pendingArtifactStyleOverrides = {}
-    pendingArtifactCopyOverrides = {}
-    artifactPosition.clearPendingPositionOverrides()
-    artifactSize.clearPendingSizeOverrides()
-    saveArtifactLibrary(artifactLibrary)
-    postActiveArtifactToParent('artifact-saved')
-    refreshArtifactSelect(name)
-    el.artifactName.value = name
-    const syncResult = await persistArtifactToAccount(name, artifactRecord)
-    showArtifactFeedback(syncResult.message || `Artifact "${name}" saved.`, syncResult.type)
-    reflectLibrarySyncResult(syncResult)
-    void refreshArtifactVersionHistory({ force: true })
-  }
-
-  function applyArtifactLibraryRecord(name, artifactRecord, options = {}) {
-    if (!name || !artifactRecord) {
-      return false
-    }
-    if (!artifactRecordMatchesActivityKind(artifactRecord)) {
-      showArtifactFeedback(
-        `Artifact "${name}" was built for a different activity type and can't run on this slide.`,
-        'error'
-      )
-      return false
-    }
-    pendingArtifactStyleOverrides = {}
-    pendingArtifactCopyOverrides = {}
-    artifactPosition.clearPendingPositionOverrides()
-    artifactSize.clearPendingSizeOverrides()
-    artifactHistory.clear()
-    const nextTheme = sanitizeTheme({
-      ...(artifactRecord.themeSnapshot || currentTheme),
-      visualMode: ARTIFACT_VISUAL_MODE
-    })
-    currentTheme = nextTheme
-    artifactLibrary.activeName = name
-    saveArtifactLibrary(artifactLibrary)
-    postActiveArtifactToParent('artifact-preset-load')
-    saveThemeDraft(currentTheme)
-    applyTheme(currentTheme)
-    postVisualModeToParent('artifact-preset-load')
-    syncThemeControls()
-    state.artifact.lastPrompt = asText(artifactRecord.lastPrompt)
-    state.artifact.savedStyleOverrides =
-      artifactRecord.styleOverrides && typeof artifactRecord.styleOverrides === 'object'
-        ? artifactRecord.styleOverrides
-        : {}
-    state.artifact.lastAnswers = cloneArtifactConversationAnswers(artifactRecord.lastAnswers)
-    state.artifact.conversationAnswers = cloneArtifactConversationAnswers(
-      artifactRecord.lastAnswers
-    )
-    state.artifact.conversationStepIndex = ARTIFACT_CONVERSATION_STEPS.length
-    state.artifact.editHistory = []
-    clearArtifactEditPromptQueue()
-    state.artifact.activeEditRequest = ''
-    state.artifact.autoRepairInFlight = false
-    state.artifact.repairAttemptCount = 0
-    state.artifact.lastRuntimeError = ''
-    const applied = applyArtifactMarkup(artifactRecord.html, {
-      requestKind: 'build',
-      artifactPackage: artifactRecord.package || null
-    })
-    syncArtifactConversationUi()
-    el.artifactName.value = name
-    if (state.snapshot) {
-      renderFromSnapshot(true)
-    } else if (applied) {
-      showArtifactStageFrame()
-    }
-    recordHistoryCheckpoint(asText(options.historyLabel) || 'Load artifact')
-    const successMessage = asText(options.successMessage) || `Artifact "${name}" loaded.`
-    const failureMessage =
-      asText(options.failureMessage) || `Artifact "${name}" could not be loaded.`
-    showArtifactFeedback(applied ? successMessage : failureMessage, applied ? 'success' : 'error')
-    return applied
-  }
-
-  function loadArtifactFromSelect() {
-    const name = asText(el.artifactSelect.value)
-    const artifactRecord = name ? artifactLibrary.artifacts[name] : null
-    if (!name || !artifactRecord) {
-      showArtifactFeedback('Select a saved artifact first.', 'error')
-      return
-    }
-    applyArtifactLibraryRecord(name, artifactRecord, {
-      historyLabel: 'Load artifact',
-      successMessage: `Artifact "${name}" loaded.`
-    })
-    void refreshArtifactVersionHistory()
-  }
-
-  async function deleteArtifactFromSelect() {
-    const name = asText(el.artifactSelect.value)
-    if (!name || !artifactLibrary.artifacts[name]) {
-      showArtifactFeedback('Nothing selected to delete.', 'error')
-      return
-    }
-    delete artifactLibrary.artifacts[name]
-    const wasActive = artifactLibrary.activeName === name
-    if (wasActive) {
-      artifactLibrary.activeName = null
-    }
-    saveArtifactLibrary(artifactLibrary)
-    if (wasActive) {
-      postActiveArtifactToParent('artifact-deleted')
-    }
-    refreshArtifactSelect(artifactLibrary.activeName)
-    const syncResult = await deleteArtifactFromAccount(name)
-    showArtifactFeedback(syncResult.message || `Artifact "${name}" deleted.`, syncResult.type)
-    reflectLibrarySyncResult(syncResult)
-    void refreshArtifactVersionHistory({ force: true })
-  }
-
-  function handleArtifactSelectChange() {
-    const selectedName = asText(el.artifactSelect.value)
-    if (selectedName) {
-      el.artifactName.value = selectedName
-    }
-    void refreshArtifactVersionHistory({ force: true })
-  }
-
-  function buildArtifactVersionLabel(record) {
-    const version = Math.max(1, toInt(record?.version))
-    const source = asText(record?.source)
-    const createdAt = Date.parse(asText(record?.created_at))
-    const timestamp = Number.isFinite(createdAt)
-      ? new Date(createdAt).toLocaleString()
-      : ''
-    return [source ? `v${version} · ${source}` : `v${version}`, timestamp]
-      .filter(Boolean)
-      .join(' · ')
-  }
-
-  function renderArtifactVersionSelect() {
-    const selectedName = asText(el.artifactSelect.value)
-    const versions = Array.isArray(artifactVersionState.versions) ? artifactVersionState.versions : []
-    el.artifactVersionSelect.innerHTML = ''
-    if (!selectedName) {
-      const option = document.createElement('option')
-      option.value = ''
-      option.textContent = 'Select artifact'
-      el.artifactVersionSelect.appendChild(option)
-      el.restoreArtifactVersion.disabled = true
-      return
-    }
-    if (artifactVersionState.loading) {
-      const option = document.createElement('option')
-      option.value = ''
-      option.textContent = 'Loading versions…'
-      el.artifactVersionSelect.appendChild(option)
-      el.restoreArtifactVersion.disabled = true
-      return
-    }
-    if (versions.length === 0) {
-      const option = document.createElement('option')
-      option.value = ''
-      option.textContent = 'No account history'
-      el.artifactVersionSelect.appendChild(option)
-      el.restoreArtifactVersion.disabled = true
-      return
-    }
-    for (const versionRecord of versions) {
-      const option = document.createElement('option')
-      const versionNumber = Math.max(1, toInt(versionRecord?.version))
-      option.value = String(versionNumber)
-      option.textContent = buildArtifactVersionLabel(versionRecord)
-      el.artifactVersionSelect.appendChild(option)
-    }
-    el.artifactVersionSelect.value = String(Math.max(1, toInt(versions[0]?.version)))
-    el.restoreArtifactVersion.disabled = false
-  }
-
-  async function refreshArtifactVersionHistory({ force = false } = {}) {
-    const selectedName = asText(el.artifactSelect.value)
-    if (!selectedName) {
-      artifactVersionState.selectedName = ''
-      artifactVersionState.versions = []
-      artifactVersionState.loading = false
-      renderArtifactVersionSelect()
-      return
-    }
-    if (
-      !force &&
-      artifactVersionState.selectedName === selectedName &&
-      Array.isArray(artifactVersionState.versions) &&
-      artifactVersionState.versions.length > 0
-    ) {
-      renderArtifactVersionSelect()
-      return
-    }
-    artifactVersionState.selectedName = selectedName
-    artifactVersionState.loading = true
-    renderArtifactVersionSelect()
-    try {
-      const rows = await listArtifactVersionsFromAccount(selectedName, 30)
-      if (artifactVersionState.selectedName !== selectedName) {
-        return
-      }
-      artifactVersionState.versions = Array.isArray(rows)
-        ? rows
-            .filter((row) => row && typeof row === 'object' && Number.isFinite(toInt(row.version)))
-            .sort((left, right) => toInt(right?.version) - toInt(left?.version))
-        : []
-    } catch (error) {
-      if (artifactVersionState.selectedName !== selectedName) {
-        return
-      }
-      artifactVersionState.versions = []
-      // Auth-related failures (no token, expired token, server rejected token)
-      // are recoverable: the host taskpane refreshes the library-sync token
-      // on a timer (see App.tsx) and the embed will catch up on the next
-      // hydrateSavedLibraries cycle. We surface the "Local library only"
-      // status via the sync manager already; logging here would just spam
-      // the console for a state the embed handles gracefully. Match the
-      // same predicate hydrateSavedLibraries uses so the two paths agree.
-      const message = String(errorToMessage(error))
-      const isAuthFailure =
-        message.includes('Sign in through Prezo Host') ||
-        message.includes('Invalid auth token') ||
-        message.includes('Auth required')
-      if (!isAuthFailure) {
-        console.warn('Failed to load artifact version history', error)
-      }
-    } finally {
-      if (artifactVersionState.selectedName === selectedName) {
-        artifactVersionState.loading = false
-        renderArtifactVersionSelect()
-      }
-    }
-  }
-
-  async function restoreArtifactFromVersionHistory() {
-    const name = asText(el.artifactSelect.value)
-    if (!name || !artifactLibrary.artifacts[name]) {
-      showArtifactFeedback('Select a saved artifact first.', 'error')
-      return
-    }
-    const version = Math.max(1, toInt(el.artifactVersionSelect.value))
-    if (!version) {
-      showArtifactFeedback('Select an artifact version first.', 'error')
-      return
-    }
-    el.restoreArtifactVersion.disabled = true
-    try {
-      const restoredRecordRaw = await restoreArtifactVersionInAccount(name, version)
-      const restoredRecord = sanitizeSavedArtifactRecord(restoredRecordRaw)
-      if (!restoredRecord) {
-        throw new Error('Restored artifact payload was invalid.')
-      }
-      artifactLibrary.artifacts[name] = restoredRecord
-      artifactLibrary.activeName = name
-      saveArtifactLibrary(artifactLibrary)
-      refreshArtifactSelect(name)
-      applyArtifactLibraryRecord(name, restoredRecord, {
-        historyLabel: 'Restore artifact version',
-        successMessage: `Artifact "${name}" restored to version v${version}.`,
-        failureMessage: `Artifact "${name}" restore returned invalid markup.`
-      })
-      await refreshArtifactVersionHistory({ force: true })
-    } catch (error) {
-      showArtifactFeedback(`Artifact restore failed: ${errorToMessage(error)}`, 'error')
-    } finally {
-      renderArtifactVersionSelect()
-    }
-  }
-
-  function exportCurrentTheme() {
-    const preferredName =
-      normalizeThemeName(el.themeName.value) ||
-      asText(el.themeSelect.value) ||
-      'prezo-theme'
-    const payload = {
-      version: 1,
-      name: preferredName,
-      exportedAt: new Date().toISOString(),
-      theme: currentTheme
-    }
-    const filename = `${preferredName.replace(/[^a-z0-9-_]+/gi, '-').replace(/-+/g, '-').toLowerCase()}.json`
-    downloadText(filename, JSON.stringify(payload, null, 2))
-    showThemeFeedback('Theme exported.', 'success')
-  }
-
-  async function importThemeFromFile(event) {
-    const file = event.target?.files?.[0]
-    if (!file) {
-      return
-    }
-    try {
-      const text = await file.text()
-      const parsed = JSON.parse(text)
-      const importedTheme = sanitizeTheme(
-        parsed?.theme && typeof parsed.theme === 'object' ? parsed.theme : parsed
-      )
-      const importedName =
-        normalizeThemeName(parsed?.name) ||
-        normalizeThemeName(file.name.replace(/\.[^.]+$/, '')) ||
-        `imported-${new Date().toISOString().slice(0, 10)}`
-
-      currentTheme = importedTheme
-      applyTheme(currentTheme)
-      syncThemeControls()
-      saveThemeDraft(currentTheme)
-      themeLibrary.themes[importedName] = clone(currentTheme)
-      themeLibrary.activeName = importedName
-      saveThemeLibrary(themeLibrary)
-      refreshThemeSelect(importedName)
-      el.themeName.value = importedName
-      const syncResult = await persistThemeToAccount(importedName, currentTheme)
-      if (state.snapshot) {
-        renderFromSnapshot(true)
-      }
-      recordHistoryCheckpoint('Import theme')
-      showThemeFeedback(
-        syncResult.message || `Theme "${importedName}" imported.`,
-        syncResult.type
-      )
-    } catch {
-      showThemeFeedback('Invalid theme file.', 'error')
-    } finally {
-      el.importTheme.value = ''
-    }
-  }
-
-  function resetThemeDraft() {
-    currentTheme = clone(defaultTheme)
-    applyTheme(currentTheme)
-    syncThemeControls()
-    saveThemeDraft(currentTheme)
-    if (state.snapshot) {
-      renderFromSnapshot(true)
-    }
-    recordHistoryCheckpoint('Reset theme')
-    showThemeFeedback('Theme reset to defaults.', 'success')
   }
 
   function isResetPositionsModalOpen() {
@@ -12289,141 +8626,6 @@ import {
       }
     }
     showThemeFeedback('All object positions reset to defaults.', 'success')
-  }
-
-  function updateTheme(partialTheme, options = {}) {
-    const persist = options.persist !== false
-    const recordHistory = options.recordHistory !== false && persist && !historyState.applying
-    const historyLabel = asText(options.historyLabel) || 'Update design'
-    const previousVisualMode = currentTheme.visualMode
-    const nextTheme = {
-      ...currentTheme,
-      ...partialTheme
-    }
-    const includesBgUrl =
-      partialTheme &&
-      Object.prototype.hasOwnProperty.call(partialTheme, 'bgImageUrl') &&
-      asText(partialTheme.bgImageUrl)
-    const includesBgOpacity =
-      partialTheme &&
-      Object.prototype.hasOwnProperty.call(partialTheme, 'bgImageOpacity')
-    if (includesBgUrl && !includesBgOpacity && Number(nextTheme.bgImageOpacity) <= 0.01) {
-      nextTheme.bgImageOpacity = 0.55
-    }
-
-    currentTheme = sanitizeTheme(nextTheme)
-    if (
-      !state.artifact.busy &&
-      previousVisualMode !== ARTIFACT_VISUAL_MODE &&
-      currentTheme.visualMode === ARTIFACT_VISUAL_MODE
-    ) {
-      state.artifact.lastPrompt = ''
-      state.artifact.lastAnswers = createEmptyArtifactAnswers()
-      clearArtifactMarkup()
-      resetArtifactConversation({ preserveInput: false })
-      hideArtifactStage()
-    }
-    applyTheme(currentTheme)
-    if (
-      partialTheme &&
-      Object.prototype.hasOwnProperty.call(partialTheme, 'visualMode') &&
-      state.snapshot
-    ) {
-      renderFromSnapshot(true)
-    }
-    if (persist) {
-      saveThemeDraft(currentTheme)
-    }
-    if (recordHistory) {
-      recordHistoryCheckpoint(historyLabel)
-    }
-    if (previousVisualMode !== currentTheme.visualMode) {
-      postVisualModeToParent('update-theme')
-    }
-  }
-
-  function applyTheme(theme) {
-    const root = document.documentElement.style
-    root.setProperty('--font-family', theme.fontFamily)
-    root.setProperty('--bg-a', theme.bgA)
-    root.setProperty('--bg-b', theme.bgB)
-    root.setProperty('--panel-color', theme.panelColor)
-    root.setProperty('--panel-opacity', `${theme.panelOpacity}`)
-    root.setProperty('--panel-bg', hexToRgba(theme.panelColor, theme.panelOpacity))
-    root.setProperty('--panel-border-color', theme.panelBorder)
-    root.setProperty('--panel-border', hexToRgba(theme.panelBorder, 0.36))
-    root.setProperty('--text-main', theme.textMain)
-    root.setProperty('--text-sub', theme.textSub)
-    root.setProperty('--track', hexToRgba(theme.trackColor, theme.trackOpacity))
-    root.setProperty('--fill-a', theme.fillA)
-    root.setProperty('--fill-b', theme.fillB)
-    root.setProperty('--bar-height', `${theme.barHeight}px`)
-    root.setProperty('--bar-radius', `${theme.barRadius}px`)
-    root.setProperty('--question-size', `${theme.questionSize}px`)
-    root.setProperty('--label-size', `${theme.labelSize}px`)
-    root.setProperty('--artifact-layout', theme.artifactLayout)
-    root.setProperty('--grid-opacity', `${theme.gridOpacity}`)
-    root.setProperty('--wrap-offset-x', '0px')
-    root.setProperty('--wrap-offset-y', '0px')
-    root.setProperty('--panel-offset-x', `${clamp(theme.panelX, -2400, 2400, 0)}px`)
-    root.setProperty('--panel-offset-y', `${clamp(theme.panelY, -2400, 2400, 0)}px`)
-    root.setProperty('--panel-scale-x', `${clamp(theme.panelScaleX, 0.35, 2.8, 1)}`)
-    root.setProperty('--panel-scale-y', `${clamp(theme.panelScaleY, 0.35, 2.8, 1)}`)
-
-    el.bgImage.style.backgroundImage = theme.bgImageUrl
-      ? `url("${theme.bgImageUrl.replace(/"/g, '\\"')}")`
-      : 'none'
-    el.bgImage.style.opacity = `${theme.bgImageOpacity}`
-    el.bgOverlay.style.backgroundColor = theme.overlayColor
-    el.bgOverlay.style.opacity = `${theme.overlayOpacity}`
-    el.gridBg.style.display = Number(theme.gridOpacity) > 0 ? 'block' : 'none'
-    el.gridBg.style.opacity = `${theme.gridOpacity}`
-    applyElementOffset(
-      el.bgImage,
-      theme.bgImageX,
-      theme.bgImageY,
-      theme.bgImageScaleX,
-      theme.bgImageScaleY
-    )
-    applyElementOffset(
-      el.bgOverlay,
-      theme.bgOverlayX,
-      theme.bgOverlayY,
-      theme.bgOverlayScaleX,
-      theme.bgOverlayScaleY
-    )
-    applyElementOffset(el.gridBg, theme.gridX, theme.gridY, theme.gridScaleX, theme.gridScaleY)
-    applyElementOffset(el.headLeft, 0, 0, 1, 1)
-    applyHeaderTextObjects()
-    applyElementOffset(el.metaBar, theme.metaX, theme.metaY, 1, 1)
-    applyElementOffset(el.footer, theme.footerX, theme.footerY, 1, 1)
-    applyElementBoxSize(el.headLeft, null, null)
-    applyElementBoxSize(el.metaBar, theme.metaBoxWidth, theme.metaBoxHeight)
-    applyElementBoxSize(el.footer, theme.footerBoxWidth, theme.footerBoxHeight)
-
-    applyImageAsset(el.customLogo, {
-      url: theme.logoUrl,
-      width: `${theme.logoWidth}px`,
-      opacity: `${theme.logoOpacity}`,
-      left: `${theme.logoX}%`,
-      top: `${theme.logoY}%`,
-      scaleX: theme.logoScaleX,
-      scaleY: theme.logoScaleY
-    })
-
-    applyImageAsset(el.customAsset, {
-      url: theme.assetUrl,
-      width: `${theme.assetWidth}px`,
-      opacity: `${theme.assetOpacity}`,
-      left: `${theme.assetX}%`,
-      top: `${theme.assetY}%`,
-      scaleX: theme.assetScaleX,
-      scaleY: theme.assetScaleY
-    })
-    applyDeletedStaticTargets(theme)
-    syncArtifactComposerVisibility()
-    scheduleResizeSelectionUpdate()
-    syncBgDropzoneUi()
   }
 
   function applyElementOffset(node, offsetX, offsetY, scaleX = 1, scaleY = 1) {
@@ -12612,912 +8814,12 @@ import {
     node.style.transform = `translate(-50%, -50%) scale(${scaleX}, ${scaleY})`
   }
 
-  function syncThemeControls() {
-    for (const spec of themeControls) {
-      const input = controlElements[spec.id]
-      if (!input) {
-        continue
-      }
-      const value = currentTheme[spec.key]
-      if (spec.type === 'checkbox') {
-        input.checked = Boolean(value)
-      } else {
-        input.value = value == null ? '' : String(value)
-      }
-    }
-    syncBgDropzoneUi()
-  }
-
-  function syncSingleControlValue(themeKey, value) {
-    const spec = themeControls.find((entry) => entry.key === themeKey)
-    if (!spec) {
-      return
-    }
-    const input = controlElements[spec.id]
-    if (!input) {
-      return
-    }
-    if (spec.type === 'checkbox') {
-      input.checked = Boolean(value)
-      return
-    }
-    input.value = value == null ? '' : String(Math.round(Number(value)))
-  }
-
-  function refreshThemeSelect(selectedName) {
-    const names = Object.keys(themeLibrary.themes).sort((a, b) => a.localeCompare(b))
-    el.themeSelect.innerHTML = ''
-
-    if (names.length === 0) {
-      const option = document.createElement('option')
-      option.value = ''
-      option.textContent = 'No saved themes'
-      el.themeSelect.appendChild(option)
-      return
-    }
-
-    for (const name of names) {
-      const option = document.createElement('option')
-      option.value = name
-      option.textContent = name
-      el.themeSelect.appendChild(option)
-    }
-
-    const preferred =
-      selectedName && themeLibrary.themes[selectedName] ? selectedName : names[0]
-    el.themeSelect.value = preferred
-    if (!el.themeName.value) {
-      el.themeName.value = preferred
-    }
-  }
-
-  function buildSavedArtifactRecord() {
-    const html = normalizeArtifactMarkup(state.artifact.html)
-    if (!html) {
-      return null
-    }
-    const artifactPackage = buildSegmentedArtifactPackage(state.artifact.package || html)
-    const materializedHtml = resolveArtifactHtmlFromPackage(artifactPackage) || html
-    const existingOverrides = state.artifact.savedStyleOverrides || {}
-    const mergedStyle = { ...existingOverrides, ...pendingArtifactStyleOverrides }
-    const pendingCopyWithPositions = {
-      ...pendingArtifactCopyOverrides,
-      positionOverrides: artifactPosition.getPendingPositionOverrides(),
-      sizeOverrides: artifactSize.getPendingSizeOverrides(),
-      hiddenOverrides: artifactDelete.getPendingHiddenOverrides()
-    }
-    const styleOverrides = mergeCopyIntoStyleOverrides(mergedStyle, pendingCopyWithPositions)
-    return sanitizeSavedArtifactRecord({
-      kind: state.activityKind,
-      html: materializedHtml,
-      package: artifactPackage || buildSingleFileArtifactPackage(materializedHtml),
-      lastPrompt: state.artifact.lastPrompt,
-      lastAnswers: state.artifact.lastAnswers,
-      themeSnapshot: {
-        ...clone(currentTheme),
-        visualMode: ARTIFACT_VISUAL_MODE
-      },
-      styleOverrides: Object.keys(styleOverrides).length > 0 ? styleOverrides : null
-    })
-  }
-
-  /** A saved artifact is loadable here only when it renders this station's
-      activity kind — a poll game can't consume the qna state channel and
-      vice versa. Legacy records (no kind) are polls. */
-  function artifactRecordMatchesActivityKind(record) {
-    const normalized = normalizeArtifactActivityKind(asText(record?.kind))
-    if (state.activityKind === 'poll') {
-      return normalized === 'poll'
-    }
-    // qna and discussion share the runtime contract, so their artifacts are
-    // interchangeable between the two kinds.
-    return normalized !== 'poll'
-  }
-
-  function refreshArtifactSelect(selectedName) {
-    const names = Object.keys(artifactLibrary.artifacts)
-      .filter((name) => artifactRecordMatchesActivityKind(artifactLibrary.artifacts[name]))
-      .sort((a, b) => a.localeCompare(b))
-    el.artifactSelect.innerHTML = ''
-
-    if (names.length === 0) {
-      const option = document.createElement('option')
-      option.value = ''
-      option.textContent = 'No saved artifacts'
-      el.artifactSelect.appendChild(option)
-      renderArtifactVersionSelect()
-      return
-    }
-
-    for (const name of names) {
-      const option = document.createElement('option')
-      option.value = name
-      option.textContent = name
-      el.artifactSelect.appendChild(option)
-    }
-
-    const preferred =
-      selectedName && artifactLibrary.artifacts[selectedName] && names.includes(selectedName)
-        ? selectedName
-        : names[0]
-    el.artifactSelect.value = preferred
-    if (!el.artifactName.value) {
-      el.artifactName.value = preferred
-    }
-    renderArtifactVersionSelect()
-  }
-
-  function showThemeFeedback(text, type) {
-    el.themeFeedback.textContent = text
-    el.themeFeedback.style.color = feedbackColor(type)
-  }
-
-  function showArtifactFeedback(text, type) {
-    el.artifactFeedback.textContent = text
-    el.artifactFeedback.style.color = feedbackColor(type)
-  }
-
-  function feedbackColor(type) {
-    if (type === 'success') {
-      return '#216e43'
-    }
-    if (type === 'error') {
-      return '#b53a4e'
-    }
-    if (type === 'warning') {
-      return '#b54708'
-    }
-    return '#5f7ea3'
-  }
-
-  function showTextEditFeedback(text, type) {
-    el.textEditFeedback.textContent = text
-    if (type === 'success') {
-      el.textEditFeedback.style.color = '#216e43'
-      return
-    }
-    if (type === 'error') {
-      el.textEditFeedback.style.color = '#b53a4e'
-      return
-    }
-    el.textEditFeedback.style.color = '#5f7ea3'
-  }
-
-  function loadTextOverrides() {
-    const parsed = safeJsonParse(safeStorageGet(TEXT_OVERRIDES_KEY))
-    return sanitizeTextOverridesMap(parsed)
-  }
-
-  function sanitizeTextOverridesMap(value) {
-    if (!value || typeof value !== 'object') {
-      return {}
-    }
-    const overrides = {}
-    for (const [key, entry] of Object.entries(value)) {
-      if (typeof entry !== 'string' || !key) {
-        continue
-      }
-      overrides[key] = sanitizeRichTextHtml(entry)
-    }
-    return overrides
-  }
-
-  function saveTextOverrides(overrides) {
-    try {
-      localStorage.setItem(TEXT_OVERRIDES_KEY, JSON.stringify(overrides))
-    } catch {}
-  }
-
-  function textToRichHtml(text) {
-    const normalized = asText(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    return escapeHtml(normalized).replace(/\n/g, '<br>')
-  }
-
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-  }
-
-  function sanitizeRichTextHtml(input) {
-    const container = document.createElement('div')
-    container.innerHTML = typeof input === 'string' ? input : ''
-
-    const fragment = document.createDocumentFragment()
-    for (const child of [...container.childNodes]) {
-      appendSanitizedNode(fragment, child)
-    }
-
-    const clean = document.createElement('div')
-    clean.appendChild(fragment)
-    return clean.innerHTML
-  }
-
-  function appendSanitizedNode(parent, node) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      parent.appendChild(document.createTextNode(node.textContent || ''))
-      return
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) {
-      return
-    }
-    const element = node
-    const tag = element.tagName.toUpperCase()
-    if (tag === 'BR') {
-      parent.appendChild(document.createElement('br'))
-      return
-    }
-
-    if (tag === 'SPAN') {
-      const safeStyle = sanitizeInlineTextStyle(asText(element.getAttribute('style')))
-      if (!safeStyle) {
-        for (const child of [...element.childNodes]) {
-          appendSanitizedNode(parent, child)
-        }
-        return
-      }
-      const safeSpan = document.createElement('span')
-      safeSpan.setAttribute('style', safeStyle)
-      for (const child of [...element.childNodes]) {
-        appendSanitizedNode(safeSpan, child)
-      }
-      parent.appendChild(safeSpan)
-      return
-    }
-
-    const allowedTag = tag === 'B' || tag === 'STRONG' || tag === 'I' || tag === 'EM' || tag === 'U'
-    if (!allowedTag) {
-      for (const child of [...element.childNodes]) {
-        appendSanitizedNode(parent, child)
-      }
-      return
-    }
-
-    const safe = document.createElement(tag.toLowerCase())
-    for (const child of [...element.childNodes]) {
-      appendSanitizedNode(safe, child)
-    }
-    parent.appendChild(safe)
-  }
-
-  function sanitizeInlineTextStyle(styleText) {
-    if (!styleText) {
-      return ''
-    }
-
-    const cleanParts = []
-    const declarations = styleText.split(';')
-    for (const declaration of declarations) {
-      const separator = declaration.indexOf(':')
-      if (separator < 0) {
-        continue
-      }
-      const rawProp = declaration.slice(0, separator).trim().toLowerCase()
-      const rawValue = declaration.slice(separator + 1).trim()
-      if (!rawProp || !rawValue) {
-        continue
-      }
-      const lowerValue = rawValue.toLowerCase()
-
-      if (rawProp === 'font-weight') {
-        const value = sanitizeFontWeightValue(lowerValue)
-        if (value) {
-          cleanParts.push(`font-weight: ${value}`)
-        }
-        continue
-      }
-      if (rawProp === 'font-style') {
-        const value = sanitizeFontStyleValue(lowerValue)
-        if (value) {
-          cleanParts.push(`font-style: ${value}`)
-        }
-        continue
-      }
-      if (rawProp === 'text-decoration' || rawProp === 'text-decoration-line') {
-        const value = sanitizeTextDecorationValue(lowerValue)
-        if (value) {
-          cleanParts.push(`text-decoration: ${value}`)
-        }
-        continue
-      }
-      if (rawProp === 'font-family') {
-        const value = sanitizeInlineFontFamilyValue(rawValue)
-        if (value) {
-          cleanParts.push(`font-family: ${value}`)
-        }
-        continue
-      }
-      if (rawProp === 'font-size') {
-        const value = sanitizeInlineFontSizeValue(lowerValue)
-        if (value) {
-          cleanParts.push(`font-size: ${value}`)
-        }
-        continue
-      }
-      if (rawProp === 'color') {
-        const value = sanitizeInlineColorValue(lowerValue)
-        if (value) {
-          cleanParts.push(`color: ${value}`)
-        }
-      }
-    }
-
-    if (cleanParts.length === 0) {
-      return ''
-    }
-    return cleanParts.join('; ')
-  }
-
-  function sanitizeFontWeightValue(value) {
-    if (value === 'normal' || value === 'bold') {
-      return value
-    }
-    if (/^[1-9]00$/.test(value)) {
-      return value
-    }
-    return ''
-  }
-
-  function sanitizeFontStyleValue(value) {
-    if (value === 'normal' || value === 'italic') {
-      return value
-    }
-    return ''
-  }
-
-  function sanitizeTextDecorationValue(value) {
-    if (value.includes('underline')) {
-      return 'underline'
-    }
-    if (value.includes('none')) {
-      return 'none'
-    }
-    return ''
-  }
-
-  function sanitizeInlineFontFamilyValue(value) {
-    const sanitized = sanitizeFontFamily(value, '')
-    if (!sanitized) {
-      return ''
-    }
-    const parts = sanitized
-      .split(',')
-      .map((part) => part.trim().replace(/^["']|["']$/g, ''))
-      .filter((part) => /^[a-z0-9 .\-]+$/i.test(part))
-    if (parts.length === 0) {
-      return ''
-    }
-    return parts.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(', ')
-  }
-
-  function sanitizeInlineFontSizeValue(value) {
-    const match = /^([0-9]+(?:\.[0-9]+)?)(pt|px|em|rem|%)$/.exec(value)
-    if (!match) {
-      return ''
-    }
-    const amount = Number(match[1])
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return ''
-    }
-    const clamped = Math.min(300, Math.max(4, amount))
-    const printable = Number.isInteger(clamped) ? String(clamped) : String(clamped)
-    return `${printable}${match[2]}`
-  }
-
-  function sanitizeInlineColorValue(value) {
-    const hex = sanitizeHex(value, '')
-    if (hex) {
-      return hex.toLowerCase()
-    }
-    const funcMatch = /^rgba?\(\s*([^)]+)\s*\)$/i.exec(asText(value))
-    if (!funcMatch) {
-      return ''
-    }
-
-    let channelText = funcMatch[1].trim()
-    if (!channelText) {
-      return ''
-    }
-    if (channelText.includes('/')) {
-      channelText = channelText.split('/')[0].trim()
-    }
-    const parts = channelText.includes(',')
-      ? channelText
-          .split(',')
-          .map((part) => part.trim())
-          .filter(Boolean)
-      : channelText.split(/\s+/).filter(Boolean)
-    if (parts.length < 3) {
-      return ''
-    }
-
-    const channels = []
-    for (let index = 0; index < 3; index += 1) {
-      const part = parts[index]
-      if (!part) {
-        return ''
-      }
-      let channelValue = Number.parseFloat(part)
-      if (!Number.isFinite(channelValue)) {
-        return ''
-      }
-      if (part.endsWith('%')) {
-        channelValue = (channelValue / 100) * 255
-      }
-      channels.push(clamp(Math.round(channelValue), 0, 255, 0))
-    }
-
-    const [r, g, b] = channels
-    return `rgb(${r}, ${g}, ${b})`
-  }
-
-  function readControlValue(input, type) {
-    if (type === 'checkbox') {
-      return Boolean(input.checked)
-    }
-    if (type === 'number') {
-      return Number(input.value)
-    }
-    return input.value
-  }
-
-  function hasThemeValue(value) {
-    return value !== undefined && value !== null && value !== ''
-  }
-
-  function migrateLegacyTitleThemeFields(theme) {
-    const incoming = theme && typeof theme === 'object' ? theme : {}
-    const migrated = { ...incoming }
-
-    const legacyX = Number(incoming.titleX)
-    if (Number.isFinite(legacyX)) {
-      if (!Number.isFinite(Number(incoming.eyebrowX))) {
-        migrated.eyebrowX = legacyX
-      }
-      if (!Number.isFinite(Number(incoming.questionX))) {
-        migrated.questionX = legacyX
-      }
-    }
-
-    const legacyY = Number(incoming.titleY)
-    if (Number.isFinite(legacyY)) {
-      if (!Number.isFinite(Number(incoming.eyebrowY))) {
-        migrated.eyebrowY = legacyY
-      }
-      if (!Number.isFinite(Number(incoming.questionY))) {
-        migrated.questionY = legacyY
-      }
-    }
-
-    if (hasThemeValue(incoming.titleBoxWidth)) {
-      if (!hasThemeValue(incoming.eyebrowBoxWidth)) {
-        migrated.eyebrowBoxWidth = incoming.titleBoxWidth
-      }
-      if (!hasThemeValue(incoming.questionBoxWidth)) {
-        migrated.questionBoxWidth = incoming.titleBoxWidth
-      }
-    }
-
-    if (hasThemeValue(incoming.titleBoxHeight)) {
-      if (!hasThemeValue(incoming.eyebrowBoxHeight)) {
-        migrated.eyebrowBoxHeight = incoming.titleBoxHeight
-      }
-      if (!hasThemeValue(incoming.questionBoxHeight)) {
-        migrated.questionBoxHeight = incoming.titleBoxHeight
-      }
-    }
-
-    delete migrated.titleX
-    delete migrated.titleY
-    delete migrated.titleBoxWidth
-    delete migrated.titleBoxHeight
-    delete migrated.titleScaleX
-    delete migrated.titleScaleY
-
-    return migrated
-  }
-
-  function sanitizeTheme(theme) {
-    const incoming = migrateLegacyTitleThemeFields(theme)
-    let gridOpacity = clamp(incoming.gridOpacity, 0, 0.5, defaultTheme.gridOpacity)
-    if (incoming.gridVisible === false) {
-      gridOpacity = 0
-    }
-    return {
-      bgImageUrl: sanitizeUrl(incoming.bgImageUrl, defaultTheme.bgImageUrl),
-      bgImageOpacity: clamp(incoming.bgImageOpacity, 0, 1, defaultTheme.bgImageOpacity),
-      bgA: sanitizeHex(incoming.bgA, defaultTheme.bgA),
-      bgB: sanitizeHex(incoming.bgB, defaultTheme.bgB),
-      overlayColor: sanitizeHex(incoming.overlayColor, defaultTheme.overlayColor),
-      overlayOpacity: clamp(incoming.overlayOpacity, 0, 1, defaultTheme.overlayOpacity),
-      gridOpacity,
-      panelColor: sanitizeHex(incoming.panelColor, defaultTheme.panelColor),
-      panelOpacity: clamp(incoming.panelOpacity, 0, 1, defaultTheme.panelOpacity),
-      panelBorder: sanitizeHex(incoming.panelBorder, defaultTheme.panelBorder),
-      textMain: sanitizeHex(incoming.textMain, defaultTheme.textMain),
-      textSub: sanitizeHex(incoming.textSub, defaultTheme.textSub),
-      trackColor: sanitizeHex(incoming.trackColor, defaultTheme.trackColor),
-      trackOpacity: clamp(incoming.trackOpacity, 0, 1, defaultTheme.trackOpacity),
-      fillA: sanitizeHex(incoming.fillA, defaultTheme.fillA),
-      fillB: sanitizeHex(incoming.fillB, defaultTheme.fillB),
-      barHeight: clamp(incoming.barHeight, 8, 44, defaultTheme.barHeight),
-      barRadius: clamp(incoming.barRadius, 0, 999, defaultTheme.barRadius),
-      questionSize: clamp(incoming.questionSize, 42, 90, defaultTheme.questionSize),
-      labelSize: clamp(incoming.labelSize, 14, 36, defaultTheme.labelSize),
-      visualMode: sanitizeVisualMode(incoming.visualMode, defaultTheme.visualMode),
-      artifactLayout: sanitizeArtifactLayout(incoming.artifactLayout, defaultTheme.artifactLayout),
-      logoUrl: sanitizeUrl(incoming.logoUrl, defaultTheme.logoUrl),
-      logoWidth: clamp(incoming.logoWidth, 40, 280, defaultTheme.logoWidth),
-      logoOpacity: clamp(incoming.logoOpacity, 0, 1, defaultTheme.logoOpacity),
-      logoX: clamp(incoming.logoX, 0, 100, defaultTheme.logoX),
-      logoY: clamp(incoming.logoY, 0, 100, defaultTheme.logoY),
-      assetUrl: sanitizeUrl(incoming.assetUrl, defaultTheme.assetUrl),
-      assetWidth: clamp(incoming.assetWidth, 60, 720, defaultTheme.assetWidth),
-      assetOpacity: clamp(incoming.assetOpacity, 0, 1, defaultTheme.assetOpacity),
-      assetX: clamp(incoming.assetX, 0, 100, defaultTheme.assetX),
-      assetY: clamp(incoming.assetY, 0, 100, defaultTheme.assetY),
-      panelX: clamp(incoming.panelX, -2400, 2400, defaultTheme.panelX),
-      panelY: clamp(incoming.panelY, -2400, 2400, defaultTheme.panelY),
-      panelScaleX: clamp(incoming.panelScaleX, 0.35, 2.8, defaultTheme.panelScaleX),
-      panelScaleY: clamp(incoming.panelScaleY, 0.35, 2.8, defaultTheme.panelScaleY),
-      bgImageX: clamp(incoming.bgImageX, -2400, 2400, defaultTheme.bgImageX),
-      bgImageY: clamp(incoming.bgImageY, -2400, 2400, defaultTheme.bgImageY),
-      bgImageScaleX: clamp(incoming.bgImageScaleX, 0.35, 3.5, defaultTheme.bgImageScaleX),
-      bgImageScaleY: clamp(incoming.bgImageScaleY, 0.35, 3.5, defaultTheme.bgImageScaleY),
-      bgOverlayX: clamp(incoming.bgOverlayX, -2400, 2400, defaultTheme.bgOverlayX),
-      bgOverlayY: clamp(incoming.bgOverlayY, -2400, 2400, defaultTheme.bgOverlayY),
-      bgOverlayScaleX: clamp(
-        incoming.bgOverlayScaleX,
-        0.35,
-        3.5,
-        defaultTheme.bgOverlayScaleX
-      ),
-      bgOverlayScaleY: clamp(
-        incoming.bgOverlayScaleY,
-        0.35,
-        3.5,
-        defaultTheme.bgOverlayScaleY
-      ),
-      gridX: clamp(incoming.gridX, -2400, 2400, defaultTheme.gridX),
-      gridY: clamp(incoming.gridY, -2400, 2400, defaultTheme.gridY),
-      gridScaleX: clamp(incoming.gridScaleX, 0.35, 3.5, defaultTheme.gridScaleX),
-      gridScaleY: clamp(incoming.gridScaleY, 0.35, 3.5, defaultTheme.gridScaleY),
-      eyebrowX: clamp(incoming.eyebrowX, -2400, 2400, defaultTheme.eyebrowX),
-      eyebrowY: clamp(incoming.eyebrowY, -2400, 2400, defaultTheme.eyebrowY),
-      eyebrowBoxWidth: sanitizeOptionalDimension(
-        incoming.eyebrowBoxWidth,
-        60,
-        1800,
-        defaultTheme.eyebrowBoxWidth
-      ),
-      eyebrowBoxHeight: sanitizeOptionalDimension(
-        incoming.eyebrowBoxHeight,
-        14,
-        420,
-        defaultTheme.eyebrowBoxHeight
-      ),
-      questionX: clamp(incoming.questionX, -2400, 2400, defaultTheme.questionX),
-      questionY: clamp(incoming.questionY, -2400, 2400, defaultTheme.questionY),
-      questionBoxWidth: sanitizeOptionalDimension(
-        incoming.questionBoxWidth,
-        120,
-        2200,
-        defaultTheme.questionBoxWidth
-      ),
-      questionBoxHeight: sanitizeOptionalDimension(
-        incoming.questionBoxHeight,
-        40,
-        1400,
-        defaultTheme.questionBoxHeight
-      ),
-      metaX: clamp(incoming.metaX, -2400, 2400, defaultTheme.metaX),
-      metaY: clamp(incoming.metaY, -2400, 2400, defaultTheme.metaY),
-      metaBoxWidth: sanitizeOptionalDimension(
-        incoming.metaBoxWidth,
-        90,
-        1000,
-        defaultTheme.metaBoxWidth
-      ),
-      metaBoxHeight: sanitizeOptionalDimension(
-        incoming.metaBoxHeight,
-        28,
-        220,
-        defaultTheme.metaBoxHeight
-      ),
-      metaScaleX: clamp(incoming.metaScaleX, 0.45, 3.2, defaultTheme.metaScaleX),
-      metaScaleY: clamp(incoming.metaScaleY, 0.45, 3.2, defaultTheme.metaScaleY),
-      optionsX: clamp(incoming.optionsX, -2400, 2400, defaultTheme.optionsX),
-      optionsY: clamp(incoming.optionsY, -2400, 2400, defaultTheme.optionsY),
-      footerX: clamp(incoming.footerX, -2400, 2400, defaultTheme.footerX),
-      footerY: clamp(incoming.footerY, -2400, 2400, defaultTheme.footerY),
-      footerBoxWidth: sanitizeOptionalDimension(
-        incoming.footerBoxWidth,
-        120,
-        2200,
-        defaultTheme.footerBoxWidth
-      ),
-      footerBoxHeight: sanitizeOptionalDimension(
-        incoming.footerBoxHeight,
-        18,
-        420,
-        defaultTheme.footerBoxHeight
-      ),
-      footerScaleX: clamp(incoming.footerScaleX, 0.45, 3, defaultTheme.footerScaleX),
-      footerScaleY: clamp(incoming.footerScaleY, 0.45, 3, defaultTheme.footerScaleY),
-      logoScaleX: clamp(incoming.logoScaleX, 0.25, 5, defaultTheme.logoScaleX),
-      logoScaleY: clamp(incoming.logoScaleY, 0.25, 5, defaultTheme.logoScaleY),
-      assetScaleX: clamp(incoming.assetScaleX, 0.25, 5, defaultTheme.assetScaleX),
-      assetScaleY: clamp(incoming.assetScaleY, 0.25, 5, defaultTheme.assetScaleY),
-      optionOffsets: sanitizeOptionOffsets(incoming.optionOffsets, defaultTheme.optionOffsets),
-      optionSizes: sanitizeOptionSizes(incoming.optionSizes, defaultTheme.optionSizes),
-      optionScales: sanitizeOptionScales(incoming.optionScales, defaultTheme.optionScales),
-      optionAnchors: sanitizeOptionAnchors(incoming.optionAnchors, defaultTheme.optionAnchors),
-      deletedObjects: sanitizeDeletedObjects(incoming.deletedObjects, defaultTheme.deletedObjects),
-      fontFamily: sanitizeFontFamily(incoming.fontFamily, defaultTheme.fontFamily)
-    }
-  }
-
-  function sanitizeOptionOffsets(value, fallback) {
-    const source = value && typeof value === 'object' ? value : fallback
-    if (!source || typeof source !== 'object') {
-      return {}
-    }
-    const sanitized = {}
-    for (const [rawId, rawOffset] of Object.entries(source)) {
-      const optionId = asText(rawId)
-      if (!optionId || !rawOffset || typeof rawOffset !== 'object') {
-        continue
-      }
-      sanitized[optionId] = {
-        x: clamp(rawOffset.x, -2400, 2400, 0),
-        y: clamp(rawOffset.y, -2400, 2400, 0)
-      }
-    }
-    return sanitized
-  }
-
-  function sanitizeOptionScales(value, fallback) {
-    const source = value && typeof value === 'object' ? value : fallback
-    if (!source || typeof source !== 'object') {
-      return {}
-    }
-    const sanitized = {}
-    for (const [rawId, rawScale] of Object.entries(source)) {
-      const optionId = asText(rawId)
-      if (!optionId || !rawScale || typeof rawScale !== 'object') {
-        continue
-      }
-      sanitized[optionId] = {
-        x: clamp(rawScale.x, 0.25, 5, 1),
-        y: clamp(rawScale.y, 0.25, 5, 1)
-      }
-    }
-    return sanitized
-  }
-
-  function sanitizeOptionSizes(value, fallback) {
-    const source = value && typeof value === 'object' ? value : fallback
-    if (!source || typeof source !== 'object') {
-      return {}
-    }
-    const sanitized = {}
-    for (const [rawId, rawSize] of Object.entries(source)) {
-      const optionId = asText(rawId)
-      if (!optionId || !rawSize || typeof rawSize !== 'object') {
-        continue
-      }
-      sanitized[optionId] = {
-        width: sanitizeOptionalDimension(rawSize.width, 24, 2600, null),
-        height: sanitizeOptionalDimension(rawSize.height, 18, 1400, null)
-      }
-    }
-    return sanitized
-  }
-
-  function sanitizeOptionAnchors(value, fallback) {
-    const source = value && typeof value === 'object' ? value : fallback
-    if (!source || typeof source !== 'object') {
-      return {}
-    }
-    const sanitized = {}
-    for (const [rawId, rawAnchor] of Object.entries(source)) {
-      const optionId = asText(rawId)
-      if (!optionId || !rawAnchor || typeof rawAnchor !== 'object') {
-        continue
-      }
-      const x = Number.isFinite(rawAnchor.x) ? clamp(rawAnchor.x, -2400, 2400, 0) : null
-      const y = Number.isFinite(rawAnchor.y) ? clamp(rawAnchor.y, -2400, 2400, 0) : null
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        continue
-      }
-      sanitized[optionId] = { x, y }
-    }
-    return sanitized
-  }
-
-  function sanitizeDeletedObjects(value, fallback) {
-    const source = value && typeof value === 'object' ? value : fallback
-    if (!source || typeof source !== 'object') {
-      return {}
-    }
-    const sanitized = {}
-    for (const [rawKey, rawValue] of Object.entries(source)) {
-      const key = asText(rawKey)
-      if (!key || !rawValue) {
-        continue
-      }
-      sanitized[key] = true
-    }
-    return sanitized
-  }
-
-  function sanitizeFontFamily(value, fallback) {
-    const text = asText(value)
-    if (!text) {
-      return fallback
-    }
-    return text.replace(/[{};]/g, '').slice(0, 120)
-  }
-
-  function sanitizeVisualMode(value, fallback) {
-    const mode = asText(value).toLowerCase()
-    if (mode === 'classic' || mode === ARTIFACT_VISUAL_MODE) {
-      return mode
-    }
-    return fallback
-  }
-
-  function sanitizeUrl(value, fallback) {
-    const text = asText(value)
-    if (!text) {
-      return fallback
-    }
-    return text
-  }
-
-  function sanitizeHex(value, fallback) {
-    const text = asText(value)
-    if (!text) {
-      return fallback
-    }
-    const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text)
-    return match ? text : fallback
-  }
-
-  function sanitizeOptionalDimension(value, min, max, fallback = null) {
-    if (value == null) {
-      return fallback
-    }
-    if (typeof value === 'string' && !value.trim()) {
-      return fallback
-    }
-    const numeric = Number(value)
-    if (!Number.isFinite(numeric)) {
-      return fallback
-    }
-    return Math.min(max, Math.max(min, numeric))
-  }
-
-  function hexToRgba(hex, alpha) {
-    const clean = sanitizeHex(hex, '#000000').replace('#', '')
-    const full = clean.length === 3 ? clean.split('').map((ch) => `${ch}${ch}`).join('') : clean
-    const r = parseInt(full.slice(0, 2), 16)
-    const g = parseInt(full.slice(2, 4), 16)
-    const b = parseInt(full.slice(4, 6), 16)
-    const a = clamp(alpha, 0, 1, 1)
-    return `rgba(${r}, ${g}, ${b}, ${a})`
-  }
-
-  function clamp(value, min, max, fallback) {
-    const num = Number(value)
-    if (!Number.isFinite(num)) {
-      return fallback
-    }
-    return Math.min(max, Math.max(min, num))
-  }
-
-  function toInt(value) {
-    const num = Number(value)
-    if (!Number.isFinite(num)) {
-      return 0
-    }
-    return Math.max(0, Math.round(num))
-  }
-
-  function normalizeApiBase(value) {
-    const text = asText(value)
-    if (!text) {
-      return ''
-    }
-    return text.replace(/\/+$/, '')
-  }
-
-  function toWsBase(apiBase) {
-    try {
-      const parsed = new URL(apiBase)
-      const protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
-      return `${protocol}//${parsed.host}`
-    } catch {
-      return ''
-    }
-  }
-
-  function normalizeCode(value) {
-    const text = asText(value)
-    return text ? text.toUpperCase() : ''
-  }
-
-  function normalizeThemeName(value) {
-    const text = asText(value)
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 64)
-    return text
-  }
-
-  function asText(value) {
-    return typeof value === 'string' ? value.trim() : ''
-  }
-
   function must(id) {
     const node = document.getElementById(id)
     if (!node) {
       throw new Error(`Missing element: ${id}`)
     }
     return node
-  }
-
-  function clone(value) {
-    return JSON.parse(JSON.stringify(value))
-  }
-
-  function safeJsonParse(value) {
-    if (!value) {
-      return null
-    }
-    try {
-      return JSON.parse(value)
-    } catch {
-      return null
-    }
-  }
-
-  function safeStorageGet(key) {
-    try {
-      return localStorage.getItem(key)
-    } catch {
-      return null
-    }
-  }
-
-  function errorToMessage(error) {
-    if (error instanceof Error && error.message) {
-      return error.message
-    }
-    return 'Unexpected error'
-  }
-
-  function extractApiErrorMessage(payload, status) {
-    const directDetail = asText(payload?.detail)
-    if (directDetail) {
-      return directDetail
-    }
-    if (Array.isArray(payload?.detail) && payload.detail.length > 0) {
-      const first = payload.detail[0]
-      const parts = [
-        asText(first?.msg),
-        Array.isArray(first?.loc) ? first.loc.join('.') : ''
-      ].filter(Boolean)
-      if (parts.length > 0) {
-        return parts.join(' [')
-          .replace(/\[$/, '')
-          .replace(/^(.+?) \[(.+)$/, '$1 [$2]')
-      }
-    }
-    return asText(payload?.error?.message) || `Request failed (${status})`
   }
 
   function readFileAsDataUrl(file) {
@@ -13527,18 +8829,6 @@ import {
       reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
       reader.readAsDataURL(file)
     })
-  }
-
-  function downloadText(filename, content) {
-    const blob = new Blob([content], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   function handleUnload() {

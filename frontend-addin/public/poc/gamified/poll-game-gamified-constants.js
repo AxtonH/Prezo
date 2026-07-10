@@ -17,6 +17,10 @@ export const EDITOR_SHELL_EXPANDED_KEY = 'prezo.poll-game-poc.editor-shell-expan
 export const EDITOR_PANEL_HEIGHT_KEY = 'prezo.poll-game-poc.editor-panel-height.v1'
 export const AI_MODEL_STORAGE_KEY = 'prezo.poll-game-poc.ai-model.v1'
 export const AI_DEFAULT_MODEL = 'gemini-2.5-flash'
+/** Cap on composer image attachments per request. Keep in lockstep with the
+    backend (ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS / ARTIFACT_ATTACHED_IMAGE_URL_LIMIT
+    in backend/app/api/ai.py). */
+export const MAX_INLINE_ATTACHMENTS = 6
 export const AI_LEGACY_MODELS = new Set([
   'gemini-2.0-flash',
   'models/gemini-2.0-flash',

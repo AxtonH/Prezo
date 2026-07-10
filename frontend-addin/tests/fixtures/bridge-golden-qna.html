@@ -1,0 +1,4104 @@
+<!doctype html><html><body><div id="golden-root" data-prezo-scene-root="true"></div><script>(function () {
+  var MESSAGE_TYPE = 'prezo-qna-state'
+  var EVENT_NAME = 'prezo:qna-update'
+  var READY_MESSAGE_TYPE = 'prezo-artifact-ready'
+  var SIZE_MESSAGE_TYPE = 'prezo-artifact-size'
+  var RENDER_OK_MESSAGE_TYPE = 'prezo-artifact-render-ok'
+  var RENDER_ERROR_MESSAGE_TYPE = 'prezo-artifact-render-error'
+  var SET_RENDERER_NAME = 'prezoSetQnaRenderer'
+  var TEXT_EDIT_MESSAGE_TYPE = 'prezo-text-edit'
+  var TEXT_STYLE_MESSAGE_TYPE = 'prezo-text-style'
+  var TEXT_HTML_MESSAGE_TYPE = 'prezo-text-html'
+  var TEXT_FOCUS_MESSAGE_TYPE = 'prezo-text-focus'
+  var TEXT_STYLE_INIT_MESSAGE_TYPE = 'prezo-text-style-init'
+  var ELEMENT_SELECTED_MESSAGE_TYPE = 'prezo-element-selected'
+  var POSITION_CHANGED_MESSAGE_TYPE = 'prezo-position-changed'
+  var POSITION_INIT_MESSAGE_TYPE = 'prezo-position-init'
+  var SIZE_CHANGED_MESSAGE_TYPE = 'prezo-size-changed'
+  var SIZE_INIT_MESSAGE_TYPE = 'prezo-size-init'
+  var ELEMENT_DELETED_MESSAGE_TYPE = 'prezo-element-deleted'
+  var HIDDEN_INIT_MESSAGE_TYPE = 'prezo-hidden-init'
+  var HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
+  var GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
+  var INSTANCE_ID = 7
+  var ACTIVITY_KIND = 'qna'
+  var defaultState = {
+    kind: ACTIVITY_KIND,
+    qna: { id: "", title: "", prompt: "", question: "", status: "", questions: [], totalQuestions: 0, totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },
+    questions: [],
+    items: [],
+    entries: [],
+    title: "",
+    prompt: "",
+    question: "",
+    totalQuestions: 0,
+    totalVotes: 0,
+    total_votes: 0,
+    votes: 0,
+    voteCount: 0,
+    meta: { kind: ACTIVITY_KIND, activityKind: ACTIVITY_KIND, totalQuestions: 0, totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0, title: "", prompt: "", question: "" }
+  }
+  var currentState = defaultState
+  var renderedState = defaultState
+  var hasRenderedState = false
+  var hasReportedRenderSuccess = false
+  var consecutiveRenderFailureCount = 0
+  var transitionDurationMs = 320
+  var transitionRafId = 0
+  var lastReportedHeight = 0
+  var lastReportedWidth = 0
+  var sizeRafId = 0
+  var sizeDebounceTimerId = 0
+  var SIZE_REPORT_DEBOUNCE_MS = 140
+  var SIZE_EPSILON_PX = 10
+  var layoutSafetyRafId = 0
+  var backgroundTreatmentRafId = 0
+  var backgroundTreatmentSuppressionUntil = 0
+  var prefersReducedMotion = false
+  var renderHook = typeof window.prezoRenderQna === "function" ? window.prezoRenderQna : null
+  var hasReceivedHostState = false
+  var optionSlotBlueprints = []
+  var renderRetryTimerId = 0
+  var pendingRenderPayload = null
+  var renderRetryCount = 0
+  var resizeResponseTimerId = 0
+  var RESIZE_RESPONSE_DEBOUNCE_MS = 120
+  function runResizeResponse() {
+    resizeResponseTimerId = 0
+    if (pendingRenderPayload) {
+      schedulePendingRenderRetry(pendingRenderPayload, 0)
+    }
+    scheduleRuntimeBackgroundTreatment()
+    scheduleLayoutSafetyPass()
+    scheduleArtifactSizeReport()
+  }
+  function scheduleResizeResponse() {
+    if (resizeResponseTimerId) {
+      clearTimeout(resizeResponseTimerId)
+    }
+    resizeResponseTimerId = setTimeout(runResizeResponse, RESIZE_RESPONSE_DEBOUNCE_MS)
+  }
+  function isObject(value) {
+    return value && typeof value === "object"
+  }
+  function toFiniteNumber(value, fallback) {
+    var numeric = Number(value)
+    return Number.isFinite(numeric) ? numeric : fallback
+  }
+  function interpolateNumber(startValue, endValue, progress) {
+    return startValue + (endValue - startValue) * progress
+  }
+  function normalizeVoteCount(value, fallback) {
+    if (!isObject(value)) {
+      return fallback
+    }
+    var candidates = [value.votes, value.voteCount, value.count, value.value]
+    for (var index = 0; index < candidates.length; index += 1) {
+      var numeric = Number(candidates[index])
+      if (Number.isFinite(numeric)) {
+        return Math.max(0, Math.round(numeric))
+      }
+    }
+    return fallback
+  }
+  function normalizePercentageValue(value, fallback) {
+    if (!isObject(value)) {
+      return fallback
+    }
+    var candidates = [value.percentage, value.percent, value.pct]
+    for (var index = 0; index < candidates.length; index += 1) {
+      var numeric = Number(candidates[index])
+      if (Number.isFinite(numeric)) {
+        return Math.max(0, Math.round(numeric))
+      }
+    }
+    return fallback
+  }
+  function normalizeQuestionText(item) {
+    if (!isObject(item)) {
+      return ""
+    }
+    var candidates = [item.text, item.label, item.question, item.body, item.content]
+    for (var index = 0; index < candidates.length; index += 1) {
+      if (typeof candidates[index] === "string" && candidates[index]) {
+        return String(candidates[index])
+      }
+    }
+    return ""
+  }
+  function normalizeQuestions(value) {
+    if (!Array.isArray(value)) {
+      return []
+    }
+    var normalized = []
+    for (var index = 0; index < value.length; index += 1) {
+      var item = value[index]
+      if (!isObject(item)) {
+        continue
+      }
+      normalized.push({
+        id: String(item.id || "question-" + index),
+        text: normalizeQuestionText(item),
+        votes: normalizeVoteCount(item, 0),
+        percentage: normalizePercentageValue(item, NaN)
+      })
+    }
+    return normalized
+  }
+  function computeTotalVotesFromQuestions(questions) {
+    if (!Array.isArray(questions)) {
+      return 0
+    }
+    var total = 0
+    for (var index = 0; index < questions.length; index += 1) {
+      total += normalizeVoteCount(questions[index], 0)
+    }
+    return Math.max(0, Math.round(total))
+  }
+  function applyQuestionAliases(questions, totalVotes) {
+    if (!Array.isArray(questions)) {
+      return []
+    }
+    var normalized = []
+    for (var index = 0; index < questions.length; index += 1) {
+      var question = questions[index]
+      if (!isObject(question)) {
+        continue
+      }
+      var votes = normalizeVoteCount(question, 0)
+      var percentage = normalizePercentageValue(question, NaN)
+      if (!Number.isFinite(percentage)) {
+        percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0
+      }
+      var text = normalizeQuestionText(question)
+      normalized.push({
+        id: String(question.id || "question-" + index),
+        text: text,
+        label: text,
+        question: text,
+        votes: votes,
+        voteCount: votes,
+        count: votes,
+        value: votes,
+        percentage: percentage,
+        percent: percentage,
+        pct: percentage,
+        rank: index + 1,
+        index: index
+      })
+    }
+    return normalized
+  }
+  function normalizeState(value) {
+    if (!isObject(value)) {
+      return defaultState
+    }
+    var qnaValue = isObject(value.qna) ? value.qna : defaultState.qna
+    var title = ""
+    var titleCandidates = [qnaValue.title, qnaValue.prompt, qnaValue.question, value.title, value.prompt, value.question]
+    for (var titleIndex = 0; titleIndex < titleCandidates.length; titleIndex += 1) {
+      if (typeof titleCandidates[titleIndex] === "string" && titleCandidates[titleIndex]) {
+        title = String(titleCandidates[titleIndex])
+        break
+      }
+    }
+    var rawQuestions = Array.isArray(qnaValue.questions) ? qnaValue.questions : value.questions
+    var normalizedQuestions = normalizeQuestions(rawQuestions)
+    var derivedTotalVotes = computeTotalVotesFromQuestions(normalizedQuestions)
+    var providedTotalVotes = toFiniteNumber(qnaValue.totalVotes, NaN)
+    if (!Number.isFinite(providedTotalVotes)) {
+      providedTotalVotes = toFiniteNumber(value.totalVotes, NaN)
+    }
+    if (!Number.isFinite(providedTotalVotes) && isObject(value.meta)) {
+      providedTotalVotes = toFiniteNumber(value.meta.totalVotes, NaN)
+    }
+    var totalVotes = Number.isFinite(providedTotalVotes) && providedTotalVotes >= 0
+      ? Math.round(providedTotalVotes)
+      : derivedTotalVotes
+    if (totalVotes <= 0 && derivedTotalVotes > 0) {
+      totalVotes = derivedTotalVotes
+    }
+    var questions = applyQuestionAliases(normalizedQuestions, totalVotes)
+    var providedTotalQuestions = toFiniteNumber(qnaValue.totalQuestions, NaN)
+    if (!Number.isFinite(providedTotalQuestions)) {
+      providedTotalQuestions = toFiniteNumber(value.totalQuestions, NaN)
+    }
+    var totalQuestions = Number.isFinite(providedTotalQuestions) && providedTotalQuestions >= 0
+      ? Math.round(providedTotalQuestions)
+      : questions.length
+    if (totalQuestions < questions.length) {
+      totalQuestions = questions.length
+    }
+    var meta = isObject(value.meta) ? clone(value.meta) : {}
+    meta.kind = ACTIVITY_KIND
+    meta.activityKind = ACTIVITY_KIND
+    meta.totalQuestions = totalQuestions
+    meta.totalVotes = totalVotes
+    meta.total_votes = totalVotes
+    meta.votes = totalVotes
+    meta.voteCount = totalVotes
+    meta.title = title
+    meta.prompt = title
+    meta.question = title
+    return {
+      kind: ACTIVITY_KIND,
+      qna: {
+        id: String(qnaValue.id || value.promptId || value.sessionId || ""),
+        title: title,
+        prompt: title,
+        question: title,
+        status: String(qnaValue.status || value.status || ""),
+        questions: questions,
+        totalQuestions: totalQuestions,
+        totalVotes: totalVotes,
+        total_votes: totalVotes,
+        votes: totalVotes,
+        voteCount: totalVotes
+      },
+      questions: questions,
+      items: questions,
+      entries: questions,
+      title: title,
+      prompt: title,
+      question: title,
+      totalQuestions: totalQuestions,
+      totalVotes: totalVotes,
+      total_votes: totalVotes,
+      votes: totalVotes,
+      voteCount: totalVotes,
+      meta: meta
+    }
+  }
+  function buildQuestionMapById(questions) {
+    var map = {}
+    if (!Array.isArray(questions)) {
+      return map
+    }
+    for (var index = 0; index < questions.length; index += 1) {
+      var question = questions[index]
+      if (!isObject(question)) {
+        continue
+      }
+      map[String(question.id || "question-" + index)] = question
+    }
+    return map
+  }
+  function buildInterpolatedState(startState, endState, progress) {
+    var safeStart = normalizeState(startState)
+    var safeEnd = normalizeState(endState)
+    var startById = buildQuestionMapById(safeStart.qna.questions)
+    var endQuestions = Array.isArray(safeEnd.qna.questions) ? safeEnd.qna.questions : []
+    var nextQuestions = []
+    for (var index = 0; index < endQuestions.length; index += 1) {
+      var endQuestion = endQuestions[index]
+      if (!isObject(endQuestion)) {
+        continue
+      }
+      var questionId = String(endQuestion.id || "question-" + index)
+      var startQuestion = startById[questionId]
+      var startVotes = toFiniteNumber(startQuestion && startQuestion.votes, 0)
+      var endVotes = toFiniteNumber(endQuestion.votes, 0)
+      var startPercentage = toFiniteNumber(startQuestion && startQuestion.percentage, 0)
+      var endPercentage = toFiniteNumber(endQuestion.percentage, 0)
+      nextQuestions.push({
+        id: questionId,
+        text: String(endQuestion.text || ""),
+        votes: Math.max(0, Math.round(interpolateNumber(startVotes, endVotes, progress))),
+        percentage: Math.max(0, Math.round(interpolateNumber(startPercentage, endPercentage, progress)))
+      })
+    }
+    return {
+      kind: ACTIVITY_KIND,
+      qna: {
+        id: String(safeEnd.qna.id || ""),
+        title: String(safeEnd.qna.title || ""),
+        status: String(safeEnd.qna.status || ""),
+        questions: nextQuestions,
+        totalQuestions: safeEnd.qna.totalQuestions
+      },
+      totalVotes: Math.max(0, Math.round(interpolateNumber(toFiniteNumber(safeStart.totalVotes, 0), toFiniteNumber(safeEnd.totalVotes, 0), progress))),
+      meta: isObject(safeEnd.meta) ? safeEnd.meta : {}
+    }
+  }
+  function clone(value) {
+    try {
+      return JSON.parse(JSON.stringify(value))
+    } catch (error) {
+      return value
+    }
+  }
+  function postParentMessage(type, extra) {
+    if (!(window.parent && window.parent !== window)) {
+      return
+    }
+    var payload = { type: type, instanceId: INSTANCE_ID }
+    if (isObject(extra)) {
+      for (var key in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, key)) {
+          payload[key] = extra[key]
+        }
+      }
+    }
+    try {
+      window.parent.postMessage(payload, "*")
+    } catch (error) {}
+  }
+  function getRenderErrorText(error) {
+    if (!error) {
+      return ""
+    }
+    if (typeof error.message === "string" && error.message) {
+      return error.message
+    }
+    return String(error)
+  }
+  function parseColorChannels(value) {
+    var match = /^rgba?\(([^)]+)\)$/i.exec(String(value || "").trim())
+    if (!match || !match[1]) {
+      return null
+    }
+    var parts = match[1].split(",")
+    if (parts.length < 3) {
+      return null
+    }
+    var r = Number(parts[0])
+    var g = Number(parts[1])
+    var b = Number(parts[2])
+    var a = parts.length > 3 ? Number(parts[3]) : 1
+    if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+      return null
+    }
+    if (!Number.isFinite(a)) {
+      a = 1
+    }
+    return { r: Math.max(0, Math.min(255, r)), g: Math.max(0, Math.min(255, g)), b: Math.max(0, Math.min(255, b)), a: Math.max(0, Math.min(1, a)) }
+  }
+  function computeColorLuminance(channels) {
+    if (!channels) {
+      return 255
+    }
+    return (channels.r * 0.2126) + (channels.g * 0.7152) + (channels.b * 0.0722)
+  }
+  function isDarkOpaqueColor(value) {
+    var channels = parseColorChannels(value)
+    if (!channels) {
+      return false
+    }
+    return channels.a >= 0.85 && computeColorLuminance(channels) <= 28
+  }
+  function isPaleOpaqueColor(value) {
+    var channels = parseColorChannels(value)
+    if (!channels) {
+      return false
+    }
+    var maxChannel = Math.max(channels.r, channels.g, channels.b)
+    var minChannel = Math.min(channels.r, channels.g, channels.b)
+    return channels.a >= 0.85 && computeColorLuminance(channels) >= 236 && (maxChannel - minChannel) <= 26
+  }
+  function hasPaintedPseudoLayer(node, pseudoName) {
+    if (!node || !pseudoName) {
+      return false
+    }
+    var style = window.getComputedStyle(node, pseudoName)
+    if (!style) {
+      return false
+    }
+    var content = String(style.content || "")
+    if (!content || content === "none" || content === "normal") {
+      return false
+    }
+    var backgroundImage = String(style.backgroundImage || "")
+    if (backgroundImage && backgroundImage !== "none") {
+      return true
+    }
+    var channels = parseColorChannels(style.backgroundColor)
+    return Boolean(channels && channels.a >= 0.08 && computeColorLuminance(channels) < 250)
+  }
+  function readBackgroundTreatmentConfig() {
+    var node = document.getElementById("prezo-background-treatment-data")
+    if (!node) {
+      return null
+    }
+    var text = String(node.textContent || "").trim()
+    if (!text) {
+      return null
+    }
+    try {
+      return JSON.parse(text)
+    } catch (error) {
+      return null
+    }
+  }
+  function hexToRgba(value, alpha) {
+    var match = /^#([0-9a-f]{6})$/i.exec(String(value || "").trim())
+    if (!match) {
+      return "rgba(0, 0, 0, " + String(alpha) + ")"
+    }
+    var raw = match[1]
+    var r = parseInt(raw.slice(0, 2), 16)
+    var g = parseInt(raw.slice(2, 4), 16)
+    var b = parseInt(raw.slice(4, 6), 16)
+    return "rgba(" + r + ", " + g + ", " + b + ", " + String(alpha) + ")"
+  }
+  function getNodeLabel(node) {
+    if (!node) {
+      return ""
+    }
+    return (String(node.id || "") + " " + String(node.className || "")).toLowerCase()
+  }
+  function isBackgroundHostElement(node) {
+    if (!node || !node.tagName) {
+      return false
+    }
+    var tag = String(node.tagName || "").toLowerCase()
+    return tag === "body" || tag === "main" || tag === "section" || tag === "article" || tag === "div"
+  }
+  function countMeaningfulDescendants(node) {
+    if (!node || typeof node.querySelectorAll !== "function") {
+      return 0
+    }
+    var descendants = node.querySelectorAll("*")
+    return Math.min(descendants.length, 48)
+  }
+  function countRenderableTextLength(node) {
+    if (!node) {
+      return 0
+    }
+    return String(node.innerText || node.textContent || "").replace(/\s+/g, "").length
+  }
+  function queryVisibleSelector(selector) {
+    var text = String(selector || "").trim()
+    if (!text || !document.querySelector) {
+      return null
+    }
+    try {
+      var node = document.querySelector(text)
+      if (!node) {
+        return null
+      }
+      var style = window.getComputedStyle(node)
+      return isElementVisible(node, style) ? node : null
+    } catch (error) {
+      return null
+    }
+  }
+  function scoreBackgroundHostCandidate(node, viewportArea) {
+    if (!isBackgroundHostElement(node)) {
+      return -1
+    }
+    var style = window.getComputedStyle(node)
+    if (!isElementVisible(node, style)) {
+      return -1
+    }
+    var rect = node.getBoundingClientRect()
+    if (!rect || rect.width < 180 || rect.height < 140) {
+      return -1
+    }
+    var areaRatio = (rect.width * rect.height) / Math.max(viewportArea, 1)
+    if (areaRatio < 0.12) {
+      return -1
+    }
+    var score = areaRatio * 100
+    var label = getNodeLabel(node)
+    if (node.hasAttribute && node.hasAttribute("data-prezo-scene-root")) {
+      score += 90
+    }
+    if (node.hasAttribute && node.hasAttribute("data-prezo-background-layer")) {
+      score += 36
+    }
+    if (/scene|stage|viewport|frame|shell|container|wrapper|surface|board|arena|background|backdrop|track|root|app/.test(label)) {
+      score += 30
+    }
+    score += Math.min(countMeaningfulDescendants(node), 36)
+    if (countRenderableTextLength(node) >= 18) {
+      score += 12
+    }
+    if (isPaleOpaqueColor(style.backgroundColor)) {
+      score += 8
+    }
+    return score
+  }
+  function chooseRuntimeBackgroundHost(config) {
+    var target = queryVisibleSelector(config && config.targetSelector)
+    if (target) {
+      if (target.hasAttribute && target.hasAttribute("data-prezo-background-layer") && target.parentElement) {
+        return target.parentElement
+      }
+      return target
+    }
+    var sceneRoot = queryVisibleSelector(config && config.sceneRootSelector)
+    if (sceneRoot) {
+      return sceneRoot
+    }
+    var annotatedScene = queryVisibleSelector("[data-prezo-scene-root]")
+    if (annotatedScene) {
+      return annotatedScene
+    }
+    var annotatedBackground = queryVisibleSelector("[data-prezo-background-layer]:not([data-prezo-runtime-background-layer])")
+    if (annotatedBackground) {
+      return annotatedBackground.parentElement || annotatedBackground
+    }
+    var body = document.body
+    if (!body) {
+      return null
+    }
+    var viewportArea = Math.max((window.innerWidth || 1) * (window.innerHeight || 1), 1)
+    var bestNode = body
+    var bestScore = scoreBackgroundHostCandidate(body, viewportArea)
+    var nodes = body.querySelectorAll("main, section, article, div")
+    for (var index = 0; index < nodes.length && index < 180; index += 1) {
+      var node = nodes[index]
+      var score = scoreBackgroundHostCandidate(node, viewportArea)
+      if (score > bestScore) {
+        bestNode = node
+        bestScore = score
+      }
+    }
+    return bestNode || body
+  }
+  function setStyleImportant(node, propertyName, value) {
+    if (!node || !node.style || !propertyName) {
+      return
+    }
+    node.style.setProperty(propertyName, value, "important")
+  }
+  function ensureRuntimeBackgroundSegment(layer, attributeName) {
+    if (!layer) {
+      return null
+    }
+    for (var index = 0; index < layer.children.length; index += 1) {
+      var child = layer.children[index]
+      if (child && child.hasAttribute && child.hasAttribute(attributeName)) {
+        return child
+      }
+    }
+    var next = document.createElement("div")
+    next.setAttribute(attributeName, "true")
+    layer.appendChild(next)
+    return next
+  }
+  function ensureRuntimeBackgroundLayer(host) {
+    if (!host) {
+      return null
+    }
+    for (var index = 0; index < host.children.length; index += 1) {
+      var child = host.children[index]
+      if (child && child.hasAttribute && child.hasAttribute("data-prezo-runtime-background-layer")) {
+        return child
+      }
+    }
+    var layer = document.createElement("div")
+    layer.setAttribute("data-prezo-runtime-background-layer", "true")
+    layer.setAttribute("aria-hidden", "true")
+    host.insertBefore(layer, host.firstChild || null)
+    return layer
+  }
+  function clampNumber(value, minimum, maximum, fallback) {
+    var numeric = Number(value)
+    if (!Number.isFinite(numeric)) {
+      numeric = fallback
+    }
+    return Math.max(minimum, Math.min(maximum, numeric))
+  }
+  function roundNumber(value) {
+    return Math.round(Number(value) * 10) / 10
+  }
+  function deterministicNoise(seed) {
+    var value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453
+    return value - Math.floor(value)
+  }
+  function buildSkylineSvgMarkup(config) {
+    var horizon = clampNumber(config && config.horizonHeightPct, 18, 78, 42)
+    var detailDensity = clampNumber(config && config.detailDensity, 10, 90, 58)
+    var layerCount = Math.round(clampNumber(config && config.layerCount, 2, 4, 3))
+    var buildingCount = Math.round(clampNumber(config && config.buildingCount, 8, 32, 18))
+    var heightVariance = clampNumber(config && config.heightVariance, 10, 95, 52)
+    var windowDensity = clampNumber(config && config.windowDensity, 0, 100, 28)
+    var spireFrequency = clampNumber(config && config.spireFrequency, 0, 100, 16)
+    var roofVariation = clampNumber(config && config.roofVariation, 0, 100, 34)
+    var silhouette = String((config && config.silhouetteColor) || "#23364D")
+    var accent = String((config && config.accentColor) || "#FFD38A")
+    var haze = String((config && config.hazeColor) || "#C8DCEC")
+    var light = String((config && config.lightColor) || "#FFF0C2")
+    var skylineTopY = Math.max(150, 1000 - (horizon * 8.3))
+    var parts = []
+    var windowBudget = Math.max(100, Math.round(120 + (detailDensity * 4.6)))
+    parts.push("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 1000\" preserveAspectRatio=\"none\" aria-hidden=\"true\" focusable=\"false\">")
+    parts.push(`<rect x="0" y="${roundNumber(skylineTopY - 18)}" width="1000" height="${roundNumber(1018 - (skylineTopY - 18))}" fill="${hexToRgba(haze, 0.05)}" />`)
+    for (var layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
+      var depthRatio = layerCount <= 1 ? 1 : layerIndex / Math.max(layerCount - 1, 1)
+      var layerOpacity = 0.2 + (depthRatio * 0.25) + (detailDensity / 520)
+      var layerFloorY = 1000 - ((layerCount - 1 - layerIndex) * 18)
+      var widthScale = 0.88 + (depthRatio * 0.26)
+      var cursorX = -24
+      var buildingIndex = 0
+      var buildingGoal = Math.max(6, Math.round(buildingCount * (0.82 + (depthRatio * 0.18))))
+      while (cursorX < 1036 && buildingIndex < buildingGoal + 12) {
+        var baseSeed = ((layerIndex + 1) * 1000) + ((buildingIndex + 1) * 37) + detailDensity
+        var widthNoise = deterministicNoise(baseSeed + 0.17)
+        var heightNoise = deterministicNoise(baseSeed + 1.31)
+        var roofNoise = deterministicNoise(baseSeed + 2.61)
+        var windowNoise = deterministicNoise(baseSeed + 3.19)
+        var bodyWidth = Math.max(26, (24 + (widthNoise * 44) + (detailDensity / 10) + (depthRatio * 14)) * widthScale)
+        var gapWidth = 3 + (deterministicNoise(baseSeed + 4.79) * 8)
+        var baseHeight = 92 + (depthRatio * 105) + (detailDensity * 1.18)
+        var variableHeight = heightNoise * (44 + (heightVariance * 1.95))
+        var bodyHeight = Math.max(84, Math.min(660, baseHeight + variableHeight))
+        var bodyTopY = Math.max(88, layerFloorY - bodyHeight)
+        var bodyFill = hexToRgba(silhouette, Math.min(0.98, layerOpacity))
+        var bodyStroke = hexToRgba(haze, 0.08 + (depthRatio * 0.08))
+        var bodyRadius = depthRatio > 0.55 ? 2.8 : 1.6
+        parts.push(`<rect x="${roundNumber(cursorX)}" y="${roundNumber(bodyTopY)}" width="${roundNumber(bodyWidth)}" height="${roundNumber(bodyHeight)}" rx="${bodyRadius}" fill="${bodyFill}" stroke="${bodyStroke}" stroke-width="${roundNumber(0.8 + (depthRatio * 0.7))}" />`)
+        if (roofVariation >= 12) {
+          var roofHeight = 8 + (deterministicNoise(baseSeed + 5.41) * (10 + (roofVariation * 0.22)))
+          if (roofNoise < 0.34) {
+            var crownWidth = bodyWidth * (0.56 + (deterministicNoise(baseSeed + 6.03) * 0.22))
+            var crownX = cursorX + ((bodyWidth - crownWidth) / 2)
+            parts.push(`<rect x="${roundNumber(crownX)}" y="${roundNumber(bodyTopY - roofHeight)}" width="${roundNumber(crownWidth)}" height="${roundNumber(roofHeight)}" rx="${roundNumber(Math.max(1.2, bodyRadius - 0.6))}" fill="${hexToRgba(silhouette, Math.min(1, layerOpacity + 0.08))}" />`)
+          } else if (roofNoise < 0.68) {
+            var roofInset = Math.max(3, bodyWidth * 0.12)
+            parts.push(`<polygon points="${roundNumber(cursorX + roofInset)},${roundNumber(bodyTopY)} ${roundNumber(cursorX + (bodyWidth / 2))},${roundNumber(bodyTopY - roofHeight)} ${roundNumber(cursorX + bodyWidth - roofInset)},${roundNumber(bodyTopY)}" fill="${hexToRgba(silhouette, Math.min(1, layerOpacity + 0.05))}" />`)
+          } else {
+            var lowerWidth = bodyWidth * (0.7 + (deterministicNoise(baseSeed + 6.91) * 0.16))
+            var upperWidth = lowerWidth * (0.5 + (deterministicNoise(baseSeed + 7.53) * 0.16))
+            var lowerX = cursorX + ((bodyWidth - lowerWidth) / 2)
+            var upperX = cursorX + ((bodyWidth - upperWidth) / 2)
+            parts.push(`<rect x="${roundNumber(lowerX)}" y="${roundNumber(bodyTopY - (roofHeight * 0.7))}" width="${roundNumber(lowerWidth)}" height="${roundNumber(roofHeight * 0.7)}" fill="${hexToRgba(silhouette, Math.min(1, layerOpacity + 0.06))}" />`)
+            parts.push(`<rect x="${roundNumber(upperX)}" y="${roundNumber(bodyTopY - roofHeight)}" width="${roundNumber(upperWidth)}" height="${roundNumber(roofHeight * 0.42)}" fill="${hexToRgba(silhouette, Math.min(1, layerOpacity + 0.08))}" />`)
+          }
+          if (spireFrequency > 0 && bodyHeight > 140 && deterministicNoise(baseSeed + 8.11) < (spireFrequency / 100)) {
+            var spireX = cursorX + (bodyWidth * (0.22 + (deterministicNoise(baseSeed + 8.83) * 0.56)))
+            var spireHeight = 10 + (detailDensity * 0.22) + (deterministicNoise(baseSeed + 9.41) * 22)
+            parts.push(`<rect x="${roundNumber(spireX)}" y="${roundNumber(bodyTopY - roofHeight - spireHeight)}" width="${roundNumber(Math.max(1.2, bodyWidth * 0.024))}" height="${roundNumber(spireHeight)}" fill="${hexToRgba(light, 0.34 + (depthRatio * 0.12))}" />`)
+            if (deterministicNoise(baseSeed + 9.97) < 0.34) {
+              parts.push(`<circle cx="${roundNumber(spireX + Math.max(0.8, bodyWidth * 0.012))}" cy="${roundNumber(bodyTopY - roofHeight - spireHeight)}" r="${roundNumber(Math.max(1.3, bodyWidth * 0.018))}" fill="${hexToRgba(accent, 0.65)}" />`)
+            }
+          }
+        }
+        if (windowDensity > 0 && bodyHeight > 84 && bodyWidth > 20 && windowBudget > 0) {
+          var cols = Math.max(1, Math.min(8, Math.floor((bodyWidth - 10) / 10)))
+          var rows = Math.max(2, Math.min(20, Math.floor((bodyHeight - 18) / 16)))
+          var windowWidth = Math.max(2.2, Math.min(8.2, (bodyWidth - 10) / Math.max(cols, 1) * 0.34))
+          var windowHeight = Math.max(3.2, Math.min(10.4, (bodyHeight - 16) / Math.max(rows, 1) * 0.28))
+          var gapX = cols > 1 ? (bodyWidth - 12 - (windowWidth * cols)) / Math.max(cols - 1, 1) : 0
+          var gapY = rows > 1 ? (bodyHeight - 18 - (windowHeight * rows)) / Math.max(rows - 1, 1) : 0
+          for (var row = 0; row < rows && windowBudget > 0; row += 1) {
+            for (var col = 0; col < cols && windowBudget > 0; col += 1) {
+              var visibilityRoll = deterministicNoise(baseSeed + (row * 17.7) + (col * 23.1) + windowNoise)
+              if (visibilityRoll > (windowDensity / 100)) {
+                continue
+              }
+              var wx = cursorX + 6 + (col * (windowWidth + gapX))
+              var wy = bodyTopY + 8 + (row * (windowHeight + gapY))
+              var glowAlpha = 0.16 + (deterministicNoise(baseSeed + (row * 11.3) + (col * 7.1)) * 0.56)
+              parts.push(`<rect x="${roundNumber(wx)}" y="${roundNumber(wy)}" width="${roundNumber(windowWidth)}" height="${roundNumber(windowHeight)}" rx="0.9" fill="${hexToRgba(light, glowAlpha)}" />`)
+              if (detailDensity >= 68 && deterministicNoise(baseSeed + (row * 5.9) + (col * 13.3)) < 0.22) {
+                parts.push(`<rect x="${roundNumber(wx)}" y="${roundNumber(wy)}" width="${roundNumber(windowWidth)}" height="${roundNumber(Math.max(1.1, windowHeight * 0.18))}" fill="${hexToRgba(accent, Math.min(0.82, glowAlpha + 0.12))}" />`)
+              }
+              windowBudget -= 1
+            }
+          }
+        }
+        if (detailDensity >= 64 && bodyHeight > 200 && deterministicNoise(baseSeed + 10.51) < 0.42) {
+          var verticalAccentX = cursorX + Math.max(4, bodyWidth * (0.14 + (deterministicNoise(baseSeed + 11.17) * 0.66)))
+          parts.push(`<rect x="${roundNumber(verticalAccentX)}" y="${roundNumber(bodyTopY + 12)}" width="${roundNumber(Math.max(1.2, bodyWidth * 0.026))}" height="${roundNumber(Math.max(18, bodyHeight - 26))}" fill="${hexToRgba(accent, 0.12 + (depthRatio * 0.08))}" />`)
+        }
+        cursorX += bodyWidth + gapWidth
+        buildingIndex += 1
+      }
+    }
+    parts.push(`<rect x="0" y="${roundNumber(1000 - (horizon * 5.2))}" width="1000" height="${roundNumber(horizon * 5.2)}" fill="${hexToRgba(accent, 0.06)}" />`)
+    parts.push("</svg>")
+    return parts.join("")
+  }
+  function applyRuntimeCompositionStyle(node, config) {
+    if (!node) {
+      return
+    }
+    var composition = String((config && config.composition) || "abstract")
+    var horizon = Math.max(18, Math.min(78, Number(config && config.horizonHeightPct) || 42))
+    var silhouette = String((config && config.silhouetteColor) || "#23364D")
+    var accent = String((config && config.accentColor) || "#FFD38A")
+    var haze = String((config && config.hazeColor) || "#C8DCEC")
+    node.style.cssText = ""
+    node.innerHTML = ""
+    setStyleImportant(node, "position", "absolute")
+    setStyleImportant(node, "pointer-events", "none")
+    setStyleImportant(node, "z-index", "0")
+    if (composition === "skyline") {
+      setStyleImportant(node, "inset", "0")
+      setStyleImportant(node, "opacity", "0.98")
+      setStyleImportant(node, "background", "none")
+      node.innerHTML = buildSkylineSvgMarkup(config)
+      return
+    }
+    if (composition === "mountains") {
+      setStyleImportant(node, "inset", "0")
+      setStyleImportant(node, "opacity", "0.92")
+      setStyleImportant(node, "background", "linear-gradient(140deg, transparent 0 38%, " + silhouette + " 38% 58%, transparent 58% 100%), linear-gradient(35deg, transparent 0 42%, " + hexToRgba(accent, 0.18) + " 42% 61%, transparent 61% 100%), linear-gradient(155deg, transparent 0 54%, " + silhouette + " 54% 72%, transparent 72% 100%), linear-gradient(25deg, transparent 0 60%, " + hexToRgba(accent, 0.1) + " 60% 76%, transparent 76% 100%), linear-gradient(0deg, " + hexToRgba(haze, 0.28) + " 0%, rgba(0,0,0,0) " + String(Math.max(24, horizon - 10)) + "%)")
+      setStyleImportant(node, "background-position", "left bottom, 18% bottom, 62% bottom, 72% bottom, center bottom")
+      setStyleImportant(node, "background-size", "48% 56%, 38% 46%, 46% 52%, 34% 42%, 100% 100%")
+      setStyleImportant(node, "background-repeat", "no-repeat")
+      return
+    }
+    if (composition === "dunes") {
+      setStyleImportant(node, "left", "0")
+      setStyleImportant(node, "right", "0")
+      setStyleImportant(node, "bottom", "0")
+      setStyleImportant(node, "top", "34%")
+      setStyleImportant(node, "opacity", "0.95")
+      setStyleImportant(node, "background", "radial-gradient(140% 70% at 8% 100%, " + hexToRgba(accent, 0.28) + " 0 38%, transparent 39%), radial-gradient(125% 62% at 40% 100%, " + hexToRgba(silhouette, 0.18) + " 0 34%, transparent 35%), radial-gradient(135% 68% at 74% 100%, " + hexToRgba(accent, 0.14) + " 0 37%, transparent 38%), linear-gradient(0deg, " + hexToRgba(haze, 0.32) + " 0%, rgba(0,0,0,0) 42%)")
+      return
+    }
+    if (composition === "clouds") {
+      setStyleImportant(node, "inset", "0")
+      setStyleImportant(node, "opacity", "0.84")
+      setStyleImportant(node, "background", "radial-gradient(24% 12% at 18% 20%, " + hexToRgba(haze, 0.66) + " 0 58%, transparent 60%), radial-gradient(28% 14% at 44% 24%, " + hexToRgba(haze, 0.58) + " 0 58%, transparent 60%), radial-gradient(26% 13% at 72% 18%, " + hexToRgba(haze, 0.52) + " 0 58%, transparent 60%), linear-gradient(180deg, " + hexToRgba(haze, 0.24) + " 0%, rgba(0,0,0,0) " + String(Math.max(26, horizon)) + "%)")
+      return
+    }
+    setStyleImportant(node, "inset", "0")
+    setStyleImportant(node, "opacity", "0.88")
+    setStyleImportant(node, "background", "radial-gradient(circle at 18% 24%, " + hexToRgba(accent, 0.28) + " 0 10%, transparent 11%), radial-gradient(circle at 76% 28%, " + hexToRgba(haze, 0.34) + " 0 12%, transparent 13%), linear-gradient(135deg, transparent 0 46%, " + hexToRgba(silhouette, 0.18) + " 46% 58%, transparent 58% 100%), linear-gradient(0deg, " + hexToRgba(haze, 0.28) + " 0%, rgba(0,0,0,0) " + String(Math.max(28, horizon)) + "%)")
+  }
+  function applyRuntimeAtmosphereStyle(node, config) {
+    if (!node) {
+      return
+    }
+    var intensity = String((config && config.intensity) || "balanced")
+    var top = String((config && config.topColor) || "#83BFE6")
+    var haze = String((config && config.hazeColor) || "#D7EBF7")
+    var light = String((config && config.lightColor) || "#FFF0C2")
+    var opacity = intensity === "dramatic" ? "0.86" : intensity === "soft" ? "0.58" : "0.72"
+    node.style.cssText = ""
+    setStyleImportant(node, "position", "absolute")
+    setStyleImportant(node, "inset", "0")
+    setStyleImportant(node, "pointer-events", "none")
+    setStyleImportant(node, "z-index", "0")
+    setStyleImportant(node, "opacity", opacity)
+    setStyleImportant(node, "mix-blend-mode", "screen")
+    setStyleImportant(node, "background", "radial-gradient(circle at 50% 20%, " + hexToRgba(light, 0.2) + " 0 9%, transparent 10%), linear-gradient(180deg, " + hexToRgba(top, 0.12) + " 0%, rgba(0,0,0,0) 24%), linear-gradient(0deg, " + hexToRgba(haze, 0.18) + " 0%, rgba(0,0,0,0) 26%)")
+  }
+  function ensureRuntimeForegroundChildrenAboveLayer(host, layer) {
+    if (!host || !layer) {
+      return
+    }
+    for (var index = 0; index < host.children.length; index += 1) {
+      var child = host.children[index]
+      if (!child || child === layer || !child.style) {
+        continue
+      }
+      var style = window.getComputedStyle(child)
+      if (style && style.position === "static") {
+        setStyleImportant(child, "position", "relative")
+      }
+      setStyleImportant(child, "z-index", "1")
+    }
+  }
+  function neutralizeLargePaleBackgroundCovers(host, layer, allowPalePalette) {
+    if (!host || allowPalePalette) {
+      return
+    }
+    var hostRect = host.getBoundingClientRect()
+    var hostArea = hostRect && hostRect.width > 0 && hostRect.height > 0 ? hostRect.width * hostRect.height : 0
+    if (hostArea <= 0) {
+      return
+    }
+    var candidates = [host]
+    var nodes = host.querySelectorAll("*")
+    for (var index = 0; index < nodes.length && index < 220; index += 1) {
+      var node = nodes[index]
+      if (!node || node === layer || (layer && layer.contains(node))) {
+        continue
+      }
+      var style = window.getComputedStyle(node)
+      if (!isElementVisible(node, style)) {
+        continue
+      }
+      var rect = node.getBoundingClientRect()
+      if (!rect || rect.width < 40 || rect.height < 40) {
+        continue
+      }
+      var areaRatio = (rect.width * rect.height) / hostArea
+      if (areaRatio < 0.68) {
+        continue
+      }
+      if (!isPaleOpaqueColor(style.backgroundColor)) {
+        continue
+      }
+      if (hasPaintedPseudoLayer(node, "::before") || hasPaintedPseudoLayer(node, "::after")) {
+        continue
+      }
+      candidates.push(node)
+    }
+    for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+      var candidate = candidates[candidateIndex]
+      if (!candidate || !candidate.style) {
+        continue
+      }
+      setStyleImportant(candidate, "background-color", "transparent")
+      setStyleImportant(candidate, "background-image", "none")
+      setStyleImportant(candidate, "background", "transparent")
+    }
+  }
+  function applyRuntimeBackgroundTreatment() {
+    backgroundTreatmentRafId = 0
+    var config = readBackgroundTreatmentConfig()
+    if (!config) {
+      return
+    }
+    var host = chooseRuntimeBackgroundHost(config)
+    if (!host) {
+      return
+    }
+    if (host === document.documentElement && document.body) {
+      host = document.body
+    }
+    if (document.documentElement) {
+      setStyleImportant(document.documentElement, "background", "transparent")
+      setStyleImportant(document.documentElement, "min-height", "100%")
+    }
+    if (document.body) {
+      setStyleImportant(document.body, "background", "transparent")
+      setStyleImportant(document.body, "min-height", "100vh")
+    }
+    var hostStyle = window.getComputedStyle(host)
+    if (hostStyle && hostStyle.position === "static") {
+      setStyleImportant(host, "position", "relative")
+    }
+    setStyleImportant(host, "overflow", "hidden")
+    setStyleImportant(host, "isolation", "isolate")
+    var layer = ensureRuntimeBackgroundLayer(host)
+    if (!layer) {
+      return
+    }
+    layer.style.cssText = ""
+    setStyleImportant(layer, "position", "absolute")
+    setStyleImportant(layer, "inset", "0")
+    setStyleImportant(layer, "pointer-events", "none")
+    setStyleImportant(layer, "z-index", "0")
+    setStyleImportant(layer, "overflow", "hidden")
+    setStyleImportant(layer, "border-radius", "inherit")
+    setStyleImportant(layer, "background", "linear-gradient(180deg, " + String(config.topColor || "#83BFE6") + " 0%, " + String(config.midColor || "#C9DEF0") + " 46%, " + String(config.bottomColor || "#F0CF9C") + " 100%)")
+    var composition = ensureRuntimeBackgroundSegment(layer, "data-prezo-runtime-background-composition")
+    var atmosphere = ensureRuntimeBackgroundSegment(layer, "data-prezo-runtime-background-atmosphere")
+    applyRuntimeCompositionStyle(composition, config)
+    applyRuntimeAtmosphereStyle(atmosphere, config)
+    ensureRuntimeForegroundChildrenAboveLayer(host, layer)
+    neutralizeLargePaleBackgroundCovers(host, layer, Boolean(config.allowPalePalette))
+    backgroundTreatmentSuppressionUntil = Date.now() + 80
+  }
+  function scheduleRuntimeBackgroundTreatment() {
+    if (backgroundTreatmentRafId) {
+      return
+    }
+    backgroundTreatmentRafId = requestAnimationFrame(applyRuntimeBackgroundTreatment)
+  }
+  function collectRenderHealth() {
+    var body = document.body
+    if (!body) {
+      return { textLength: 0, elementCount: 0, visibleElementCount: 0, largeVisibleElementCount: 0, mediaCount: 0, largeDarkCoverCount: 0, largePaleCoverCount: 0, runtimeBackgroundLayerCount: 0, runtimeBackgroundVisibleCount: 0, likelyBlank: false, likelyWashedOut: false }
+    }
+    var bodyText = typeof body.innerText === "string" ? body.innerText : ""
+    var textLength = bodyText.replace(/\s+/g, "").length
+    var viewportWidth = Math.max(window.innerWidth || 0, 1)
+    var viewportHeight = Math.max(window.innerHeight || 0, 1)
+    var viewportArea = Math.max(1, viewportWidth * viewportHeight)
+    var mediaCount = body.querySelectorAll("canvas,svg,img,video,picture").length
+    var nodes = body.querySelectorAll("*")
+    var elementCount = nodes.length
+    var visibleElementCount = 0
+    var largeVisibleElementCount = 0
+    var largeDarkCoverCount = 0
+    var largePaleCoverCount = 0
+    var bodyStyle = window.getComputedStyle(body)
+    var bodyRect = body.getBoundingClientRect()
+    var bodyAreaRatio = bodyRect && bodyRect.width > 0 && bodyRect.height > 0
+      ? (bodyRect.width * bodyRect.height) / viewportArea
+      : 0
+    var bodyHasPseudo = hasPaintedPseudoLayer(body, "::before") || hasPaintedPseudoLayer(body, "::after")
+    if (bodyAreaRatio >= 0.72 && isDarkOpaqueColor(bodyStyle && bodyStyle.backgroundColor) && !bodyHasPseudo) {
+      largeDarkCoverCount += 1
+    }
+    if (bodyAreaRatio >= 0.72 && isPaleOpaqueColor(bodyStyle && bodyStyle.backgroundColor) && !bodyHasPseudo) {
+      largePaleCoverCount += 1
+    }
+    var runtimeBackgroundLayerCount = 0
+    var runtimeBackgroundVisibleCount = 0
+    var runtimeLayers = body.querySelectorAll("[data-prezo-runtime-background-layer]")
+    for (var runtimeIndex = 0; runtimeIndex < runtimeLayers.length; runtimeIndex += 1) {
+      var runtimeLayer = runtimeLayers[runtimeIndex]
+      var runtimeStyle = window.getComputedStyle(runtimeLayer)
+      if (!isElementVisible(runtimeLayer, runtimeStyle)) {
+        continue
+      }
+      var runtimeRect = runtimeLayer.getBoundingClientRect()
+      if (!runtimeRect || runtimeRect.width < 40 || runtimeRect.height < 40) {
+        continue
+      }
+      runtimeBackgroundLayerCount += 1
+      if (((runtimeRect.width * runtimeRect.height) / viewportArea) >= 0.28) {
+        runtimeBackgroundVisibleCount += 1
+      }
+    }
+    for (var index = 0; index < nodes.length && index < 180; index += 1) {
+      var node = nodes[index]
+      var style = window.getComputedStyle(node)
+      if (!isElementVisible(node, style)) {
+        continue
+      }
+      var rect = node.getBoundingClientRect()
+      if (!rect || rect.width < 8 || rect.height < 8) {
+        continue
+      }
+      visibleElementCount += 1
+      var areaRatio = (rect.width * rect.height) / viewportArea
+      if (areaRatio >= 0.16) {
+        largeVisibleElementCount += 1
+      }
+      var hasPseudo = hasPaintedPseudoLayer(node, "::before") || hasPaintedPseudoLayer(node, "::after")
+      if (areaRatio >= 0.72 && isDarkOpaqueColor(style && style.backgroundColor) && !hasPseudo) {
+        largeDarkCoverCount += 1
+      }
+      if (areaRatio >= 0.72 && isPaleOpaqueColor(style && style.backgroundColor) && !hasPseudo) {
+        largePaleCoverCount += 1
+      }
+    }
+    return {
+      textLength: textLength,
+      elementCount: elementCount,
+      visibleElementCount: visibleElementCount,
+      largeVisibleElementCount: largeVisibleElementCount,
+      mediaCount: mediaCount,
+      largeDarkCoverCount: largeDarkCoverCount,
+      largePaleCoverCount: largePaleCoverCount,
+      runtimeBackgroundLayerCount: runtimeBackgroundLayerCount,
+      runtimeBackgroundVisibleCount: runtimeBackgroundVisibleCount,
+      likelyBlank: textLength === 0 && mediaCount === 0 && visibleElementCount <= 2 && (largeDarkCoverCount > 0 || largePaleCoverCount > 0),
+      likelyWashedOut: largePaleCoverCount > 0 && textLength >= 18 && textLength <= 120 && mediaCount === 0 && visibleElementCount <= 28 && largeDarkCoverCount === 0 && largeVisibleElementCount <= 12 && runtimeBackgroundVisibleCount === 0
+    }
+  }
+  function isRecoverableRenderError(error) {
+    var text = getRenderErrorText(error)
+    return /Cannot (?:set|read) properties of (?:null|undefined)/.test(text) || / is null\b/.test(text)
+  }
+  function clearPendingRenderRetry() {
+    if (renderRetryTimerId) {
+      clearTimeout(renderRetryTimerId)
+      renderRetryTimerId = 0
+    }
+  }
+  function setRenderer(nextRenderer) {
+    renderHook = typeof nextRenderer === "function" ? nextRenderer : null
+    if (renderHook && hasRenderedState) {
+      schedulePendingRenderRetry(clone(currentState), 0)
+    }
+    return renderHook
+  }
+  function schedulePendingRenderRetry(payload, delayMs) {
+    pendingRenderPayload = clone(normalizeState(payload || currentState))
+    clearPendingRenderRetry()
+    var delay = Math.max(0, Number(delayMs) || 0)
+    renderRetryTimerId = setTimeout(function () {
+      renderRetryTimerId = 0
+      if (!pendingRenderPayload) {
+        return
+      }
+      invokeRenderHook(clone(pendingRenderPayload))
+    }, delay)
+  }
+  function computeDocumentSize() {
+    var doc = document.documentElement
+    var body = document.body
+    var viewportWidth = Math.max((doc && doc.clientWidth) || 0, window.innerWidth || 0, 320)
+    var viewportHeight = Math.max((doc && doc.clientHeight) || 0, window.innerHeight || 0, 240)
+    var docHeight = doc ? Math.max(doc.scrollHeight, doc.offsetHeight, doc.clientHeight) : 0
+    var bodyHeight = body ? Math.max(body.scrollHeight, body.offsetHeight, body.clientHeight) : 0
+    var docWidth = doc ? Math.max(doc.scrollWidth, doc.offsetWidth, doc.clientWidth) : 0
+    var bodyWidth = body ? Math.max(body.scrollWidth, body.offsetWidth, body.clientWidth) : 0
+    var contentWidth = Math.max(docWidth, bodyWidth, viewportWidth)
+    var contentHeight = Math.max(docHeight, bodyHeight, viewportHeight)
+    var maxReasonableWidth = viewportWidth * 2.4
+    var maxReasonableHeight = viewportHeight * 2.4
+    if (contentWidth > maxReasonableWidth) {
+      contentWidth = viewportWidth
+    }
+    if (contentHeight > maxReasonableHeight) {
+      contentHeight = viewportHeight
+    }
+    return {
+      width: Math.min(Math.max(contentWidth, 320), 12000),
+      height: Math.min(Math.max(contentHeight, 240), 6000)
+    }
+  }
+  function postArtifactSize(force) {
+    var nextSize = computeDocumentSize()
+    var nextHeight = nextSize.height
+    var nextWidth = nextSize.width
+    if (!force && Math.abs(nextHeight - lastReportedHeight) < SIZE_EPSILON_PX && Math.abs(nextWidth - lastReportedWidth) < SIZE_EPSILON_PX) {
+      return
+    }
+    lastReportedHeight = nextHeight
+    lastReportedWidth = nextWidth
+    if (window.parent && window.parent !== window) {
+      try {
+        postParentMessage(SIZE_MESSAGE_TYPE, { width: nextWidth, height: nextHeight })
+      } catch (error) {}
+    }
+  }
+  function scheduleArtifactSizeReport() {
+    if (sizeDebounceTimerId) {
+      clearTimeout(sizeDebounceTimerId)
+      sizeDebounceTimerId = 0
+    }
+    sizeDebounceTimerId = setTimeout(function () {
+      sizeDebounceTimerId = 0
+      if (sizeRafId) {
+        return
+      }
+      sizeRafId = requestAnimationFrame(function () {
+        sizeRafId = 0
+        postArtifactSize(false)
+      })
+    }, SIZE_REPORT_DEBOUNCE_MS)
+  }
+  function isElementVisible(node, style) {
+    var computed = style || (node ? window.getComputedStyle(node) : null)
+    if (!node || !computed) {
+      return false
+    }
+    if (computed.display === "none" || computed.visibility === "hidden") {
+      return false
+    }
+    if (Number(computed.opacity) <= 0) {
+      var anim = computed.animationName || computed.webkitAnimationName || ""
+      if (anim && anim !== "none") {
+        return true
+      }
+      return false
+    }
+    return true
+  }
+  function hasRenderableText(node) {
+    if (!node || !node.tagName) {
+      return false
+    }
+    var tag = String(node.tagName || "").toLowerCase()
+    if (tag === "script" || tag === "style" || tag === "noscript") {
+      return false
+    }
+    var text = String(node.textContent || "").trim()
+    return text.length > 0
+  }
+  function hasDirectRenderableText(node) {
+    if (!node || !node.childNodes) {
+      return false
+    }
+    for (var index = 0; index < node.childNodes.length; index += 1) {
+      var child = node.childNodes[index]
+      if (!child || child.nodeType !== 3) {
+        continue
+      }
+      if (String(child.textContent || "").trim().length > 0) {
+        return true
+      }
+    }
+    return false
+  }
+  function isThinDecorationCandidate(node, rect, style) {
+    if (!node || !rect || !style) {
+      return false
+    }
+    var tag = String(node.tagName || "").toLowerCase()
+    if (tag === "hr") {
+      return true
+    }
+    if (hasRenderableText(node)) {
+      return false
+    }
+    var label = (String(node.className || "") + " " + String(node.id || "")).toLowerCase()
+    var looksLikeDivider = /divider|ornament|separator|rule|line/.test(label)
+    var thin = rect.height <= 8
+    var wide = rect.width >= Math.max(160, window.innerWidth * 0.28)
+    if (thin && wide) {
+      return true
+    }
+    return looksLikeDivider && rect.height <= 12
+  }
+  function rectsOverlap(a, b) {
+    if (!a || !b) {
+      return false
+    }
+    var horizontal = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+    var vertical = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    return horizontal > 8 && vertical > 2
+  }
+  function collectTextEntries() {
+    var entries = []
+    var nodes = document.body ? document.body.querySelectorAll("*") : []
+    for (var index = 0; index < nodes.length; index += 1) {
+      var node = nodes[index]
+      if (!hasRenderableText(node)) {
+        continue
+      }
+      var style = window.getComputedStyle(node)
+      if (!isElementVisible(node, style)) {
+        continue
+      }
+      var rect = node.getBoundingClientRect()
+      if (!rect || rect.width < 4 || rect.height < 8) {
+        continue
+      }
+      entries.push({ node: node, rect: rect, style: style })
+    }
+    return entries
+  }
+  function shiftRect(rect, shiftY) {
+    if (!rect) {
+      return null
+    }
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top + shiftY,
+      bottom: rect.bottom + shiftY,
+      width: rect.width,
+      height: rect.height
+    }
+  }
+  function calculateRectOverlapArea(a, b) {
+    if (!a || !b) {
+      return 0
+    }
+    var horizontal = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+    var vertical = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    if (horizontal <= 0 || vertical <= 0) {
+      return 0
+    }
+    return horizontal * vertical
+  }
+  function overlapsAnyText(rect, textEntries) {
+    if (!rect || !textEntries || !textEntries.length) {
+      return false
+    }
+    for (var index = 0; index < textEntries.length; index += 1) {
+      var entry = textEntries[index]
+      if (!entry || !entry.rect) {
+        continue
+      }
+      if (rectsOverlap(rect, entry.rect)) {
+        return true
+      }
+    }
+    return false
+  }
+  function totalTextOverlapArea(rect, textEntries) {
+    if (!rect || !textEntries || !textEntries.length) {
+      return 0
+    }
+    var area = 0
+    for (var index = 0; index < textEntries.length; index += 1) {
+      var entry = textEntries[index]
+      if (!entry || !entry.rect) {
+        continue
+      }
+      area += calculateRectOverlapArea(rect, entry.rect)
+    }
+    return area
+  }
+  function computeDecorationSafeShift(rect, textEntries) {
+    if (!rect || !textEntries || !textEntries.length) {
+      return 0
+    }
+    if (!overlapsAnyText(rect, textEntries)) {
+      return 0
+    }
+    var gap = 8
+    var candidates = [0]
+    for (var index = 0; index < textEntries.length; index += 1) {
+      var entry = textEntries[index]
+      if (!entry || !entry.rect || !rectsOverlap(rect, entry.rect)) {
+        continue
+      }
+      candidates.push((entry.rect.bottom - rect.top) + gap)
+      candidates.push((entry.rect.top - rect.bottom) - gap)
+    }
+    candidates.sort(function (a, b) {
+      return Math.abs(a) - Math.abs(b)
+    })
+    var maxShift = Math.max(window.innerHeight, 1200)
+    for (var candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+      var candidate = candidates[candidateIndex]
+      if (Math.abs(candidate) > maxShift) {
+        continue
+      }
+      var shifted = shiftRect(rect, candidate)
+      if (!overlapsAnyText(shifted, textEntries)) {
+        return candidate
+      }
+    }
+    var bestShift = 0
+    var bestArea = totalTextOverlapArea(rect, textEntries)
+    for (var fallbackIndex = 0; fallbackIndex < candidates.length; fallbackIndex += 1) {
+      var fallback = candidates[fallbackIndex]
+      if (Math.abs(fallback) > maxShift) {
+        continue
+      }
+      var shiftedRectValue = shiftRect(rect, fallback)
+      var area = totalTextOverlapArea(shiftedRectValue, textEntries)
+      if (area < bestArea) {
+        bestArea = area
+        bestShift = fallback
+      }
+    }
+    return bestShift
+  }
+  function clearLegacyDecorationHidden(node) {
+    if (!node || !node.style) {
+      return
+    }
+    node.style.removeProperty("opacity")
+    node.style.removeProperty("visibility")
+    if (node.dataset && node.dataset.prezoDecorationHidden) {
+      delete node.dataset.prezoDecorationHidden
+    }
+  }
+  function demoteDecorationNode(node, style) {
+    if (!node || !node.style) {
+      return
+    }
+    var computed = style || window.getComputedStyle(node)
+    if (!node.__prezoDecorationDemoted) {
+      node.__prezoDecorationDemoted = {
+        position: node.style.position || "",
+        zIndex: node.style.zIndex || "",
+        pointerEvents: node.style.pointerEvents || "",
+        translate: node.style.translate || "",
+        opacity: node.style.opacity || "",
+        visibility: node.style.visibility || ""
+      }
+    }
+    clearLegacyDecorationHidden(node)
+    if (computed && computed.position === "static") {
+      node.style.setProperty("position", "relative", "important")
+    }
+    node.style.setProperty("z-index", "0", "important")
+    node.style.setProperty("pointer-events", "none", "important")
+  }
+  function restoreDecorationNode(node) {
+    if (!node || !node.style || !node.__prezoDecorationDemoted) {
+      return
+    }
+    var prev = node.__prezoDecorationDemoted
+    if (prev.position) {
+      node.style.setProperty("position", prev.position)
+    } else {
+      node.style.removeProperty("position")
+    }
+    if (prev.zIndex) {
+      node.style.setProperty("z-index", prev.zIndex)
+    } else {
+      node.style.removeProperty("z-index")
+    }
+    if (prev.pointerEvents) {
+      node.style.setProperty("pointer-events", prev.pointerEvents)
+    } else {
+      node.style.removeProperty("pointer-events")
+    }
+    if (prev.translate) {
+      node.style.setProperty("translate", prev.translate)
+    } else {
+      node.style.removeProperty("translate")
+    }
+    if (prev.opacity) {
+      node.style.setProperty("opacity", prev.opacity)
+    } else {
+      node.style.removeProperty("opacity")
+    }
+    if (prev.visibility) {
+      node.style.setProperty("visibility", prev.visibility)
+    } else {
+      node.style.removeProperty("visibility")
+    }
+    delete node.__prezoDecorationDemoted
+  }
+  function setDecorationShift(node, shiftY) {
+    if (!node || !node.style) {
+      return
+    }
+    if (Math.abs(shiftY) < 0.5) {
+      node.style.removeProperty("translate")
+      return
+    }
+    node.style.setProperty("translate", "0px " + Math.round(shiftY) + "px", "important")
+  }
+  function promoteTextNode(node, style) {
+    if (!node || !node.style) {
+      return
+    }
+    var computed = style || window.getComputedStyle(node)
+    if (!node.__prezoTextPromoted) {
+      node.__prezoTextPromoted = {
+        position: node.style.position || "",
+        zIndex: node.style.zIndex || ""
+      }
+    }
+    if (computed && computed.position === "static") {
+      node.style.setProperty("position", "relative", "important")
+    }
+    node.style.setProperty("z-index", "2", "important")
+  }
+  function restoreTextNode(node) {
+    if (!node || !node.style || !node.__prezoTextPromoted) {
+      return
+    }
+    var prev = node.__prezoTextPromoted
+    if (prev.position) {
+      node.style.setProperty("position", prev.position)
+    } else {
+      node.style.removeProperty("position")
+    }
+    if (prev.zIndex) {
+      node.style.setProperty("z-index", prev.zIndex)
+    } else {
+      node.style.removeProperty("z-index")
+    }
+    delete node.__prezoTextPromoted
+  }
+  function applyLayoutSafetyPass() {
+    layoutSafetyRafId = 0
+    if (!document.body) {
+      return
+    }
+    var textEntries = collectTextEntries()
+    if (!textEntries.length) {
+      return
+    }
+    var promotedTextNodes = new Set()
+    var nodes = document.body.querySelectorAll("*")
+    for (var index = 0; index < nodes.length; index += 1) {
+      var node = nodes[index]
+      var style = window.getComputedStyle(node)
+      if (!isElementVisible(node, style)) {
+        continue
+      }
+      var rect = node.getBoundingClientRect()
+      if (!rect || rect.width < 20 || rect.height < 1) {
+        continue
+      }
+      if (!isThinDecorationCandidate(node, rect, style)) {
+        restoreDecorationNode(node)
+        clearLegacyDecorationHidden(node)
+        continue
+      }
+      demoteDecorationNode(node, style)
+      setDecorationShift(node, 0)
+      for (var textIndex = 0; textIndex < textEntries.length; textIndex += 1) {
+        var textEntry = textEntries[textIndex]
+        if (!textEntry || !textEntry.node || !textEntry.rect) {
+          continue
+        }
+        if (!rectsOverlap(rect, textEntry.rect)) {
+          continue
+        }
+        promoteTextNode(textEntry.node, textEntry.style)
+        promotedTextNodes.add(textEntry.node)
+      }
+    }
+    for (var textNodeIndex = 0; textNodeIndex < textEntries.length; textNodeIndex += 1) {
+      var candidate = textEntries[textNodeIndex] && textEntries[textNodeIndex].node
+      if (!candidate || promotedTextNodes.has(candidate)) {
+        continue
+      }
+      restoreTextNode(candidate)
+    }
+  }
+  function scheduleLayoutSafetyPass() {
+    if (layoutSafetyRafId) {
+      return
+    }
+    layoutSafetyRafId = requestAnimationFrame(applyLayoutSafetyPass)
+  }
+  function normalizeOptionRowLabelText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase()
+  }
+  function getLikelyOptionRowLabel(node) {
+    if (!node) {
+      return ""
+    }
+    var dataLabel = ""
+    if (node.dataset) {
+      dataLabel = node.dataset.optionLabel || node.dataset.label || ""
+    }
+    if (dataLabel) {
+      return normalizeOptionRowLabelText(dataLabel)
+    }
+    var labelNode = node.querySelector(
+      ".label, .option-label, .poll-label, .name, [data-option-label], [data-prezo-option-label], [data-label]"
+    )
+    if (labelNode && labelNode.textContent) {
+      return normalizeOptionRowLabelText(labelNode.textContent)
+    }
+    return normalizeOptionRowLabelText(node.textContent)
+  }
+  function isLikelyOptionRowNode(node) {
+    if (!node || node.nodeType !== 1) {
+      return false
+    }
+    var tag = String(node.tagName || "").toLowerCase()
+    if (tag !== "div" && tag !== "li" && tag !== "article" && tag !== "section") {
+      return false
+    }
+    var classText = String(node.className || "").toLowerCase()
+    var attrText = ""
+    if (node.getAttribute) {
+      attrText = String(node.getAttribute("data-question-id") || node.getAttribute("data-prezo-question-id") || node.getAttribute("data-option-id") || node.getAttribute("data-prezo-option-id") || "").toLowerCase()
+    }
+    if (/\b(option|poll-option|option-row|poll-row|lane|result-row|choice|answer|question|question-row|question-card|submission)\b/.test(classText)) {
+      return true
+    }
+    if (attrText) {
+      return true
+    }
+    var label = getLikelyOptionRowLabel(node)
+    return label.length >= 3 && !!node.querySelector(".track, .bar, .votes, .stats, [data-votes], [data-percentage]")
+  }
+  function findLikelyOptionRowContainer() {
+    if (!document.body) {
+      return null
+    }
+    var nodes = document.body.querySelectorAll("section, div, main, article, ul, ol")
+    var best = null
+    var bestCount = 0
+    for (var index = 0; index < nodes.length; index += 1) {
+      var candidate = nodes[index]
+      var children = candidate && candidate.children ? candidate.children : null
+      if (!children || children.length < 4) {
+        continue
+      }
+      var rowCount = 0
+      for (var childIndex = 0; childIndex < children.length; childIndex += 1) {
+        if (isLikelyOptionRowNode(children[childIndex])) {
+          rowCount += 1
+        }
+      }
+      if (rowCount >= 4 && rowCount > bestCount) {
+        best = candidate
+        bestCount = rowCount
+      }
+    }
+    return best
+  }
+  function trimDuplicatedOptionRows() {
+    var container = findLikelyOptionRowContainer()
+    if (!container || !container.children) {
+      return
+    }
+    var rows = []
+    for (var index = 0; index < container.children.length; index += 1) {
+      var child = container.children[index]
+      if (isLikelyOptionRowNode(child)) {
+        rows.push(child)
+      }
+    }
+    if (rows.length < 4) {
+      return
+    }
+    var signatures = []
+    for (var sigIndex = 0; sigIndex < rows.length; sigIndex += 1) {
+      var label = getLikelyOptionRowLabel(rows[sigIndex])
+      if (!label) {
+        return
+      }
+      signatures.push(label)
+    }
+    var expectedOptions = 0
+    if (currentState && currentState.qna && Array.isArray(currentState.qna.questions)) {
+      expectedOptions = currentState.qna.questions.length
+    }
+    var blockSizes = []
+    if (expectedOptions >= 2 && rows.length % expectedOptions === 0) {
+      blockSizes.push(expectedOptions)
+    }
+    for (var size = 2; size <= Math.floor(rows.length / 2); size += 1) {
+      if (rows.length % size === 0 && blockSizes.indexOf(size) < 0) {
+        blockSizes.push(size)
+      }
+    }
+    for (var blockIndex = 0; blockIndex < blockSizes.length; blockIndex += 1) {
+      var blockSize = blockSizes[blockIndex]
+      var repeatCount = Math.floor(rows.length / blockSize)
+      if (repeatCount < 2) {
+        continue
+      }
+      var baseOffset = rows.length - blockSize
+      var baseSignatures = signatures.slice(baseOffset)
+      var uniqueLabels = {}
+      for (var uniqueIndex = 0; uniqueIndex < baseSignatures.length; uniqueIndex += 1) {
+        uniqueLabels[baseSignatures[uniqueIndex]] = true
+      }
+      if (Object.keys(uniqueLabels).length < 2) {
+        continue
+      }
+      var allBlocksMatch = true
+      for (var repeatIndex = 0; repeatIndex < repeatCount; repeatIndex += 1) {
+        var offset = repeatIndex * blockSize
+        for (var compareIndex = 0; compareIndex < blockSize; compareIndex += 1) {
+          if (signatures[offset + compareIndex] !== baseSignatures[compareIndex]) {
+            allBlocksMatch = false
+            break
+          }
+        }
+        if (!allBlocksMatch) {
+          break
+        }
+      }
+      if (!allBlocksMatch) {
+        continue
+      }
+      var removeUntil = rows.length - blockSize
+      for (var removeIndex = 0; removeIndex < removeUntil; removeIndex += 1) {
+        var node = rows[removeIndex]
+        if (node && node.parentNode === container) {
+          container.removeChild(node)
+        }
+      }
+      return
+    }
+  }
+  function invokeRenderHook(payload) {
+    var candidate = typeof renderHook === "function" ? renderHook : window.prezoRenderQna
+    if (typeof candidate !== "function") {
+      return false
+    }
+    renderHook = candidate
+    try {
+      candidate(payload)
+      trimDuplicatedOptionRows()
+      scheduleRuntimeBackgroundTreatment()
+      consecutiveRenderFailureCount = 0
+      if (!hasReportedRenderSuccess) {
+        hasReportedRenderSuccess = true
+        setTimeout(function () {
+          postParentMessage(RENDER_OK_MESSAGE_TYPE, { renderHealth: collectRenderHealth() })
+        }, 60)
+      }
+      pendingRenderPayload = null
+      renderRetryCount = 0
+      clearPendingRenderRetry()
+      return true
+    } catch (error) {
+      consecutiveRenderFailureCount += 1
+      if (transitionRafId) {
+        cancelAnimationFrame(transitionRafId)
+        transitionRafId = 0
+      }
+      if (isRecoverableRenderError(error) && renderRetryCount < 12) {
+        renderRetryCount += 1
+        schedulePendingRenderRetry(payload, Math.min(700, 40 + renderRetryCount * 60))
+      }
+      postParentMessage(RENDER_ERROR_MESSAGE_TYPE, {
+        message: getRenderErrorText(error),
+        recoverable: isRecoverableRenderError(error),
+        failureCount: consecutiveRenderFailureCount
+      })
+      console.error("[prezo-artifact] prezoRenderQna failed", error)
+      return false
+    }
+  }
+  function installRenderHookBridge() {
+    try {
+      Object.defineProperty(window, "prezoRenderQna", {
+        configurable: true,
+        enumerable: true,
+        get: function () {
+          return renderHook
+        },
+        set: function (value) {
+          renderHook = typeof value === "function" ? value : null
+          if (renderHook && hasRenderedState) {
+            schedulePendingRenderRetry(clone(currentState), 0)
+          }
+        }
+      })
+    } catch (error) {}
+  }
+  function dispatchState(payloadValue) {
+    var payload = clone(normalizeState(payloadValue))
+    currentState = payload
+    renderedState = payload
+    hasRenderedState = true
+    window.__PREZO_QNA_STATE = payload
+    invokeRenderHook(payload)
+    try {
+      document.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: payload }))
+    } catch (error) {}
+    scheduleRuntimeBackgroundTreatment()
+    scheduleLayoutSafetyPass()
+    scheduleArtifactSizeReport()
+  }
+  function animateStateTransition(nextValue, forceImmediate) {
+    var nextState = normalizeState(nextValue)
+    var previousState = hasRenderedState ? normalizeState(renderedState) : defaultState
+    if (transitionRafId) {
+      cancelAnimationFrame(transitionRafId)
+      transitionRafId = 0
+    }
+    var shouldAnimate = !forceImmediate && !prefersReducedMotion && hasRenderedState
+    if (shouldAnimate && String(previousState.qna.id || "") !== String(nextState.qna.id || "")) {
+      shouldAnimate = false
+    }
+    if (!shouldAnimate) {
+      dispatchState(nextState)
+      return
+    }
+    var startTs = 0
+    function step(ts) {
+      if (!startTs) {
+        startTs = ts
+      }
+      var elapsed = ts - startTs
+      var raw = transitionDurationMs > 0 ? elapsed / transitionDurationMs : 1
+      var clamped = Math.min(1, Math.max(0, raw))
+      var eased = 1 - Math.pow(1 - clamped, 3)
+      dispatchState(buildInterpolatedState(previousState, nextState, eased))
+      if (clamped < 1) {
+        transitionRafId = requestAnimationFrame(step)
+        return
+      }
+      transitionRafId = 0
+      dispatchState(nextState)
+    }
+    transitionRafId = requestAnimationFrame(step)
+  }
+  if (typeof window.matchMedia === "function") {
+    try {
+      var media = window.matchMedia("(prefers-reduced-motion: reduce)")
+      prefersReducedMotion = Boolean(media && media.matches)
+      var onMotionChange = function (event) {
+        prefersReducedMotion = Boolean(event && event.matches)
+      }
+      if (media && typeof media.addEventListener === "function") {
+        media.addEventListener("change", onMotionChange)
+      } else if (media && typeof media.addListener === "function") {
+        media.addListener(onMotionChange)
+      }
+    } catch (error) {}
+  }
+  installRenderHookBridge()
+  window[SET_RENDERER_NAME] = function (nextRenderer) {
+    return setRenderer(nextRenderer)
+  }
+  window.prezoGetQnaState = function () {
+    return clone(currentState)
+  }
+  window.addEventListener("message", function (event) {
+    var message = event && event.data
+    if (!isObject(message)) return
+    if (message.type === MESSAGE_TYPE) {
+      hasReceivedHostState = true
+      animateStateTransition(message.payload, false)
+      return
+    }
+  })
+  postParentMessage(READY_MESSAGE_TYPE)
+  window.addEventListener("resize", function () {
+    scheduleResizeResponse()
+  })
+  if (typeof MutationObserver === "function") {
+    var observer = new MutationObserver(function () {
+      if (pendingRenderPayload) {
+        schedulePendingRenderRetry(pendingRenderPayload, 0)
+      }
+      if (Date.now() >= backgroundTreatmentSuppressionUntil) {
+        scheduleRuntimeBackgroundTreatment()
+      }
+      scheduleLayoutSafetyPass()
+      scheduleArtifactSizeReport()
+    })
+    var observedTarget = document.body || document.documentElement
+    if (observedTarget) {
+      observer.observe(observedTarget, { childList: true, subtree: true, attributes: true, characterData: true })
+    }
+  }
+  if (typeof ResizeObserver === "function") {
+    var resizeObserver = new ResizeObserver(function () {
+      scheduleArtifactSizeReport()
+    })
+    if (document.documentElement) {
+      resizeObserver.observe(document.documentElement)
+    }
+    if (document.body) {
+      resizeObserver.observe(document.body)
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      if (pendingRenderPayload) {
+        schedulePendingRenderRetry(pendingRenderPayload, 0)
+      }
+      scheduleRuntimeBackgroundTreatment()
+      scheduleLayoutSafetyPass()
+      scheduleArtifactSizeReport()
+    }, { once: true })
+  } else {
+    setTimeout(function () {
+      if (pendingRenderPayload) {
+        schedulePendingRenderRetry(pendingRenderPayload, 0)
+      }
+      scheduleRuntimeBackgroundTreatment()
+      scheduleLayoutSafetyPass()
+      scheduleArtifactSizeReport()
+    }, 0)
+  }
+  scheduleRuntimeBackgroundTreatment()
+  scheduleLayoutSafetyPass()
+  postArtifactSize(true)
+  var _lastKnownOverrides = null
+  var preEditTextByKey = {}
+  var preEditHtmlByKey = {}
+  function snapshotKey(field, optionId) {
+    return optionId ? field + ":" + optionId : field
+  }
+  window.addEventListener("message", function (event) {
+    var _msg = event && event.data
+    if (!_msg || typeof _msg !== "object") return
+    if (_msg.type === TEXT_STYLE_MESSAGE_TYPE && _msg.instanceId === INSTANCE_ID) {
+      applyArtifactTextStyle(_msg)
+    }
+    if (_msg.type === TEXT_STYLE_INIT_MESSAGE_TYPE && _msg.instanceId === INSTANCE_ID) {
+      _lastKnownOverrides = _msg.overrides
+      applyArtifactStyleOverrides(_msg.overrides)
+    }
+  })
+  function flattenNodeSpans(host) {
+    var styledEls = host.querySelectorAll("span[style], b, strong, i, em, font")
+    if (styledEls.length <= 1) return
+    // Walk all styled elements outermost→innermost; later (inner) values win per property
+    var all = host.querySelectorAll("[style]")
+    var merged = {}
+    for (var i = 0; i < all.length; i++) {
+      var s = all[i].style
+      if (s.fontSize) merged.fontSize = s.fontSize
+      if (s.fontFamily) merged.fontFamily = s.fontFamily
+      if (s.color) merged.color = s.color
+      if (s.fontWeight) merged.fontWeight = s.fontWeight
+      if (s.fontStyle) merged.fontStyle = s.fontStyle
+    }
+    var text = host.innerText || host.textContent || ""
+    var span = document.createElement("span")
+    if (merged.fontSize) span.style.fontSize = merged.fontSize
+    if (merged.fontFamily) span.style.fontFamily = merged.fontFamily
+    if (merged.color) span.style.color = merged.color
+    if (merged.fontWeight) span.style.fontWeight = merged.fontWeight
+    if (merged.fontStyle) span.style.fontStyle = merged.fontStyle
+    span.style.lineHeight = "1.2"
+    span.textContent = text
+    host.innerHTML = ""
+    host.appendChild(span)
+  }
+  function sendTextHtml(node) {
+    if (!node) return
+    flattenNodeSpans(node)
+    var field = node.getAttribute("data-prezo-editable") || "question"
+    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""
+    var html = node.innerHTML || ""
+    var key = snapshotKey(field, optionId)
+    var priorHtml = Object.prototype.hasOwnProperty.call(preEditHtmlByKey, key) ? preEditHtmlByKey[key] : null
+    postParentMessage(TEXT_HTML_MESSAGE_TYPE, { field: field, optionId: optionId, html: html, priorHtml: priorHtml })
+  }
+  function hasActiveSelection(host, sel) {
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false
+    var range = sel.getRangeAt(0)
+    var ancestor = range.commonAncestorContainer
+    return host.contains(ancestor) || ancestor === host
+  }
+  function relaxContainerLayout(node) {
+    node.style.height = "auto"
+    node.style.minHeight = "0"
+    node.style.lineHeight = "normal"
+    node.style.overflow = "visible"
+  }
+  function getDeepestStyledChild(el) {
+    var cur = el
+    while (cur) {
+      var child = cur.querySelector("span, b, strong, i, em, font")
+      if (!child) break
+      cur = child
+    }
+    return cur || el
+  }
+  function applyStyleToAllContent(host, prop, value) {
+    // Read effective styles from the deepest styled child (what is actually rendered)
+    var deepest = getDeepestStyledChild(host)
+    var cs = window.getComputedStyle(deepest)
+    var text = host.innerText || host.textContent || ""
+    // Flatten all nested spans into one single clean span to prevent span accumulation
+    var span = document.createElement("span")
+    span.style.fontSize = cs.fontSize
+    span.style.fontFamily = cs.fontFamily
+    span.style.color = cs.color
+    span.style.fontWeight = cs.fontWeight
+    span.style.fontStyle = cs.fontStyle
+    span.style.lineHeight = "1.2"
+    // Override with the new property being applied
+    span.style[prop] = value
+    span.textContent = text
+    host.innerHTML = ""
+    host.appendChild(span)
+  }
+  function applyInlineStyleToSelection(host, sel, prop, value) {
+    var range = sel.getRangeAt(0)
+    // If selection covers the whole host, flatten instead of wrapping to prevent span nesting
+    var hostRange = document.createRange()
+    hostRange.selectNodeContents(host)
+    var isWholeHost = range.compareBoundaryPoints(Range.START_TO_START, hostRange) <= 0 &&
+                      range.compareBoundaryPoints(Range.END_TO_END, hostRange) >= 0
+    if (isWholeHost) {
+      applyStyleToAllContent(host, prop, value)
+      if (prop === "fontSize") relaxContainerLayout(host)
+      return
+    }
+    var span = document.createElement("span")
+    span.style[prop] = value
+    if (prop === "fontSize") { span.style.lineHeight = "1.2" }
+    try {
+      range.surroundContents(span)
+    } catch (e) {
+      var frag = range.extractContents()
+      span.appendChild(frag)
+      range.insertNode(span)
+    }
+    var newRange = document.createRange()
+    newRange.selectNodeContents(span)
+    sel.removeAllRanges()
+    sel.addRange(newRange)
+  }
+  function applyArtifactTextStyle(message) {
+    var node = activeEditNode
+    if (!node) return
+    if (activeEditNodeClearTimer) { clearTimeout(activeEditNodeClearTimer); activeEditNodeClearTimer = null }
+    var doc = node.ownerDocument || document
+    var win = doc.defaultView || window
+    var sel = win.getSelection ? win.getSelection() : null
+    var styleCmd = message.styleCmd
+    var styleValue = message.styleValue
+    var hasSelection = hasActiveSelection(node, sel)
+    if (styleCmd === "clear") {
+      node.innerHTML = node.innerText || node.textContent || ""
+      node.removeAttribute("style")
+      sendTextHtml(node)
+      sendTextEdit(node)
+      reportNodeStyles(node)
+      return
+    }
+    if (styleCmd === "bold") {
+      if (hasSelection) { doc.execCommand("bold", false, null) }
+      else {
+        var curWeight = window.getComputedStyle(getDeepestStyledChild(node)).fontWeight
+        var isBold = curWeight === "bold" || curWeight === "700" || parseInt(curWeight, 10) >= 700
+        applyStyleToAllContent(node, "fontWeight", isBold ? "normal" : "bold")
+      }
+    } else if (styleCmd === "italic") {
+      if (hasSelection) { doc.execCommand("italic", false, null) }
+      else {
+        var curStyle = window.getComputedStyle(getDeepestStyledChild(node)).fontStyle
+        applyStyleToAllContent(node, "fontStyle", curStyle === "italic" ? "normal" : "italic")
+      }
+    } else if (styleCmd === "fontSize" && styleValue) {
+      if (hasSelection) { applyInlineStyleToSelection(node, sel, "fontSize", styleValue) }
+      else { applyStyleToAllContent(node, "fontSize", styleValue) }
+      relaxContainerLayout(node)
+    } else if (styleCmd === "fontFamily" && styleValue) {
+      if (hasSelection) { applyInlineStyleToSelection(node, sel, "fontFamily", styleValue) }
+      else { applyStyleToAllContent(node, "fontFamily", styleValue) }
+      relaxContainerLayout(node)
+    } else if (styleCmd === "color" && styleValue) {
+      if (hasSelection) { applyInlineStyleToSelection(node, sel, "color", styleValue) }
+      else { applyStyleToAllContent(node, "color", styleValue) }
+    }
+    sendTextHtml(node)
+    sendTextEdit(node)
+    reportNodeStyles(node)
+  }
+  function findEditableNode(field, optionId) {
+    var nodes = document.body ? document.body.querySelectorAll("[data-prezo-editable]") : []
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i]
+      if (n.getAttribute("data-prezo-editable") === field) {
+        if (!optionId || n.getAttribute("data-prezo-editable-option-id") === optionId) {
+          return n
+        }
+      }
+    }
+    return null
+  }
+  function applyArtifactStyleOverrides(overrides) {
+    if (!overrides || typeof overrides !== "object") return
+    var keys = Object.keys(overrides)
+    for (var k = 0; k < keys.length; k++) {
+      var nodeKey = keys[k]
+      var html = overrides[nodeKey]
+      if (typeof html !== "string" || !html) continue
+      var parts = nodeKey.split(":")
+      var field = parts[0]
+      var optionId = parts[1] || ""
+      var node = findEditableNode(field, optionId)
+      if (!node) continue
+      // For stat fields (votes, percentage, rank), the text changes on every
+      // vote update but the style should persist. Extract the style from the
+      // saved override and apply it to the current (renderer-updated) text.
+      var isStatField = field === "option-votes" || field === "option-percentage" || field === "option-rank"
+      if (isStatField) {
+        var currentText = (node.innerText || node.textContent || "").trim()
+        node.innerHTML = html
+        flattenNodeSpans(node)
+        var deepest = getDeepestStyledChild(node)
+        if (currentText) deepest.textContent = currentText
+      } else {
+        node.innerHTML = html
+        flattenNodeSpans(node)
+      }
+      if (html.indexOf("font-size") !== -1 || html.indexOf("font-family") !== -1) {
+        relaxContainerLayout(node)
+      }
+    }
+  }
+  var BROAD_TEXT_TAGS = "div, span, p, h1, h2, h3, h4, h5, h6, li, blockquote, figcaption, dt, dd, em, strong, small, mark, b, i, u, time, abbr, header, footer, section, article, aside"
+  var SKIP_EDIT_SELECTORS = "script, style, svg, canvas, img, video, picture, button, a, input, textarea, select, label, .track, .bar, .stat-votes, .stats, [data-prezo-runtime-background-layer]"
+  var COPY_FIELD_PLACEHOLDERS = { question: "Enter question…", "option-label": "Enter option…", subtitle: "Enter subtitle…", footer: "Enter footer…", "option-votes": "0", "option-percentage": "0%", "option-rank": "#1", text: "Edit text…" }
+  var editableNodes = new Set()
+  var editStyleInjected = false
+  function injectEditStyles() {
+    if (editStyleInjected) return
+    editStyleInjected = true
+    var s = document.createElement("style")
+    s.textContent = [
+      "[data-prezo-editable] { cursor: default; transition: outline 0.15s, box-shadow 0.15s; border-radius: 2px; }",
+      "[data-prezo-editable][contenteditable=true] { cursor: text; -webkit-user-modify: read-write; }",
+      "[data-prezo-editable]:hover { outline: 1.5px dashed rgba(74,124,255,0.5); outline-offset: 2px; }",
+      "[data-prezo-editable]:focus { outline: 2px solid rgba(74,124,255,0.85); outline-offset: 2px; box-shadow: 0 0 0 3px rgba(74,124,255,0.18); }",
+      "[data-prezo-editable]:empty::before { content: attr(data-prezo-placeholder); opacity: 0.4; pointer-events: none; }"
+    ].join("\n")
+    ;(document.head || document.documentElement).appendChild(s)
+  }
+  function buildNodeTokenString(node) {
+    if (!node || node.nodeType !== 1) return ""
+    var id = (node.id || "").toString().toLowerCase()
+    var rawClass = node.getAttribute ? (node.getAttribute("class") || "") : ""
+    var cls = rawClass.toString().toLowerCase()
+    // Normalize separators so "questionText" reads similarly to "question-text"
+    // by inserting a hyphen before each uppercase boundary. (Done on the raw
+    // forms before lowercasing happens.)
+    var rawId = (node.id || "").toString()
+    var normalizedId = rawId.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()
+    var normalizedClass = (node.getAttribute ? (node.getAttribute("class") || "") : "").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()
+    return id + " " + cls + " " + normalizedId + " " + normalizedClass
+  }
+  function nodeMatchesAny(node, regex) {
+    var tokens = buildNodeTokenString(node)
+    if (!tokens.trim()) return false
+    return regex.test(tokens)
+  }
+  function stripStatSuffixForMatch(text) {
+    if (!text) return ""
+    return text.replace(/\s*(votes?|points?|pts?|replies|cast)(\s+cast)?\.?$/i, "").trim()
+  }
+  var OPTION_ROW_DATA_SELECTOR = "[data-option-id], [data-prezo-option-id], [data-opt-id], [data-poll-option-id], [data-lane-id], [data-choice-id], [data-answer-id], [data-bar-id]"
+  var ROW_HEAD_TOKENS = { option: 1, opt: 1, lane: 1, choice: 1, answer: 1, options: 1, opts: 1, lanes: 1, choices: 1, answers: 1 }
+  var ROW_SUFFIX_TOKENS = { row: 1, item: 1, col: 1, cell: 1, "": 1 }
+  function splitClassTokens(value) {
+    if (!value) return []
+    var normalized = String(value).replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase()
+    return normalized.split(/[\s\-_]+/).filter(function (t) { return t.length > 0 })
+  }
+  function classListAsRowClasses(node) {
+    var out = []
+    if (!node || !node.getAttribute) return out
+    var raw = node.getAttribute("class") || ""
+    var classes = raw.split(/\s+/).filter(function (c) { return c.length > 0 })
+    var id = node.id ? [node.id] : []
+    var all = classes.concat(id)
+    for (var i = 0; i < all.length; i++) out.push(all[i])
+    return out
+  }
+  function isRowShapedClass(className) {
+    var tokens = splitClassTokens(className)
+    if (tokens.length === 0) return false
+    var hasHead = false
+    var hasNonRowToken = false
+    for (var i = 0; i < tokens.length; i++) {
+      var t = tokens[i]
+      if (ROW_HEAD_TOKENS[t]) { hasHead = true; continue }
+      if (ROW_SUFFIX_TOKENS[t]) continue
+      if (t === "poll" || t === "the") continue
+      hasNonRowToken = true
+      break
+    }
+    return hasHead && !hasNonRowToken
+  }
+  function isOptionRowElement(node) {
+    if (!node || node.nodeType !== 1) return false
+    if (node.matches && node.matches(OPTION_ROW_DATA_SELECTOR)) return true
+    var classes = classListAsRowClasses(node)
+    var hasRowShapedClass = false
+    for (var ci = 0; ci < classes.length; ci++) {
+      if (isRowShapedClass(classes[ci])) { hasRowShapedClass = true; break }
+    }
+    if (!hasRowShapedClass) return false
+    var parent = node.parentElement
+    if (!parent || !parent.children) return false
+    var ownTag = node.tagName
+    var ownClass = (node.getAttribute && node.getAttribute("class") || "").toLowerCase()
+    var peerMatches = 0
+    for (var p = 0; p < parent.children.length; p++) {
+      var peer = parent.children[p]
+      if (peer === node) { peerMatches++; continue }
+      if (peer.tagName !== ownTag) continue
+      var peerClass = (peer.getAttribute && peer.getAttribute("class") || "").toLowerCase()
+      if (peerClass && ownClass && peerClass === ownClass) { peerMatches++; continue }
+      var peerClasses = classListAsRowClasses(peer)
+      for (var pi = 0; pi < peerClasses.length; pi++) {
+        if (isRowShapedClass(peerClasses[pi])) { peerMatches++; break }
+      }
+    }
+    return peerMatches >= 2
+  }
+  function closestOptionRow(node) {
+    var cur = node
+    while (cur && cur.nodeType === 1) {
+      if (isOptionRowElement(cur)) return cur
+      cur = cur.parentElement
+    }
+    return null
+  }
+  function isInsideOptionRow(node) {
+    return closestOptionRow(node) !== null
+  }
+  var SUBTITLE_TOKEN_RE = /(subtitle|sub-title|sub_title|subheading|poll-?sub|caption|tagline|kicker)/i
+  var FOOTER_TOKEN_RE = /(total-?votes|totalvotes|poll-?footer|poll-?total|vote-?counter|votes-?counter|total-?count|footer-?text)/i
+  function isLikelySubtitleNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "subtitle") return true
+    if (isInsideOptionRow(node)) return false
+    if (nodeMatchesAny(node, SUBTITLE_TOKEN_RE)) return true
+    var text = (node.innerText || node.textContent || "").trim()
+    if (text.length > 0 && text.length <= 30 && /^(live\s+)?(poll|survey|vote|voting|quiz|q\s*&\s*a)$/i.test(text)) return true
+    return false
+  }
+  function isLikelyFooterNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "footer") return true
+    if (isInsideOptionRow(node)) return false
+    if (nodeMatchesAny(node, FOOTER_TOKEN_RE)) return true
+    var text = (node.innerText || node.textContent || "").trim()
+    if (/^\d+\s+(total\s+)?vote/i.test(text)) return true
+    if (/^\d+\s+vote(s)?\s+cast/i.test(text)) return true
+    return false
+  }
+  var VOTES_TOKEN_RE = /(vote-?count|votecount|vote-?num|votes?|opt-?votes|bar-?votes|lane-?votes|choice-?votes|answer-?votes|count)/i
+  var PERCENTAGE_TOKEN_RE = /(percentage|percent|pct)/i
+  var RANK_TOKEN_RE = /(rank|ranking|position|place)/i
+  function isLikelyVotesNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "option-votes") return true
+    if (node.hasAttribute && node.hasAttribute("data-votes")) return isInsideOptionRow(node)
+    if (!nodeMatchesAny(node, VOTES_TOKEN_RE)) return false
+    if (!isInsideOptionRow(node)) return false
+    var text = (node.innerText || node.textContent || "").trim()
+    if (!text) return true
+    var stripped = stripStatSuffixForMatch(text)
+    return /^\d+$/.test(stripped)
+  }
+  function isLikelyPercentageNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "option-percentage") return true
+    if (node.hasAttribute && node.hasAttribute("data-percentage")) return isInsideOptionRow(node)
+    if (!nodeMatchesAny(node, PERCENTAGE_TOKEN_RE)) return false
+    if (!isInsideOptionRow(node)) return false
+    var text = (node.innerText || node.textContent || "").trim()
+    if (!text) return true
+    return /^\d+(?:\.\d+)?\s*%$/.test(text)
+  }
+  function isLikelyRankNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "option-rank") return true
+    if (!nodeMatchesAny(node, RANK_TOKEN_RE)) return false
+    if (!isInsideOptionRow(node)) return false
+    var text = (node.innerText || node.textContent || "").trim()
+    if (!text) return true
+    return /^#?\d+$/.test(text)
+  }
+  var LABEL_TOKEN_RE = /(label|name|title|text|heading)/i
+  function isLikelyOptionLabelNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    if (!isInsideOptionRow(node)) return false
+    if (isLikelyVotesNode(node)) return false
+    if (isLikelyPercentageNode(node)) return false
+    if (isLikelyRankNode(node)) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "option-label") return true
+    if (nodeMatchesAny(node, LABEL_TOKEN_RE)) return true
+    var text = (node.innerText || node.textContent || "").trim()
+    if (text.length > 0 && text.length <= 200 && hasOnlyTextChildren(node)) return true
+    return false
+  }
+  function getOptionIdFromRow(node) {
+    var optionRow = closestOptionRow(node)
+    if (!optionRow) return null
+    var optionId = ""
+    if (optionRow.dataset) {
+      optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""
+    }
+    if (!optionId) {
+      var siblings = optionRow.parentElement ? Array.prototype.slice.call(optionRow.parentElement.children) : []
+      optionId = "option-" + siblings.indexOf(optionRow)
+    }
+    return optionId
+  }
+  var QUESTION_TOKEN_RE = /(\bpoll-?q(?:uestion)?\b|\bquestion(?:-?text)?\b|\bpoll-?title\b|\bpoll-?heading\b|\bpoll-?headline\b|\bheadline\b|\bheading\b|\bprompt\b)/i
+  function isLikelyQuestionNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "question") return true
+    if (isInsideOptionRow(node)) return false
+    if (isLikelySubtitleNode(node)) return false
+    if (isLikelyFooterNode(node)) return false
+    if (nodeMatchesAny(node, QUESTION_TOKEN_RE)) return true
+    var tag = (node.tagName || "").toLowerCase()
+    if (tag === "h1" || tag === "h2") return true
+    return false
+  }
+  function classifyEditableNode(node) {
+    if (!node || node.nodeType !== 1) return null
+    if (node.matches && node.matches(SKIP_EDIT_SELECTORS)) return null
+    if (node.closest && node.closest(SKIP_EDIT_SELECTORS)) return null
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "subtitle") return { field: "subtitle", optionId: "" }
+    if (explicit === "footer") return { field: "footer", optionId: "" }
+    if (explicit === "question") return { field: "question", optionId: "" }
+    if (isLikelyFooterNode(node)) return { field: "footer", optionId: "" }
+    if (isLikelySubtitleNode(node)) return { field: "subtitle", optionId: "" }
+    if (isLikelyVotesNode(node)) {
+      var vid = getOptionIdFromRow(node)
+      return vid !== null ? { field: "option-votes", optionId: vid } : null
+    }
+    if (isLikelyPercentageNode(node)) {
+      var pid = getOptionIdFromRow(node)
+      return pid !== null ? { field: "option-percentage", optionId: pid } : null
+    }
+    if (isLikelyRankNode(node)) {
+      var rid = getOptionIdFromRow(node)
+      return rid !== null ? { field: "option-rank", optionId: rid } : null
+    }
+    if (isLikelyQuestionNode(node)) return { field: "question", optionId: "" }
+    var optionRow = closestOptionRow(node)
+    if (optionRow) {
+      if (isLikelyOptionLabelNode(node)) {
+        var optionId = ""
+        if (optionRow.dataset) {
+          optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""
+        }
+        if (!optionId) {
+          var siblings = optionRow.parentElement ? Array.prototype.slice.call(optionRow.parentElement.children) : []
+          optionId = "option-" + siblings.indexOf(optionRow)
+        }
+        return { field: "option-label", optionId: optionId }
+      }
+      return null
+    }
+    var fallbackText = (node.innerText || node.textContent || "").trim()
+    if (!fallbackText) return null
+    if (!hasOnlyTextChildren(node)) return null
+    var stableId = computeStableTextId(node)
+    if (stableId) return { field: "text", optionId: stableId }
+    return null
+  }
+  function buildNodeStablePath(node) {
+    var parts = []
+    var cur = node
+    var depth = 0
+    while (cur && cur.nodeType === 1 && cur !== document.body && depth < 16) {
+      var parent = cur.parentNode
+      var idx = 0
+      if (parent && parent.children) {
+        for (var ci = 0; ci < parent.children.length; ci++) {
+          if (parent.children[ci] === cur) { idx = ci; break }
+        }
+      }
+      parts.unshift((cur.tagName || "").toLowerCase() + idx)
+      cur = parent
+      depth += 1
+    }
+    return parts.join(">")
+  }
+  function hashStringToBase36(input) {
+    var h = 5381
+    for (var i = 0; i < input.length; i++) {
+      h = ((h << 5) + h + input.charCodeAt(i)) | 0
+    }
+    if (h < 0) h = -h
+    return h.toString(36)
+  }
+  function computeStableTextId(node) {
+    var existing = node.getAttribute && node.getAttribute("data-prezo-text-id")
+    if (existing) return existing
+    var path = buildNodeStablePath(node)
+    if (!path) return ""
+    return "t" + hashStringToBase36(path)
+  }
+  function isInteractiveAncestor(node) {
+    return node.closest ? !!node.closest("button, a[href], input, textarea, select, label, [role=button], [contenteditable=false]") : false
+  }
+  function hasOnlyTextChildren(node) {
+    if (!node || !node.childNodes) return false
+    var hasText = false
+    for (var i = 0; i < node.childNodes.length; i++) {
+      var child = node.childNodes[i]
+      if (child.nodeType === 1) {
+        var tag = (child.tagName || "").toLowerCase()
+        if (tag !== "span" && tag !== "em" && tag !== "strong" && tag !== "b" && tag !== "i" && tag !== "u" && tag !== "mark" && tag !== "small" && tag !== "br") {
+          return false
+        }
+      } else if (child.nodeType === 3) {
+        if (child.nodeValue && child.nodeValue.trim()) hasText = true
+      }
+    }
+    return hasText
+  }
+  var suppressNextRender = false
+  var activeEditNode = null
+  var activeEditNodeClearTimer = null
+  function reportNodeStyles(node) {
+    var field = node.getAttribute("data-prezo-editable") || "question"
+    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""
+    var styleTarget = getDeepestStyledChild(node)
+    var computed = window.getComputedStyle(styleTarget)
+    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, {
+      field: field, optionId: optionId, active: true,
+      color: computed.color || "",
+      fontSize: computed.fontSize || "",
+      fontFamily: computed.fontFamily || ""
+    })
+  }
+  function handleEditFocus(e) {
+    var node = e.target
+    if (activeEditNodeClearTimer) { clearTimeout(activeEditNodeClearTimer); activeEditNodeClearTimer = null }
+    activeEditNode = node
+    suppressNextRender = true
+    var field = node.getAttribute("data-prezo-editable") || "question"
+    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""
+    var key = snapshotKey(field, optionId)
+    var currentText = (node.innerText || node.textContent || "").replace(/\n/g, " ").trim()
+    if (!Object.prototype.hasOwnProperty.call(preEditTextByKey, key)) {
+      preEditTextByKey[key] = currentText
+    }
+    if (!Object.prototype.hasOwnProperty.call(preEditHtmlByKey, key)) {
+      preEditHtmlByKey[key] = node.innerHTML || ""
+    }
+    var styleTarget = getDeepestStyledChild(node)
+    var computed = window.getComputedStyle(styleTarget)
+    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, {
+      field: field,
+      optionId: optionId,
+      active: true,
+      color: computed.color || "",
+      fontSize: computed.fontSize || "",
+      fontFamily: computed.fontFamily || ""
+    })
+  }
+  function handleEditBlur(e) {
+    var node = e.target
+    setTimeout(function () { suppressNextRender = false }, 100)
+    sendTextEdit(node)
+    sendTextHtml(node)
+    var field = node.getAttribute("data-prezo-editable") || "question"
+    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""
+    var key = snapshotKey(field, optionId)
+    delete preEditTextByKey[key]
+    delete preEditHtmlByKey[key]
+    postParentMessage(TEXT_FOCUS_MESSAGE_TYPE, { field: field, active: false })
+    if (textEditNode === node) {
+      textEditNode = null
+      try { node.removeAttribute("contenteditable") } catch (e2) {}
+    }
+    // Keep activeEditNode alive for 2s so toolbar style commands can still target it
+    activeEditNodeClearTimer = setTimeout(function () {
+      activeEditNodeClearTimer = null
+      activeEditNode = null
+    }, 2000)
+  }
+  function handleEditInput(e) {
+    sendTextEdit(e.target)
+  }
+  function handleEditKeydown(e) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      e.target.blur()
+    }
+    if (e.key === "Escape") {
+      e.preventDefault()
+      e.target.blur()
+    }
+  }
+  function handleEditPaste(e) {
+    e.preventDefault()
+    var text = (e.clipboardData || window.clipboardData || { getData: function () { return "" } }).getData("text/plain")
+    if (text) document.execCommand("insertText", false, text)
+  }
+  function sendTextEdit(node) {
+    if (!node) return
+    var field = node.getAttribute("data-prezo-editable") || "question"
+    var optionId = node.getAttribute("data-prezo-editable-option-id") || ""
+    var text = (node.innerText || node.textContent || "").replace(/\n/g, " ").trim()
+    var key = snapshotKey(field, optionId)
+    var priorText = Object.prototype.hasOwnProperty.call(preEditTextByKey, key) ? preEditTextByKey[key] : null
+    postParentMessage(TEXT_EDIT_MESSAGE_TYPE, { field: field, optionId: optionId, text: text, priorText: priorText })
+  }
+  function isStatNode(node) {
+    return isLikelyVotesNode(node) || isLikelyPercentageNode(node) || isLikelyRankNode(node)
+  }
+  function passesScanGate(node, classification) {
+    if (!node || !classification) return false
+    var field = classification.field
+    var isCopyField = field === "subtitle" || field === "footer"
+    var isStat = field === "option-votes" || field === "option-percentage" || field === "option-rank"
+    var isPollField = field === "question" || field === "option-label"
+    var maxChildren = isCopyField ? 8 : (isStat ? 3 : (isPollField ? 4 : 3))
+    var maxTextLen = isCopyField ? 800 : (isStat ? 40 : (isPollField ? 500 : 800))
+    if (node.children && node.children.length > maxChildren) return false
+    var text = (node.innerText || node.textContent || "").trim()
+    var allowEmpty = isCopyField || isPollField || isStat
+    if (!text) return allowEmpty
+    if (text.length > maxTextLen) return false
+    return true
+  }
+  function tryScanNode(node) {
+    if (!node || node.nodeType !== 1) return
+    if (editableNodes.has(node)) return
+    if (node.matches && node.matches(SKIP_EDIT_SELECTORS)) return
+    if (node.closest && node.closest(SKIP_EDIT_SELECTORS)) return
+    var classification = classifyEditableNode(node)
+    if (!classification) return
+    if (!passesScanGate(node, classification)) return
+    if (hasDescendantWithSameField(node, classification.field)) return
+    applyClassificationToNode(node, classification)
+  }
+  function hasDescendantWithSameField(node, field) {
+    if (!node || !node.children) return false
+    var queue = []
+    for (var i = 0; i < node.children.length; i++) queue.push(node.children[i])
+    var seen = 0
+    while (queue.length && seen < 50) {
+      seen += 1
+      var cur = queue.shift()
+      if (!cur || cur.nodeType !== 1) continue
+      if (cur.matches && cur.matches(SKIP_EDIT_SELECTORS)) continue
+      var sub = classifyEditableNode(cur)
+      if (sub && sub.field === field) return true
+      if (cur.children) {
+        for (var k = 0; k < cur.children.length; k++) queue.push(cur.children[k])
+      }
+    }
+    return false
+  }
+  function applyClassificationToNode(node, classification) {
+    if (!node || editableNodes.has(node)) return
+    editableNodes.add(node)
+    node.setAttribute("data-prezo-editable", classification.field)
+    if (classification.optionId) {
+      node.setAttribute("data-prezo-editable-option-id", classification.optionId)
+    }
+    if (classification.field === "text") {
+      node.setAttribute("data-prezo-text-id", classification.optionId)
+      node.setAttribute("data-prezo-placeholder", "Edit text…")
+    } else {
+      node.setAttribute("data-prezo-placeholder", COPY_FIELD_PLACEHOLDERS[classification.field] || "Edit…")
+    }
+    node.addEventListener("focus", handleEditFocus)
+    node.addEventListener("blur", handleEditBlur)
+    node.addEventListener("input", handleEditInput)
+    node.addEventListener("keydown", handleEditKeydown)
+    node.addEventListener("paste", handleEditPaste)
+  }
+  function scanAndEnableEditing() {
+    injectEditStyles()
+    if (!document.body) return
+    var nodes = document.body.querySelectorAll(BROAD_TEXT_TAGS)
+    var maxScan = 600
+    for (var i = 0; i < nodes.length && i < maxScan; i++) {
+      tryScanNode(nodes[i])
+    }
+  }
+  function nodeHasStyledContent(node) {
+    return node.querySelector("span[style], b, strong, i, em, font") !== null
+  }
+  function updateTextPreservingStyle(node, newText) {
+    // If the node has styled spans (manual edits), update only the text inside
+    // the deepest styled child so the style wrapper is preserved.
+    if (nodeHasStyledContent(node)) {
+      var deepest = getDeepestStyledChild(node)
+      deepest.textContent = newText
+      return
+    }
+    node.textContent = newText
+  }
+  function applyArtifactCopyFromMeta(payload) {
+    var copy = payload && payload.meta && payload.meta.artifactCopy
+    if (!copy || typeof copy !== "object") return
+    if (!document.body) return
+    var subtitleText = typeof copy.subtitle === "string" ? copy.subtitle : null
+    var footerSuffix = typeof copy.footerSuffix === "string" ? copy.footerSuffix : null
+    var footerLegacy = typeof copy.footer === "string" ? copy.footer : null
+    var textOverrides = copy.textOverrides && typeof copy.textOverrides === "object" ? copy.textOverrides : null
+    var totalVotes = payload.totalVotes
+    if (typeof totalVotes !== "number" || !isFinite(totalVotes)) totalVotes = 0
+    if (subtitleText !== null) {
+      var subtitleNodes = document.body.querySelectorAll("[data-prezo-editable=subtitle]")
+      for (var si = 0; si < subtitleNodes.length; si++) {
+        updateTextPreservingStyle(subtitleNodes[si], subtitleText)
+      }
+    }
+    if (footerSuffix !== null || footerLegacy !== null) {
+      var suffix = footerSuffix !== null ? footerSuffix : footerLegacy
+      var footerNodes = document.body.querySelectorAll("[data-prezo-editable=footer]")
+      for (var fi = 0; fi < footerNodes.length; fi++) {
+        var splitCount = footerNodes[fi].querySelector("[data-prezo-poll-total-count]")
+        if (splitCount) {
+          var textSibling = splitCount.nextSibling
+          if (textSibling && textSibling.nodeType === 3) textSibling.textContent = " " + suffix
+        } else {
+          updateTextPreservingStyle(footerNodes[fi], String(totalVotes) + " " + suffix)
+        }
+      }
+    }
+    if (textOverrides) {
+      var overrideIds = Object.keys(textOverrides)
+      for (var ti = 0; ti < overrideIds.length; ti++) {
+        var stableId = overrideIds[ti]
+        var savedText = textOverrides[stableId]
+        if (typeof savedText !== "string") continue
+        // Look up by attribute. Skip nodes that already match (avoids
+        // clobbering an in-progress edit when the user is typing).
+        var attrSelector = "[data-prezo-text-id=\"" + stableId.replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\" i]"
+        var targets
+        try { targets = document.body.querySelectorAll(attrSelector) } catch (e) { continue }
+        for (var tj = 0; tj < targets.length; tj++) {
+          var target = targets[tj]
+          if (target === activeEditNode) continue
+          var existing = (target.innerText || target.textContent || "").trim()
+          if (existing === savedText.trim()) continue
+          updateTextPreservingStyle(target, savedText)
+        }
+      }
+    }
+  }
+  function applyArtifactCopyInit() {
+    var pollState = window.__PREZO_POLL_STATE
+    if (pollState) applyArtifactCopyFromMeta(pollState)
+  }
+  var STAT_FIELDS = { "option-votes": 1, "option-percentage": 1, "option-rank": 1 }
+  function snapshotEditableNodes() {
+    var snap = {}
+    var nodes = document.body ? document.body.querySelectorAll("[data-prezo-editable]") : []
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i]
+      var field = n.getAttribute("data-prezo-editable") || ""
+      var optionId = n.getAttribute("data-prezo-editable-option-id") || ""
+      var key = optionId ? field + ":" + optionId : field
+      snap[key] = { html: n.innerHTML, field: field }
+    }
+    return snap
+  }
+  function restoreStyledNodes(snap) {
+    if (!snap || !document.body) return
+    // Merge with _lastKnownOverrides (host-pushed overrides may be newer)
+    var overrides = _lastKnownOverrides || {}
+    var merged = {}
+    var snapKeys = Object.keys(snap)
+    for (var si = 0; si < snapKeys.length; si++) {
+      var sk = snapKeys[si]
+      merged[sk] = snap[sk]
+    }
+    var overrideKeys = Object.keys(overrides)
+    for (var oi = 0; oi < overrideKeys.length; oi++) {
+      var ok = overrideKeys[oi]
+      if (!merged[ok]) {
+        var oParts = ok.split(":")
+        merged[ok] = { html: overrides[ok], field: oParts[0] }
+      }
+    }
+    var keys = Object.keys(merged)
+    for (var k = 0; k < keys.length; k++) {
+      var key = keys[k]
+      var entry = merged[key]
+      var savedHtml = entry.html
+      if (!savedHtml || typeof savedHtml !== "string") continue
+      // Skip nodes that had no style overrides (plain text, no spans)
+      if (savedHtml.indexOf("<") === -1) continue
+      var parts = key.split(":")
+      var field = parts[0]
+      var optionId = parts[1] || ""
+      var node = findEditableNode(field, optionId)
+      if (!node) continue
+      var isStat = STAT_FIELDS[field]
+      if (isStat) {
+        // Stat nodes: keep renderer text, restore style wrapper
+        var rendererText = (node.innerText || node.textContent || "").trim()
+        node.innerHTML = savedHtml
+        flattenNodeSpans(node)
+        var deepest = getDeepestStyledChild(node)
+        if (rendererText) deepest.textContent = rendererText
+      } else {
+        // Non-stat nodes: restore full styled HTML
+        node.innerHTML = savedHtml
+        flattenNodeSpans(node)
+      }
+      if (savedHtml.indexOf("font-size") !== -1 || savedHtml.indexOf("font-family") !== -1) {
+        relaxContainerLayout(node)
+      }
+    }
+  }
+  var _originalInvokeRenderHook = invokeRenderHook
+  invokeRenderHook = function (payload) {
+    if (suppressNextRender && activeEditNode) {
+      return
+    }
+    // Snapshot styled nodes BEFORE the renderer potentially destroys them
+    var snap = snapshotEditableNodes()
+    _originalInvokeRenderHook(payload)
+    // Synchronously restore styled nodes BEFORE the browser paints
+    applyArtifactCopyFromMeta(payload)
+    scanAndEnableEditing()
+    restoreStyledNodes(snap)
+    if (lastKnownPositionOverrides && Object.keys(lastKnownPositionOverrides).length > 0) {
+      applyPositionOverrides(lastKnownPositionOverrides)
+    }
+    if (lastKnownHiddenOverrides && Object.keys(lastKnownHiddenOverrides).length > 0) {
+      applyHiddenOverrides(lastKnownHiddenOverrides)
+    }
+    refreshSelectionOverlay()
+  }
+  var selectionOverlayEl = null
+  var selectionLabelEl = null
+  var selectionHandleEls = null
+  var selectedNode = null
+  var selectedKind = ""
+  function ensureSelectionOverlay() {
+    if (selectionOverlayEl) return
+    if (!document.body) return
+    selectionOverlayEl = document.createElement("div")
+    selectionOverlayEl.setAttribute("data-prezo-selection-overlay", "true")
+    selectionOverlayEl.style.cssText = [
+      "position:absolute",
+      "pointer-events:none",
+      "border:1.5px solid rgba(155,89,182,0.95)",
+      "box-shadow:0 0 0 1px rgba(155,89,182,0.25), 0 0 12px rgba(155,89,182,0.35)",
+      "border-radius:2px",
+      "z-index:2147483646",
+      "display:none"
+    ].join(";")
+    selectionOverlayEl.style.transition = "left 80ms linear, top 80ms linear, width 80ms linear, height 80ms linear"
+    selectionLabelEl = document.createElement("div")
+    selectionLabelEl.setAttribute("data-prezo-selection-label", "true")
+    selectionLabelEl.style.cssText = [
+      "position:absolute",
+      "top:-22px",
+      "left:0",
+      "padding:2px 8px",
+      "background:rgba(155,89,182,0.95)",
+      "color:#fff",
+      "font:600 11px/1.4 'Segoe UI',sans-serif",
+      "letter-spacing:0.02em",
+      "white-space:nowrap",
+      "border-radius:3px",
+      "pointer-events:none",
+      "max-width:280px",
+      "overflow:hidden",
+      "text-overflow:ellipsis"
+    ].join(";")
+    selectionOverlayEl.appendChild(selectionLabelEl)
+    var HANDLE_DIRS = ["nw","n","ne","e","se","s","sw","w"]
+    var HANDLE_CURSORS = { nw: "nwse-resize", n: "ns-resize", ne: "nesw-resize", e: "ew-resize", se: "nwse-resize", s: "ns-resize", sw: "nesw-resize", w: "ew-resize" }
+    selectionHandleEls = {}
+    for (var hi = 0; hi < HANDLE_DIRS.length; hi++) {
+      var dir = HANDLE_DIRS[hi]
+      var handle = document.createElement("div")
+      handle.setAttribute("data-prezo-resize-handle", dir)
+      handle.style.cssText = [
+        "position:absolute",
+        "width:10px",
+        "height:10px",
+        "background:#fff",
+        "border:1.5px solid rgba(155,89,182,0.95)",
+        "border-radius:2px",
+        "box-shadow:0 0 0 1px rgba(0,0,0,0.12)",
+        "pointer-events:auto",
+        "z-index:2147483647",
+        "cursor:" + HANDLE_CURSORS[dir]
+      ].join(";")
+      selectionOverlayEl.appendChild(handle)
+      selectionHandleEls[dir] = handle
+    }
+    document.body.appendChild(selectionOverlayEl)
+  }
+  function getDocumentRect(el) {
+    if (!el || !el.getBoundingClientRect) return null
+    var rect = el.getBoundingClientRect()
+    var docEl = document.documentElement
+    var scrollX = (window.scrollX || (docEl && docEl.scrollLeft) || 0)
+    var scrollY = (window.scrollY || (docEl && docEl.scrollTop) || 0)
+    return {
+      x: rect.left + scrollX,
+      y: rect.top + scrollY,
+      w: rect.width,
+      h: rect.height
+    }
+  }
+  function positionSelectionOverlay(node) {
+    if (!selectionOverlayEl || !node) return
+    var r = getDocumentRect(node)
+    if (!r || r.w <= 0 || r.h <= 0) {
+      selectionOverlayEl.style.display = "none"
+      return
+    }
+    selectionOverlayEl.style.display = "block"
+    selectionOverlayEl.style.left = r.x + "px"
+    selectionOverlayEl.style.top = r.y + "px"
+    selectionOverlayEl.style.width = r.w + "px"
+    selectionOverlayEl.style.height = r.h + "px"
+    positionSelectionHandles(r.w, r.h)
+  }
+  function positionSelectionHandles(w, h) {
+    if (!selectionHandleEls) return
+    var midX = (w / 2) - 5
+    var midY = (h / 2) - 5
+    var rightX = w - 5
+    var botY = h - 5
+    function place(dir, x, y) {
+      var el = selectionHandleEls[dir]
+      if (!el) return
+      el.style.left = x + "px"
+      el.style.top = y + "px"
+      el.style.display = isResizableSelection(selectedNode, selectedKind) ? "block" : "none"
+    }
+    place("nw", -5, -5)
+    place("n", midX, -5)
+    place("ne", rightX, -5)
+    place("e", rightX, midY)
+    place("se", rightX, botY)
+    place("s", midX, botY)
+    place("sw", -5, botY)
+    place("w", -5, midY)
+  }
+  function isResizableSelection(node, kind) {
+    if (!node || !kind) return false
+    if (kind === "scene") return false
+    return true
+  }
+  function buildOptionRowLabel(node) {
+    var row = isOptionRowElement(node) ? node : null
+    if (!row) return ""
+    var parent = row.parentElement
+    if (!parent || !parent.children) return "Option Row"
+    var idx = 0
+    for (var i = 0; i < parent.children.length; i++) {
+      if (parent.children[i] === row) { idx = i; break }
+    }
+    return "Option Row " + (idx + 1)
+  }
+  function getRowOptionId(node) {
+    var row = isOptionRowElement(node) ? node : null
+    if (!row) return ""
+    if (row.dataset) {
+      var d = row.dataset
+      var id = d.optionId || d.prezoOptionId || d.optId || d.pollOptionId || d.laneId || d.choiceId || d.answerId || d.barId || ""
+      if (id) return id
+    }
+    var parent = row.parentElement
+    if (!parent || !parent.children) return ""
+    for (var i = 0; i < parent.children.length; i++) {
+      if (parent.children[i] === row) return "option-" + i
+    }
+    return ""
+  }
+  var OPTIONS_CONTAINER_TOKEN_RE = /(options-?container|lanes-?container|choices-?container|answers-?container|bars-?container|options-?list|choices-?list|lanes-?list)/i
+  function isOptionsContainer(node) {
+    if (!node || node.nodeType !== 1) return false
+    if (nodeMatchesAny(node, OPTIONS_CONTAINER_TOKEN_RE)) return true
+    if (!node.children || node.children.length < 2) return false
+    var rowCount = 0
+    for (var i = 0; i < node.children.length; i++) {
+      if (isOptionRowElement(node.children[i])) rowCount++
+    }
+    return rowCount >= 2 && rowCount === node.children.length
+  }
+  function classifySelectableGroup(node) {
+    if (!node || node.nodeType !== 1) return null
+    if (node.matches) {
+      if (node.matches("[data-prezo-scene-root]")) return { kind: "scene", id: "", label: "Scene", optionId: "" }
+      if (node.matches("[data-prezo-background-layer]")) return { kind: "background", id: node.id || "", label: "Background Layer", optionId: "" }
+      if (node.matches("[data-prezo-foreground-layer]")) return { kind: "foreground", id: node.id || "", label: "Foreground Layer", optionId: "" }
+    }
+    if (isLikelyQuestionNode(node)) return { kind: "poll-question", id: node.id || "", label: "Poll Question", optionId: "" }
+    if (isLikelyFooterNode(node)) return { kind: "poll-footer", id: node.id || "", label: "Total Votes", optionId: "" }
+    if (isLikelySubtitleNode(node)) return { kind: "poll-subtitle", id: node.id || "", label: "Subtitle", optionId: "" }
+    if (isOptionRowElement(node)) {
+      return { kind: "option-row", id: getRowOptionId(node), label: buildOptionRowLabel(node), optionId: getRowOptionId(node) }
+    }
+    if (isOptionsContainer(node)) return { kind: "options-container", id: node.id || "", label: "Options Container", optionId: "" }
+    if (isLikelyVotesNode(node)) return { kind: "option-votes", id: node.id || "", label: "Option Votes", optionId: getOptionIdFromRow(node) || "" }
+    if (isLikelyPercentageNode(node)) return { kind: "option-percentage", id: node.id || "", label: "Option Percentage", optionId: getOptionIdFromRow(node) || "" }
+    if (isLikelyRankNode(node)) return { kind: "option-rank", id: node.id || "", label: "Option Rank", optionId: getOptionIdFromRow(node) || "" }
+    if (isLikelyOptionLabelNode(node)) return { kind: "option-label", id: node.id || "", label: "Option Label", optionId: getOptionIdFromRow(node) || "" }
+    var explicit = node.getAttribute && node.getAttribute("data-prezo-editable")
+    if (explicit === "text") {
+      var tid = node.getAttribute("data-prezo-text-id") || ""
+      return { kind: "text", id: tid, label: "Text", optionId: "" }
+    }
+    return null
+  }
+  function buildSelectionChain(node) {
+    var chain = []
+    var cur = node
+    var depth = 0
+    while (cur && cur.nodeType === 1 && depth < 32) {
+      if (cur.matches && cur.matches("[data-prezo-selection-overlay], [data-prezo-selection-label]")) {
+        cur = cur.parentElement
+        depth++
+        continue
+      }
+      var c = classifySelectableGroup(cur)
+      if (c) chain.push({ node: cur, classification: c })
+      cur = cur.parentElement
+      depth++
+    }
+    return chain
+  }
+  function pickSelectionFromChain(chain, clickTarget) {
+    if (!chain.length) return null
+    return chain[0]
+  }
+  var drillScopeNode = null
+  function buildElementLabel(node) {
+    var tag = (node.tagName || "").toLowerCase()
+    if (!tag) return "Element"
+    if (node.id) return tag + "#" + node.id
+    var raw = node.getAttribute ? (node.getAttribute("class") || "") : ""
+    var firstClass = raw.split(/\s+/).filter(function (c) { return c.length > 0 })[0]
+    if (firstClass) return tag + "." + firstClass
+    return tag
+  }
+  function buildElementId(node) {
+    var stable = computeStableTextId(node)
+    return stable || ""
+  }
+  function cssIdentEscape(value) {
+    if (typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") {
+      try { return CSS.escape(String(value)) } catch (e) {}
+    }
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, function (ch) { return "\\" + ch })
+  }
+  function buildElementCssLabel(node) {
+    if (!node || node.nodeType !== 1) return ""
+    var tag = (node.tagName || "").toLowerCase()
+    if (!tag) return ""
+    if (node.id) return tag + "#" + cssIdentEscape(node.id)
+    var raw = node.getAttribute ? (node.getAttribute("class") || "") : ""
+    var firstClass = raw.split(/\s+/).filter(function (c) { return c.length > 0 })[0]
+    if (firstClass) return tag + "." + cssIdentEscape(firstClass)
+    return tag
+  }
+  var SKIP_SELECT_SELECTORS = "script, style, [data-prezo-selection-overlay], [data-prezo-selection-label], [data-prezo-context-menu]"
+  function classifyElementFallback(node) {
+    if (!node || node.nodeType !== 1) return null
+    if (node.matches && node.matches(SKIP_SELECT_SELECTORS)) return null
+    if (node.closest && node.closest(SKIP_SELECT_SELECTORS)) return null
+    var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null
+    return { kind: "element", id: buildElementId(node), label: buildElementLabel(node), optionId: "" }
+  }
+  function findDeepestInScope(parent, pointTarget) {
+    if (!parent) return null
+    var candidate = pointTarget && parent.contains && parent.contains(pointTarget) ? pointTarget : null
+    if (!candidate) {
+      var children = parent.children || []
+      var bestArea = 0
+      var best = null
+      for (var i = 0; i < children.length; i++) {
+        var c = children[i]
+        var r = c.getBoundingClientRect ? c.getBoundingClientRect() : null
+        if (!r) continue
+        var area = (r.width || 0) * (r.height || 0)
+        if (area > bestArea) { bestArea = area; best = c }
+      }
+      candidate = best
+    }
+    if (!candidate) return null
+    var cur = candidate
+    var safety = 0
+    while (cur && safety < 8) {
+      var children = cur.children || []
+      if (!children.length) break
+      var curRect = cur.getBoundingClientRect && cur.getBoundingClientRect()
+      var onlyChild = null
+      for (var k = 0; k < children.length; k++) {
+        var ch = children[k]
+        if (ch.matches && ch.matches(SKIP_SELECT_SELECTORS)) continue
+        var chRect = ch.getBoundingClientRect && ch.getBoundingClientRect()
+        if (!chRect || chRect.width <= 0 || chRect.height <= 0) continue
+        if (onlyChild) { onlyChild = null; break }
+        onlyChild = { node: ch, rect: chRect }
+      }
+      if (!onlyChild) break
+      if (!curRect) break
+      var coverage = ((onlyChild.rect.width || 0) * (onlyChild.rect.height || 0)) / Math.max(1, (curRect.width || 1) * (curRect.height || 1))
+      if (coverage < 0.6) break
+      cur = onlyChild.node
+      safety++
+    }
+    var semantic = classifySelectableGroup(cur)
+    if (semantic) return { node: cur, classification: semantic }
+    var fallback = classifyElementFallback(cur)
+    if (fallback) return { node: cur, classification: fallback }
+    return null
+  }
+  var textEditNode = null
+  function isEditableTextNode(node) {
+    if (!node || node.nodeType !== 1) return false
+    return node.hasAttribute && node.hasAttribute("data-prezo-editable")
+  }
+  function enterTextEditMode(node) {
+    if (!node || textEditNode === node) return
+    if (!isEditableTextNode(node)) return
+    exitTextEditMode()
+    textEditNode = node
+    node.setAttribute("contenteditable", "true")
+    try { node.focus({ preventScroll: true }) } catch (e) { try { node.focus() } catch (e2) {} }
+    try {
+      var range = document.createRange()
+      range.selectNodeContents(node)
+      range.collapse(false)
+      var sel = window.getSelection && window.getSelection()
+      if (sel) { sel.removeAllRanges(); sel.addRange(range) }
+    } catch (e3) {}
+  }
+  function exitTextEditMode() {
+    if (!textEditNode) return
+    var node = textEditNode
+    textEditNode = null
+    try { node.removeAttribute("contenteditable") } catch (e) {}
+    if (document.activeElement === node) {
+      try { node.blur() } catch (e2) {}
+    }
+  }
+  function setSelectedNode(node, classification) {
+    if (textEditNode && textEditNode !== node) {
+      exitTextEditMode()
+    }
+    selectedNode = node
+    selectedKind = classification ? classification.kind : ""
+    ensureSelectionOverlay()
+    if (!node) {
+      if (selectionOverlayEl) selectionOverlayEl.style.display = "none"
+      postParentMessage(ELEMENT_SELECTED_MESSAGE_TYPE, { kind: "", id: "", label: "", optionId: "", rect: null })
+      return
+    }
+    if (selectionLabelEl) selectionLabelEl.textContent = classification.label || classification.kind
+    positionSelectionOverlay(node)
+    postParentMessage(ELEMENT_SELECTED_MESSAGE_TYPE, {
+      kind: classification.kind,
+      id: classification.id || "",
+      label: classification.label || classification.kind,
+      optionId: classification.optionId || "",
+      rect: getDocumentRect(node)
+    })
+  }
+  function refreshSelectionOverlay() {
+    if (!selectedNode || !document.body || !document.body.contains(selectedNode)) {
+      if (selectedNode) setSelectedNode(null, null)
+      return
+    }
+    positionSelectionOverlay(selectedNode)
+  }
+  function handleSelectionClick(event) {
+    var target = event && event.target
+    if (!target) return
+    if (target === selectionOverlayEl || target === selectionLabelEl) return
+    if (target.closest && target.closest("[data-prezo-context-menu]")) return
+    if (textEditNode && textEditNode.contains && textEditNode.contains(target)) return
+    if (drillScopeNode) {
+      if (drillScopeNode === target || (drillScopeNode.contains && drillScopeNode.contains(target))) {
+        var drilled = findDeepestInScope(drillScopeNode, target)
+        if (drilled) {
+          maybePromoteSelection(drilled.node, drilled.classification)
+          return
+        }
+      } else {
+        drillScopeNode = null
+      }
+    }
+    var chain = buildSelectionChain(target)
+    var pick = pickSelectionFromChain(chain, target)
+    if (!pick) {
+      var fallback = classifyElementFallback(target)
+      if (fallback) {
+        maybePromoteSelection(target, fallback)
+        return
+      }
+      setSelectedNode(null, null)
+      return
+    }
+    maybePromoteSelection(pick.node, pick.classification)
+  }
+  function maybePromoteSelection(node, classification) {
+    var sameAsCurrent = selectedNode && node === selectedNode
+    if (sameAsCurrent && isEditableTextNode(node)) {
+      enterTextEditMode(node)
+      return
+    }
+    setSelectedNode(node, classification)
+  }
+  var contextMenuEl = null
+  function ensureContextMenu() {
+    if (contextMenuEl) return
+    if (!document.body) return
+    contextMenuEl = document.createElement("div")
+    contextMenuEl.setAttribute("data-prezo-context-menu", "true")
+    contextMenuEl.style.cssText = [
+      "position:absolute",
+      "z-index:2147483647",
+      "display:none",
+      "min-width:180px",
+      "background:#1f1730",
+      "color:#fff",
+      "border:1px solid rgba(155,89,182,0.5)",
+      "border-radius:6px",
+      "box-shadow:0 6px 24px rgba(0,0,0,0.45)",
+      "padding:4px",
+      "font:500 13px/1.4 'Segoe UI',sans-serif",
+      "user-select:none"
+    ].join(";")
+    document.body.appendChild(contextMenuEl)
+  }
+  function hideContextMenu() {
+    if (contextMenuEl) contextMenuEl.style.display = "none"
+  }
+  function buildMenuItem(label, disabled, onClick) {
+    var item = document.createElement("div")
+    item.setAttribute("data-prezo-context-menu-item", "true")
+    item.textContent = label
+    item.style.cssText = [
+      "padding:6px 10px",
+      "border-radius:4px",
+      "cursor:" + (disabled ? "default" : "pointer"),
+      "opacity:" + (disabled ? "0.45" : "1")
+    ].join(";")
+    if (!disabled) {
+      item.addEventListener("mouseenter", function () { item.style.background = "rgba(155,89,182,0.35)" })
+      item.addEventListener("mouseleave", function () { item.style.background = "transparent" })
+      item.addEventListener("click", function (e) {
+        e.preventDefault()
+        e.stopPropagation()
+        hideContextMenu()
+        onClick()
+      })
+    }
+    return item
+  }
+  function clipMenuToViewport(x, y) {
+    var docEl = document.documentElement
+    var vw = (window.innerWidth || (docEl && docEl.clientWidth) || 800)
+    var vh = (window.innerHeight || (docEl && docEl.clientHeight) || 600)
+    var mw = contextMenuEl.offsetWidth || 200
+    var mh = contextMenuEl.offsetHeight || 120
+    if (x + mw > vw) x = Math.max(0, vw - mw - 4)
+    if (y + mh > vh) y = Math.max(0, vh - mh - 4)
+    var scrollX = (window.scrollX || (docEl && docEl.scrollLeft) || 0)
+    var scrollY = (window.scrollY || (docEl && docEl.scrollTop) || 0)
+    return { x: x + scrollX, y: y + scrollY }
+  }
+  function selectInside(pointTarget) {
+    if (!selectedNode) return
+    var scope = selectedNode
+    drillScopeNode = scope
+    var pick = findDeepestInScope(scope, pointTarget)
+    if (!pick) return
+    if (pick.node === scope) return
+    setSelectedNode(pick.node, pick.classification)
+  }
+  function selectParent() {
+    if (!selectedNode) return
+    var parent = selectedNode.parentElement
+    while (parent && parent.nodeType === 1) {
+      if (parent === document.body) break
+      var sem = classifySelectableGroup(parent)
+      if (sem) {
+        drillScopeNode = null
+        setSelectedNode(parent, sem)
+        return
+      }
+      var fall = classifyElementFallback(parent)
+      if (fall) {
+        drillScopeNode = null
+        setSelectedNode(parent, fall)
+        return
+      }
+      parent = parent.parentElement
+    }
+    drillScopeNode = null
+    setSelectedNode(null, null)
+  }
+  function copyTextToClipboard(text) {
+    if (!text) return
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+        return
+      }
+    } catch (e) {}
+    var ta = document.createElement("textarea")
+    ta.value = text
+    ta.style.position = "fixed"
+    ta.style.opacity = "0"
+    document.body.appendChild(ta)
+    try { ta.select(); document.execCommand && document.execCommand("copy") } catch (e2) {}
+    if (ta.parentNode) ta.parentNode.removeChild(ta)
+  }
+  function copySelectionId() {
+    if (!selectedNode) return
+    var id = selectedNode.getAttribute("data-prezo-text-id")
+      || selectedNode.getAttribute("data-prezo-editable-option-id")
+      || (selectedNode.dataset && (selectedNode.dataset.optionId || selectedNode.dataset.prezoOptionId))
+      || selectedNode.id
+      || computeStableTextId(selectedNode)
+    copyTextToClipboard(id || "")
+  }
+  function showContextMenuAt(pageX, pageY, pointTarget) {
+    ensureContextMenu()
+    if (!contextMenuEl) return
+    while (contextMenuEl.firstChild) contextMenuEl.removeChild(contextMenuEl.firstChild)
+    var hasSelection = !!selectedNode
+    var canSelectInside = hasSelection && selectedNode.children && selectedNode.children.length > 0
+    var canSelectParent = hasSelection && selectedNode.parentElement && selectedNode.parentElement !== document.body
+    contextMenuEl.appendChild(buildMenuItem("Select inside", !canSelectInside, function () { selectInside(pointTarget) }))
+    contextMenuEl.appendChild(buildMenuItem("Select parent", !canSelectParent, function () { selectParent() }))
+    contextMenuEl.appendChild(buildMenuItem("Copy element id", !hasSelection, function () { copySelectionId() }))
+    var canDelete = hasSelection && isDeletableSelection(selectedNode, selectedKind)
+    contextMenuEl.appendChild(buildMenuItem("Delete", !canDelete, function () { deleteSelectedElement() }))
+    contextMenuEl.style.display = "block"
+    contextMenuEl.style.left = "0px"
+    contextMenuEl.style.top = "0px"
+    var pos = clipMenuToViewport(pageX, pageY)
+    contextMenuEl.style.left = pos.x + "px"
+    contextMenuEl.style.top = pos.y + "px"
+  }
+  function handleContextMenu(event) {
+    if (!event) return
+    var target = event.target
+    if (!target) return
+    if (target.closest && target.closest("[data-prezo-context-menu]")) return
+    event.preventDefault()
+    if (!selectedNode) {
+      var chain = buildSelectionChain(target)
+      var pick = pickSelectionFromChain(chain, target) || (classifyElementFallback(target) ? { node: target, classification: classifyElementFallback(target) } : null)
+      if (pick) setSelectedNode(pick.node, pick.classification)
+    }
+    showContextMenuAt(event.clientX, event.clientY, target)
+  }
+  function handleGlobalClickForMenu(event) {
+    if (!contextMenuEl || contextMenuEl.style.display === "none") return
+    var t = event && event.target
+    if (t && t.closest && t.closest("[data-prezo-context-menu]")) return
+    hideContextMenu()
+  }
+  function handleEscapeForMenu(event) {
+    if (event && event.key === "Escape") {
+      hideContextMenu()
+      drillScopeNode = null
+      cancelDragInProgress()
+    }
+  }
+  function isTypingContext() {
+    if (textEditNode) return true
+    var ae = document.activeElement
+    if (!ae) return false
+    if (ae.isContentEditable) return true
+    var tag = (ae.tagName || "").toLowerCase()
+    return tag === "input" || tag === "textarea" || tag === "select"
+  }
+  function handleDeleteKey(event) {
+    if (!event || event.defaultPrevented) return
+    var key = event.key
+    if (key !== "Delete" && key !== "Backspace") return
+    if (!selectedNode) return
+    if (!isDeletableSelection(selectedNode, selectedKind)) return
+    if (isTypingContext()) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    event.preventDefault()
+    hideContextMenu()
+    deleteSelectedElement()
+  }
+  function handleHistoryShortcut(event) {
+    if (!event || event.defaultPrevented) return
+    var mod = event.metaKey || event.ctrlKey
+    if (!mod) return
+    var key = (event.key || "").toLowerCase()
+    if (key !== "z" && key !== "y") return
+    if (textEditNode && document.activeElement === textEditNode) return
+    event.preventDefault()
+    var action = (key === "y") ? "redo" : (event.shiftKey ? "redo" : "undo")
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "prezo-history-shortcut", action: action, instanceId: INSTANCE_ID }, "*")
+    }
+  }
+  var POSITION_OVERRIDE_PREFIX = "__prezo_pos:"
+  var SIZE_OVERRIDE_PREFIX = "__prezo_size:"
+  var lastKnownPositionOverrides = {}
+  var lastKnownSizeOverrides = {}
+  var positionBaseTransforms = {}
+  var dragState = null
+  var resizeState = null
+  function isMovableSelection(node, kind) {
+    if (!node || !kind) return false
+    if (kind === "scene") return false
+    return true
+  }
+  function getNodeTransformBaseline(node, stableId) {
+    if (!stableId) return ""
+    if (Object.prototype.hasOwnProperty.call(positionBaseTransforms, stableId)) {
+      return positionBaseTransforms[stableId]
+    }
+    var inline = (node.style && node.style.transform) || ""
+    var baseline = inline
+      .replace(/translate3d\([^)]*\)/gi, "")
+      .replace(/translate\([^)]*\)/gi, "")
+      .replace(/translateX\([^)]*\)/gi, "")
+      .replace(/translateY\([^)]*\)/gi, "")
+      .replace(/scale3d\([^)]*\)/gi, "")
+      .replace(/scale\([^)]*\)/gi, "")
+      .replace(/scaleX\([^)]*\)/gi, "")
+      .replace(/scaleY\([^)]*\)/gi, "")
+      .trim()
+    positionBaseTransforms[stableId] = baseline
+    return baseline
+  }
+  function composeTransform(baseline, dx, dy, sx, sy) {
+    var parts = []
+    if (dx !== 0 || dy !== 0) parts.push("translate(" + dx + "px, " + dy + "px)")
+    if (sx !== 1 || sy !== 1) parts.push("scale(" + sx + ", " + sy + ")")
+    if (baseline) parts.push(baseline)
+    return parts.join(" ")
+  }
+  function applyComposedTransform(node, stableId) {
+    if (!node || !stableId) return
+    var posOv = lastKnownPositionOverrides && lastKnownPositionOverrides[stableId]
+    var sizeOv = lastKnownSizeOverrides && lastKnownSizeOverrides[stableId]
+    var dx = Number((posOv && posOv.dx) || 0)
+    var dy = Number((posOv && posOv.dy) || 0)
+    var sx = Number((sizeOv && sizeOv.sx) || 1)
+    var sy = Number((sizeOv && sizeOv.sy) || 1)
+    if (!Number.isFinite(dx)) dx = 0
+    if (!Number.isFinite(dy)) dy = 0
+    if (!Number.isFinite(sx) || sx <= 0) sx = 1
+    if (!Number.isFinite(sy) || sy <= 0) sy = 1
+    var baseline = getNodeTransformBaseline(node, stableId)
+    if (node.style) node.style.transform = composeTransform(baseline, dx, dy, sx, sy)
+  }
+  function applyPositionToNode(node, stableId, override) {
+    if (!node || !stableId) return
+    var dx = Number((override && override.dx) || 0)
+    var dy = Number((override && override.dy) || 0)
+    if (!Number.isFinite(dx)) dx = 0
+    if (!Number.isFinite(dy)) dy = 0
+    node.setAttribute("data-prezo-pos-id", stableId)
+    if (!lastKnownPositionOverrides) lastKnownPositionOverrides = {}
+    lastKnownPositionOverrides[stableId] = { dx: dx, dy: dy, label: override && override.label, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }
+    applyComposedTransform(node, stableId)
+  }
+  function applySizeToNode(node, stableId, override) {
+    if (!node || !stableId) return
+    var sx = Number((override && override.sx) || 1)
+    var sy = Number((override && override.sy) || 1)
+    if (!Number.isFinite(sx) || sx <= 0) sx = 1
+    if (!Number.isFinite(sy) || sy <= 0) sy = 1
+    node.setAttribute("data-prezo-pos-id", stableId)
+    if (!lastKnownSizeOverrides) lastKnownSizeOverrides = {}
+    lastKnownSizeOverrides[stableId] = { sx: sx, sy: sy, label: override && override.label, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }
+    if (node.style) {
+      if (!node.style.transformOrigin) node.style.transformOrigin = "center center"
+    }
+    applyComposedTransform(node, stableId)
+  }
+  function findNodeForPositionOverride(stableId, override) {
+    if (!document.body) return null
+    try {
+      var attrSelector = "[data-prezo-pos-id=\"" + String(stableId).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\" i]"
+      var direct = document.body.querySelector(attrSelector)
+      if (direct) return direct
+    } catch (e) {}
+    try {
+      var textIdSel = "[data-prezo-text-id=\"" + String(stableId).replace(/\\/g, "\\\\").replace(/\"/g, "\\\"") + "\" i]"
+      var textNode = document.body.querySelector(textIdSel)
+      if (textNode) return textNode
+    } catch (e2) {}
+    if (override && override.role) {
+      if (override.role === "option-row" && override.optionId) {
+        var rows = document.body.querySelectorAll("[data-option-id], [data-prezo-option-id], [data-opt-id], [data-poll-option-id], [data-lane-id], [data-choice-id], [data-answer-id]")
+        for (var ri = 0; ri < rows.length; ri++) {
+          var rd = rows[ri].dataset || {}
+          if ((rd.optionId || rd.prezoOptionId || rd.optId || rd.pollOptionId || rd.laneId || rd.choiceId || rd.answerId) === override.optionId) return rows[ri]
+        }
+      }
+      if (override.role === "poll-question") {
+        var nodes = document.body.querySelectorAll("[data-prezo-editable=question]")
+        if (nodes.length === 1) return nodes[0]
+        return findFirstMatching(isLikelyQuestionNode)
+      }
+      if (override.role === "poll-footer") {
+        var fnodes = document.body.querySelectorAll("[data-prezo-editable=footer]")
+        if (fnodes.length === 1) return fnodes[0]
+        return findFirstMatching(isLikelyFooterNode)
+      }
+      if (override.role === "poll-subtitle") {
+        var snodes = document.body.querySelectorAll("[data-prezo-editable=subtitle]")
+        if (snodes.length === 1) return snodes[0]
+        return findFirstMatching(isLikelySubtitleNode)
+      }
+      if (override.role === "background") {
+        var bg = document.body.querySelector("[data-prezo-background-layer]")
+        if (bg) return bg
+      }
+      if (override.role === "foreground") {
+        var fglayer = document.body.querySelector("[data-prezo-foreground-layer]")
+        if (fglayer) return fglayer
+      }
+      if (override.role === "element" && typeof override.label === "string" && override.label) {
+        if (typeof override.anchor === "string" && override.anchor) {
+          try {
+            var anchorEl = document.body.querySelector(override.anchor)
+            if (anchorEl) {
+              var scoped = anchorEl.querySelector(override.label)
+              if (scoped) return scoped
+            }
+          } catch (eAnchor) {}
+        }
+        try {
+          var labelMatch = document.body.querySelector(override.label)
+          if (labelMatch) return labelMatch
+        } catch (eLabel) {}
+      }
+    }
+    return null
+  }
+  function findFirstMatching(predicate) {
+    if (!document.body) return null
+    var all = document.body.querySelectorAll("*")
+    for (var i = 0; i < all.length; i++) {
+      try { if (predicate(all[i])) return all[i] } catch (e) {}
+    }
+    return null
+  }
+  function applyPositionOverrides(overrides) {
+    if (!overrides || typeof overrides !== "object") return []
+    if (!document.body) return []
+    lastKnownPositionOverrides = overrides
+    var unmatched = []
+    var ids = Object.keys(overrides)
+    var suppressed = []
+    for (var i = 0; i < ids.length; i++) {
+      var stableId = ids[i]
+      var ov = overrides[stableId]
+      if (!ov) continue
+      var node = findNodeForPositionOverride(stableId, ov)
+      if (!node) { unmatched.push(stableId); continue }
+      if (node.style) {
+        suppressed.push({ node: node, transition: node.style.transition })
+        node.style.transition = "none"
+      }
+      applyPositionToNode(node, stableId, ov)
+    }
+    refreshSelectionOverlay()
+    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }
+    raf(function () {
+      for (var j = 0; j < suppressed.length; j++) {
+        var entry = suppressed[j]
+        if (entry.node && entry.node.style) {
+          entry.node.style.transition = entry.transition
+        }
+      }
+      refreshSelectionOverlay()
+    })
+    return unmatched
+  }
+  function findNodeForSizeOverride(stableId, override) {
+    return findNodeForPositionOverride(stableId, override)
+  }
+  function applySizeOverrides(overrides) {
+    if (!overrides || typeof overrides !== "object") return []
+    if (!document.body) return []
+    lastKnownSizeOverrides = overrides
+    var unmatched = []
+    var ids = Object.keys(overrides)
+    var suppressed = []
+    for (var i = 0; i < ids.length; i++) {
+      var stableId = ids[i]
+      var ov = overrides[stableId]
+      if (!ov) continue
+      var node = findNodeForSizeOverride(stableId, ov)
+      if (!node) { unmatched.push(stableId); continue }
+      if (node.style) {
+        suppressed.push({ node: node, transition: node.style.transition })
+        node.style.transition = "none"
+      }
+      applySizeToNode(node, stableId, ov)
+    }
+    refreshSelectionOverlay()
+    var raf2 = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }
+    raf2(function () {
+      for (var j = 0; j < suppressed.length; j++) {
+        var entry = suppressed[j]
+        if (entry.node && entry.node.style) entry.node.style.transition = entry.transition
+      }
+      refreshSelectionOverlay()
+    })
+    return unmatched
+  }
+  function readCurrentScaleFor(stableId) {
+    if (!stableId) return { sx: 1, sy: 1 }
+    var ov = lastKnownSizeOverrides && lastKnownSizeOverrides[stableId]
+    if (!ov) return { sx: 1, sy: 1 }
+    var sx = Number(ov.sx)
+    var sy = Number(ov.sy)
+    return {
+      sx: (Number.isFinite(sx) && sx > 0) ? sx : 1,
+      sy: (Number.isFinite(sy) && sy > 0) ? sy : 1
+    }
+  }
+  function readCurrentOffsetFor(stableId) {
+    if (!stableId) return { dx: 0, dy: 0 }
+    var ov = lastKnownPositionOverrides && lastKnownPositionOverrides[stableId]
+    if (!ov) return { dx: 0, dy: 0 }
+    var dx = Number(ov.dx)
+    var dy = Number(ov.dy)
+    return { dx: Number.isFinite(dx) ? dx : 0, dy: Number.isFinite(dy) ? dy : 0 }
+  }
+  function buildElementAnchorSelector(node) {
+    if (!node || node.nodeType !== 1) return ""
+    var cur = node.parentElement
+    var depth = 0
+    while (cur && cur.nodeType === 1 && depth < 6) {
+      if (cur.id) return "#" + cur.id
+      var ds = cur.dataset || {}
+      if (ds.optionId) return "[data-option-id=\"" + String(ds.optionId).replace(/\"/g, "\\\"") + "\" i]"
+      if (ds.prezoOptionId) return "[data-prezo-option-id=\"" + String(ds.prezoOptionId).replace(/\"/g, "\\\"") + "\" i]"
+      if (ds.prezoSceneRoot) return "[data-prezo-scene-root]"
+      if (ds.prezoForegroundLayer) return "[data-prezo-foreground-layer]"
+      cur = cur.parentElement
+      depth += 1
+    }
+    return ""
+  }
+  function postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy) {
+    if (!stableId) return
+    var kind = selectedKind || ""
+    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""
+    var label = ""
+    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
+    var anchorSelector = (kind === "element") ? buildElementAnchorSelector(node) : ""
+    postParentMessage(POSITION_CHANGED_MESSAGE_TYPE, {
+      stableId: stableId,
+      dx: dx,
+      dy: dy,
+      priorDx: priorDx,
+      priorDy: priorDy,
+      role: kind,
+      label: label,
+      optionId: optionId,
+      anchor: anchorSelector
+    })
+  }
+  var dragOverlayTransitionBaseline = ""
+  var dragNodeTransitionBaseline = ""
+  var dragNodeWillChangeBaseline = ""
+  var overlayRafId = 0
+  function scheduleOverlayRefresh() {
+    if (overlayRafId) return
+    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }
+    overlayRafId = raf(function () {
+      overlayRafId = 0
+      refreshSelectionOverlay()
+    })
+  }
+  function enterDragFastMode(node) {
+    if (selectionOverlayEl) {
+      dragOverlayTransitionBaseline = selectionOverlayEl.style.transition || ""
+      selectionOverlayEl.style.transition = "none"
+    }
+    if (node && node.style) {
+      dragNodeTransitionBaseline = node.style.transition || ""
+      dragNodeWillChangeBaseline = node.style.willChange || ""
+      node.style.transition = "none"
+      node.style.willChange = "transform"
+    }
+  }
+  function exitDragFastMode(node) {
+    if (selectionOverlayEl) {
+      selectionOverlayEl.style.transition = dragOverlayTransitionBaseline
+      dragOverlayTransitionBaseline = ""
+    }
+    if (node && node.style) {
+      node.style.transition = dragNodeTransitionBaseline
+      node.style.willChange = dragNodeWillChangeBaseline
+      dragNodeTransitionBaseline = ""
+      dragNodeWillChangeBaseline = ""
+    }
+    if (overlayRafId) {
+      var caf = (typeof window !== "undefined" && window.cancelAnimationFrame) ? window.cancelAnimationFrame.bind(window) : clearTimeout
+      caf(overlayRafId)
+      overlayRafId = 0
+    }
+  }
+  function cancelDragInProgress() {
+    if (!dragState) return
+    applyPositionToNode(dragState.node, dragState.stableId, { dx: dragState.startDx, dy: dragState.startDy })
+    exitDragFastMode(dragState.node)
+    hideSnapReferenceMarker()
+    dragState = null
+  }
+  function startResizeGesture(event, handleEl) {
+    if (!selectedNode) return false
+    if (!isResizableSelection(selectedNode, selectedKind)) return false
+    var stableId = computeStableTextId(selectedNode)
+    if (!stableId) return false
+    var dir = handleEl.getAttribute("data-prezo-resize-handle")
+    if (!dir) return false
+    var startRect = selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()
+    if (!startRect || startRect.width <= 0 || startRect.height <= 0) return false
+    var current = readCurrentScaleFor(stableId)
+    var naturalW = startRect.width / (current.sx || 1)
+    var naturalH = startRect.height / (current.sy || 1)
+    resizeState = {
+      node: selectedNode,
+      stableId: stableId,
+      dir: dir,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startSx: current.sx,
+      startSy: current.sy,
+      naturalW: naturalW,
+      naturalH: naturalH,
+      moved: false,
+      pointerId: event.pointerId
+    }
+    enterDragFastMode(selectedNode)
+    try { handleEl.setPointerCapture && handleEl.setPointerCapture(event.pointerId) } catch (e) {}
+    event.preventDefault()
+    event.stopPropagation()
+    return true
+  }
+  function computeResizeScale(state, deltaX, deltaY, shiftKey) {
+    var dir = state.dir
+    var W = state.naturalW > 0 ? state.naturalW : 1
+    var H = state.naturalH > 0 ? state.naturalH : 1
+    var signX = (dir === "e" || dir === "ne" || dir === "se") ? 1
+              : (dir === "w" || dir === "nw" || dir === "sw") ? -1 : 0
+    var signY = (dir === "s" || dir === "se" || dir === "sw") ? 1
+              : (dir === "n" || dir === "ne" || dir === "nw") ? -1 : 0
+    var nextSx = signX !== 0 ? (1 + (2 * signX * deltaX) / W) : 1
+    var nextSy = signY !== 0 ? (1 + (2 * signY * deltaY) / H) : 1
+    var isCorner = (dir === "nw" || dir === "ne" || dir === "se" || dir === "sw")
+    var lockAspect = isCorner ? !shiftKey : !!shiftKey
+    if (lockAspect) {
+      var src = (Math.abs(nextSx - 1) >= Math.abs(nextSy - 1)) ? nextSx : nextSy
+      nextSx = src
+      nextSy = src
+    }
+    if (!Number.isFinite(nextSx) || nextSx < 0.1) nextSx = 0.1
+    if (!Number.isFinite(nextSy) || nextSy < 0.1) nextSy = 0.1
+    if (nextSx > 10) nextSx = 10
+    if (nextSy > 10) nextSy = 10
+    return { sx: nextSx * state.startSx, sy: nextSy * state.startSy }
+  }
+  function handleResizePointerMove(event) {
+    if (!resizeState) return
+    if (event.pointerId !== resizeState.pointerId) return
+    var deltaX = event.clientX - resizeState.startClientX
+    var deltaY = event.clientY - resizeState.startClientY
+    if (!resizeState.moved) {
+      if (Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) return
+      resizeState.moved = true
+    }
+    var next = computeResizeScale(resizeState, deltaX, deltaY, event.shiftKey)
+    applySizeToNode(resizeState.node, resizeState.stableId, { sx: next.sx, sy: next.sy })
+    scheduleOverlayRefresh()
+  }
+  function handleResizePointerUp(event) {
+    if (!resizeState) return
+    if (event.pointerId !== resizeState.pointerId) return
+    var node = resizeState.node
+    var stableId = resizeState.stableId
+    var priorSx = resizeState.startSx
+    var priorSy = resizeState.startSy
+    var deltaX = event.clientX - resizeState.startClientX
+    var deltaY = event.clientY - resizeState.startClientY
+    var next = computeResizeScale(resizeState, deltaX, deltaY, event.shiftKey)
+    var moved = resizeState.moved
+    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}
+    exitDragFastMode(node)
+    resizeState = null
+    if (!moved) return
+    applySizeToNode(node, stableId, { sx: next.sx, sy: next.sy })
+    postCommittedSize(stableId, node, next.sx, next.sy, priorSx, priorSy)
+    refreshSelectionOverlay()
+  }
+  function cancelResizeInProgress() {
+    if (!resizeState) return
+    applySizeToNode(resizeState.node, resizeState.stableId, { sx: resizeState.startSx, sy: resizeState.startSy })
+    exitDragFastMode(resizeState.node)
+    resizeState = null
+  }
+  function postCommittedSize(stableId, node, sx, sy, priorSx, priorSy) {
+    if (!stableId) return
+    var kind = selectedKind || ""
+    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""
+    var label = ""
+    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
+    var anchorSelector = (kind === "element") ? buildElementAnchorSelector(node) : ""
+    postParentMessage(SIZE_CHANGED_MESSAGE_TYPE, {
+      stableId: stableId,
+      sx: sx,
+      sy: sy,
+      priorSx: priorSx,
+      priorSy: priorSy,
+      role: kind,
+      label: label,
+      optionId: optionId,
+      anchor: anchorSelector
+    })
+  }
+  function handleSizeInitMessage(event) {
+    if (!event || !event.data || typeof event.data !== "object") return
+    if (event.data.type !== SIZE_INIT_MESSAGE_TYPE) return
+    if (event.data.instanceId !== INSTANCE_ID) return
+    var ov = event.data.overrides
+    if (!ov || typeof ov !== "object") return
+    applySizeOverrides(ov)
+  }
+  var lastKnownHiddenOverrides = {}
+  var hiddenStyleBaselines = {}
+  function findNodeForHiddenOverride(stableId, override) {
+    return findNodeForPositionOverride(stableId, override)
+  }
+  var hiddenStyleEl = null
+  function ensureHiddenStyleEl() {
+    if (hiddenStyleEl && hiddenStyleEl.parentNode) return hiddenStyleEl
+    var existing = null
+    try { existing = (document.head || document.documentElement).querySelector("style[data-prezo-hidden-style]") } catch (e) {}
+    if (existing) { hiddenStyleEl = existing; hiddenStyleEl.setAttribute("data-prezo-hidden-style", "true"); return hiddenStyleEl }
+    hiddenStyleEl = document.createElement("style")
+    hiddenStyleEl.setAttribute("data-prezo-hidden-style", "true")
+    ;(document.head || document.documentElement).appendChild(hiddenStyleEl)
+    return hiddenStyleEl
+  }
+  function cssAttrEscape(value) {
+    return String(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
+  }
+  function hiddenSelectorsFor(stableId, ov) {
+    var sels = []
+    sels.push("[data-prezo-deleted=\"" + cssAttrEscape(stableId) + "\"]")
+    sels.push("[data-prezo-pos-id=\"" + cssAttrEscape(stableId) + "\"]")
+    var role = ov && ov.role
+    if ((role === "option-row" || role === "options-container") && ov && ov.optionId) {
+      var oe = cssAttrEscape(ov.optionId)
+      sels.push("[data-option-id=\"" + oe + "\"]")
+      sels.push("[data-prezo-option-id=\"" + oe + "\"]")
+      sels.push("[data-opt-id=\"" + oe + "\"]")
+      sels.push("[data-poll-option-id=\"" + oe + "\"]")
+      sels.push("[data-lane-id=\"" + oe + "\"]")
+      sels.push("[data-choice-id=\"" + oe + "\"]")
+      sels.push("[data-answer-id=\"" + oe + "\"]")
+      return sels
+    }
+    var cssLabel = (ov && typeof ov.cssLabel === "string" && ov.cssLabel) ? ov.cssLabel : ""
+    var anchor = (ov && typeof ov.anchor === "string" && ov.anchor) ? ov.anchor : ""
+    if (cssLabel) {
+      if (anchor) sels.push(anchor + " " + cssLabel)
+      sels.push(cssLabel)
+    } else if (anchor) {
+      sels.push(anchor)
+    }
+    return sels
+  }
+  function rebuildHiddenStyleRules() {
+    var ids = lastKnownHiddenOverrides ? Object.keys(lastKnownHiddenOverrides) : []
+    if (!ids.length) {
+      if (hiddenStyleEl) hiddenStyleEl.textContent = ""
+      return
+    }
+    var allSelectors = []
+    for (var i = 0; i < ids.length; i++) {
+      var ov = lastKnownHiddenOverrides[ids[i]]
+      if (!ov || !ov.hidden) continue
+      var sels = hiddenSelectorsFor(ids[i], ov)
+      for (var s = 0; s < sels.length; s++) allSelectors.push(sels[s])
+    }
+    var el = ensureHiddenStyleEl()
+    if (!allSelectors.length) { el.textContent = ""; return }
+    el.textContent = allSelectors.join(",\n") + " { visibility: hidden !important; pointer-events: none !important; }"
+  }
+  function applyHiddenToNode(node, stableId, override) {
+    if (!node || !stableId) return
+    var hidden = !!(override && override.hidden)
+    node.setAttribute("data-prezo-pos-id", stableId)
+    if (!lastKnownHiddenOverrides) lastKnownHiddenOverrides = {}
+    if (hidden) {
+      if (!Object.prototype.hasOwnProperty.call(hiddenStyleBaselines, stableId)) {
+        hiddenStyleBaselines[stableId] = {
+          visibility: (node.style && node.style.visibility) || "",
+          pointerEvents: (node.style && node.style.pointerEvents) || ""
+        }
+      }
+      lastKnownHiddenOverrides[stableId] = { hidden: true, label: override && override.label, cssLabel: override && override.cssLabel, role: override && override.role, optionId: override && override.optionId, anchor: override && override.anchor }
+      node.setAttribute("data-prezo-deleted", stableId)
+      if (node.style) {
+        node.style.visibility = "hidden"
+        node.style.pointerEvents = "none"
+      }
+    } else {
+      delete lastKnownHiddenOverrides[stableId]
+      try { node.removeAttribute("data-prezo-deleted") } catch (e) {}
+      if (node.style) {
+        var baseline = Object.prototype.hasOwnProperty.call(hiddenStyleBaselines, stableId) ? hiddenStyleBaselines[stableId] : { visibility: "", pointerEvents: "" }
+        node.style.visibility = baseline.visibility
+        node.style.pointerEvents = baseline.pointerEvents
+      }
+      delete hiddenStyleBaselines[stableId]
+    }
+    rebuildHiddenStyleRules()
+  }
+  function applyHiddenOverrides(overrides) {
+    if (!overrides || typeof overrides !== "object") return []
+    if (!document.body) return []
+    var nextKnown = {}
+    var unmatched = []
+    var ids = Object.keys(overrides)
+    for (var i = 0; i < ids.length; i++) {
+      var stableId = ids[i]
+      var ov = overrides[stableId]
+      if (!ov || typeof ov.hidden !== "boolean") continue
+      if (ov.hidden) {
+        nextKnown[stableId] = { hidden: true, label: ov.label, cssLabel: ov.cssLabel, role: ov.role, optionId: ov.optionId, anchor: ov.anchor }
+      }
+      var node = findNodeForHiddenOverride(stableId, ov)
+      if (!node) { if (ov.hidden) unmatched.push(stableId); continue }
+      applyHiddenToNode(node, stableId, ov)
+    }
+    lastKnownHiddenOverrides = nextKnown
+    rebuildHiddenStyleRules()
+    refreshSelectionOverlay()
+    return unmatched
+  }
+  function handleHiddenInitMessage(event) {
+    if (!event || !event.data || typeof event.data !== "object") return
+    if (event.data.type !== HIDDEN_INIT_MESSAGE_TYPE) return
+    if (event.data.instanceId !== INSTANCE_ID) return
+    var ov = event.data.overrides
+    if (!ov || typeof ov !== "object") return
+    applyHiddenOverrides(ov)
+    var raf = (typeof window !== "undefined" && window.requestAnimationFrame) ? window.requestAnimationFrame.bind(window) : function (cb) { return setTimeout(cb, 16) }
+    raf(function () {
+      raf(function () {
+        postParentMessage(HIDDEN_APPLIED_MESSAGE_TYPE, {})
+      })
+    })
+  }
+  function isDeletableSelection(node, kind) {
+    if (!node || !kind) return false
+    if (kind === "scene") return false
+    return true
+  }
+  function postCommittedHidden(stableId, node) {
+    if (!stableId) return
+    var meta = buildHiddenOverrideMeta(node, selectedKind)
+    postParentMessage(ELEMENT_DELETED_MESSAGE_TYPE, {
+      stableId: stableId,
+      hidden: true,
+      priorHidden: false,
+      role: meta.role,
+      label: meta.label,
+      cssLabel: meta.cssLabel,
+      optionId: meta.optionId,
+      anchor: meta.anchor
+    })
+  }
+  function buildHiddenOverrideMeta(node, kind) {
+    var role = kind || ""
+    var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""
+    if (!optionId && node) {
+      var rowId = getOptionIdFromRow(node)
+      if (rowId) optionId = rowId
+    }
+    var label = ""
+    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
+    var cssLabel = buildElementCssLabel(node)
+    var anchor = ""
+    if (role !== "option-row" && role !== "options-container") {
+      if (optionId) {
+        anchor = "[data-option-id=\"" + cssAttrEscape(optionId) + "\"]"
+      } else {
+        anchor = buildElementAnchorSelector(node)
+      }
+    }
+    return { role: role, optionId: optionId, label: label, cssLabel: cssLabel, anchor: anchor }
+  }
+  function deleteSelectedElement() {
+    if (!selectedNode) return
+    if (!isDeletableSelection(selectedNode, selectedKind)) return
+    var node = selectedNode
+    var stableId = computeStableTextId(node)
+    if (!stableId) return
+    if (textEditNode === node) { try { exitTextEditMode() } catch (e) {} }
+    var meta = buildHiddenOverrideMeta(node, selectedKind)
+    applyHiddenToNode(node, stableId, { hidden: true, role: meta.role, optionId: meta.optionId, label: meta.label, cssLabel: meta.cssLabel, anchor: meta.anchor })
+    postCommittedHidden(stableId, node)
+    setSelectedNode(null, null)
+  }
+  function handlePointerDown(event) {
+    if (!event) return
+    if (event.button !== 0) return
+    if (!selectedNode) return
+    var target = event.target
+    if (!target) return
+    var handleEl = (target.closest && target.closest("[data-prezo-resize-handle]")) || null
+    if (handleEl) {
+      if (startResizeGesture(event, handleEl)) return
+    }
+    if (!isMovableSelection(selectedNode, selectedKind)) return
+    if (target.closest && target.closest("[data-prezo-context-menu]")) return
+    if (!selectedNode.contains || !selectedNode.contains(target)) return
+    if (textEditNode && (textEditNode === target || textEditNode.contains(target))) return
+    var stableId = computeStableTextId(selectedNode)
+    if (!stableId) return
+    var current = readCurrentOffsetFor(stableId)
+    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0, width: 0, height: 0 }
+    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }
+    var naturalLeft = (startRect.left - bodyRect.left) - current.dx
+    var naturalTop = (startRect.top - bodyRect.top) - current.dy
+    var width = startRect.width || 0
+    var height = startRect.height || 0
+    var refOff = getSnapReferenceOffsets(selectedKind, width, height)
+    var naturalRefX = naturalLeft + refOff.x
+    var naturalRefY = naturalTop + refOff.y
+    dragState = {
+      node: selectedNode,
+      stableId: stableId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startDx: current.dx,
+      startDy: current.dy,
+      naturalLeft: naturalLeft,
+      naturalTop: naturalTop,
+      naturalWidth: width,
+      naturalHeight: height,
+      naturalRefX: naturalRefX,
+      naturalRefY: naturalRefY,
+      refOffsetX: refOff.x,
+      refOffsetY: refOff.y,
+      moved: false,
+      pointerId: event.pointerId
+    }
+    showSnapReferenceMarker()
+    enterDragFastMode(selectedNode)
+    try { event.target.setPointerCapture && event.target.setPointerCapture(event.pointerId) } catch (e) {}
+    event.preventDefault()
+  }
+  function handlePointerMove(event) {
+    if (resizeState) { handleResizePointerMove(event); return }
+    if (!dragState) return
+    if (event.pointerId !== dragState.pointerId) return
+    var deltaX = event.clientX - dragState.startClientX
+    var deltaY = event.clientY - dragState.startClientY
+    if (!dragState.moved) {
+      if (Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) return
+      dragState.moved = true
+    }
+    var dx = dragState.startDx + deltaX
+    var dy = dragState.startDy + deltaY
+    var snapped = snapDeltaToGrid(dragState.node, dx, dy)
+    dx = snapped.dx
+    dy = snapped.dy
+    applyPositionToNode(dragState.node, dragState.stableId, { dx: dx, dy: dy })
+    refreshSnapReferenceMarker()
+    scheduleOverlayRefresh()
+  }
+  function handlePointerUp(event) {
+    if (resizeState) { handleResizePointerUp(event); return }
+    if (!dragState) return
+    if (event.pointerId !== dragState.pointerId) return
+    var node = dragState.node
+    var stableId = dragState.stableId
+    var priorDx = dragState.startDx
+    var priorDy = dragState.startDy
+    var dx = priorDx + (event.clientX - dragState.startClientX)
+    var dy = priorDy + (event.clientY - dragState.startClientY)
+    var snapped = snapDeltaToGrid(node, dx, dy)
+    dx = snapped.dx
+    dy = snapped.dy
+    var moved = dragState.moved
+    try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}
+    exitDragFastMode(node)
+    hideSnapReferenceMarker()
+    dragState = null
+    if (!moved) return
+    applyPositionToNode(node, stableId, { dx: dx, dy: dy })
+    lastKnownPositionOverrides[stableId] = { dx: dx, dy: dy }
+    postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy)
+    refreshSelectionOverlay()
+  }
+  function handlePositionInitMessage(event) {
+    if (!event || !event.data || typeof event.data !== "object") return
+    if (event.data.type !== POSITION_INIT_MESSAGE_TYPE) return
+    if (event.data.instanceId !== INSTANCE_ID) return
+    var ov = event.data.overrides
+    if (!ov || typeof ov !== "object") return
+    applyPositionOverrides(ov)
+  }
+  var DESIGNER_RULER_THICKNESS = 24
+  var DESIGNER_REF_WIDTH = 1920
+  var DESIGNER_REF_HEIGHT = 1080
+  var designerConfig = {
+    rulersVisible: false,
+    gridVisible: false,
+    gridSpacing: 100,
+    snapToGrid: false,
+    snapThreshold: 8
+  }
+  var topRulerEl = null
+  var leftRulerEl = null
+  var gridOverlayEl = null
+  function ensureDesignerOverlays() {
+    if (!document.body) return
+    if (!gridOverlayEl) {
+      gridOverlayEl = document.createElement("div")
+      gridOverlayEl.setAttribute("data-prezo-grid-overlay", "true")
+      gridOverlayEl.style.cssText = [
+        "position:absolute",
+        "top:0", "left:0",
+        "width:" + DESIGNER_REF_WIDTH + "px",
+        "height:" + DESIGNER_REF_HEIGHT + "px",
+        "pointer-events:none",
+        "z-index:2147483644",
+        "display:none"
+      ].join(";")
+      document.body.appendChild(gridOverlayEl)
+    }
+    if (!topRulerEl) {
+      topRulerEl = document.createElement("div")
+      topRulerEl.setAttribute("data-prezo-ruler", "top")
+      topRulerEl.style.cssText = [
+        "position:absolute",
+        "top:0", "left:0",
+        "width:" + DESIGNER_REF_WIDTH + "px",
+        "height:" + DESIGNER_RULER_THICKNESS + "px",
+        "pointer-events:none",
+        "z-index:2147483645",
+        "background:rgba(20,20,30,0.78)",
+        "color:#fff",
+        "font:600 10px/1 'Segoe UI',sans-serif",
+        "letter-spacing:0.02em",
+        "display:none",
+        "overflow:hidden"
+      ].join(";")
+      document.body.appendChild(topRulerEl)
+    }
+    if (!leftRulerEl) {
+      leftRulerEl = document.createElement("div")
+      leftRulerEl.setAttribute("data-prezo-ruler", "left")
+      leftRulerEl.style.cssText = [
+        "position:absolute",
+        "top:0", "left:0",
+        "width:" + DESIGNER_RULER_THICKNESS + "px",
+        "height:" + DESIGNER_REF_HEIGHT + "px",
+        "pointer-events:none",
+        "z-index:2147483645",
+        "background:rgba(20,20,30,0.78)",
+        "color:#fff",
+        "font:600 10px/1 'Segoe UI',sans-serif",
+        "letter-spacing:0.02em",
+        "display:none",
+        "overflow:hidden"
+      ].join(";")
+      document.body.appendChild(leftRulerEl)
+    }
+  }
+  function renderRulers(spacing) {
+    if (!topRulerEl || !leftRulerEl) return
+    var majorStep = spacing
+    var minorStep = Math.max(5, Math.round(spacing / 5))
+    var w = DESIGNER_REF_WIDTH
+    var h = DESIGNER_REF_HEIGHT
+    var rt = DESIGNER_RULER_THICKNESS
+    var topParts = []
+    topParts.push("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + w + "\" height=\"" + rt + "\" viewBox=\"0 0 " + w + " " + rt + "\">")
+    for (var x = 0; x <= w; x += minorStep) {
+      var isMajor = (x % majorStep === 0)
+      var tickH = isMajor ? Math.round(rt * 0.55) : Math.round(rt * 0.28)
+      topParts.push("<line x1=\"" + x + "\" x2=\"" + x + "\" y1=\"" + (rt - tickH) + "\" y2=\"" + rt + "\" stroke=\"rgba(255,255,255,0.85)\" stroke-width=\"" + (isMajor ? 1 : 0.6) + "\"/>")
+      if (isMajor && x > 0 && x < w) {
+        topParts.push("<text x=\"" + (x + 2) + "\" y=\"10\" fill=\"rgba(255,255,255,0.9)\" font-family=\"Segoe UI, sans-serif\" font-size=\"10\" font-weight=\"600\">" + x + "</text>")
+      }
+    }
+    topParts.push("</svg>")
+    topRulerEl.innerHTML = topParts.join("")
+    var leftParts = []
+    leftParts.push("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" + rt + "\" height=\"" + h + "\" viewBox=\"0 0 " + rt + " " + h + "\">")
+    for (var y = 0; y <= h; y += minorStep) {
+      var isMajorY = (y % majorStep === 0)
+      var tickW = isMajorY ? Math.round(rt * 0.55) : Math.round(rt * 0.28)
+      leftParts.push("<line y1=\"" + y + "\" y2=\"" + y + "\" x1=\"" + (rt - tickW) + "\" x2=\"" + rt + "\" stroke=\"rgba(255,255,255,0.85)\" stroke-width=\"" + (isMajorY ? 1 : 0.6) + "\"/>")
+      if (isMajorY && y > 0 && y < h) {
+        leftParts.push("<text x=\"3\" y=\"" + (y - 2) + "\" fill=\"rgba(255,255,255,0.9)\" font-family=\"Segoe UI, sans-serif\" font-size=\"10\" font-weight=\"600\">" + y + "</text>")
+      }
+    }
+    leftParts.push("</svg>")
+    leftRulerEl.innerHTML = leftParts.join("")
+  }
+  function renderGrid(spacing) {
+    if (!gridOverlayEl) return
+    var majorStep = spacing
+    var minorStep = Math.max(5, Math.round(spacing / 5))
+    var majorColor = "rgba(155,89,182,0.22)"
+    var minorColor = "rgba(155,89,182,0.09)"
+    gridOverlayEl.style.backgroundImage = [
+      "linear-gradient(to right, " + majorColor + " 1px, transparent 1px)",
+      "linear-gradient(to bottom, " + majorColor + " 1px, transparent 1px)",
+      "linear-gradient(to right, " + minorColor + " 1px, transparent 1px)",
+      "linear-gradient(to bottom, " + minorColor + " 1px, transparent 1px)"
+    ].join(",")
+    gridOverlayEl.style.backgroundSize = [
+      majorStep + "px " + majorStep + "px",
+      majorStep + "px " + majorStep + "px",
+      minorStep + "px " + minorStep + "px",
+      minorStep + "px " + minorStep + "px"
+    ].join(",")
+    gridOverlayEl.style.backgroundPosition = "0 0"
+  }
+  var snapMarkerEl = null
+  function ensureSnapMarker() {
+    if (snapMarkerEl) return
+    if (!document.body) return
+    snapMarkerEl = document.createElement("div")
+    snapMarkerEl.setAttribute("data-prezo-snap-marker", "true")
+    snapMarkerEl.style.cssText = [
+      "position:absolute",
+      "pointer-events:none",
+      "width:14px",
+      "height:14px",
+      "margin-left:-7px",
+      "margin-top:-7px",
+      "border-radius:50%",
+      "background:rgba(155,89,182,0.95)",
+      "box-shadow:0 0 0 2px #fff, 0 0 0 3px rgba(155,89,182,0.6), 0 2px 6px rgba(0,0,0,0.3)",
+      "z-index:2147483647",
+      "display:none"
+    ].join(";")
+    document.body.appendChild(snapMarkerEl)
+  }
+  function showSnapReferenceMarker() {
+    if (!designerConfig.snapToGrid) return
+    ensureSnapMarker()
+    if (!snapMarkerEl) return
+    snapMarkerEl.style.display = "block"
+    refreshSnapReferenceMarker()
+  }
+  function hideSnapReferenceMarker() {
+    if (!snapMarkerEl) return
+    snapMarkerEl.style.display = "none"
+  }
+  function refreshSnapReferenceMarker() {
+    if (!snapMarkerEl || snapMarkerEl.style.display === "none") return
+    if (!dragState || !dragState.node) return
+    var node = dragState.node
+    var rect = node.getBoundingClientRect && node.getBoundingClientRect()
+    if (!rect) return
+    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }
+    var x = (rect.left - bodyRect.left) + dragState.refOffsetX
+    var y = (rect.top - bodyRect.top) + dragState.refOffsetY
+    snapMarkerEl.style.left = x + "px"
+    snapMarkerEl.style.top = y + "px"
+  }
+  function applyDesignerConfig(next) {
+    if (!next || typeof next !== "object") return
+    designerConfig.rulersVisible = !!next.rulersVisible
+    designerConfig.gridVisible = !!next.gridVisible
+    designerConfig.gridSpacing = Math.max(10, Math.round(Number(next.gridSpacing) || 100))
+    designerConfig.snapToGrid = !!next.snapToGrid
+    designerConfig.snapThreshold = Math.max(1, Math.round(Number(next.snapThreshold) || 8))
+    ensureDesignerOverlays()
+    renderRulers(designerConfig.gridSpacing)
+    renderGrid(designerConfig.gridSpacing)
+    if (topRulerEl) topRulerEl.style.display = designerConfig.rulersVisible ? "block" : "none"
+    if (leftRulerEl) leftRulerEl.style.display = designerConfig.rulersVisible ? "block" : "none"
+    if (gridOverlayEl) gridOverlayEl.style.display = designerConfig.gridVisible ? "block" : "none"
+    if (!designerConfig.snapToGrid) hideSnapReferenceMarker()
+  }
+  function handleGridConfigMessage(event) {
+    if (!event || !event.data || typeof event.data !== "object") return
+    if (event.data.type !== GRID_CONFIG_MESSAGE_TYPE) return
+    if (event.data.instanceId !== INSTANCE_ID && event.data.instanceId !== undefined) return
+    applyDesignerConfig(event.data.config)
+  }
+  function getSnapReferenceOffsets(kind, width, height) {
+    var w = Number(width) || 0
+    var h = Number(height) || 0
+    return { x: w / 2, y: h / 2 }
+  }
+  function snapDeltaToGrid(node, dx, dy) {
+    if (!designerConfig.snapToGrid || !node) return { dx: dx, dy: dy }
+    if (!dragState || dragState.node !== node) return { dx: dx, dy: dy }
+    var spacing = designerConfig.gridSpacing
+    var threshold = designerConfig.snapThreshold
+    var baseRefX = dragState.naturalRefX
+    var baseRefY = dragState.naturalRefY
+    var projectedRefX = baseRefX + dx
+    var projectedRefY = baseRefY + dy
+    var nearestX = Math.round(projectedRefX / spacing) * spacing
+    var nearestY = Math.round(projectedRefY / spacing) * spacing
+    if (Math.abs(nearestX - projectedRefX) <= threshold) {
+      dx = nearestX - baseRefX
+    }
+    if (Math.abs(nearestY - projectedRefY) <= threshold) {
+      dy = nearestY - baseRefY
+    }
+    return { dx: dx, dy: dy }
+  }
+  function installSelectionListeners() {
+    if (!document.body) return
+    document.addEventListener("click", handleSelectionClick, true)
+    document.addEventListener("contextmenu", handleContextMenu, true)
+    document.addEventListener("click", handleGlobalClickForMenu, true)
+    document.addEventListener("keydown", handleEscapeForMenu, true)
+    document.addEventListener("keydown", handleDeleteKey, true)
+    document.addEventListener("keydown", handleHistoryShortcut, true)
+    document.addEventListener("pointerdown", handlePointerDown, true)
+    document.addEventListener("pointermove", handlePointerMove, true)
+    document.addEventListener("pointerup", handlePointerUp, true)
+    document.addEventListener("pointercancel", handlePointerUp, true)
+    window.addEventListener("resize", refreshSelectionOverlay)
+    window.addEventListener("scroll", refreshSelectionOverlay, true)
+    window.addEventListener("message", handlePositionInitMessage)
+    window.addEventListener("message", handleSizeInitMessage)
+    window.addEventListener("message", handleHiddenInitMessage)
+    window.addEventListener("message", handleGridConfigMessage)
+  }
+  setTimeout(installSelectionListeners, 140)
+  document.addEventListener("DOMContentLoaded", function () { setTimeout(installSelectionListeners, 140) })
+  setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 120)
+  document.addEventListener("DOMContentLoaded", function () { setTimeout(function () { applyArtifactCopyInit(); scanAndEnableEditing() }, 120) })
+})()</script>
+</body></html>

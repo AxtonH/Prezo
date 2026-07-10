@@ -1,3 +1,5 @@
+import { asText } from './poll-game-gamified-utils.js'
+
 export const ARTIFACT_VISUAL_MODE = 'artifact'
 export const ARTIFACT_LAYOUT_HORIZONTAL = 'horizontal'
 export const ARTIFACT_LAYOUT_VERTICAL = 'vertical'
@@ -99,6 +101,17 @@ export function createEmptyArtifactAnswers() {
      * (POST /brand-profiles/extract with purpose=artifact). Merged with designGuidelines for prompts.
      */
     referenceImageGuidelines: ''
+  }
+}
+
+export function cloneArtifactConversationAnswers(answers) {
+  return {
+    artifactType: asText(answers?.artifactType),
+    designGuidelines: asText(answers?.designGuidelines),
+    brandProfileName: asText(answers?.brandProfileName),
+    referenceImageGuidelines: asText(answers?.referenceImageGuidelines),
+    /** Legacy: older saved artifacts may still include this; no longer collected in the wizard. */
+    audienceSize: asText(answers?.audienceSize)
   }
 }
 
