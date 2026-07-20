@@ -1945,7 +1945,7 @@
       else { applyStyleToAllContent(node, "color", styleValue) }
     }
     var styledField = node.getAttribute ? node.getAttribute("data-prezo-editable") : ""
-    var broadcastRowStyle = ACTIVITY_KIND !== "poll" && isRowScopedField(styledField) && (styleCmd === "fontSize" || styleCmd === "fontFamily")
+    var broadcastRowStyle = ACTIVITY_KIND !== "poll" && isRowScopedField(styledField)
     if (broadcastRowStyle) {
       var templateHtml = buildRowTemplateHtml(node)
       applyRowTemplateHtmlToAll(styledField, templateHtml, node)

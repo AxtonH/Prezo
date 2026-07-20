@@ -194,12 +194,14 @@ export function buildTextStyleBridgeLines() {
     '      if (hasSelection) { applyInlineStyleToSelection(node, sel, "color", styleValue) }',
     '      else { applyStyleToAllContent(node, "color", styleValue) }',
     '    }',
-    // Size/font edits on qna/discussion response rows become the row
-    // template: broadcast to all sibling rows now and persist under the
-    // wildcard key so re-renders and future responses stay cohesive.
-    // Bold/italic/color stay per-row — emphasising ONE answer is deliberate.
+    // Style edits (size, font, bold, italic, color) on qna/discussion
+    // response rows become the row template: broadcast to all sibling rows
+    // now and persist under the wildcard key so re-renders and future
+    // responses stay cohesive. The template snapshots the edited node's
+    // computed size/family/weight/style/color, so every command routes
+    // through the same single-span template.
     '    var styledField = node.getAttribute ? node.getAttribute("data-prezo-editable") : ""',
-    '    var broadcastRowStyle = ACTIVITY_KIND !== "poll" && isRowScopedField(styledField) && (styleCmd === "fontSize" || styleCmd === "fontFamily")',
+    '    var broadcastRowStyle = ACTIVITY_KIND !== "poll" && isRowScopedField(styledField)',
     '    if (broadcastRowStyle) {',
     '      var templateHtml = buildRowTemplateHtml(node)',
     '      applyRowTemplateHtmlToAll(styledField, templateHtml, node)',
