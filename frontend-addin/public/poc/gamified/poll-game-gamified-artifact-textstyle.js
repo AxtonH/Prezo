@@ -150,6 +150,20 @@ export function buildTextStyleBridgeLines() {
     '    if (styleCmd === "clear") {',
     '      node.innerHTML = node.innerText || node.textContent || ""',
     '      node.removeAttribute("style")',
+    '      var clearField = node.getAttribute ? node.getAttribute("data-prezo-editable") : ""',
+    '      if (ACTIVITY_KIND !== "poll" && isRowScopedField(clearField)) {',
+    // Cohesion works both ways: clearing one response clears them all.
+    // The plain-text wildcard html is skipped by the restore paths (no
+    // markup), so future rows render at the artifact default too.
+    '        var clearNodes = document.body ? document.body.querySelectorAll("[data-prezo-editable=\\"" + clearField + "\\"]") : []',
+    '        for (var cni = 0; cni < clearNodes.length; cni++) {',
+    '          var cn = clearNodes[cni]',
+    '          if (cn === node) continue',
+    '          cn.innerHTML = cn.innerText || cn.textContent || ""',
+    '          cn.removeAttribute("style")',
+    '        }',
+    '        postParentMessage(TEXT_HTML_MESSAGE_TYPE, { field: clearField, optionId: "*", html: node.innerHTML || " ", priorHtml: null })',
+    '      }',
     '      sendTextHtml(node)',
     '      sendTextEdit(node)',
     '      reportNodeStyles(node)',
@@ -180,9 +194,71 @@ export function buildTextStyleBridgeLines() {
     '      if (hasSelection) { applyInlineStyleToSelection(node, sel, "color", styleValue) }',
     '      else { applyStyleToAllContent(node, "color", styleValue) }',
     '    }',
-    '    sendTextHtml(node)',
+    // Size/font edits on qna/discussion response rows become the row
+    // template: broadcast to all sibling rows now and persist under the
+    // wildcard key so re-renders and future responses stay cohesive.
+    // Bold/italic/color stay per-row — emphasising ONE answer is deliberate.
+    '    var styledField = node.getAttribute ? node.getAttribute("data-prezo-editable") : ""',
+    '    var broadcastRowStyle = ACTIVITY_KIND !== "poll" && isRowScopedField(styledField) && (styleCmd === "fontSize" || styleCmd === "fontFamily")',
+    '    if (broadcastRowStyle) {',
+    '      var templateHtml = buildRowTemplateHtml(node)',
+    '      applyRowTemplateHtmlToAll(styledField, templateHtml, node)',
+    '      postParentMessage(TEXT_HTML_MESSAGE_TYPE, { field: styledField, optionId: "*", html: templateHtml, priorHtml: null })',
+    '    } else {',
+    '      sendTextHtml(node)',
+    '    }',
     '    sendTextEdit(node)',
     '    reportNodeStyles(node)',
+    '  }',
+
+    // ── Row-template styling (qna / discussion kinds) ─────────────
+    // Responses are a DYNAMIC list — audience answers keep arriving — so
+    // per-row font styling would leave every new row unstyled. For the qna
+    // kinds a size/font edit on any row-scoped field becomes a ROW TEMPLATE:
+    // broadcast to every sibling row immediately (keeping each row's own
+    // text) and persisted under the wildcard key `field:*` so re-renders and
+    // future rows adopt it too. Polls keep per-option styling — their rows
+    // are a fixed authored set.
+    '  var ROW_SCOPED_FIELDS = { "option-label": 1, "option-votes": 1, "option-percentage": 1, "option-rank": 1 }',
+    '  function isRowScopedField(field) {',
+    '    return Object.prototype.hasOwnProperty.call(ROW_SCOPED_FIELDS, field)',
+    '  }',
+    // Canonical single-span template built from the edited node\'s computed
+    // style. Selections can leave partial spans in the edited node; the
+    // computed style of the deepest styled child is what the user sees, so
+    // the template captures that instead of the raw (possibly partial) html.
+    '  function buildRowTemplateHtml(sourceNode) {',
+    '    var deepest = getDeepestStyledChild(sourceNode)',
+    '    var cs = window.getComputedStyle(deepest)',
+    '    var span = document.createElement("span")',
+    '    span.style.fontSize = cs.fontSize',
+    '    span.style.fontFamily = cs.fontFamily',
+    '    span.style.color = cs.color',
+    '    span.style.fontWeight = cs.fontWeight',
+    '    span.style.fontStyle = cs.fontStyle',
+    '    span.style.lineHeight = "1.2"',
+    '    span.textContent = (sourceNode.innerText || sourceNode.textContent || "")',
+    '    var wrap = document.createElement("div")',
+    '    wrap.appendChild(span)',
+    '    return wrap.innerHTML',
+    '  }',
+    // Apply a saved template to every node of the field, keeping each
+    // node\'s own (renderer-owned) text.
+    '  function applyRowTemplateHtmlToAll(field, templateHtml, skipNode) {',
+    '    if (!document.body || typeof templateHtml !== "string" || templateHtml.indexOf("<") === -1) return',
+    '    var nodes = document.body.querySelectorAll("[data-prezo-editable=\\"" + field + "\\"]")',
+    '    for (var i = 0; i < nodes.length; i++) {',
+    '      var n = nodes[i]',
+    '      if (n === skipNode || n === activeEditNode) continue',
+    '      var ownText = (n.innerText || n.textContent || "").trim()',
+    '      n.innerHTML = templateHtml',
+    '      flattenNodeSpans(n)',
+    '      var deepest = getDeepestStyledChild(n)',
+    '      deepest.textContent = ownText',
+    '      if (templateHtml.indexOf("font-size") !== -1 || templateHtml.indexOf("font-family") !== -1) {',
+    '        relaxContainerLayout(n)',
+    '      }',
+    '    }',
     '  }',
 
     // ── Style-override restore (on render) ────────────────────────
@@ -201,6 +277,15 @@ export function buildTextStyleBridgeLines() {
     '  function applyArtifactStyleOverrides(overrides) {',
     '    if (!overrides || typeof overrides !== "object") return',
     '    var keys = Object.keys(overrides)',
+    // Wildcard row templates (`field:*`, qna kinds) apply FIRST so a
+    // per-row override can still win over the template afterwards.
+    '    for (var w = 0; w < keys.length; w++) {',
+    '      var wildcardKey = keys[w]',
+    '      var wildcardParts = wildcardKey.split(":")',
+    '      if (wildcardParts[1] === "*") {',
+    '        applyRowTemplateHtmlToAll(wildcardParts[0], overrides[wildcardKey], null)',
+    '      }',
+    '    }',
     '    for (var k = 0; k < keys.length; k++) {',
     '      var nodeKey = keys[k]',
     '      var html = overrides[nodeKey]',
@@ -208,13 +293,17 @@ export function buildTextStyleBridgeLines() {
     '      var parts = nodeKey.split(":")',
     '      var field = parts[0]',
     '      var optionId = parts[1] || ""',
+    '      if (optionId === "*") continue',
     '      var node = findEditableNode(field, optionId)',
     '      if (!node) continue',
     '      // For stat fields (votes, percentage, rank), the text changes on every',
     '      // vote update but the style should persist. Extract the style from the',
     '      // saved override and apply it to the current (renderer-updated) text.',
+    '      // The qna kinds extend this to ALL row-scoped fields: their rows are',
+    '      // renderer-owned audience answers, so saved html must never pin text.',
     '      var isStatField = field === "option-votes" || field === "option-percentage" || field === "option-rank"',
-    '      if (isStatField) {',
+    '      var preserveRendererText = isStatField || (ACTIVITY_KIND !== "poll" && isRowScopedField(field))',
+    '      if (preserveRendererText) {',
     '        var currentText = (node.innerText || node.textContent || "").trim()',
     '        node.innerHTML = html',
     '        flattenNodeSpans(node)',
@@ -463,7 +552,7 @@ export function buildTextStyleBridgeLines() {
     '    if (!optionRow) return null',
     '    var optionId = ""',
     '    if (optionRow.dataset) {',
-    '      optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""',
+    '      optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.questionId || optionRow.dataset.prezoQuestionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""',
     '    }',
     '    if (!optionId) {',
     '      var siblings = optionRow.parentElement ? Array.prototype.slice.call(optionRow.parentElement.children) : []',
@@ -518,7 +607,7 @@ export function buildTextStyleBridgeLines() {
     '      if (isLikelyOptionLabelNode(node)) {',
     '        var optionId = ""',
     '        if (optionRow.dataset) {',
-    '          optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""',
+    '          optionId = optionRow.dataset.optionId || optionRow.dataset.prezoOptionId || optionRow.dataset.optId || optionRow.dataset.pollOptionId || optionRow.dataset.questionId || optionRow.dataset.prezoQuestionId || optionRow.dataset.laneId || optionRow.dataset.choiceId || optionRow.dataset.answerId || optionRow.dataset.barId || ""',
     '        }',
     '        if (!optionId) {',
     '          var siblings = optionRow.parentElement ? Array.prototype.slice.call(optionRow.parentElement.children) : []',
@@ -885,6 +974,16 @@ export function buildTextStyleBridgeLines() {
     '      }',
     '    }',
     '    var keys = Object.keys(merged)',
+    // Wildcard row templates apply FIRST (they style every row of the
+    // field, including rows that did not exist before this render), then
+    // specific keys can win per row.
+    '    for (var wk = 0; wk < keys.length; wk++) {',
+    '      var wildKey = keys[wk]',
+    '      var wildParts = wildKey.split(":")',
+    '      if (wildParts[1] === "*") {',
+    '        applyRowTemplateHtmlToAll(wildParts[0], merged[wildKey].html, null)',
+    '      }',
+    '    }',
     '    for (var k = 0; k < keys.length; k++) {',
     '      var key = keys[k]',
     '      var entry = merged[key]',
@@ -895,9 +994,13 @@ export function buildTextStyleBridgeLines() {
     '      var parts = key.split(":")',
     '      var field = parts[0]',
     '      var optionId = parts[1] || ""',
+    '      if (optionId === "*") continue',
     '      var node = findEditableNode(field, optionId)',
     '      if (!node) continue',
-    '      var isStat = STAT_FIELDS[field]',
+    // Row-scoped fields in the qna kinds always keep the renderer's text:
+    // responses are a dynamic, reorderable list, so restoring a snapshot's
+    // full html could pin one answer's text onto a different row.
+    '      var isStat = STAT_FIELDS[field] || (ACTIVITY_KIND !== "poll" && isRowScopedField(field))',
     '      if (isStat) {',
     '        // Stat nodes: keep renderer text, restore style wrapper',
     '        var rendererText = (node.innerText || node.textContent || "").trim()',
