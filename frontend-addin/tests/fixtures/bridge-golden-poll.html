@@ -3373,7 +3373,19 @@
       hideContextMenu()
       drillScopeNode = null
       cancelDragInProgress()
+      if (textEditNode) {
+        exitTextEditMode()
+      } else if (selectedNode) {
+        setSelectedNode(null, null)
+      }
     }
+  }
+  function handleWindowBlurForSelection() {
+    if (dragState || resizeState) return
+    hideContextMenu()
+    drillScopeNode = null
+    if (textEditNode) { try { exitTextEditMode() } catch (e) {} }
+    if (selectedNode) setSelectedNode(null, null)
   }
   function isTypingContext() {
     if (textEditNode) return true
@@ -4437,6 +4449,7 @@
     document.addEventListener("pointermove", handlePointerMove, true)
     document.addEventListener("pointerup", handlePointerUp, true)
     document.addEventListener("pointercancel", handlePointerUp, true)
+    window.addEventListener("blur", handleWindowBlurForSelection)
     window.addEventListener("resize", refreshSelectionOverlay)
     window.addEventListener("scroll", refreshSelectionOverlay, true)
     window.addEventListener("message", handlePositionInitMessage)

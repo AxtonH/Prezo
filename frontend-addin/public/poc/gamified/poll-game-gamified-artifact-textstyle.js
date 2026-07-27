@@ -1877,7 +1877,26 @@ export function buildTextStyleBridgeLines() {
     '      hideContextMenu()',
     '      drillScopeNode = null',
     '      cancelDragInProgress()',
+    // PowerPoint-style stepping: Esc in text edit drops back to object
+    // selection; Esc with a plain selection deselects.
+    '      if (textEditNode) {',
+    '        exitTextEditMode()',
+    '      } else if (selectedNode) {',
+    '        setSelectedNode(null, null)',
+    '      }',
     '    }',
+    '  }',
+    // Clicking anywhere OUTSIDE the artifact (the PowerPoint canvas around
+    // the embed, host chrome) never reaches this document, so the selection
+    // used to stick forever. Focus leaving the iframe window is the signal
+    // that the user moved on — clear everything. Skipped mid-gesture:
+    // pointer capture can shuffle focus without the user leaving.
+    '  function handleWindowBlurForSelection() {',
+    '    if (dragState || resizeState) return',
+    '    hideContextMenu()',
+    '    drillScopeNode = null',
+    '    if (textEditNode) { try { exitTextEditMode() } catch (e) {} }',
+    '    if (selectedNode) setSelectedNode(null, null)',
     '  }',
     // Delete / Backspace deletes (hides) the current selection. Strictly
     // gated so it never fires while the user is editing text: skip when in
@@ -3231,6 +3250,7 @@ export function buildTextStyleBridgeLines() {
     '    document.addEventListener("pointermove", handlePointerMove, true)',
     '    document.addEventListener("pointerup", handlePointerUp, true)',
     '    document.addEventListener("pointercancel", handlePointerUp, true)',
+    '    window.addEventListener("blur", handleWindowBlurForSelection)',
     '    window.addEventListener("resize", refreshSelectionOverlay)',
     '    window.addEventListener("scroll", refreshSelectionOverlay, true)',
     '    window.addEventListener("message", handlePositionInitMessage)',
