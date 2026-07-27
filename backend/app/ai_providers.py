@@ -20,7 +20,7 @@ from .config import settings
 logger = logging.getLogger("prezo.ai")
 
 
-DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-opus-4-8"
+DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL = "claude-opus-5"
 
 DEFAULT_ANTHROPIC_INTAKE_MODEL = "claude-haiku-4-5"
 
@@ -40,7 +40,10 @@ DEFAULT_GEMINI_ARTIFACT_ANSWER_MODEL = "gemini-2.5-flash-lite"
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-ANTHROPIC_ARTIFACT_MAX_TOKENS = 16000
+# On Opus 5, thinking is on by default and counts against max_tokens, so the
+# cap needs headroom beyond the artifact HTML itself or builds truncate with
+# stop_reason=max_tokens. 32000 leaves ~16k for thinking on top of the output.
+ANTHROPIC_ARTIFACT_MAX_TOKENS = 32000
 
 # Intake replies are a single short question or a small JSON brief.
 ANTHROPIC_INTAKE_MAX_TOKENS = 1200
@@ -426,10 +429,16 @@ def normalize_anthropic_model_name(value: str | None) -> str:
 
 # Anthropic models from Opus 4.7 onward removed sampling params (temperature,
 # top_p, top_k) and the enabled/budget_tokens thinking mode — sending any of them
-# returns a 400. Older Claude models (Opus 4.6 and earlier, all Sonnet/Haiku 4.x)
-# still accept temperature. This gate only applies to the Anthropic call; the
-# Gemini path is unaffected.
-ANTHROPIC_MODELS_WITHOUT_SAMPLING_PARAMS = ("opus-4-8", "opus-4-7")
+# returns a 400. Opus 5, Sonnet 5, and Fable 5 keep that behavior. Older Claude
+# models (Opus 4.6 and earlier, Sonnet 4.x, Haiku 4.x) still accept temperature.
+# This gate only applies to the Anthropic call; the Gemini path is unaffected.
+ANTHROPIC_MODELS_WITHOUT_SAMPLING_PARAMS = (
+    "opus-5",
+    "opus-4-8",
+    "opus-4-7",
+    "sonnet-5",
+    "fable-5",
+)
 
 def anthropic_model_accepts_sampling_params(model: str) -> bool:
     normalized = (model or "").strip().lower()

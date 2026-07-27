@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     spike_endpoints_enabled: bool = False
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com/v1"
-    anthropic_artifact_build_model: str = "claude-sonnet-4-6"
+    anthropic_artifact_build_model: str = "claude-opus-5"
     anthropic_artifact_build_timeout_seconds: float = 180.0
     anthropic_intake_model: str = "claude-haiku-4-5"
     anthropic_intake_timeout_seconds: float = 30.0
