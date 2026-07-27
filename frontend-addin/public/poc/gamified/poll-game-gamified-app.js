@@ -507,7 +507,7 @@ import {
       state.apiBase = apiBase
     },
     // The library panel is instantiated further down (it needs the handler
-    // instances declared below), so its methods arrive as deferred arrows â€”
+    // instances declared below), so its methods arrive as deferred arrows —
     // the sync manager only invokes them post-init, once the panel consts
     // exist.
     mergeRemoteThemeLibrary: (records) => mergeRemoteThemeLibrary(records),
@@ -734,7 +734,7 @@ import {
       // Record an undo entry only for genuine user deletes from the iframe,
       // which always carry an explicit priorHidden flag. The history re-apply
       // path (applyHistoryHiddenEntry) omits priorHidden so re-emitting an
-      // undo/redo doesn't push a fresh entry â€” mirrors the position/size
+      // undo/redo doesn't push a fresh entry — mirrors the position/size
       // handlers' priorDx/priorSx guard.
       if (!message || typeof message.priorHidden !== 'boolean') return
       artifactHistory.push({
@@ -755,14 +755,14 @@ import {
     }
   })
   // Undo/redo. Closure resolves apply* helpers at call time so they don't
-  // need to be defined before this constructor runs. Scope: per-artifact â€”
+  // need to be defined before this constructor runs. Scope: per-artifact —
   // we clear the stacks when the artifact is rebuilt or swapped.
   const artifactHistory = createArtifactHistoryHandler({
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
   })
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
   // preference, persisted in localStorage. Present mode unconditionally
-  // forces visual aids off â€” handled by the handler's getEffectiveConfig.
+  // forces visual aids off — handled by the handler's getEffectiveConfig.
   const artifactGuides = createArtifactGuidesHandler({
     onConfigChange: () => {
       pushArtifactGridConfig()
@@ -936,7 +936,7 @@ import {
   /**
    * Tell the embed parent (poll-game-content.html) what visual mode this
    * iframe is currently rendering. Called from every site that mutates
-   * currentTheme.visualMode â€” both the standard updateTheme path AND the
+   * currentTheme.visualMode — both the standard updateTheme path AND the
    * direct-assignment paths (history undo/redo, theme load, artifact preset
    * load) which bypass updateTheme. The outer embed deduplicates against its
    * own currentScreenMode, so calling here unconditionally is safe.
@@ -980,8 +980,8 @@ import {
   // Theme editor DOM half: control bindings, updateTheme/applyTheme/
   // syncThemeControls, and the image upload UI. Instantiated after
   // historyState (updateTheme reads its `applying` flag by reference) and
-  // before init() runs. The canvas-object helpers stay in this file â€” the
-  // drag/resize engine shares them â€” and arrive as callbacks under their
+  // before init() runs. The canvas-object helpers stay in this file — the
+  // drag/resize engine shares them — and arrive as callbacks under their
   // original names. Destructured names keep every historical call site
   // unchanged.
   const themeEditor = createThemeEditor({
@@ -1067,7 +1067,7 @@ import {
 
   // Canvas drag/resize engine: pointer move/resize for every stage object,
   // the resize selection box, position reset, and the shared canvas-object
-  // geometry helpers (also injected into the theme editor above â€” the arrows
+  // geometry helpers (also injected into the theme editor above — the arrows
   // there resolve to these consts at call time). dragState/resizeState/
   // resizeProfiles come back BY REFERENCE so the ribbon guard, artifact-mode
   // sync, and unload cleanup read the engine's live state unchanged.
@@ -1803,7 +1803,7 @@ import {
       'title',
       state.presentMode ? 'Exit present mode' : 'Enter present mode'
     )
-    el.presentModeToggle.textContent = state.presentMode ? 'Ã—' : '+'
+    el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(
@@ -2083,7 +2083,7 @@ import {
     }
     const g = payload?.guidelines
     if (g && typeof g === 'object' && Object.keys(g).length > 0) {
-      return `Reference image â€” visual guidelines (extracted):\n${JSON.stringify(g, null, 2)}`
+      return `Reference image — visual guidelines (extracted):\n${JSON.stringify(g, null, 2)}`
     }
     return ''
   }
@@ -2118,7 +2118,7 @@ import {
     el.artifactBrandReferencePreview.removeAttribute('title')
   }
 
-  /** Ã— on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
+  /** × on the brand reference pill: drop the uploaded reference and its extracted guidelines. */
   function handleArtifactBrandReferenceClearClick() {
     if (el.artifactBrandReferenceClear.disabled || artifactBrandReferenceBusy) {
       return
@@ -2326,13 +2326,13 @@ import {
     )
     insertChipAtCaret(el.artifactPromptInput, chip)
     refreshComposerPlaceholder(el.artifactPromptInput)
-    el.artifactTypeReferenceStatus.textContent = 'Uploading imageâ€¦'
+    el.artifactTypeReferenceStatus.textContent = 'Uploading image…'
     el.artifactTypeReferenceInput.value = ''
     syncArtifactComposerBusyState()
 
     void (async () => {
       // Base64 (Anthropic vision on initial build). Only for images small enough to send
-      // as vision â€” larger ones embed via their hosted URL only, so we skip the base64
+      // as vision — larger ones embed via their hosted URL only, so we skip the base64
       // read to keep the request under provider inline-data limits. Non-fatal either way.
       if (file.size <= ARTIFACT_BUILD_REFERENCE_VISION_MAX_BYTES) {
         try {
@@ -2364,7 +2364,7 @@ import {
           entry.status = 'error'
           setChipState(el.artifactPromptInput, id, { status: 'error', url: '' })
           el.artifactTypeReferenceStatus.textContent =
-            'Could not host that image for embedding â€” remove it and try again.'
+            'Could not host that image for embedding — remove it and try again.'
         }
       } finally {
         syncArtifactComposerBusyState()
@@ -2473,9 +2473,9 @@ import {
   }
 
   let artifactBrandProfilesFetchPromise = null
-  // name â†’ up to 3 top-ranked hexes from the profile's saved brand facts,
+  // name → up to 3 top-ranked hexes from the profile's saved brand facts,
   // used to paint that brand's quick-reply chip as a gradient of its
-  // identity colors. Empty/missing â†’ default chip style.
+  // identity colors. Empty/missing → default chip style.
   const artifactBrandChipColorsByName = new Map()
 
   function pickArtifactBrandChipColors(row) {
@@ -2541,7 +2541,7 @@ import {
     // no longer claim the footer's auto-margin. The pill dims while analyzing.
     showArtifactBrandReferencePreview(file, { uploading: true })
     artifactBrandReferenceBusy = true
-    el.artifactBrandReferenceStatus.textContent = 'Analyzingâ€¦'
+    el.artifactBrandReferenceStatus.textContent = 'Analyzing…'
     syncArtifactComposerBusyState()
     try {
       const formData = new FormData()
@@ -2609,7 +2609,7 @@ import {
         select.appendChild(none)
         const referenceOption = document.createElement('option')
         referenceOption.value = ARTIFACT_BRAND_REFERENCE_VALUE
-        referenceOption.textContent = 'Upload a reference imageâ€¦'
+        referenceOption.textContent = 'Upload a reference image…'
         select.appendChild(referenceOption)
         artifactBrandChipColorsByName.clear()
         for (const row of payload) {
@@ -2633,7 +2633,7 @@ import {
   // While the intake request is in flight, the wizard's bubble types out a
   // short narration of what the turn is actually doing (read the answer,
   // check brand profiles, decide what to ask) instead of a static
-  // "Thinkingâ€¦" label. The provider call is not streamed, so this is a
+  // "Thinking…" label. The provider call is not streamed, so this is a
   // local typewriter over honest pipeline descriptions, not model output.
   const ARTIFACT_INTAKE_THINKING_TICK_MS = 35
   const ARTIFACT_INTAKE_THINKING_PAUSE_TICKS = 12
@@ -2645,16 +2645,16 @@ import {
 
   function buildArtifactIntakeThinkingPhrases({ forceReady }) {
     if (forceReady) {
-      return ['Skipping ahead â€” pulling everything you told me into a creative briefâ€¦']
+      return ['Skipping ahead — pulling everything you told me into a creative brief…']
     }
     const intake = state.artifact.intake
     const userTurns = intake.messages.filter((message) => message.role === 'user').length
-    const phrases = [userTurns <= 1 ? 'Reading your ideaâ€¦' : 'Reading your answerâ€¦']
+    const phrases = [userTurns <= 1 ? 'Reading your idea…' : 'Reading your answer…']
     const chosenBrand = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
     if (collectArtifactBrandProfileNames().length && !chosenBrand) {
-      phrases.push('Checking your saved brand profilesâ€¦')
+      phrases.push('Checking your saved brand profiles…')
     }
-    phrases.push('Deciding whether I have enough to build, or what to ask nextâ€¦')
+    phrases.push('Deciding whether I have enough to build, or what to ask next…')
     return phrases
   }
 
@@ -2716,7 +2716,7 @@ import {
   // Quick-reply chips replace the old labeled brand dropdown: they render
   // inside the chat log under the intake model's brand question (it labels
   // each question with a topic) and answer the turn in one click. The hidden
-  // select stays as the data store â€” form submits re-read its value.
+  // select stays as the data store — form submits re-read its value.
   function shouldShowArtifactBrandChips() {
     const intake = state.artifact.intake
     if (isArtifactConversationComplete() || intake.busy || state.artifact.busy) {
@@ -2741,7 +2741,7 @@ import {
       if (brandColors.length) {
         chip.classList.add('branded')
         // The outline's gradient is mostly the standard soft purple with a
-        // narrow band of the brand colors at 40â€“56% of an oversized image;
+        // narrow band of the brand colors at 40–56% of an oversized image;
         // the CSS animation slides that band across the ring periodically.
         const band = brandColors
           .map((hex, index) => {
@@ -2771,7 +2771,7 @@ import {
     }
     addChip('No brand', true, () => handleArtifactIntakeBrandChipClick(''))
     if (getLibraryAccessToken()) {
-      addChip('Use a reference imageâ€¦', true, handleArtifactIntakeReferenceChipClick)
+      addChip('Use a reference image…', true, handleArtifactIntakeReferenceChipClick)
     }
     return row
   }
@@ -2791,7 +2791,7 @@ import {
     select.value = name
     handleArtifactBrandProfileSelectChange()
     void submitArtifactConversationAnswer(
-      name ? `Use the "${name}" brand profile.` : 'No brand â€” use your judgment.'
+      name ? `Use the "${name}" brand profile.` : 'No brand — use your judgment.'
     )
   }
 
@@ -3155,7 +3155,7 @@ import {
       (entry) => entry.status === 'uploading'
     )
     if (hasPendingUpload) {
-      el.artifactTypeReferenceStatus.textContent = 'Wait for attached images to finish uploadingâ€¦'
+      el.artifactTypeReferenceStatus.textContent = 'Wait for attached images to finish uploading…'
       return
     }
     const brandName = asText(state.artifact.conversationAnswers?.brandProfileName).trim()
@@ -3273,14 +3273,14 @@ import {
     }
     if (message.type === ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE) {
       // The iframe finished applying hidden (delete) overrides and the browser
-      // has had a frame to paint them. Safe to reveal the masked frame now â€”
+      // has had a frame to paint them. Safe to reveal the masked frame now —
       // deleted elements are invisible, so there's no load flicker.
       revealArtifactFrame()
       return
     }
     if (message.type === ARTIFACT_HISTORY_SHORTCUT_MESSAGE_TYPE) {
       // Shortcut forwarded from the iframe bridge. Same arbitration as the
-      // host-side keydown listener â€” run undo or redo via artifactHistory.
+      // host-side keydown listener — run undo or redo via artifactHistory.
       if (message.action === 'redo') {
         artifactHistory.redo()
       } else if (message.action === 'undo') {
@@ -3353,7 +3353,7 @@ import {
 
   function handleArtifactRenderError(message) {
     // A failed render won't push overrides, so drop the load mask immediately
-    // rather than waiting on its safety timeout â€” the user should see whatever
+    // rather than waiting on its safety timeout — the user should see whatever
     // rendered (or the error state) without delay.
     revealArtifactFrame()
     state.artifact.renderErrorCount = Math.max(
@@ -3614,7 +3614,7 @@ import {
     const expanded = state.editorShellExpanded
     el.aiChatShell.classList.toggle('editor-shell--expanded', expanded)
     const label = expanded ? 'Show less' : 'Show history and activity'
-    const icon = expanded ? 'â–¼' : 'â–²'
+    const icon = expanded ? '▼' : '▲'
     el.aiEditorShellToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false')
     el.aiEditorShellToggle.setAttribute('aria-label', label)
     el.aiEditorShellToggle.setAttribute('title', label)
@@ -3770,7 +3770,7 @@ import {
 
   function handleArtifactPromptInputInput() {
     // Reconcile attachment state with the DOM: a chip the user deleted with Backspace
-    // (rather than its Ã— button) leaves an orphaned Map entry â€” drop it and revoke its
+    // (rather than its × button) leaves an orphaned Map entry — drop it and revoke its
     // preview object URL so collectReadyAttachmentUrls stays in sync.
     const presentIds = new Set(
       Array.from(el.artifactPromptInput.querySelectorAll('.artifact-image-chip')).map(
@@ -4055,7 +4055,7 @@ import {
       state.artifact.rollbackPackage = null
       state.artifact.pendingRequestKind = 'build'
       pendingArtifactCopyOverrides = {}
-      // Fresh build replaces the artifact entirely â€” drop any pending
+      // Fresh build replaces the artifact entirely — drop any pending
       // position/size drags that belonged to the prior artifact.
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
@@ -4087,7 +4087,7 @@ import {
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
     // Bake the deleted-element hide stylesheet into the srcdoc so deleted
-    // elements never paint visible on load â€” eliminates the flicker at the
+    // elements never paint visible on load — eliminates the flicker at the
     // source, no masking/wait needed. Built from saved + pending hidden
     // overrides (pending wins), matching what pushArtifactHiddenOverrides sends.
     const bakedHiddenCss = buildArtifactHiddenCss(
@@ -4131,13 +4131,13 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactDelete.clearPendingHiddenOverrides()
-      // AI edits rebuild the DOM â€” prior undo entries reference nodes that
+      // AI edits rebuild the DOM — prior undo entries reference nodes that
       // may no longer exist or whose stable ids have shifted.
       artifactHistory.clear()
       const nextOverrides = { ...merged }
       // Drop overrides whose underlying element the AI just changed. This
       // resolves the conflict where the user manually colors the title red,
-      // then asks the AI for blue â€” without this, the red override would
+      // then asks the AI for blue — without this, the red override would
       // re-apply and overwrite the AI's blue.
       const priorHtmlForDiff = asText(state.artifact.rollbackHtml || state.artifact.lastStableHtml)
       dropOverridesAiChanged(nextOverrides, priorHtmlForDiff, resolvedMarkup)
@@ -4650,7 +4650,7 @@ import {
     return true
   }
 
-  // â”€â”€ Artifact iframe text style toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Artifact iframe text style toolbar ──────────────────────────
 
   let artifactToolbarInteractionUntil = 0
 
@@ -4825,7 +4825,7 @@ import {
 
   /**
    * Called by the text-edit handler when a subtitle or footer field is edited.
-   * Stores the copy locally â€” no force push needed because:
+   * Stores the copy locally — no force push needed because:
    *  - The user's typed text is already visible in the DOM.
    *  - The copy will be included in `meta.artifactCopy` on the next natural
    *    payload push (vote update, etc.) and reapplied after that render.
@@ -4896,7 +4896,7 @@ import {
       // Suppress further history recording when we re-emit via the handler.
       // The position handler doesn't currently re-fire onPositionChange for
       // history entries (priorDx/priorDy unset so the host filter drops
-      // them) â€” so this is implicit, but make the intent explicit:
+      // them) — so this is implicit, but make the intent explicit:
       priorDx: undefined,
       priorDy: undefined
     })
@@ -4939,7 +4939,7 @@ import {
     const field = target.field
     const optionId = target.optionId || ''
     const text = typeof target.text === 'string' ? target.text : ''
-    // Copy / generic text â€” route through the same persistence shape
+    // Copy / generic text — route through the same persistence shape
     // handleArtifactCopyEdit uses.
     if (field === 'subtitle' || field === 'footer') {
       handleArtifactCopyEdit(field, text)
@@ -4950,7 +4950,7 @@ import {
       handleArtifactCopyEdit('text', text, { stableId: optionId })
       return
     }
-    // Poll fields: question / option-label â€” PATCH the poll so the change
+    // Poll fields: question / option-label — PATCH the poll so the change
     // broadcasts to audience like a fresh edit. Use the existing textedit
     // handler's apply* helpers indirectly by re-sending a synthetic
     // prezo-text-edit message into it (no priorText so we don't loop).
@@ -5035,7 +5035,7 @@ import {
   }
 
   /**
-   * Sibling of pushArtifactPositionOverrides â€” pushes the merged saved +
+   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
    * pending size overrides into the iframe so resized elements appear at
    * their scaled dimensions immediately on load. Called from the same
    * lifecycle points as the position push.
@@ -5058,7 +5058,7 @@ import {
   }
 
   /**
-   * Sibling of pushArtifactPositionOverrides â€” pushes the merged saved +
+   * Sibling of pushArtifactPositionOverrides — pushes the merged saved +
    * pending hidden (delete) overrides into the iframe so deleted elements
    * stay hidden immediately on load. Called from the same lifecycle points
    * as the position/size pushes.
@@ -5079,7 +5079,7 @@ import {
     )
   }
 
-  // â”€â”€ Override-load masking (anti-snap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Override-load masking (anti-snap) ────────────────────────────────
   // The override push messages land ~250-300ms after the artifact first
   // paints, so without masking the user sees the un-edited artifact "snap"
   // into the edited one. We hide the frame the moment we inject an artifact
@@ -5089,7 +5089,7 @@ import {
   let artifactRevealTimerId = 0
 
   /**
-   * True when the artifact carries manual edits worth masking for â€” any
+   * True when the artifact carries manual edits worth masking for — any
    * position / size / hidden / text-style / copy override. A clean artifact
    * has nothing to snap, so we don't mask it (no needless blank frame).
    */
@@ -5107,7 +5107,7 @@ import {
   /**
    * Hide the frame ahead of the override push so the un-edited paint is never
    * shown. No-op (and immediate reveal) when there's nothing to apply.
-   * `maxMaskMs` is the safety ceiling â€” the frame always reveals by then even
+   * `maxMaskMs` is the safety ceiling — the frame always reveals by then even
    * if the reveal call is somehow missed.
    */
   function maskArtifactFrameForOverrides() {

@@ -80,14 +80,14 @@ export function createOverrideDiff(deps) {
    * Detection: for each override key, locate the corresponding element in
    * both the prior HTML (what the artifact looked like before this AI
    * edit) and the new HTML (the AI's output). If the element's stable
-   * signature differs between the two, the AI changed it â€” drop the
+   * signature differs between the two, the AI changed it — drop the
    * override. Conservative on uncertainty: an override we can't locate
    * in BOTH HTMLs is kept (preserves drags on decorative children, etc).
    *
    * Only the question / option-label / option-* / position override kinds
    * have a reliable locator in arbitrary AI HTML. Copy and generic text
    * overrides depend on stable DOM-path ids that don't survive AI
-   * restructures â€” those are pruned elsewhere (pruneStalePollStyleOverridesInStore).
+   * restructures — those are pruned elsewhere (pruneStalePollStyleOverridesInStore).
    *
    * @param {Record<string, unknown>} store
    * @param {string} priorHtml
@@ -147,10 +147,10 @@ export function createOverrideDiff(deps) {
       if (key.startsWith('__prezo_pos:')) {
         // Position overrides need careful handling because AI edits can
         // affect different elements than the user dragged:
-        //   - User drags element A, asks AI to change A's position â†’ AI
+        //   - User drags element A, asks AI to change A's position → AI
         //     moves A. We need to DROP A's override so the bridge doesn't
         //     re-apply the old drag on top of the AI's new position.
-        //   - User drags element A, asks AI to change B â†’ AI rewrites the
+        //   - User drags element A, asks AI to change B → AI rewrites the
         //     whole artifact and may strip A's inline transform as a
         //     side-effect. We need to KEEP A's override so the bridge
         //     re-applies the drag on render. A's position is preserved.
@@ -161,7 +161,7 @@ export function createOverrideDiff(deps) {
         //   - element has its own inline absolute/fixed positioning
         //   - element's parent layout changed meaningfully (parent class,
         //     parent inline style, sibling index)
-        // Otherwise keep the override â€” the AI didn't move this element,
+        // Otherwise keep the override — the AI didn't move this element,
         // it just rewrote unrelated parts of the artifact.
         const stableId = key.slice('__prezo_pos:'.length)
         const parsed = safeParseJSON(store[key])
@@ -171,7 +171,7 @@ export function createOverrideDiff(deps) {
         const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
         const target = locatePositionTarget(priorDoc, stableId, role, optionId, label, anchor)
         const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, label, anchor)
-        // Diagnostic logging â€” remove once override-after-AI is verified
+        // Diagnostic logging — remove once override-after-AI is verified
         // stable. Helps explain why a particular position override was
         // dropped on the user's machine.
         const diag = {
@@ -200,7 +200,7 @@ export function createOverrideDiff(deps) {
         // renderer at runtime (e.g. option rows built from poll data via
         // JS in <script>), so it doesn't appear in the parsed static HTML
         // on either side. We can still detect AI moves that ride on
-        // stylesheet rules â€” the AI typically adds/edits a rule that
+        // stylesheet rules — the AI typically adds/edits a rule that
         // targets the row's container or class selector (e.g.
         // `.tower-col:nth-child(1) { order: 99 }`) and those rules ARE
         // present in the parsed <style>.
@@ -245,7 +245,7 @@ export function createOverrideDiff(deps) {
           continue
         }
         recordDecision('KEEP', 'AI did not move this element')
-        // Keep override â€” bridge will re-apply on render.
+        // Keep override — bridge will re-apply on render.
         continue
       }
       if (key.startsWith('__prezo_size:')) {
@@ -253,7 +253,7 @@ export function createOverrideDiff(deps) {
         // explicitly took control of THIS element's size (inline width/
         // height/transform:scale, or a stylesheet rule that touches any
         // of the size-affecting properties on this element's selectors).
-        // Otherwise keep â€” the user's manual resize survives an AI edit
+        // Otherwise keep — the user's manual resize survives an AI edit
         // that targeted a different element.
         const stableId = key.slice('__prezo_size:'.length)
         const parsed = safeParseJSON(store[key])
@@ -311,7 +311,7 @@ export function createOverrideDiff(deps) {
         recordSizeDecision('KEEP', 'AI did not resize this element')
         continue
       }
-      // Other keys (subtitle, footer, generic text) â€” left alone here.
+      // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
     }
@@ -447,7 +447,7 @@ export function createOverrideDiff(deps) {
    *   margin: <something> auto or auto on horizontal sides
    *
    * Returns true if any of these positioning intents appear inline on
-   * the element. Stylesheet-driven moves are NOT detected here â€” those
+   * the element. Stylesheet-driven moves are NOT detected here — those
    * are caught by parentLayoutChanged.
    */
   function hasExplicitPositioning(el) {
@@ -469,7 +469,7 @@ export function createOverrideDiff(deps) {
    *   - the parent gained or lost layout-affecting inline style (display,
    *     justify-content, align-items, flex-direction, text-align)
    *
-   * We deliberately do NOT trip on arbitrary parent class changes â€” the
+   * We deliberately do NOT trip on arbitrary parent class changes — the
    * AI often renames classes during rewrites without actually changing
    * layout, and we don't want to drop overrides on those.
    */
@@ -528,7 +528,7 @@ export function createOverrideDiff(deps) {
   }
 
   // For elements that the artifact renders at runtime (option rows, etc.)
-  // we can't pull selectors from a parsed DOM node â€” the node doesn't exist
+  // we can't pull selectors from a parsed DOM node — the node doesn't exist
   // on either side. Synthesize a selector set from the known container ids
   // for the role plus the well-known option-row class fragments. The
   // extractor only keeps rules whose body actually carries layout decls,
@@ -550,7 +550,7 @@ export function createOverrideDiff(deps) {
     ]
     for (const c of knownClasses) out.add('.' + c)
     // Also harvest selectors from the existing stylesheet text that target
-    // any of the well-known container ids â€” covers AI rewrites that
+    // any of the well-known container ids — covers AI rewrites that
     // introduced a child-targeting rule like `.tower-col:nth-child(1)`.
     return Array.from(out)
   }
@@ -701,7 +701,7 @@ export function createOverrideDiff(deps) {
   // recorded (e.g. a stableId or option id round-tripped through a JSON
   // serializer or rewritten by the model). Without the `i` flag the
   // querySelector silently misses and the caller falls into "element not
-  // found" branches â€” see the override-not-cleared bug where the user moved
+  // found" branches — see the override-not-cleared bug where the user moved
   // the title, the AI moved it too, but the override re-applied on top.
   function attrEqI(name, value) {
     return `[${name}="${cssAttrEscape(value)}" i]`
