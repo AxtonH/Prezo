@@ -2978,7 +2978,11 @@
       if (el.matches && el.matches(SKIP_SELECT_SELECTORS)) continue
       if (el.closest && el.closest(SKIP_SELECT_SELECTORS)) continue
       if (el.closest && el.closest("[data-prezo-context-menu]")) continue
-      if (!isVisiblyPaintedElement(el)) continue
+      if (!isVisiblyPaintedElement(el)) {
+        var semantic = classifySelectableGroup(el)
+        if (!semantic) continue
+        if (semantic.kind === "scene" || semantic.kind === "background" || semantic.kind === "foreground") continue
+      }
       var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null
       if (!r || r.width <= 0 || r.height <= 0) continue
       var area = r.width * r.height

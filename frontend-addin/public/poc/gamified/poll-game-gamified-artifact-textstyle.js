@@ -1402,10 +1402,14 @@ export function buildTextStyleBridgeLines() {
     '    var stack = null',
     '    try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return fallback }',
     '    if (!stack || !stack.length) return fallback',
-    // Among every painted element under the pointer, prefer the SMALLEST
-    // bounding box — big painted layers (roads, skylines, panels) must not
-    // swallow the small objects layered around them. A larger element deeper
-    // in the stack can never beat a smaller one above it.
+    // Among every candidate under the pointer, prefer the SMALLEST bounding
+    // box — big painted layers (roads, skylines, panels) must not swallow
+    // the small objects layered around them. Candidates are elements that
+    // paint pixels, PLUS transparent elements with a real semantic role
+    // (options container, option row, question…) so group wrappers are
+    // clickable in their empty areas too. Full-bleed layer wrappers (scene,
+    // background, foreground) never compete by bounds — they are reachable
+    // via their painted contents or "Select parent".
     '    var best = null',
     '    var bestArea = Infinity',
     '    for (var i = 0; i < stack.length; i++) {',
@@ -1415,7 +1419,11 @@ export function buildTextStyleBridgeLines() {
     '      if (el.matches && el.matches(SKIP_SELECT_SELECTORS)) continue',
     '      if (el.closest && el.closest(SKIP_SELECT_SELECTORS)) continue',
     '      if (el.closest && el.closest("[data-prezo-context-menu]")) continue',
-    '      if (!isVisiblyPaintedElement(el)) continue',
+    '      if (!isVisiblyPaintedElement(el)) {',
+    '        var semantic = classifySelectableGroup(el)',
+    '        if (!semantic) continue',
+    '        if (semantic.kind === "scene" || semantic.kind === "background" || semantic.kind === "foreground") continue',
+    '      }',
     '      var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null',
     '      if (!r || r.width <= 0 || r.height <= 0) continue',
     '      var area = r.width * r.height',
