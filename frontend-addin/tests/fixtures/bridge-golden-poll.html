@@ -2969,6 +2969,8 @@
     var stack = null
     try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return fallback }
     if (!stack || !stack.length) return fallback
+    var best = null
+    var bestArea = Infinity
     for (var i = 0; i < stack.length; i++) {
       var el = stack[i]
       if (!el || el.nodeType !== 1) continue
@@ -2976,9 +2978,13 @@
       if (el.matches && el.matches(SKIP_SELECT_SELECTORS)) continue
       if (el.closest && el.closest(SKIP_SELECT_SELECTORS)) continue
       if (el.closest && el.closest("[data-prezo-context-menu]")) continue
-      if (isVisiblyPaintedElement(el)) return el
+      if (!isVisiblyPaintedElement(el)) continue
+      var r = el.getBoundingClientRect ? el.getBoundingClientRect() : null
+      if (!r || r.width <= 0 || r.height <= 0) continue
+      var area = r.width * r.height
+      if (area < bestArea) { best = el; bestArea = area }
     }
-    return fallback
+    return best || fallback
   }
   function findDeepestInScope(parent, pointTarget) {
     if (!parent) return null
@@ -3054,7 +3060,54 @@
       try { node.blur() } catch (e2) {}
     }
   }
-  function setSelectedNode(node, classification) {
+  var extraSelectedNodes = []
+  var extraOverlayEls = []
+  function findExtraIndex(node) {
+    for (var i = 0; i < extraSelectedNodes.length; i++) {
+      if (extraSelectedNodes[i].node === node) return i
+    }
+    return -1
+  }
+  function clearExtraSelections() {
+    if (extraSelectedNodes.length) extraSelectedNodes = []
+    syncExtraOverlays()
+  }
+  function syncExtraOverlays() {
+    if (!document.body) return
+    for (var d = extraSelectedNodes.length - 1; d >= 0; d--) {
+      var pruned = extraSelectedNodes[d]
+      if (!pruned.node || !document.body.contains(pruned.node)) extraSelectedNodes.splice(d, 1)
+    }
+    while (extraOverlayEls.length < extraSelectedNodes.length) {
+      var box = document.createElement("div")
+      box.setAttribute("data-prezo-selection-overlay", "extra")
+      box.style.cssText = [
+        "position:absolute",
+        "pointer-events:none",
+        "z-index:2147483646",
+        "border:2px dashed rgba(155,89,182,0.9)",
+        "border-radius:2px",
+        "box-shadow:0 0 0 1px rgba(255,255,255,0.35)",
+        "display:none"
+      ].join(";")
+      document.body.appendChild(box)
+      extraOverlayEls.push(box)
+    }
+    for (var k = 0; k < extraOverlayEls.length; k++) {
+      var boxEl = extraOverlayEls[k]
+      var entry = extraSelectedNodes[k]
+      if (!entry) { boxEl.style.display = "none"; continue }
+      var r = getDocumentRect(entry.node)
+      if (!r || r.w <= 0 || r.h <= 0) { boxEl.style.display = "none"; continue }
+      boxEl.style.display = "block"
+      boxEl.style.left = r.x + "px"
+      boxEl.style.top = r.y + "px"
+      boxEl.style.width = r.w + "px"
+      boxEl.style.height = r.h + "px"
+    }
+  }
+  function setSelectedNode(node, classification, opts) {
+    if (!opts || !opts.keepExtras) clearExtraSelections()
     if (textEditNode && textEditNode !== node) {
       exitTextEditMode()
     }
@@ -3082,6 +3135,7 @@
       return
     }
     positionSelectionOverlay(selectedNode)
+    syncExtraOverlays()
   }
   function handleSelectionClick(event) {
     var rawTarget = event && event.target
@@ -3091,11 +3145,12 @@
     if (rawTarget.closest && rawTarget.closest("[data-prezo-context-menu]")) return
     if (textEditNode && textEditNode.contains && textEditNode.contains(rawTarget)) return
     var target = resolveVisualClickTarget(event) || rawTarget
+    var additive = !!(event.ctrlKey || event.metaKey)
     if (drillScopeNode) {
       if (drillScopeNode === target || (drillScopeNode.contains && drillScopeNode.contains(target))) {
         var drilled = findDeepestInScope(drillScopeNode, target)
         if (drilled) {
-          maybePromoteSelection(drilled.node, drilled.classification)
+          commitClickSelection(drilled.node, drilled.classification, additive)
           return
         }
       } else {
@@ -3107,13 +3162,13 @@
     if (!pick) {
       var fallback = classifyElementFallback(target)
       if (fallback) {
-        maybePromoteSelection(target, fallback)
+        commitClickSelection(target, fallback, additive)
         return
       }
-      setSelectedNode(null, null)
+      if (!additive) setSelectedNode(null, null)
       return
     }
-    maybePromoteSelection(pick.node, pick.classification)
+    commitClickSelection(pick.node, pick.classification, additive)
   }
   function maybePromoteSelection(node, classification) {
     var sameAsCurrent = selectedNode && node === selectedNode
@@ -3122,6 +3177,35 @@
       return
     }
     setSelectedNode(node, classification)
+  }
+  function commitClickSelection(node, classification, additive) {
+    if (!additive) {
+      maybePromoteSelection(node, classification)
+      return
+    }
+    if (!node || (classification && classification.kind === "scene")) return
+    if (!selectedNode) {
+      setSelectedNode(node, classification)
+      return
+    }
+    if (node === selectedNode) {
+      var promoted = extraSelectedNodes.length ? extraSelectedNodes[extraSelectedNodes.length - 1] : null
+      if (promoted) {
+        extraSelectedNodes.pop()
+        setSelectedNode(promoted.node, promoted.classification, { keepExtras: true })
+      } else {
+        setSelectedNode(null, null)
+      }
+      return
+    }
+    var idx = findExtraIndex(node)
+    if (idx >= 0) {
+      extraSelectedNodes.splice(idx, 1)
+      syncExtraOverlays()
+      return
+    }
+    extraSelectedNodes.push({ node: node, classification: classification })
+    syncExtraOverlays()
   }
   var contextMenuEl = null
   function ensureContextMenu() {
@@ -3334,14 +3418,23 @@
   }
   function isPointerOverSelectedNode(event, target) {
     if (!selectedNode) return false
-    if (selectedNode === target || (selectedNode.contains && selectedNode.contains(target))) return true
+    var roots = [selectedNode]
+    for (var x = 0; x < extraSelectedNodes.length; x++) {
+      if (extraSelectedNodes[x].node) roots.push(extraSelectedNodes[x].node)
+    }
+    for (var rIdx = 0; rIdx < roots.length; rIdx++) {
+      var root = roots[rIdx]
+      if (root === target || (root.contains && root.contains(target))) return true
+    }
     if (!document.elementsFromPoint) return false
     var stack = null
     try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return false }
     if (!stack) return false
     for (var i = 0; i < stack.length; i++) {
       var el = stack[i]
-      if (el === selectedNode || (selectedNode.contains && selectedNode.contains(el))) return true
+      for (var j = 0; j < roots.length; j++) {
+        if (el === roots[j] || (roots[j].contains && roots[j].contains(el))) return true
+      }
     }
     return false
   }
@@ -3580,12 +3673,12 @@
     }
     return ""
   }
-  function postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy) {
+  function postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy, kindOverride, labelOverride) {
     if (!stableId) return
-    var kind = selectedKind || ""
+    var kind = kindOverride || selectedKind || ""
     var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""
-    var label = ""
-    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
+    var label = labelOverride || ""
+    if (!label && selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
     var anchorSelector = (kind === "element") ? buildElementAnchorSelector(node) : ""
     postParentMessage(POSITION_CHANGED_MESSAGE_TYPE, {
       stableId: stableId,
@@ -3643,6 +3736,16 @@
   function cancelDragInProgress() {
     if (!dragState) return
     applyPositionToNode(dragState.node, dragState.stableId, { dx: dragState.startDx, dy: dragState.startDy })
+    if (dragState.extras) {
+      for (var xi = 0; xi < dragState.extras.length; xi++) {
+        var ex = dragState.extras[xi]
+        applyPositionToNode(ex.node, ex.stableId, { dx: ex.startDx, dy: ex.startDy })
+        if (ex.node && ex.node.style) {
+          ex.node.style.transition = ex.transitionBaseline
+          ex.node.style.willChange = ex.willChangeBaseline
+        }
+      }
+    }
     exitDragFastMode(dragState.node)
     hideSnapReferenceMarker()
     dragState = null
@@ -3899,9 +4002,9 @@
     if (kind === "scene") return false
     return true
   }
-  function postCommittedHidden(stableId, node) {
+  function postCommittedHidden(stableId, node, kindOverride, labelOverride) {
     if (!stableId) return
-    var meta = buildHiddenOverrideMeta(node, selectedKind)
+    var meta = buildHiddenOverrideMeta(node, kindOverride || selectedKind, labelOverride)
     postParentMessage(ELEMENT_DELETED_MESSAGE_TYPE, {
       stableId: stableId,
       hidden: true,
@@ -3913,15 +4016,15 @@
       anchor: meta.anchor
     })
   }
-  function buildHiddenOverrideMeta(node, kind) {
+  function buildHiddenOverrideMeta(node, kind, labelOverride) {
     var role = kind || ""
     var optionId = (node && node.getAttribute && (node.getAttribute("data-prezo-editable-option-id") || node.getAttribute("data-option-id"))) || ""
     if (!optionId && node) {
       var rowId = getOptionIdFromRow(node)
       if (rowId) optionId = rowId
     }
-    var label = ""
-    if (selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
+    var label = labelOverride || ""
+    if (!label && selectionLabelEl && selectionLabelEl.textContent) label = selectionLabelEl.textContent
     var cssLabel = buildElementCssLabel(node)
     var anchor = ""
     if (role !== "option-row" && role !== "options-container") {
@@ -3936,13 +4039,26 @@
   function deleteSelectedElement() {
     if (!selectedNode) return
     if (!isDeletableSelection(selectedNode, selectedKind)) return
-    var node = selectedNode
-    var stableId = computeStableTextId(node)
-    if (!stableId) return
-    if (textEditNode === node) { try { exitTextEditMode() } catch (e) {} }
-    var meta = buildHiddenOverrideMeta(node, selectedKind)
-    applyHiddenToNode(node, stableId, { hidden: true, role: meta.role, optionId: meta.optionId, label: meta.label, cssLabel: meta.cssLabel, anchor: meta.anchor })
-    postCommittedHidden(stableId, node)
+    var targets = [{ node: selectedNode, kind: selectedKind, label: (selectionLabelEl && selectionLabelEl.textContent) || "" }]
+    for (var xi = 0; xi < extraSelectedNodes.length; xi++) {
+      var xEntry = extraSelectedNodes[xi]
+      if (!xEntry.node || xEntry.node === selectedNode) continue
+      var xKind = xEntry.classification ? xEntry.classification.kind : "element"
+      if (!isDeletableSelection(xEntry.node, xKind)) continue
+      targets.push({ node: xEntry.node, kind: xKind, label: xEntry.classification ? (xEntry.classification.label || "") : "" })
+    }
+    var deletedAny = false
+    for (var ti = 0; ti < targets.length; ti++) {
+      var t = targets[ti]
+      var stableId = computeStableTextId(t.node)
+      if (!stableId) continue
+      if (textEditNode === t.node) { try { exitTextEditMode() } catch (e) {} }
+      var meta = buildHiddenOverrideMeta(t.node, t.kind, t.label)
+      applyHiddenToNode(t.node, stableId, { hidden: true, role: meta.role, optionId: meta.optionId, label: meta.label, cssLabel: meta.cssLabel, anchor: meta.anchor })
+      postCommittedHidden(stableId, t.node, t.kind, t.label)
+      deletedAny = true
+    }
+    if (!deletedAny) return
     setSelectedNode(null, null)
   }
   function handlePointerDown(event) {
@@ -3991,6 +4107,28 @@
       moved: false,
       pointerId: event.pointerId
     }
+    dragState.extras = []
+    for (var xi = 0; xi < extraSelectedNodes.length; xi++) {
+      var xEntry = extraSelectedNodes[xi]
+      if (!xEntry.node || xEntry.node === selectedNode) continue
+      var xId = computeStableTextId(xEntry.node)
+      if (!xId) continue
+      var xCur = readCurrentOffsetFor(xId)
+      dragState.extras.push({
+        node: xEntry.node,
+        stableId: xId,
+        startDx: xCur.dx,
+        startDy: xCur.dy,
+        kind: xEntry.classification ? xEntry.classification.kind : "element",
+        label: xEntry.classification ? (xEntry.classification.label || "") : "",
+        transitionBaseline: (xEntry.node.style && xEntry.node.style.transition) || "",
+        willChangeBaseline: (xEntry.node.style && xEntry.node.style.willChange) || ""
+      })
+      if (xEntry.node.style) {
+        xEntry.node.style.transition = "none"
+        xEntry.node.style.willChange = "transform"
+      }
+    }
     showSnapReferenceMarker()
     enterDragFastMode(selectedNode)
     try { event.target.setPointerCapture && event.target.setPointerCapture(event.pointerId) } catch (e) {}
@@ -4012,6 +4150,14 @@
     dx = snapped.dx
     dy = snapped.dy
     applyPositionToNode(dragState.node, dragState.stableId, { dx: dx, dy: dy })
+    if (dragState.extras && dragState.extras.length) {
+      var sharedDx = dx - dragState.startDx
+      var sharedDy = dy - dragState.startDy
+      for (var xi = 0; xi < dragState.extras.length; xi++) {
+        var ex = dragState.extras[xi]
+        applyPositionToNode(ex.node, ex.stableId, { dx: ex.startDx + sharedDx, dy: ex.startDy + sharedDy })
+      }
+    }
     refreshSnapReferenceMarker()
     scheduleOverlayRefresh()
   }
@@ -4029,14 +4175,32 @@
     dx = snapped.dx
     dy = snapped.dy
     var moved = dragState.moved
+    var extras = dragState.extras || []
     try { event.target.releasePointerCapture && event.target.releasePointerCapture(event.pointerId) } catch (e) {}
     exitDragFastMode(node)
+    for (var ri = 0; ri < extras.length; ri++) {
+      var rx = extras[ri]
+      if (rx.node && rx.node.style) {
+        rx.node.style.transition = rx.transitionBaseline
+        rx.node.style.willChange = rx.willChangeBaseline
+      }
+    }
     hideSnapReferenceMarker()
     dragState = null
     if (!moved) return
     applyPositionToNode(node, stableId, { dx: dx, dy: dy })
     lastKnownPositionOverrides[stableId] = { dx: dx, dy: dy }
     postCommittedPosition(stableId, node, dx, dy, priorDx, priorDy)
+    var groupDx = dx - priorDx
+    var groupDy = dy - priorDy
+    for (var ci = 0; ci < extras.length; ci++) {
+      var cx = extras[ci]
+      var exDx = cx.startDx + groupDx
+      var exDy = cx.startDy + groupDy
+      applyPositionToNode(cx.node, cx.stableId, { dx: exDx, dy: exDy })
+      lastKnownPositionOverrides[cx.stableId] = { dx: exDx, dy: exDy }
+      postCommittedPosition(cx.stableId, cx.node, exDx, exDy, cx.startDx, cx.startDy, cx.kind, cx.label)
+    }
     refreshSelectionOverlay()
   }
   function handlePositionInitMessage(event) {
