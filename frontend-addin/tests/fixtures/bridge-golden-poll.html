@@ -3332,6 +3332,19 @@
     if (kind === "scene") return false
     return true
   }
+  function isPointerOverSelectedNode(event, target) {
+    if (!selectedNode) return false
+    if (selectedNode === target || (selectedNode.contains && selectedNode.contains(target))) return true
+    if (!document.elementsFromPoint) return false
+    var stack = null
+    try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return false }
+    if (!stack) return false
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i]
+      if (el === selectedNode || (selectedNode.contains && selectedNode.contains(el))) return true
+    }
+    return false
+  }
   function getNodeTransformBaseline(node, stableId) {
     if (!stableId) return ""
     if (Object.prototype.hasOwnProperty.call(positionBaseTransforms, stableId)) {
@@ -3944,7 +3957,7 @@
     }
     if (!isMovableSelection(selectedNode, selectedKind)) return
     if (target.closest && target.closest("[data-prezo-context-menu]")) return
-    if (!selectedNode.contains || !selectedNode.contains(target)) return
+    if (!isPointerOverSelectedNode(event, target)) return
     if (textEditNode && (textEditNode === target || textEditNode.contains(target))) return
     var stableId = computeStableTextId(selectedNode)
     if (!stableId) return

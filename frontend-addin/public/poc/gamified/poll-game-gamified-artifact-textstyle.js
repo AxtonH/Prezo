@@ -1842,6 +1842,19 @@ export function buildTextStyleBridgeLines() {
     '    if (kind === "scene") return false',
     '    return true',
     '  }',
+    '  function isPointerOverSelectedNode(event, target) {',
+    '    if (!selectedNode) return false',
+    '    if (selectedNode === target || (selectedNode.contains && selectedNode.contains(target))) return true',
+    '    if (!document.elementsFromPoint) return false',
+    '    var stack = null',
+    '    try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return false }',
+    '    if (!stack) return false',
+    '    for (var i = 0; i < stack.length; i++) {',
+    '      var el = stack[i]',
+    '      if (el === selectedNode || (selectedNode.contains && selectedNode.contains(el))) return true',
+    '    }',
+    '    return false',
+    '  }',
     '  function getNodeTransformBaseline(node, stableId) {',
     '    if (!stableId) return ""',
     '    if (Object.prototype.hasOwnProperty.call(positionBaseTransforms, stableId)) {',
@@ -2645,9 +2658,14 @@ export function buildTextStyleBridgeLines() {
     '      if (startResizeGesture(event, handleEl)) return',
     '    }',
     '    if (!isMovableSelection(selectedNode, selectedKind)) return',
-    // Only start a drag when the press is inside the selected element.
+    // Only start a drag when the press is over the selected element. The raw
+    // pointerdown target is often a transparent hit-area wrapper ON TOP of
+    // the selected element (the same problem resolveVisualClickTarget solves
+    // for selection) — a plain contains() check made such elements
+    // undraggable. Accept the press when the selected node (or one of its
+    // descendants) is anywhere in the element stack under the pointer.
     '    if (target.closest && target.closest("[data-prezo-context-menu]")) return',
-    '    if (!selectedNode.contains || !selectedNode.contains(target)) return',
+    '    if (!isPointerOverSelectedNode(event, target)) return',
     // Leave the user alone if they\'re in text-edit mode on this node — the
     // pointerdown is intended to place the caret / select text, not drag.
     '    if (textEditNode && (textEditNode === target || textEditNode.contains(target))) return',
