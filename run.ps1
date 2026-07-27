@@ -13,7 +13,7 @@ $certDir = if ($env:OFFICE_ADDIN_DEV_CERTS) {
   Join-Path $env:USERPROFILE ".office-addin-dev-certs"
 }
 
-function Require-Command {
+function Assert-Command {
   param(
     [string]$Name,
     [string]$InstallHint
@@ -24,7 +24,7 @@ function Require-Command {
   }
 }
 
-function Ensure-DevCerts {
+function Install-DevCerts {
   param(
     [string]$CertDir,
     [string]$AddinDir
@@ -63,10 +63,10 @@ function Get-ListeningProcess {
     $netstat = netstat -ano -p tcp | Select-String -Pattern "LISTENING" |
       Select-String -Pattern (":$Port\\s")
     if ($netstat) {
-      $pid = ($netstat.Line -split "\\s+")[-1]
-      if ($pid -match "^[0-9]+$") {
+      $ownerPid = ($netstat.Line -split "\\s+")[-1]
+      if ($ownerPid -match "^[0-9]+$") {
         try {
-          return Get-Process -Id $pid -ErrorAction Stop
+          return Get-Process -Id $ownerPid -ErrorAction Stop
         } catch {
           return $null
         }
@@ -146,12 +146,12 @@ function Open-Url {
   $chromePath = Get-ChromePath
   if ($chromePath) {
     New-Item -ItemType Directory -Force -Path $devBrowserProfile | Out-Null
-    $args = @(
+    $chromeArgs = @(
       "--app=$Url",
       "--new-window",
       "--user-data-dir=$devBrowserProfile"
     )
-    Start-Process -FilePath $chromePath -ArgumentList $args | Out-Null
+    Start-Process -FilePath $chromePath -ArgumentList $chromeArgs | Out-Null
     return
   }
 
@@ -201,11 +201,11 @@ npm run dev
 
 Write-Host "Starting Prezo backend, host add-in, and audience..."
 
-Require-Command -Name "node" -InstallHint "Install Node.js LTS from https://nodejs.org/."
-Require-Command -Name "npm" -InstallHint "Install Node.js LTS from https://nodejs.org/."
-Require-Command -Name "python" -InstallHint "Install Python 3 from https://python.org/."
+Assert-Command -Name "node" -InstallHint "Install Node.js LTS from https://nodejs.org/."
+Assert-Command -Name "npm" -InstallHint "Install Node.js LTS from https://nodejs.org/."
+Assert-Command -Name "python" -InstallHint "Install Python 3 from https://python.org/."
 
-Ensure-DevCerts -CertDir $certDir -AddinDir $addinPath
+Install-DevCerts -CertDir $certDir -AddinDir $addinPath
 
 $backendStarted = Start-Runner -Name "Prezo Backend" -WorkDir $backendPath -Command $backendCmd -Port 8000
 $hostStarted = Start-Runner -Name "Prezo Host" -WorkDir $addinPath -Command $frontendAddinCmd -Port 5173
