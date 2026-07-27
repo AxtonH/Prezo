@@ -2750,17 +2750,28 @@
     }
     document.body.appendChild(selectionOverlayEl)
   }
+  function getEffectiveRootZoom() {
+    var z = 1
+    try {
+      var docEl = document.documentElement
+      var raw = window.getComputedStyle ? window.getComputedStyle(docEl).zoom : (docEl.style && docEl.style.zoom)
+      var v = parseFloat(raw)
+      if (Number.isFinite(v) && v > 0) z = v
+    } catch (e) {}
+    return z
+  }
   function getDocumentRect(el) {
     if (!el || !el.getBoundingClientRect) return null
     var rect = el.getBoundingClientRect()
     var docEl = document.documentElement
     var scrollX = (window.scrollX || (docEl && docEl.scrollLeft) || 0)
     var scrollY = (window.scrollY || (docEl && docEl.scrollTop) || 0)
+    var zoom = getEffectiveRootZoom()
     return {
-      x: rect.left + scrollX,
-      y: rect.top + scrollY,
-      w: rect.width,
-      h: rect.height
+      x: (rect.left + scrollX) / zoom,
+      y: (rect.top + scrollY) / zoom,
+      w: rect.width / zoom,
+      h: rect.height / zoom
     }
   }
   function positionSelectionOverlay(node) {
@@ -3161,8 +3172,11 @@
   }
   function clipMenuToViewport(x, y) {
     var docEl = document.documentElement
-    var vw = (window.innerWidth || (docEl && docEl.clientWidth) || 800)
-    var vh = (window.innerHeight || (docEl && docEl.clientHeight) || 600)
+    var zoom = getEffectiveRootZoom()
+    x = x / zoom
+    y = y / zoom
+    var vw = (window.innerWidth || (docEl && docEl.clientWidth) || 800) / zoom
+    var vh = (window.innerHeight || (docEl && docEl.clientHeight) || 600) / zoom
     var mw = contextMenuEl.offsetWidth || 200
     var mh = contextMenuEl.offsetHeight || 120
     if (x + mw > vw) x = Math.max(0, vw - mw - 4)
@@ -3937,10 +3951,11 @@
     var current = readCurrentOffsetFor(stableId)
     var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0, width: 0, height: 0 }
     var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }
-    var naturalLeft = (startRect.left - bodyRect.left) - current.dx
-    var naturalTop = (startRect.top - bodyRect.top) - current.dy
-    var width = startRect.width || 0
-    var height = startRect.height || 0
+    var dragZoom = getEffectiveRootZoom()
+    var naturalLeft = (startRect.left - bodyRect.left) / dragZoom - current.dx
+    var naturalTop = (startRect.top - bodyRect.top) / dragZoom - current.dy
+    var width = (startRect.width || 0) / dragZoom
+    var height = (startRect.height || 0) / dragZoom
     var refOff = getSnapReferenceOffsets(selectedKind, width, height)
     var naturalRefX = naturalLeft + refOff.x
     var naturalRefY = naturalTop + refOff.y
@@ -3959,6 +3974,7 @@
       naturalRefY: naturalRefY,
       refOffsetX: refOff.x,
       refOffsetY: refOff.y,
+      zoom: dragZoom,
       moved: false,
       pointerId: event.pointerId
     }
@@ -3971,8 +3987,8 @@
     if (resizeState) { handleResizePointerMove(event); return }
     if (!dragState) return
     if (event.pointerId !== dragState.pointerId) return
-    var deltaX = event.clientX - dragState.startClientX
-    var deltaY = event.clientY - dragState.startClientY
+    var deltaX = (event.clientX - dragState.startClientX) / (dragState.zoom || 1)
+    var deltaY = (event.clientY - dragState.startClientY) / (dragState.zoom || 1)
     if (!dragState.moved) {
       if (Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) return
       dragState.moved = true
@@ -3994,8 +4010,8 @@
     var stableId = dragState.stableId
     var priorDx = dragState.startDx
     var priorDy = dragState.startDy
-    var dx = priorDx + (event.clientX - dragState.startClientX)
-    var dy = priorDy + (event.clientY - dragState.startClientY)
+    var dx = priorDx + (event.clientX - dragState.startClientX) / (dragState.zoom || 1)
+    var dy = priorDy + (event.clientY - dragState.startClientY) / (dragState.zoom || 1)
     var snapped = snapDeltaToGrid(node, dx, dy)
     dx = snapped.dx
     dy = snapped.dy
@@ -4177,8 +4193,9 @@
     var rect = node.getBoundingClientRect && node.getBoundingClientRect()
     if (!rect) return
     var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }
-    var x = (rect.left - bodyRect.left) + dragState.refOffsetX
-    var y = (rect.top - bodyRect.top) + dragState.refOffsetY
+    var zoom = dragState.zoom || 1
+    var x = (rect.left - bodyRect.left) / zoom + dragState.refOffsetX
+    var y = (rect.top - bodyRect.top) / zoom + dragState.refOffsetY
     snapMarkerEl.style.left = x + "px"
     snapMarkerEl.style.top = y + "px"
   }

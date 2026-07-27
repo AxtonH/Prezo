@@ -1128,17 +1128,37 @@ export function buildTextStyleBridgeLines() {
     '    }',
     '    document.body.appendChild(selectionOverlayEl)',
     '  }',
+    // Present mode zooms the whole document (documentElement.style.zoom, see
+    // artifact-bridge postViewportZoom) so the artifact rasterizes at native
+    // resolution. Under root zoom, getBoundingClientRect returns VISUAL
+    // (zoomed) coordinates while absolutely-positioned body children (the
+    // selection overlay, context menu, snap marker) lay out in the zoomed
+    // space too — writing visual coords to their left/top double-applies the
+    // zoom and the overlay lands at zoom× the correct spot. All geometry
+    // below therefore converts to LAYOUT coordinates by dividing by the
+    // effective root zoom.
+    '  function getEffectiveRootZoom() {',
+    '    var z = 1',
+    '    try {',
+    '      var docEl = document.documentElement',
+    '      var raw = window.getComputedStyle ? window.getComputedStyle(docEl).zoom : (docEl.style && docEl.style.zoom)',
+    '      var v = parseFloat(raw)',
+    '      if (Number.isFinite(v) && v > 0) z = v',
+    '    } catch (e) {}',
+    '    return z',
+    '  }',
     '  function getDocumentRect(el) {',
     '    if (!el || !el.getBoundingClientRect) return null',
     '    var rect = el.getBoundingClientRect()',
     '    var docEl = document.documentElement',
     '    var scrollX = (window.scrollX || (docEl && docEl.scrollLeft) || 0)',
     '    var scrollY = (window.scrollY || (docEl && docEl.scrollTop) || 0)',
+    '    var zoom = getEffectiveRootZoom()',
     '    return {',
-    '      x: rect.left + scrollX,',
-    '      y: rect.top + scrollY,',
-    '      w: rect.width,',
-    '      h: rect.height',
+    '      x: (rect.left + scrollX) / zoom,',
+    '      y: (rect.top + scrollY) / zoom,',
+    '      w: rect.width / zoom,',
+    '      h: rect.height / zoom',
     '    }',
     '  }',
     '  function positionSelectionOverlay(node) {',
@@ -1621,10 +1641,15 @@ export function buildTextStyleBridgeLines() {
     '    }',
     '    return item',
     '  }',
+    // x/y arrive as clientX/clientY (visual px); the menu is an absolutely
+    // positioned body child (layout px under root zoom) — convert first.
     '  function clipMenuToViewport(x, y) {',
     '    var docEl = document.documentElement',
-    '    var vw = (window.innerWidth || (docEl && docEl.clientWidth) || 800)',
-    '    var vh = (window.innerHeight || (docEl && docEl.clientHeight) || 600)',
+    '    var zoom = getEffectiveRootZoom()',
+    '    x = x / zoom',
+    '    y = y / zoom',
+    '    var vw = (window.innerWidth || (docEl && docEl.clientWidth) || 800) / zoom',
+    '    var vh = (window.innerHeight || (docEl && docEl.clientHeight) || 600) / zoom',
     '    var mw = contextMenuEl.offsetWidth || 200',
     '    var mh = contextMenuEl.offsetHeight || 120',
     '    if (x + mw > vw) x = Math.max(0, vw - mw - 4)',
@@ -2640,10 +2665,13 @@ export function buildTextStyleBridgeLines() {
     // (appended to <body> at (0,0) of the 1920×1080 reference space).
     '    var startRect = (selectedNode.getBoundingClientRect && selectedNode.getBoundingClientRect()) || { left: 0, top: 0, width: 0, height: 0 }',
     '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
-    '    var naturalLeft = (startRect.left - bodyRect.left) - current.dx',
-    '    var naturalTop = (startRect.top - bodyRect.top) - current.dy',
-    '    var width = startRect.width || 0',
-    '    var height = startRect.height || 0',
+    // Rects are visual px; the transform offsets (dx/dy) and the grid are
+    // layout px — divide by the root zoom (1 outside present mode).
+    '    var dragZoom = getEffectiveRootZoom()',
+    '    var naturalLeft = (startRect.left - bodyRect.left) / dragZoom - current.dx',
+    '    var naturalTop = (startRect.top - bodyRect.top) / dragZoom - current.dy',
+    '    var width = (startRect.width || 0) / dragZoom',
+    '    var height = (startRect.height || 0) / dragZoom',
     '    var refOff = getSnapReferenceOffsets(selectedKind, width, height)',
     '    var naturalRefX = naturalLeft + refOff.x',
     '    var naturalRefY = naturalTop + refOff.y',
@@ -2662,6 +2690,7 @@ export function buildTextStyleBridgeLines() {
     '      naturalRefY: naturalRefY,',
     '      refOffsetX: refOff.x,',
     '      refOffsetY: refOff.y,',
+    '      zoom: dragZoom,',
     '      moved: false,',
     '      pointerId: event.pointerId',
     '    }',
@@ -2674,8 +2703,9 @@ export function buildTextStyleBridgeLines() {
     '    if (resizeState) { handleResizePointerMove(event); return }',
     '    if (!dragState) return',
     '    if (event.pointerId !== dragState.pointerId) return',
-    '    var deltaX = event.clientX - dragState.startClientX',
-    '    var deltaY = event.clientY - dragState.startClientY',
+    // Pointer deltas are visual px; the transform we write is layout px.
+    '    var deltaX = (event.clientX - dragState.startClientX) / (dragState.zoom || 1)',
+    '    var deltaY = (event.clientY - dragState.startClientY) / (dragState.zoom || 1)',
     '    if (!dragState.moved) {',
     // 3px deadzone so a click that bounces by 1-2px doesn\'t register as a drag.
     '      if (Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) return',
@@ -2703,8 +2733,8 @@ export function buildTextStyleBridgeLines() {
     '    var stableId = dragState.stableId',
     '    var priorDx = dragState.startDx',
     '    var priorDy = dragState.startDy',
-    '    var dx = priorDx + (event.clientX - dragState.startClientX)',
-    '    var dy = priorDy + (event.clientY - dragState.startClientY)',
+    '    var dx = priorDx + (event.clientX - dragState.startClientX) / (dragState.zoom || 1)',
+    '    var dy = priorDy + (event.clientY - dragState.startClientY) / (dragState.zoom || 1)',
     // Apply the same snap math as the live move so the committed position
     // matches what the user saw on screen mid-drag.
     '    var snapped = snapDeltaToGrid(node, dx, dy)',
@@ -2907,8 +2937,9 @@ export function buildTextStyleBridgeLines() {
     '    var rect = node.getBoundingClientRect && node.getBoundingClientRect()',
     '    if (!rect) return',
     '    var bodyRect = (document.body && document.body.getBoundingClientRect && document.body.getBoundingClientRect()) || { left: 0, top: 0 }',
-    '    var x = (rect.left - bodyRect.left) + dragState.refOffsetX',
-    '    var y = (rect.top - bodyRect.top) + dragState.refOffsetY',
+    '    var zoom = dragState.zoom || 1',
+    '    var x = (rect.left - bodyRect.left) / zoom + dragState.refOffsetX',
+    '    var y = (rect.top - bodyRect.top) / zoom + dragState.refOffsetY',
     '    snapMarkerEl.style.left = x + "px"',
     '    snapMarkerEl.style.top = y + "px"',
     '  }',
