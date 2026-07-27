@@ -1279,9 +1279,19 @@ export function buildTextStyleBridgeLines() {
     // a parent group, this is a no-op for now — drill-up could be added
     // later via a modifier. Drilling DOWN happens naturally because the
     // click target is the deepest element under the pointer.
+    '  var BROAD_CONTAINER_KINDS = { scene: 1, background: 1, foreground: 1, "options-container": 1 }',
     '  function pickSelectionFromChain(chain, clickTarget) {',
     '    if (!chain.length) return null',
-    '    return chain[0]',
+    '    var pick = chain[0]',
+    // When the innermost semantic ancestor is a full-bleed container but the
+    // pointer sat on a concrete visible element inside it, select THAT
+    // element — PowerPoint behaviour. "Select parent" in the context menu
+    // still reaches the container.
+    '    if (BROAD_CONTAINER_KINDS[pick.classification.kind] && clickTarget && clickTarget !== pick.node && isVisiblyPaintedElement(clickTarget)) {',
+    '      var fb = classifyElementFallback(clickTarget)',
+    '      if (fb) return { node: clickTarget, classification: fb }',
+    '    }',
+    '    return pick',
     '  }',
     // Drill mode: when the user explicitly chose "Select inside" from the
     // context menu, we want subsequent clicks (and the immediate drill-in)
@@ -1336,6 +1346,52 @@ export function buildTextStyleBridgeLines() {
     '    var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null',
     '    if (!rect || rect.width <= 0 || rect.height <= 0) return null',
     '    return { kind: "element", id: buildElementId(node), label: buildElementLabel(node), optionId: "" }',
+    '  }',
+    // ── Visual hit-test resolution ───────────────────────────────
+    // event.target is a poor proxy for "what the user clicked" in generated
+    // artifacts: full-bleed transparent wrappers (lane hit areas, layer
+    // containers) sit on top of the visible art and swallow the DOM
+    // hit-test, and on animated scenes a click whose mousedown/mouseup hit
+    // different moving nodes retargets to their common ancestor. Both made
+    // the selection land on huge seemingly-random containers. Resolve
+    // through the element stack under the pointer to the topmost element
+    // that actually paints pixels at that point.
+    '  function isVisiblyPaintedElement(node) {',
+    '    if (!node || node.nodeType !== 1) return false',
+    '    var tag = (node.tagName || "").toLowerCase()',
+    '    if (tag === "img" || tag === "svg" || tag === "canvas" || tag === "video" || tag === "picture") return true',
+    '    if (node.namespaceURI && String(node.namespaceURI).indexOf("svg") !== -1) return true',
+    '    var kids = node.childNodes || []',
+    '    for (var i = 0; i < kids.length; i++) {',
+    '      if (kids[i].nodeType === 3 && String(kids[i].nodeValue || "").replace(/\\s+/g, "")) return true',
+    '    }',
+    '    var cs = null',
+    '    try { cs = window.getComputedStyle(node) } catch (e) { return false }',
+    '    if (!cs) return false',
+    '    if (cs.visibility === "hidden" || Number(cs.opacity) === 0) return false',
+    '    var bg = cs.backgroundColor || ""',
+    '    if (bg && bg !== "transparent" && !/^rgba\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*0\\s*\\)$/.test(bg)) return true',
+    '    if (cs.backgroundImage && cs.backgroundImage !== "none") return true',
+    '    if (cs.boxShadow && cs.boxShadow !== "none") return true',
+    '    if ((parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== "none") || (parseFloat(cs.borderLeftWidth) > 0 && cs.borderLeftStyle !== "none")) return true',
+    '    return false',
+    '  }',
+    '  function resolveVisualClickTarget(event) {',
+    '    var fallback = event && event.target',
+    '    if (!event || !document.elementsFromPoint) return fallback',
+    '    var stack = null',
+    '    try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return fallback }',
+    '    if (!stack || !stack.length) return fallback',
+    '    for (var i = 0; i < stack.length; i++) {',
+    '      var el = stack[i]',
+    '      if (!el || el.nodeType !== 1) continue',
+    '      if (el === document.documentElement || el === document.body) break',
+    '      if (el.matches && el.matches(SKIP_SELECT_SELECTORS)) continue',
+    '      if (el.closest && el.closest(SKIP_SELECT_SELECTORS)) continue',
+    '      if (el.closest && el.closest("[data-prezo-context-menu]")) continue',
+    '      if (isVisiblyPaintedElement(el)) return el',
+    '    }',
+    '    return fallback',
     '  }',
     // Find the deepest classifiable descendant of `parent` that contains
     // `pointTarget`. Used by drill mode to land on the actual leaf the user
@@ -1461,15 +1517,22 @@ export function buildTextStyleBridgeLines() {
     '    positionSelectionOverlay(selectedNode)',
     '  }',
     '  function handleSelectionClick(event) {',
-    '    var target = event && event.target',
-    '    if (!target) return',
+    '    var rawTarget = event && event.target',
+    '    if (!rawTarget) return',
     // Don\'t hijack clicks the user makes on overlay / menu elements.
-    '    if (target === selectionOverlayEl || target === selectionLabelEl) return',
-    '    if (target.closest && target.closest("[data-prezo-context-menu]")) return',
+    // Includes the resize handles (overlay children): a press-without-drag
+    // on a handle still emits a click, and re-resolving it would switch the
+    // selection to whatever sits under the handle.
+    '    if (rawTarget === selectionOverlayEl || rawTarget === selectionLabelEl) return',
+    '    if (rawTarget.closest && rawTarget.closest("[data-prezo-selection-overlay]")) return',
+    '    if (rawTarget.closest && rawTarget.closest("[data-prezo-context-menu]")) return',
     // If we\'re already in text-edit mode and the click landed inside the
     // editing node, leave the native contenteditable behaviour alone — the
     // user is placing the caret / selecting text.
-    '    if (textEditNode && textEditNode.contains && textEditNode.contains(target)) return',
+    '    if (textEditNode && textEditNode.contains && textEditNode.contains(rawTarget)) return',
+    // Resolve through transparent hit-area wrappers / click retargeting to
+    // the element the user visually clicked (see resolveVisualClickTarget).
+    '    var target = resolveVisualClickTarget(event) || rawTarget',
     // Drill mode: if we have a sticky drill scope and the click landed
     // inside it, resolve the click to the deepest qualifying descendant.
     // Otherwise exit drill mode and fall through to normal resolution.
@@ -1658,14 +1721,16 @@ export function buildTextStyleBridgeLines() {
     // Don\'t hijack a right-click that landed inside the menu itself.
     '    if (target.closest && target.closest("[data-prezo-context-menu]")) return',
     '    event.preventDefault()',
+    // Same visual hit-test resolution as left-click selection.
+    '    var resolvedTarget = resolveVisualClickTarget(event) || target',
     // If nothing is selected yet, resolve the right-click target first so
     // the menu has something to operate on.
     '    if (!selectedNode) {',
-    '      var chain = buildSelectionChain(target)',
-    '      var pick = pickSelectionFromChain(chain, target) || (classifyElementFallback(target) ? { node: target, classification: classifyElementFallback(target) } : null)',
+    '      var chain = buildSelectionChain(resolvedTarget)',
+    '      var pick = pickSelectionFromChain(chain, resolvedTarget) || (classifyElementFallback(resolvedTarget) ? { node: resolvedTarget, classification: classifyElementFallback(resolvedTarget) } : null)',
     '      if (pick) setSelectedNode(pick.node, pick.classification)',
     '    }',
-    '    showContextMenuAt(event.clientX, event.clientY, target)',
+    '    showContextMenuAt(event.clientX, event.clientY, resolvedTarget)',
     '  }',
     '  function handleGlobalClickForMenu(event) {',
     '    if (!contextMenuEl || contextMenuEl.style.display === "none") return',

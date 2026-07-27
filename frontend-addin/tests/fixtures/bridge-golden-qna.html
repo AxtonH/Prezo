@@ -2869,9 +2869,15 @@
     }
     return chain
   }
+  var BROAD_CONTAINER_KINDS = { scene: 1, background: 1, foreground: 1, "options-container": 1 }
   function pickSelectionFromChain(chain, clickTarget) {
     if (!chain.length) return null
-    return chain[0]
+    var pick = chain[0]
+    if (BROAD_CONTAINER_KINDS[pick.classification.kind] && clickTarget && clickTarget !== pick.node && isVisiblyPaintedElement(clickTarget)) {
+      var fb = classifyElementFallback(clickTarget)
+      if (fb) return { node: clickTarget, classification: fb }
+    }
+    return pick
   }
   var drillScopeNode = null
   function buildElementLabel(node) {
@@ -2911,6 +2917,43 @@
     var rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null
     if (!rect || rect.width <= 0 || rect.height <= 0) return null
     return { kind: "element", id: buildElementId(node), label: buildElementLabel(node), optionId: "" }
+  }
+  function isVisiblyPaintedElement(node) {
+    if (!node || node.nodeType !== 1) return false
+    var tag = (node.tagName || "").toLowerCase()
+    if (tag === "img" || tag === "svg" || tag === "canvas" || tag === "video" || tag === "picture") return true
+    if (node.namespaceURI && String(node.namespaceURI).indexOf("svg") !== -1) return true
+    var kids = node.childNodes || []
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].nodeType === 3 && String(kids[i].nodeValue || "").replace(/\s+/g, "")) return true
+    }
+    var cs = null
+    try { cs = window.getComputedStyle(node) } catch (e) { return false }
+    if (!cs) return false
+    if (cs.visibility === "hidden" || Number(cs.opacity) === 0) return false
+    var bg = cs.backgroundColor || ""
+    if (bg && bg !== "transparent" && !/^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(bg)) return true
+    if (cs.backgroundImage && cs.backgroundImage !== "none") return true
+    if (cs.boxShadow && cs.boxShadow !== "none") return true
+    if ((parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== "none") || (parseFloat(cs.borderLeftWidth) > 0 && cs.borderLeftStyle !== "none")) return true
+    return false
+  }
+  function resolveVisualClickTarget(event) {
+    var fallback = event && event.target
+    if (!event || !document.elementsFromPoint) return fallback
+    var stack = null
+    try { stack = document.elementsFromPoint(event.clientX, event.clientY) } catch (e) { return fallback }
+    if (!stack || !stack.length) return fallback
+    for (var i = 0; i < stack.length; i++) {
+      var el = stack[i]
+      if (!el || el.nodeType !== 1) continue
+      if (el === document.documentElement || el === document.body) break
+      if (el.matches && el.matches(SKIP_SELECT_SELECTORS)) continue
+      if (el.closest && el.closest(SKIP_SELECT_SELECTORS)) continue
+      if (el.closest && el.closest("[data-prezo-context-menu]")) continue
+      if (isVisiblyPaintedElement(el)) return el
+    }
+    return fallback
   }
   function findDeepestInScope(parent, pointTarget) {
     if (!parent) return null
@@ -3016,11 +3059,13 @@
     positionSelectionOverlay(selectedNode)
   }
   function handleSelectionClick(event) {
-    var target = event && event.target
-    if (!target) return
-    if (target === selectionOverlayEl || target === selectionLabelEl) return
-    if (target.closest && target.closest("[data-prezo-context-menu]")) return
-    if (textEditNode && textEditNode.contains && textEditNode.contains(target)) return
+    var rawTarget = event && event.target
+    if (!rawTarget) return
+    if (rawTarget === selectionOverlayEl || rawTarget === selectionLabelEl) return
+    if (rawTarget.closest && rawTarget.closest("[data-prezo-selection-overlay]")) return
+    if (rawTarget.closest && rawTarget.closest("[data-prezo-context-menu]")) return
+    if (textEditNode && textEditNode.contains && textEditNode.contains(rawTarget)) return
+    var target = resolveVisualClickTarget(event) || rawTarget
     if (drillScopeNode) {
       if (drillScopeNode === target || (drillScopeNode.contains && drillScopeNode.contains(target))) {
         var drilled = findDeepestInScope(drillScopeNode, target)
@@ -3193,12 +3238,13 @@
     if (!target) return
     if (target.closest && target.closest("[data-prezo-context-menu]")) return
     event.preventDefault()
+    var resolvedTarget = resolveVisualClickTarget(event) || target
     if (!selectedNode) {
-      var chain = buildSelectionChain(target)
-      var pick = pickSelectionFromChain(chain, target) || (classifyElementFallback(target) ? { node: target, classification: classifyElementFallback(target) } : null)
+      var chain = buildSelectionChain(resolvedTarget)
+      var pick = pickSelectionFromChain(chain, resolvedTarget) || (classifyElementFallback(resolvedTarget) ? { node: resolvedTarget, classification: classifyElementFallback(resolvedTarget) } : null)
       if (pick) setSelectedNode(pick.node, pick.classification)
     }
-    showContextMenuAt(event.clientX, event.clientY, target)
+    showContextMenuAt(event.clientX, event.clientY, resolvedTarget)
   }
   function handleGlobalClickForMenu(event) {
     if (!contextMenuEl || contextMenuEl.style.display === "none") return
