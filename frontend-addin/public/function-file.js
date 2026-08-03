@@ -461,6 +461,9 @@
         const badge = shapeIds.badge
           ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
           : null
+        const counterShape = shapeIds.counter
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.counter)
+          : null
         const itemShapes = (shapeIds.items || []).map((item) => {
           const container = info.slide.shapes.getItemOrNullObject(item.container)
           const text = info.slide.shapes.getItemOrNullObject(item.text)
@@ -477,6 +480,7 @@
         if (subtitle) subtitle.load('id')
         if (meta) meta.load('id')
         if (badge) badge.load('id')
+        if (counterShape) counterShape.load('id')
         await context.sync()
 
         if (applyStyle) {
@@ -580,6 +584,13 @@
             resolvedMode
           )
         }
+        await updateCounterShape(
+          context,
+          counterShape,
+          filteredQuestions.length,
+          'question',
+          'questions'
+        )
         if (itemShapes.length > 0) {
           const hasApproved = approved.length > 0
           if (body && !body.isNullObject) {
@@ -618,6 +629,47 @@
 
       await context.sync()
     })
+  }
+
+  /** Counter shapes: template-preserving number update (classic mirror of
+   * widgetShapes.ts syncCounterText). Auto state (empty, or text still equal
+   * to our last default write) -> fresh default + auto tag; user template ->
+   * swap the first number and leave the tag alone so the template survives;
+   * number removed by the user -> hands off. Best-effort: failures never
+   * break the surrounding widget update. */
+  const updateCounterShape = async (context, counterShape, count, singular, plural) => {
+    if (!counterShape || counterShape.isNullObject) {
+      return
+    }
+    try {
+      const autoTag = counterShape.tags.getItemOrNullObject('PrezoPollWidgetAutoText')
+      autoTag.load('value')
+      counterShape.textFrame.textRange.load('text')
+      await context.sync()
+      const defaultText = `${count} ${count === 1 ? singular : plural}`
+      const currentText = counterShape.textFrame.textRange.text || ''
+      const lastAutoText = autoTag.isNullObject ? '' : autoTag.value || ''
+      const isAuto =
+        !currentText.trim() || (!autoTag.isNullObject && currentText === lastAutoText)
+      if (isAuto) {
+        if (currentText !== defaultText) {
+          counterShape.textFrame.textRange.text = defaultText
+        }
+        counterShape.tags.delete('PrezoPollWidgetAutoText')
+        counterShape.tags.add('PrezoPollWidgetAutoText', defaultText)
+        return
+      }
+      const numberRe = /\d[\d,]*/
+      if (!numberRe.test(currentText)) {
+        return
+      }
+      const nextText = currentText.replace(numberRe, String(count))
+      if (currentText !== nextText) {
+        counterShape.textFrame.textRange.text = nextText
+      }
+    } catch {
+      // Counter updates are best-effort.
+    }
   }
 
   const updatePollWidget = async (sessionId, code, polls) => {
@@ -820,6 +872,11 @@
           bodyShape.load('id')
         }
 
+        let counterShape = shapeIds.counter ? resolveShape(shapeIds.counter) : null
+        if (counterShape) {
+          counterShape.load('id')
+        }
+
         let itemShapes = (shapeIds.items || []).map((item) => {
           const label = resolveShape(item.label)
           const bg = resolveShape(item.bg)
@@ -861,6 +918,7 @@
           let taggedTitle = null
           let taggedQuestion = null
           let taggedBody = null
+          let taggedCounter = null
           tagged.forEach(({ shape, roleTag }) => {
             if (roleTag.isNullObject || !roleTag.value) {
               return
@@ -880,6 +938,9 @@
                 break
               case 'poll-body':
                 taggedBody = shape
+                break
+              case 'poll-counter':
+                taggedCounter = shape
                 break
               case 'poll-label':
                 labels.push(shape)
@@ -911,6 +972,7 @@
           if (taggedTitle) title = taggedTitle
           if (taggedQuestion) questionShape = taggedQuestion
           if (taggedBody) bodyShape = taggedBody
+          if (taggedCounter) counterShape = taggedCounter
           if (taggedItems.length > 0) {
             itemShapes = taggedItems.map((item) => {
               item.label.load('id')
@@ -941,6 +1003,12 @@
                   ? taggedQuestion.id
                   : shapeIds.question,
               body: taggedBody && !taggedBody.isNullObject ? taggedBody.id : shapeIds.body,
+              /** Preserving the counter here matters: omitting the field
+               * would clobber it out of the tag and orphan the shape. */
+              counter:
+                taggedCounter && !taggedCounter.isNullObject
+                  ? taggedCounter.id
+                  : shapeIds.counter,
               items:
                 taggedItems.length > 0
                   ? taggedItems.map((item) => ({
@@ -1081,6 +1149,9 @@
           .join('\n')}`
         }
 
+        const totalVotes = optionData.reduce((sum, option) => sum + option.votes, 0)
+        await updateCounterShape(context, counterShape, totalVotes, 'vote', 'votes')
+
         itemShapes.forEach((item, index) => {
           const data = optionData[index]
           if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
@@ -1207,6 +1278,9 @@
         const badge = shapeIds.badge
           ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
           : null
+        const counterShape = shapeIds.counter
+          ? info.slide.shapes.getItemOrNullObject(shapeIds.counter)
+          : null
         const itemShapes = (shapeIds.items || []).map((item) => {
           const container = info.slide.shapes.getItemOrNullObject(item.container)
           const text = info.slide.shapes.getItemOrNullObject(item.text)
@@ -1223,6 +1297,7 @@
         if (subtitle) subtitle.load('id')
         if (meta) meta.load('id')
         if (badge) badge.load('id')
+        if (counterShape) counterShape.load('id')
         await context.sync()
 
         if (applyStyle) {
@@ -1313,6 +1388,13 @@
         if (badge && !badge.isNullObject) {
           badge.textFrame.textRange.text = `Answers ${approved.length}`
         }
+        await updateCounterShape(
+          context,
+          counterShape,
+          filteredQuestions.length,
+          'answer',
+          'answers'
+        )
         if (itemShapes.length > 0) {
           const hasApproved = approved.length > 0
           const emptyBody = boundPromptId ? 'No answers yet.' : DISCUSSION_EMPTY_BODY

@@ -2778,6 +2778,32 @@ export async function updatePollWidget(
         }
       }
 
+      /** Adopt an orphaned counter: a shapes tag written before the counter
+       * existed (or rewritten by an older build) lacks the field even though
+       * the shape sits on the slide. One role-tag scan finds it and persists
+       * it back into the tag; counter === '' is the "scanned, none found"
+       * sentinel that keeps this off the hot path for widgets that genuinely
+       * have no counter. */
+      if (!counterShape && shapeIds.counter === undefined) {
+        syncPhase = 'adopt-counter'
+        const scanScope = groupShapeIsGroup ? groupShape!.group.shapes : info.slide.shapes
+        scanScope.load('items')
+        await context.sync()
+        const scanned = scanScope.items.map((shape) => {
+          const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+          roleTag.load('value')
+          shape.load(['id', 'type'])
+          return { shape, roleTag }
+        })
+        await context.sync()
+        const found = scanned.find(
+          ({ roleTag }) => !roleTag.isNullObject && roleTag.value === 'poll-counter'
+        )
+        counterShape = found ? found.shape : null
+        shapeIds = { ...shapeIds, counter: found ? found.shape.id : '' }
+        setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(shapeIds))
+      }
+
       if (!shapeScope) {
         const legacyBarItems = itemShapes
           .map((item, index) => ({ item, index }))
