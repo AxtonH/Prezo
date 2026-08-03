@@ -641,6 +641,11 @@
     if (!counterShape || counterShape.isNullObject) {
       return
     }
+    /** Never write a non-number — a NaN would poison the auto tag and stick
+     * until the next healthy update. */
+    if (!Number.isFinite(count)) {
+      return
+    }
     try {
       const autoTag = counterShape.tags.getItemOrNullObject('PrezoPollWidgetAutoText')
       autoTag.load('value')
@@ -1149,7 +1154,12 @@
           .join('\n')}`
         }
 
-        const totalVotes = optionData.reduce((sum, option) => sum + option.votes, 0)
+        /** Sum from poll.options directly — this file's buildPollOptions
+         * returns only {label, ratio}, so summing optionData.votes is NaN. */
+        const totalVotes =
+          poll && Array.isArray(poll.options)
+            ? poll.options.reduce((sum, option) => sum + (option.votes || 0), 0)
+            : 0
         await updateCounterShape(context, counterShape, totalVotes, 'vote', 'votes')
 
         itemShapes.forEach((item, index) => {

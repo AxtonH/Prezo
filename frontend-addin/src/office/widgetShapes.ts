@@ -657,6 +657,11 @@ const syncCounterText = (
   if (!state || isShapeNullObject(state.shape)) {
     return
   }
+  /** Never write a non-number — a NaN would poison the auto tag and stick
+   * until the next healthy update. */
+  if (!Number.isFinite(count)) {
+    return
+  }
   const currentText = state.shape.textFrame.textRange.text ?? ''
   const hasAutoTag = !state.autoTag.isNullObject
   const lastAutoText = hasAutoTag ? (state.autoTag.value ?? '') : ''
