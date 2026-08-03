@@ -71,6 +71,28 @@ export function ActivePollActivityCard({
     />
   )
 
+  /**
+   * Stop = pin closed. On a live card it closes now; on an off-air auto card
+   * it disarms slide control so the poll won't go live with its slide.
+   */
+  const stopButton = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onStop?.(poll.id)
+      }}
+      title={
+        closed
+          ? 'Keep closed even when the slideshow reaches its slide'
+          : 'Close now and keep closed regardless of the slideshow'
+      }
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
+    >
+      Stop poll
+    </button>
+  )
+
   const resetButton = onReset ? (
     <button
       type="button"
@@ -201,17 +223,7 @@ export function ActivePollActivityCard({
           {!closed ? (
             <div className="flex flex-wrap gap-2 pt-2">
               {configureButton}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onStop?.(poll.id)
-                }}
-                title="Close now and keep closed regardless of the slideshow"
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
-              >
-                Stop poll
-              </button>
+              {stopButton}
               {followSlidesButton}
               {resetButton}
               {onDelete ? (
@@ -255,6 +267,7 @@ export function ActivePollActivityCard({
               >
                 Pin open
               </button>
+              {mode === 'auto' && onStop ? stopButton : null}
               {followSlidesButton}
               {resetButton}
               {onDelete ? (
@@ -309,6 +322,7 @@ export function ActivePollActivityCard({
               >
                 Pin open
               </button>
+              {mode === 'auto' && onStop ? stopButton : null}
               {onDelete ? (
                 <button
                   type="button"

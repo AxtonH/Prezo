@@ -159,6 +159,28 @@ export function ActiveDiscussionActivityCard({
     />
   )
 
+  /**
+   * Stop = pin closed. On a live card it closes now; on an off-air auto card
+   * it disarms slide control so the discussion won't go live with its slide.
+   */
+  const stopButton = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onStop?.(prompt.id)
+      }}
+      title={
+        closed
+          ? 'Keep closed even when the slideshow reaches its slide'
+          : 'Close now and keep closed regardless of the slideshow'
+      }
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
+    >
+      Stop discussion
+    </button>
+  )
+
   const resetButton = onReset ? (
     <button
       type="button"
@@ -334,17 +356,7 @@ export function ActiveDiscussionActivityCard({
         {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
             {configureButton}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onStop?.(prompt.id)
-              }}
-              title="Close now and keep closed regardless of the slideshow"
-              className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
-            >
-              Stop discussion
-            </button>
+            {stopButton}
             {followSlidesButton}
             {resetButton}
             {onDelete ? (
@@ -375,6 +387,7 @@ export function ActiveDiscussionActivityCard({
             >
               Pin open
             </button>
+            {mode === 'auto' && onStop ? stopButton : null}
             {followSlidesButton}
             {resetButton}
             {onDelete ? (

@@ -424,6 +424,7 @@ export function SessionActiveActivitiesPanel({
                   poll={row.poll}
                   variant="inactive"
                   onConfigure={onConfigurePoll}
+                  onStop={onStopPoll}
                   onResume={onResumePoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
                   onReset={
@@ -445,6 +446,7 @@ export function SessionActiveActivitiesPanel({
                   variant="inactive"
                   mode={qnaControlMode}
                   onConfigure={onConfigureQna}
+                  onStop={onStopQna}
                   onResume={onResumeQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
                   onReset={onResetQna ? () => setResetTarget({ kind: 'qna' }) : undefined}
@@ -463,6 +465,7 @@ export function SessionActiveActivitiesPanel({
                 approvedQuestions={approvedQuestions}
                 variant="inactive"
                 onConfigure={onConfigureDiscussion}
+                onStop={onStopDiscussion}
                 onResume={onResumeDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onReset={

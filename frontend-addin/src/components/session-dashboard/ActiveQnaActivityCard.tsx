@@ -131,6 +131,28 @@ export function ActiveQnaActivityCard({
     />
   )
 
+  /**
+   * Stop = pin closed. On a live card it closes now; on an off-air auto card
+   * it disarms slide control so Q&amp;A won't go live with its slide.
+   */
+  const stopButton = (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onStop?.()
+      }}
+      title={
+        closed
+          ? 'Keep closed even when the slideshow reaches a Q&A slide'
+          : 'Close now and keep closed regardless of the slideshow'
+      }
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
+    >
+      Stop Q&amp;A
+    </button>
+  )
+
   const resetButton = onReset ? (
     <button
       type="button"
@@ -285,17 +307,7 @@ export function ActiveQnaActivityCard({
         {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
             {configureButton}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onStop?.()
-              }}
-              title="Close now and keep closed regardless of the slideshow"
-              className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
-            >
-              Stop Q&amp;A
-            </button>
+            {stopButton}
             {followSlidesButton}
             {resetButton}
             {onDelete ? (
@@ -325,6 +337,7 @@ export function ActiveQnaActivityCard({
             >
               Pin open
             </button>
+            {mode === 'auto' && onStop ? stopButton : null}
             {followSlidesButton}
             {resetButton}
             {onDelete ? (
