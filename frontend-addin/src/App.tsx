@@ -64,7 +64,7 @@ import {
 } from './utils/sessionsListCache'
 import { buildActivityHits, matchesSessionTitleOrCode } from './utils/hostSearch'
 import { useEmbedWarmup } from './office/embedWarmup'
-import { setConductorSession } from './office/slideShowConductor'
+import { isSlideShowViewActive, setConductorSession } from './office/slideShowConductor'
 import { isPowerPointAddinHost } from './utils/officeHost'
 import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
 
@@ -1036,7 +1036,11 @@ function HostConsole({
         }
         current.inFlight = true
         try {
-          await updatePollWidget(current.sessionId, current.code, current.polls)
+          /** Evaluated per write, not per schedule: a queued update that runs
+           * after a view flip should honor the view it writes into. */
+          await updatePollWidget(current.sessionId, current.code, current.polls, {
+            animateBars: isSlideShowViewActive()
+          })
         } catch (err) {
           console.warn('Failed to update poll widget shapes', err)
         } finally {

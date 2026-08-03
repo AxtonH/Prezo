@@ -375,6 +375,16 @@ const startLoop = () => {
 }
 
 /**
+ * True while the deck is in read (slideshow) view, per the conductor's cached
+ * view state (ActiveViewChanged + periodic recheck). False until the first
+ * view read resolves and whenever the conductor isn't running (no session,
+ * non-addin host) — callers get the conservative "not presenting" answer.
+ */
+export function isSlideShowViewActive(): boolean {
+  return viewKnown && viewIsRead
+}
+
+/**
  * Point the conductor at the active session (or null to stop reporting).
  * Idempotent; safe to call from a React effect on every session change.
  */

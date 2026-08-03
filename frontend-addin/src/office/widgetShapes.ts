@@ -1822,14 +1822,111 @@ export async function insertPollWidget(
   })
 }
 
+/** Vote-change bar animation. Duration is wall-clock: a throttled webview
+ * timer just drops frames (worst case a single snap to target), it never
+ * stretches the animation. Each frame costs one context.sync round trip. */
+const POLL_BAR_ANIMATION_MS = 600
+const POLL_BAR_ANIMATION_FRAME_DELAY_MS = 30
+/** Deltas below this many points snap directly — keeps selection-change
+ * refreshes and unchanged-vote updates from wiggling the bars. */
+const POLL_BAR_ANIMATION_MIN_DELTA_PT = 1.5
+
+type PollBarGeometry = {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+type PollBarAnimation = {
+  fill: PowerPoint.Shape
+  from: PollBarGeometry
+  to: PollBarGeometry
+  /** ratio hit 0: keep the bar visible while it shrinks, hide it after. */
+  hideAtEnd: boolean
+}
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3)
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+const applyBarGeometry = (fill: PowerPoint.Shape, geometry: PollBarGeometry) => {
+  fill.width = geometry.width
+  fill.height = geometry.height
+  fill.left = geometry.left
+  fill.top = geometry.top
+}
+
+/** Tween poll bar fills to their target geometry with a short ease-out.
+ * All bars on a slide share the same frames so options grow together. Only
+ * the geometry properties the one-shot updater already owns are written —
+ * user styling (colors, fonts, effects) is never touched. On any failure the
+ * remaining bars get isolated exact-target writes so a shape deleted or
+ * swapped mid-animation can't strand the others at an intermediate size. */
+const animatePollBars = async (
+  context: PowerPoint.RequestContext,
+  animations: PollBarAnimation[]
+) => {
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+  try {
+    const start = Date.now()
+    for (;;) {
+      const elapsed = Date.now() - start
+      const progress = Math.min(1, elapsed / POLL_BAR_ANIMATION_MS)
+      const eased = easeOutCubic(progress)
+      for (const anim of animations) {
+        applyBarGeometry(anim.fill, {
+          left: lerp(anim.from.left, anim.to.left, eased),
+          top: lerp(anim.from.top, anim.to.top, eased),
+          width: lerp(anim.from.width, anim.to.width, eased),
+          height: lerp(anim.from.height, anim.to.height, eased)
+        })
+      }
+      await context.sync()
+      if (progress >= 1) {
+        break
+      }
+      await sleep(POLL_BAR_ANIMATION_FRAME_DELAY_MS)
+    }
+  } catch {
+    for (const anim of animations) {
+      try {
+        applyBarGeometry(anim.fill, anim.to)
+        await context.sync()
+      } catch (itemErr) {
+        console.warn('Poll widget: bar animation fallback write failed', itemErr)
+      }
+    }
+  }
+  for (const anim of animations) {
+    if (!anim.hideAtEnd) {
+      continue
+    }
+    try {
+      anim.fill.fill.transparency = 1
+      await context.sync()
+    } catch (itemErr) {
+      console.warn('Poll widget: bar hide-after-animation failed', itemErr)
+    }
+  }
+}
+
 export async function updatePollWidget(
   sessionId: string,
   code: string | null | undefined,
-  polls: Poll[]
+  polls: Poll[],
+  options?: {
+    /** Tween bar geometry instead of snapping. Callers pass this only while
+     * the deck is in slideshow view — animating in edit view would pile
+     * frame-by-frame writes onto the user's undo stack. */
+    animateBars?: boolean
+  }
 ) {
   if (!isPowerPointShapeApiAvailable()) {
     return
   }
+  const animateBars = Boolean(options?.animateBars)
 
   const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
@@ -2583,6 +2680,8 @@ export async function updatePollWidget(
         }
       }
 
+      const pendingBarAnimations: PollBarAnimation[] = []
+
       for (let index = 0; index < itemShapes.length; index += 1) {
         const item = itemShapes[index]
         const data = optionData[index]
@@ -2645,19 +2744,62 @@ export async function updatePollWidget(
           `label ${index}`
         )
         if (canStyleBars && bgGeometryValid) {
+          const targetGeometry: PollBarGeometry = isVertical
+            ? (() => {
+                const fillHeight = Math.max(2, bgHeight * data.ratio)
+                return {
+                  left: bgLeft,
+                  top: bgTop + (bgHeight - fillHeight),
+                  width: bgWidth,
+                  height: fillHeight
+                }
+              })()
+            : {
+                left: bgLeft,
+                top: bgTop,
+                width: Math.max(2, bgWidth * data.ratio),
+                height: bgHeight
+              }
+
+          const fillGeometryValid =
+            isFiniteNum(item.fill.left) &&
+            isFiniteNum(item.fill.top) &&
+            isFiniteNum(item.fill.width) &&
+            isFiniteNum(item.fill.height)
+          /** Only the value axis decides whether to animate — cross-axis
+           * drift (user nudged the fill off its track) is corrected silently
+           * either way. */
+          const valueAxisDelta = isVertical
+            ? Math.abs(targetGeometry.height - item.fill.height)
+            : Math.abs(targetGeometry.width - item.fill.width)
+
+          if (animateBars && fillGeometryValid && valueAxisDelta >= POLL_BAR_ANIMATION_MIN_DELTA_PT) {
+            pendingBarAnimations.push({
+              fill: item.fill,
+              from: {
+                left: item.fill.left,
+                top: item.fill.top,
+                width: item.fill.width,
+                height: item.fill.height
+              },
+              to: targetGeometry,
+              hideAtEnd: data.ratio === 0
+            })
+            /** Reveal a previously hidden bar before it grows; hiding (ratio
+             * 0) waits until the shrink finishes inside animatePollBars. See
+             * the hidden branch above for why transparency is
+             * system-controlled rather than gated on style lock. */
+            await tryItemWrite(() => {
+              if (data.ratio > 0) {
+                item.fill.fill.transparency = 0
+              }
+              item.bg.fill.transparency = 0
+            }, `bar transparency ${index}`)
+            continue
+          }
+
           await tryItemWrite(() => {
-            if (isVertical) {
-              const fillHeight = Math.max(2, bgHeight * data.ratio)
-              item.fill.height = fillHeight
-              item.fill.top = bgTop + (bgHeight - fillHeight)
-              item.fill.width = bgWidth
-              item.fill.left = bgLeft
-            } else {
-              item.fill.left = bgLeft
-              item.fill.width = Math.max(2, bgWidth * data.ratio)
-              item.fill.top = bgTop
-              item.fill.height = bgHeight
-            }
+            applyBarGeometry(item.fill, targetGeometry)
           }, `bar dims ${index}`)
           /** See the matching note on the hidden branch above for why
               transparency is system-controlled rather than gated on style lock. */
@@ -2668,6 +2810,11 @@ export async function updatePollWidget(
             item.bg.fill.transparency = 0
           }, `bg transparency ${index}`)
         }
+      }
+
+      if (pendingBarAnimations.length > 0) {
+        syncPhase = 'animate-bars'
+        await animatePollBars(context, pendingBarAnimations)
       }
 
       if (isPending || recovered) {
