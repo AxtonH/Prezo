@@ -470,60 +470,6 @@
     }
   }
 
-  /** "Undo last widget change": the host snapshots the slide (as .pptx)
-   * before every widget insert/replace/remove because PowerPoint's own
-   * Ctrl+Z never covers add-in changes. The snapshot metadata lives in
-   * shared-origin localStorage, so the dialog reads it directly; the actual
-   * restore runs in the host via the restore-slide message. */
-  const WIDGET_RESTORE_KEY = 'prezo-widget-restore'
-
-  const readRestoreSnapshot = () => {
-    try {
-      const raw = localStorage.getItem(WIDGET_RESTORE_KEY)
-      return raw ? JSON.parse(raw) : null
-    } catch {
-      return null
-    }
-  }
-
-  const restoreEls = () => ({
-    section: el('restore-section'),
-    info: el('restore-info'),
-    button: el('restore-slide'),
-    confirm: el('restore-confirm'),
-    accept: el('restore-confirm-accept'),
-    cancel: el('restore-confirm-cancel'),
-    status: el('restore-status'),
-    error: el('restore-error')
-  })
-
-  const describeRestore = (snapshot) => {
-    const actionText =
-      snapshot.action === 'replace'
-        ? 'replaced'
-        : snapshot.action === 'remove'
-          ? 'removed'
-          : 'inserted'
-    const family = snapshot.family || 'widget'
-    const when = snapshot.ts ? new Date(snapshot.ts).toLocaleTimeString() : ''
-    return `Restores the slide as it was before the ${family} widget was ${actionText}${
-      when ? ` (${when})` : ''
-    }.`
-  }
-
-  const renderRestore = () => {
-    const els = restoreEls()
-    if (!els.section) return
-    const snapshot = readRestoreSnapshot()
-    if (!snapshot || !snapshot.base64) {
-      els.section.classList.add('hidden')
-      return
-    }
-    els.section.classList.remove('hidden')
-    if (els.button) els.button.disabled = false
-    if (els.info) els.info.textContent = describeRestore(snapshot)
-  }
-
   const sendGameInsert = () => {
     setGameError('')
     setGameStatus('Inserting game slide...')
@@ -561,28 +507,6 @@
     }
     if (insertGameButton()) {
       insertGameButton().addEventListener('click', sendGameInsert)
-    }
-
-    const restore = restoreEls()
-    if (restore.button) {
-      restore.button.addEventListener('click', () => {
-        if (restore.error) restore.error.textContent = ''
-        if (restore.status) restore.status.textContent = ''
-        if (restore.confirm) restore.confirm.classList.remove('hidden')
-      })
-    }
-    if (restore.accept) {
-      restore.accept.addEventListener('click', () => {
-        if (restore.confirm) restore.confirm.classList.add('hidden')
-        if (restore.status) restore.status.textContent = 'Restoring slide...'
-        if (restore.button) restore.button.disabled = true
-        Office.context.ui.messageParent(JSON.stringify({ type: 'restore-slide' }))
-      })
-    }
-    if (restore.cancel) {
-      restore.cancel.addEventListener('click', () => {
-        if (restore.confirm) restore.confirm.classList.add('hidden')
-      })
     }
 
     Object.keys(families).forEach((key) => {
@@ -658,12 +582,6 @@
           const key = familyFromSource(message.source)
           families[key].setStatus('Widget removed from the slide.')
           families[key].setBusy(false)
-          renderRestore()
-        } else if (message && message.type === 'restored') {
-          const els = restoreEls()
-          if (els.status) els.status.textContent = 'Slide restored.'
-          if (els.info) els.info.textContent = ''
-          if (els.button) els.button.disabled = true
         } else if (message && message.type === 'error') {
           if (message.source === 'game') {
             setGameStatus('')
@@ -679,13 +597,6 @@
               message.message || 'Failed to insert open discussion widget.'
             )
             setDiscussionBusy(false)
-          } else if (message.source === 'restore') {
-            const els = restoreEls()
-            if (els.status) els.status.textContent = ''
-            if (els.error) {
-              els.error.textContent = message.message || 'Failed to restore the slide.'
-            }
-            if (els.button) els.button.disabled = false
           } else {
             setStatus('')
             setError(message.message || 'Failed to insert widget.')
@@ -698,7 +609,6 @@
     updatePreview()
     updateDiscussionPreview()
     updatePollPreview()
-    renderRestore()
     renderDebug()
   })
 })()
