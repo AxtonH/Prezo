@@ -2318,6 +2318,196 @@
     })
   }
 
+  /**
+   * Widget lifecycle helpers. PowerPoint gives add-ins no undo transactions —
+   * a widget insert is dozens of shape operations across several batches, so
+   * Ctrl+Z can never cleanly reverse it. Lifecycle is therefore explicit:
+   * inserts never silently delete an existing widget (the dialog asks first)
+   * and removal is a dedicated action rather than a doomed undo hunt.
+   */
+  const WIDGET_FAMILIES = {
+    poll: {
+      widgetTag: POLL_WIDGET_TAG,
+      shapesTag: POLL_SHAPES_TAG,
+      slideTags: [
+        POLL_SESSION_TAG,
+        POLL_PENDING_TAG,
+        POLL_STYLE_TAG,
+        POLL_SHAPES_TAG,
+        POLL_BINDING_TAG
+      ],
+      collectIds: (parsed) => {
+        const itemIds = (parsed.items || []).flatMap((item) => [
+          item.label,
+          item.group,
+          item.bg,
+          item.fill
+        ])
+        return [
+          parsed.group,
+          parsed.shadow,
+          parsed.container,
+          parsed.title,
+          parsed.question,
+          parsed.body,
+          ...itemIds
+        ]
+      }
+    },
+    qna: {
+      widgetTag: WIDGET_TAG,
+      shapesTag: SHAPES_TAG,
+      slideTags: [
+        SESSION_TAG,
+        WIDGET_PENDING_TAG,
+        WIDGET_STYLE_TAG,
+        SHAPES_TAG,
+        LEGACY_QNA_MODE_TAG,
+        LEGACY_QNA_PROMPT_TAG,
+        QNA_PROMPT_BINDING_TAG
+      ],
+      collectIds: (parsed) => {
+        const itemIds = (parsed.items || []).flatMap((item) => [
+          item.container,
+          item.text,
+          item.votes
+        ])
+        return [
+          parsed.shadow,
+          parsed.container,
+          parsed.title,
+          parsed.subtitle,
+          parsed.meta,
+          parsed.badge,
+          parsed.body,
+          ...itemIds
+        ]
+      }
+    },
+    discussion: {
+      widgetTag: DISCUSSION_WIDGET_TAG,
+      shapesTag: DISCUSSION_SHAPES_TAG,
+      slideTags: [
+        DISCUSSION_SESSION_TAG,
+        DISCUSSION_PENDING_TAG,
+        DISCUSSION_STYLE_TAG,
+        DISCUSSION_SHAPES_TAG,
+        DISCUSSION_PROMPT_BINDING_TAG
+      ],
+      collectIds: (parsed) => {
+        const itemIds = (parsed.items || []).flatMap((item) => [
+          item.container,
+          item.text,
+          item.votes
+        ])
+        return [
+          parsed.shadow,
+          parsed.container,
+          parsed.title,
+          parsed.subtitle,
+          parsed.meta,
+          parsed.badge,
+          parsed.body,
+          ...itemIds
+        ]
+      }
+    }
+  }
+
+  const getSelectedSlideForLifecycle = async (context) => {
+    const slides = context.presentation.getSelectedSlides()
+    slides.load('items')
+    await context.sync()
+    const slide = slides.items[0]
+    if (!slide) {
+      throw new Error('Select a slide first.')
+    }
+    return slide
+  }
+
+  /** Top-level shapes carrying the family tag. Children inside bar groups are
+   * not in slide.shapes, so deleting the returned shapes never double-deletes. */
+  const loadTaggedFamilyShapes = async (context, slide, family) => {
+    const shapes = slide.shapes
+    shapes.load('items')
+    await context.sync()
+    const tagged = shapes.items.map((shape) => {
+      const tag = shape.tags.getItemOrNullObject(family.widgetTag)
+      tag.load('value')
+      shape.load('id')
+      return { shape, tag }
+    })
+    await context.sync()
+    return tagged
+      .filter(({ tag }) => !tag.isNullObject && tag.value === 'true')
+      .map(({ shape }) => shape)
+  }
+
+  const selectedSlideHasWidget = async (familyKey) => {
+    const family = WIDGET_FAMILIES[familyKey]
+    let found = false
+    await runPowerPoint(async (context) => {
+      const slide = await getSelectedSlideForLifecycle(context)
+      const shapesTag = slide.tags.getItemOrNullObject(family.shapesTag)
+      shapesTag.load('value')
+      await context.sync()
+      if (!shapesTag.isNullObject && shapesTag.value) {
+        found = true
+        return
+      }
+      const taggedShapes = await loadTaggedFamilyShapes(context, slide, family)
+      found = taggedShapes.length > 0
+    })
+    return found
+  }
+
+  /** Delete every shape of the family on the selected slide (stored ids plus
+   * tag scan, deduped) and clear its slide tags. Returns true if anything was
+   * actually removed. */
+  const removeWidgetFromSelectedSlide = async (familyKey) => {
+    const family = WIDGET_FAMILIES[familyKey]
+    let removed = false
+    await runPowerPoint(async (context) => {
+      const slide = await getSelectedSlideForLifecycle(context)
+      const shapesTag = slide.tags.getItemOrNullObject(family.shapesTag)
+      shapesTag.load('value')
+      await context.sync()
+
+      let storedShapes = []
+      if (!shapesTag.isNullObject && shapesTag.value) {
+        try {
+          const parsed = JSON.parse(shapesTag.value)
+          const ids = family.collectIds(parsed).filter(Boolean)
+          storedShapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+          storedShapes.forEach((shape) => shape.load('id'))
+          await context.sync()
+        } catch {
+          storedShapes = []
+        }
+      }
+
+      const taggedShapes = await loadTaggedFamilyShapes(context, slide, family)
+      const seenIds = {}
+      const deletable = []
+      storedShapes.concat(taggedShapes).forEach((shape) => {
+        if (shape.isNullObject) {
+          return
+        }
+        if (seenIds[shape.id]) {
+          return
+        }
+        seenIds[shape.id] = true
+        deletable.push(shape)
+      })
+
+      deletable.forEach((shape) => shape.delete())
+      family.slideTags.forEach((tagName) => slide.tags.delete(tagName))
+      await context.sync()
+      removed = deletable.length > 0
+    })
+    return removed
+  }
+
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -2330,6 +2520,16 @@
     }
     if (message && message.type === 'insert-qna') {
       try {
+        /** Never silently destroy an existing (possibly designer-customized)
+         * widget: without an explicit replace flag, bounce back to the dialog
+         * for confirmation. Checked before the Q&A config save so a canceled
+         * insert has no side effects. */
+        if (!message.replace && (await selectedSlideHasWidget('qna'))) {
+          activeDialog.messageChild(
+            JSON.stringify({ type: 'confirm-replace', source: 'qna' })
+          )
+          return
+        }
         const binding = await getBinding()
         if (
           message.qna &&
@@ -2340,6 +2540,9 @@
         }
         if (message.qna && binding && binding.sessionId) {
           await updateQnaConfig(binding, message.qna)
+        }
+        if (message.replace) {
+          await removeWidgetFromSelectedSlide('qna')
         }
         await insertWidget(message.style, message.qna)
         activeDialog.messageChild(JSON.stringify({ type: 'inserted' }))
@@ -2354,6 +2557,15 @@
     }
     if (message && message.type === 'insert-poll') {
       try {
+        if (!message.replace && (await selectedSlideHasWidget('poll'))) {
+          activeDialog.messageChild(
+            JSON.stringify({ type: 'confirm-replace', source: 'poll' })
+          )
+          return
+        }
+        if (message.replace) {
+          await removeWidgetFromSelectedSlide('poll')
+        }
         await insertPollWidget(message.style)
         activeDialog.messageChild(JSON.stringify({ type: 'poll-inserted' }))
         activeDialog.close()
@@ -2367,6 +2579,15 @@
     }
     if (message && message.type === 'insert-discussion') {
       try {
+        if (!message.replace && (await selectedSlideHasWidget('discussion'))) {
+          activeDialog.messageChild(
+            JSON.stringify({ type: 'confirm-replace', source: 'discussion' })
+          )
+          return
+        }
+        if (message.replace) {
+          await removeWidgetFromSelectedSlide('discussion')
+        }
         await insertDiscussionWidget(message.style)
         activeDialog.messageChild(JSON.stringify({ type: 'discussion-inserted' }))
         activeDialog.close()
@@ -2374,6 +2595,51 @@
       } catch (error) {
         const detail =
           error && error.message ? error.message : 'Failed to insert open discussion widget'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'discussion', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'remove-qna') {
+      try {
+        const removed = await removeWidgetFromSelectedSlide('qna')
+        if (!removed) {
+          throw new Error('No Q&A widget found on the selected slide.')
+        }
+        activeDialog.messageChild(JSON.stringify({ type: 'removed', source: 'qna' }))
+      } catch (error) {
+        const detail = error && error.message ? error.message : 'Failed to remove widget'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'qna', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'remove-poll') {
+      try {
+        const removed = await removeWidgetFromSelectedSlide('poll')
+        if (!removed) {
+          throw new Error('No poll widget found on the selected slide.')
+        }
+        activeDialog.messageChild(JSON.stringify({ type: 'removed', source: 'poll' }))
+      } catch (error) {
+        const detail = error && error.message ? error.message : 'Failed to remove poll widget'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'poll', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'remove-discussion') {
+      try {
+        const removed = await removeWidgetFromSelectedSlide('discussion')
+        if (!removed) {
+          throw new Error('No open discussion widget found on the selected slide.')
+        }
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'removed', source: 'discussion' })
+        )
+      } catch (error) {
+        const detail =
+          error && error.message ? error.message : 'Failed to remove open discussion widget'
         activeDialog.messageChild(
           JSON.stringify({ type: 'error', source: 'discussion', message: detail })
         )

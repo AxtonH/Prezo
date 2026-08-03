@@ -718,7 +718,22 @@ const regeneratePollLabel = (
   return null
 }
 
-export async function insertQnaWidget(sessionId?: string | null, code?: string | null) {
+/** Thrown when an insert would overwrite an existing widget and the caller
+ * did not pass `replace: true`. UIs catch this to show a confirm step —
+ * PowerPoint has no undo transactions for add-ins, so a silently replaced
+ * (possibly designer-customized) widget would be unrecoverable. */
+export class WidgetExistsError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WidgetExistsError'
+  }
+}
+
+export async function insertQnaWidget(
+  sessionId?: string | null,
+  code?: string | null,
+  options?: { replace?: boolean }
+) {
   if (!isPowerPointShapeApiAvailable()) {
     return
   }
@@ -728,6 +743,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
   const useShapeVisibility = supportsShapeVisibility()
+  const allowReplace = Boolean(options?.replace)
   await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
@@ -749,6 +765,13 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     existingStyleTag.load('value')
     existingShapesTag.load('value')
     await context.sync()
+
+    const hasExistingWidget = !existingShapesTag.isNullObject && Boolean(existingShapesTag.value)
+    if (hasExistingWidget && !allowReplace) {
+      throw new WidgetExistsError(
+        'This slide already has a Q&A widget. Replace it or remove it first.'
+      )
+    }
 
     if (!existingShapesTag.isNullObject && existingShapesTag.value) {
       try {

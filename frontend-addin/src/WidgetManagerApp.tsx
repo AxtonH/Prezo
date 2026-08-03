@@ -13,7 +13,7 @@ import type {
 import { useSessionSocket } from './hooks/useSessionSocket'
 import type { SessionBinding } from './office/sessionBinding'
 import { readSessionBinding } from './office/sessionBinding'
-import { insertQnaWidget, updateQnaWidget } from './office/widgetShapes'
+import { insertQnaWidget, updateQnaWidget, WidgetExistsError } from './office/widgetShapes'
 
 const BINDING_POLL_MS = 3000
 
@@ -28,6 +28,7 @@ export function WidgetManagerApp() {
   const [error, setError] = useState<string | null>(null)
   const [isInserting, setIsInserting] = useState(false)
   const [isSavingConfig, setIsSavingConfig] = useState(false)
+  const [confirmReplace, setConfirmReplace] = useState(false)
 
   const handleSessionActivity = useCallback((activity: SessionActivity) => {
     if (activity.type === 'session_snapshot') {
@@ -175,10 +176,11 @@ export function WidgetManagerApp() {
     setSession(updated)
   }
 
-  const handleInsert = async () => {
+  const handleInsert = async (replace = false) => {
     const hasSession = Boolean(binding?.sessionId)
     setError(null)
     setStatusMessage(null)
+    setConfirmReplace(false)
     setIsInserting(true)
     try {
       if (hasSession) {
@@ -186,7 +188,7 @@ export function WidgetManagerApp() {
         await saveQnaConfig()
         setIsSavingConfig(false)
       }
-      await insertQnaWidget(binding?.sessionId ?? null, binding?.code ?? null)
+      await insertQnaWidget(binding?.sessionId ?? null, binding?.code ?? null, { replace })
       if (hasSession && binding?.sessionId) {
         await updateQnaWidget(
           binding.sessionId,
@@ -201,7 +203,13 @@ export function WidgetManagerApp() {
           : 'Placeholder inserted. It will connect when a session starts.'
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to insert widget')
+      /** Existing widget on the slide: switch to an explicit confirm step
+       * instead of silently overwriting a possibly customized design. */
+      if (err instanceof WidgetExistsError) {
+        setConfirmReplace(true)
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to insert widget')
+      }
     } finally {
       setIsSavingConfig(false)
       setIsInserting(false)
@@ -282,10 +290,24 @@ export function WidgetManagerApp() {
           <button onClick={handleSaveConfig} disabled={isSavingConfig || !binding?.sessionId}>
             {isSavingConfig ? 'Saving...' : 'Save Q&amp;A settings'}
           </button>
-          <button onClick={handleInsert} disabled={isInserting || isSavingConfig}>
+          <button onClick={() => handleInsert(false)} disabled={isInserting || isSavingConfig}>
             {isInserting ? 'Inserting...' : 'Insert widget on slide'}
           </button>
         </div>
+        {confirmReplace ? (
+          <div className="actions">
+            <p className="muted">
+              This slide already has a Q&amp;A widget. Replace it? Its design
+              customizations will be lost.
+            </p>
+            <button onClick={() => handleInsert(true)} disabled={isInserting || isSavingConfig}>
+              Replace widget
+            </button>
+            <button onClick={() => setConfirmReplace(false)} disabled={isInserting}>
+              Cancel
+            </button>
+          </div>
+        ) : null}
         {statusMessage ? <p className="muted">{statusMessage}</p> : null}
         {error ? <p className="error">{error}</p> : null}
       </div>

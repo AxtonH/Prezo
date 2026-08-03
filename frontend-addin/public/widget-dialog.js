@@ -335,31 +335,139 @@
     }
   }
 
-  const sendInsert = () => {
+  const sendInsert = (replace) => {
     setError('')
     setStatus('Sending request...')
     setBusy(true)
     Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-qna', style: readQnaConfig() })
+      JSON.stringify({
+        type: 'insert-qna',
+        style: readQnaConfig(),
+        replace: replace === true
+      })
     )
   }
 
-  const sendDiscussionInsert = () => {
+  const sendDiscussionInsert = (replace) => {
     setDiscussionError('')
     setDiscussionStatus('Sending request...')
     setDiscussionBusy(true)
     Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-discussion', style: readDiscussionConfig() })
+      JSON.stringify({
+        type: 'insert-discussion',
+        style: readDiscussionConfig(),
+        replace: replace === true
+      })
     )
   }
 
-  const sendPollInsert = () => {
+  const sendPollInsert = (replace) => {
     setPollError('')
     setPollStatus('Sending request...')
     setPollBusy(true)
     Office.context.ui.messageParent(
-      JSON.stringify({ type: 'insert-poll', style: readPollConfig() })
+      JSON.stringify({
+        type: 'insert-poll',
+        style: readPollConfig(),
+        replace: replace === true
+      })
     )
+  }
+
+  /**
+   * Explicit widget lifecycle: the host never silently replaces an existing
+   * widget (PowerPoint has no undo transactions for add-ins, so an
+   * overwritten widget is unrecoverable). It answers `confirm-replace`, we
+   * ask here; Remove goes through the same confirm bar.
+   */
+  const families = {
+    qna: {
+      label: 'Q&A',
+      setStatus,
+      setError,
+      setBusy,
+      send: sendInsert,
+      removeType: 'remove-qna',
+      ids: {
+        remove: 'remove-qna',
+        bar: 'qna-confirm',
+        text: 'qna-confirm-text',
+        accept: 'qna-confirm-accept',
+        cancel: 'qna-confirm-cancel'
+      }
+    },
+    discussion: {
+      label: 'open discussion',
+      setStatus: setDiscussionStatus,
+      setError: setDiscussionError,
+      setBusy: setDiscussionBusy,
+      send: sendDiscussionInsert,
+      removeType: 'remove-discussion',
+      ids: {
+        remove: 'remove-discussion',
+        bar: 'discussion-confirm',
+        text: 'discussion-confirm-text',
+        accept: 'discussion-confirm-accept',
+        cancel: 'discussion-confirm-cancel'
+      }
+    },
+    poll: {
+      label: 'poll',
+      setStatus: setPollStatus,
+      setError: setPollError,
+      setBusy: setPollBusy,
+      send: sendPollInsert,
+      removeType: 'remove-poll',
+      ids: {
+        remove: 'remove-poll',
+        bar: 'poll-confirm',
+        text: 'poll-confirm-text',
+        accept: 'poll-confirm-accept',
+        cancel: 'poll-confirm-cancel'
+      }
+    }
+  }
+
+  const familyFromSource = (source) =>
+    source === 'poll' || source === 'discussion' ? source : 'qna'
+
+  const pendingConfirm = { qna: null, discussion: null, poll: null }
+
+  const hideConfirm = (key) => {
+    pendingConfirm[key] = null
+    const bar = el(families[key].ids.bar)
+    if (bar) bar.classList.add('hidden')
+  }
+
+  const showConfirm = (key, action) => {
+    pendingConfirm[key] = action
+    const family = families[key]
+    const bar = el(family.ids.bar)
+    const text = el(family.ids.text)
+    const accept = el(family.ids.accept)
+    if (text) {
+      text.textContent =
+        action === 'replace'
+          ? `This slide already has a ${family.label} widget. Replace it? Its design customizations will be lost.`
+          : `Remove the ${family.label} widget from this slide? Its design customizations will be lost.`
+    }
+    if (accept) accept.textContent = action === 'replace' ? 'Replace' : 'Remove'
+    if (bar) bar.classList.remove('hidden')
+  }
+
+  const acceptConfirm = (key) => {
+    const family = families[key]
+    const action = pendingConfirm[key]
+    hideConfirm(key)
+    if (action === 'replace') {
+      family.send(true)
+      return
+    }
+    if (action === 'remove') {
+      family.setError('')
+      family.setStatus('Removing widget...')
+      Office.context.ui.messageParent(JSON.stringify({ type: family.removeType }))
+    }
   }
 
   const sendGameInsert = () => {
@@ -389,17 +497,41 @@
       backPollButton().addEventListener('click', () => showView('select'))
     }
     if (insertQnaButton()) {
-      insertQnaButton().addEventListener('click', sendInsert)
+      insertQnaButton().addEventListener('click', () => sendInsert(false))
     }
     if (insertDiscussionButton()) {
-      insertDiscussionButton().addEventListener('click', sendDiscussionInsert)
+      insertDiscussionButton().addEventListener('click', () => sendDiscussionInsert(false))
     }
     if (insertPollButton()) {
-      insertPollButton().addEventListener('click', sendPollInsert)
+      insertPollButton().addEventListener('click', () => sendPollInsert(false))
     }
     if (insertGameButton()) {
       insertGameButton().addEventListener('click', sendGameInsert)
     }
+
+    Object.keys(families).forEach((key) => {
+      const family = families[key]
+      const removeButton = el(family.ids.remove)
+      const accept = el(family.ids.accept)
+      const cancel = el(family.ids.cancel)
+      if (removeButton) {
+        removeButton.addEventListener('click', () => {
+          family.setError('')
+          family.setStatus('')
+          showConfirm(key, 'remove')
+        })
+      }
+      if (accept) {
+        accept.addEventListener('click', () => acceptConfirm(key))
+      }
+      if (cancel) {
+        cancel.addEventListener('click', () => {
+          hideConfirm(key)
+          family.setStatus('')
+          family.setBusy(false)
+        })
+      }
+    })
 
     Object.values(qnaInputs).forEach((getter) => {
       const input = getter()
@@ -441,6 +573,15 @@
         } else if (message && message.type === 'game-inserted') {
           setGameStatus('Game slide inserted.')
           setGameBusy(false)
+        } else if (message && message.type === 'confirm-replace') {
+          const key = familyFromSource(message.source)
+          families[key].setStatus('')
+          families[key].setBusy(false)
+          showConfirm(key, 'replace')
+        } else if (message && message.type === 'removed') {
+          const key = familyFromSource(message.source)
+          families[key].setStatus('Widget removed from the slide.')
+          families[key].setBusy(false)
         } else if (message && message.type === 'error') {
           if (message.source === 'game') {
             setGameStatus('')
