@@ -2508,6 +2508,118 @@
     return removed
   }
 
+  /**
+   * Widget-level undo. PowerPoint never registers add-in API changes on the
+   * user's undo stack and Office.js has no undo/transaction API, so Ctrl+Z
+   * cannot reverse widget operations. Instead, the selected slide is exported
+   * as real .pptx content (Slide.exportAsBase64, PowerPointApi 1.8) right
+   * before every destructive widget operation, and "Undo last widget change"
+   * swaps the mutated slide for that snapshot — a verbatim restore that
+   * brings back designer customizations exactly.
+   *
+   * The snapshot lives in shared-origin localStorage (the same channel the
+   * embed tokens use), latest operation only. The widget dialog reads the
+   * metadata directly to render the restore button.
+   */
+  const WIDGET_RESTORE_KEY = 'prezo-widget-restore'
+
+  const readRestoreSnapshot = () => {
+    try {
+      const raw = localStorage.getItem(WIDGET_RESTORE_KEY)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  }
+
+  const clearRestoreSnapshot = () => {
+    try {
+      localStorage.removeItem(WIDGET_RESTORE_KEY)
+    } catch {
+      // ignore storage failures
+    }
+  }
+
+  /** Best-effort: failure (old host, storage quota, slide too large) only
+   * means restore is unavailable for this operation — the operation itself
+   * proceeds. The previous snapshot is cleared either way so the restore
+   * button never offers a state older than the last operation. */
+  const saveSlideSnapshot = async (action, familyLabel) => {
+    clearRestoreSnapshot()
+    try {
+      if (!Office.context.requirements.isSetSupported('PowerPointApi', '1.8')) {
+        return
+      }
+      await runPowerPoint(async (context) => {
+        const slide = await getSelectedSlideForLifecycle(context)
+        slide.load('id')
+        const exported = slide.exportAsBase64()
+        await context.sync()
+        const payload = {
+          base64: exported.value,
+          slideId: slide.id,
+          documentUrl: (Office.context.document && Office.context.document.url) || '',
+          action,
+          family: familyLabel,
+          ts: Date.now()
+        }
+        localStorage.setItem(WIDGET_RESTORE_KEY, JSON.stringify(payload))
+      })
+    } catch {
+      clearRestoreSnapshot()
+    }
+  }
+
+  const restoreSlideSnapshot = async () => {
+    const payload = readRestoreSnapshot()
+    if (!payload || !payload.base64) {
+      throw new Error('There is no widget change to undo.')
+    }
+    const currentUrl = (Office.context.document && Office.context.document.url) || ''
+    if (payload.documentUrl && currentUrl && payload.documentUrl !== currentUrl) {
+      throw new Error('The saved slide belongs to a different presentation.')
+    }
+    await runPowerPoint(async (context) => {
+      const original = context.presentation.slides.getItemOrNullObject(payload.slideId)
+      original.load('id')
+      const slidesBefore = context.presentation.slides
+      slidesBefore.load('items/id')
+      await context.sync()
+
+      const beforeIds = {}
+      slidesBefore.items.forEach((slide) => {
+        beforeIds[slide.id] = true
+      })
+
+      /** KeepSourceFormatting: the snapshot came from this deck, so a
+       * verbatim re-import is the faithful restore. */
+      const options = { formatting: 'KeepSourceFormatting' }
+      if (!original.isNullObject) {
+        options.targetSlideId = original.id
+      }
+      context.presentation.insertSlidesFromBase64(payload.base64, options)
+      await context.sync()
+
+      if (!original.isNullObject) {
+        original.delete()
+      }
+      await context.sync()
+
+      // Land the user on the restored slide (best effort).
+      if (Office.context.requirements.isSetSupported('PowerPointApi', '1.5')) {
+        const slidesAfter = context.presentation.slides
+        slidesAfter.load('items/id')
+        await context.sync()
+        const added = slidesAfter.items.find((slide) => !beforeIds[slide.id])
+        if (added) {
+          context.presentation.setSelectedSlides([added.id])
+          await context.sync()
+        }
+      }
+    })
+    clearRestoreSnapshot()
+  }
+
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -2541,6 +2653,7 @@
         if (message.qna && binding && binding.sessionId) {
           await updateQnaConfig(binding, message.qna)
         }
+        await saveSlideSnapshot(message.replace ? 'replace' : 'insert', 'Q&A')
         if (message.replace) {
           await removeWidgetFromSelectedSlide('qna')
         }
@@ -2563,6 +2676,7 @@
           )
           return
         }
+        await saveSlideSnapshot(message.replace ? 'replace' : 'insert', 'poll')
         if (message.replace) {
           await removeWidgetFromSelectedSlide('poll')
         }
@@ -2585,6 +2699,7 @@
           )
           return
         }
+        await saveSlideSnapshot(message.replace ? 'replace' : 'insert', 'open discussion')
         if (message.replace) {
           await removeWidgetFromSelectedSlide('discussion')
         }
@@ -2602,10 +2717,11 @@
     }
     if (message && message.type === 'remove-qna') {
       try {
-        const removed = await removeWidgetFromSelectedSlide('qna')
-        if (!removed) {
+        if (!(await selectedSlideHasWidget('qna'))) {
           throw new Error('No Q&A widget found on the selected slide.')
         }
+        await saveSlideSnapshot('remove', 'Q&A')
+        await removeWidgetFromSelectedSlide('qna')
         activeDialog.messageChild(JSON.stringify({ type: 'removed', source: 'qna' }))
       } catch (error) {
         const detail = error && error.message ? error.message : 'Failed to remove widget'
@@ -2616,10 +2732,11 @@
     }
     if (message && message.type === 'remove-poll') {
       try {
-        const removed = await removeWidgetFromSelectedSlide('poll')
-        if (!removed) {
+        if (!(await selectedSlideHasWidget('poll'))) {
           throw new Error('No poll widget found on the selected slide.')
         }
+        await saveSlideSnapshot('remove', 'poll')
+        await removeWidgetFromSelectedSlide('poll')
         activeDialog.messageChild(JSON.stringify({ type: 'removed', source: 'poll' }))
       } catch (error) {
         const detail = error && error.message ? error.message : 'Failed to remove poll widget'
@@ -2630,10 +2747,11 @@
     }
     if (message && message.type === 'remove-discussion') {
       try {
-        const removed = await removeWidgetFromSelectedSlide('discussion')
-        if (!removed) {
+        if (!(await selectedSlideHasWidget('discussion'))) {
           throw new Error('No open discussion widget found on the selected slide.')
         }
+        await saveSlideSnapshot('remove', 'open discussion')
+        await removeWidgetFromSelectedSlide('discussion')
         activeDialog.messageChild(
           JSON.stringify({ type: 'removed', source: 'discussion' })
         )
@@ -2642,6 +2760,18 @@
           error && error.message ? error.message : 'Failed to remove open discussion widget'
         activeDialog.messageChild(
           JSON.stringify({ type: 'error', source: 'discussion', message: detail })
+        )
+      }
+    }
+    if (message && message.type === 'restore-slide') {
+      try {
+        await restoreSlideSnapshot()
+        activeDialog.messageChild(JSON.stringify({ type: 'restored' }))
+      } catch (error) {
+        const detail =
+          error && error.message ? error.message : 'Failed to restore the slide'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'error', source: 'restore', message: detail })
         )
       }
     }
