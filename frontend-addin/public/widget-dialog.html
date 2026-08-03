@@ -10,7 +10,7 @@
     />
     <style>
       :root {
-        --bg: #f1f5f9;
+        --bg: #f4f6f9;
         --surface: #ffffff;
         --surface-2: #f8fafc;
         --border: #e2e8f0;
@@ -18,6 +18,7 @@
         --muted: #64748b;
         --primary: #2563eb;
         --primary-dark: #1d4ed8;
+        --primary-soft: #eef3fe;
         --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
         --radius: 14px;
       }
@@ -25,14 +26,18 @@
         margin: 0;
         font-family: 'Sora', sans-serif;
         color: var(--text);
-        background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 65%);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
       }
       .dialog {
-        padding: 18px;
+        padding: 24px 28px 28px;
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 18px;
         min-height: 100vh;
+        max-width: 960px;
+        margin: 0 auto;
+        box-sizing: border-box;
       }
       .view {
         display: flex;
@@ -48,7 +53,8 @@
         gap: 8px;
       }
       h1 {
-        font-size: 20px;
+        font-size: 22px;
+        letter-spacing: -0.02em;
         margin: 0;
       }
       h2 {
@@ -57,77 +63,118 @@
       }
       .card {
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 14px;
+        border-radius: 16px;
+        padding: 20px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 16px;
         background: var(--surface);
-        box-shadow: var(--shadow);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
       }
       .card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+        transform: translateY(-1px);
+        border-color: #cfd8e3;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
       }
       .card-header {
         display: flex;
         align-items: flex-start;
-        gap: 12px;
+        gap: 14px;
       }
       .card-title {
-        font-size: 16px;
-        font-weight: 700;
-        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 3px;
+      }
+      .card-header .muted {
+        font-size: 12.5px;
+        line-height: 1.55;
       }
       .card-icon {
-        width: 36px;
-        height: 36px;
+        width: 40px;
+        height: 40px;
         border-radius: 12px;
+        flex: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-weight: 700;
-        font-size: 14px;
-        color: #ffffff;
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        color: #2563eb;
+        background: #eff6ff;
+      }
+      .card-icon svg {
+        width: 20px;
+        height: 20px;
       }
       .card-icon.poll {
-        background: linear-gradient(135deg, #0f766e, #14b8a6);
+        background: #f0fdfa;
+        color: #0f766e;
       }
       .card-icon.discussion {
-        background: linear-gradient(135deg, #f97316, #f59e0b);
+        background: #fff7ed;
+        color: #ea580c;
       }
       .card-icon.game {
-        background: linear-gradient(135deg, #7c3aed, #a855f7);
+        background: #f5f3ff;
+        color: #7c3aed;
       }
       .card-actions {
         display: flex;
         gap: 8px;
+        margin-top: auto;
       }
       .card-actions button {
         width: 100%;
       }
+      button.card-cta {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: var(--primary-soft);
+        color: var(--primary);
+        font-size: 13px;
+        padding: 9px 12px;
+        border-radius: 10px;
+        transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+      }
+      button.card-cta svg {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      button.card-cta:hover {
+        transform: none;
+        box-shadow: none;
+      }
+      .card:hover button.card-cta {
+        background: var(--primary);
+        color: #ffffff;
+      }
+      .card:hover button.card-cta svg {
+        transform: translateX(2px);
+      }
       .select-hero {
-        background: var(--surface);
-        border-radius: var(--radius);
-        border: 1px solid var(--border);
-        padding: 14px;
-        box-shadow: var(--shadow);
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 5px;
+        padding: 6px 2px 2px;
       }
       .select-eyebrow {
         font-size: 11px;
-        color: var(--muted);
-        letter-spacing: 0.18em;
+        font-weight: 600;
+        color: var(--primary);
+        letter-spacing: 0.16em;
         text-transform: uppercase;
+      }
+      .select-hero .muted {
+        font-size: 13.5px;
       }
       .select-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
+        gap: 16px;
       }
       @media (max-width: 760px) {
         .select-grid {
@@ -208,11 +255,19 @@
         opacity: 0.7;
         cursor: not-allowed;
       }
+      button:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
       #status,
       #poll-status,
       #game-status {
         font-size: 12px;
         color: #64748b;
+      }
+      #game-status:empty,
+      #game-error:empty {
+        display: none;
       }
       #error {
         color: #ef4444;
@@ -359,43 +414,84 @@
         <div class="select-grid">
           <div class="card">
             <div class="card-header">
-              <div class="card-icon">Q&amp;A</div>
+              <div class="card-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                  <path d="M12 17h.01" />
+                </svg>
+              </div>
               <div>
                 <div class="card-title">Q&amp;A widget</div>
                 <p class="muted">Shows approved questions on the selected slide.</p>
               </div>
             </div>
             <div class="card-actions">
-              <button type="button" id="open-qna">Customize &amp; insert</button>
+              <button type="button" class="card-cta" id="open-qna">
+                Customize &amp; insert
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
             </div>
           </div>
           <div class="card">
             <div class="card-header">
-              <div class="card-icon discussion">OD</div>
+              <div class="card-icon discussion" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z" />
+                  <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" />
+                </svg>
+              </div>
               <div>
                 <div class="card-title">Open discussion widget</div>
                 <p class="muted">Highlights answers to a host prompt.</p>
               </div>
             </div>
             <div class="card-actions">
-              <button type="button" id="open-discussion">Customize &amp; insert</button>
+              <button type="button" class="card-cta" id="open-discussion">
+                Customize &amp; insert
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
             </div>
           </div>
           <div class="card">
             <div class="card-header">
-              <div class="card-icon poll">Poll</div>
+              <div class="card-icon poll" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 3v18h18" />
+                  <path d="M18 17V9" />
+                  <path d="M13 17V5" />
+                  <path d="M8 17v-3" />
+                </svg>
+              </div>
               <div>
                 <div class="card-title">Poll widget</div>
                 <p class="muted">Shows the latest poll on the selected slide.</p>
               </div>
             </div>
             <div class="card-actions">
-              <button type="button" id="open-poll">Customize &amp; insert</button>
+              <button type="button" class="card-cta" id="open-poll">
+                Customize &amp; insert
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
             </div>
           </div>
           <div class="card">
             <div class="card-header">
-              <div class="card-icon game">GM</div>
+              <div class="card-icon game" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 11h4" />
+                  <path d="M8 9v4" />
+                  <path d="M15 12h.01" />
+                  <path d="M18 10h.01" />
+                  <path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5Z" />
+                </svg>
+              </div>
               <div>
                 <div class="card-title">Game embed</div>
                 <p class="muted">
@@ -405,7 +501,12 @@
               </div>
             </div>
             <div class="card-actions">
-              <button type="button" id="insert-game">Insert game slide</button>
+              <button type="button" class="card-cta" id="insert-game">
+                Insert game slide
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </button>
             </div>
             <div id="game-status"></div>
             <div id="game-error"></div>
@@ -766,3 +867,4 @@
     </div>
   </body>
 </html>
+
