@@ -1804,6 +1804,18 @@ import {
       state.presentMode ? 'Exit present mode' : 'Enter present mode'
     )
     el.presentModeToggle.textContent = state.presentMode ? '×' : '+'
+  }
+
+  /**
+   * Tell the outer embed about a present-mode TRANSITION. The outer embed
+   * persists this to the embed-instance row, so it must only be sent on
+   * actual changes (applyPresentModeState) — never as a state echo from
+   * sync/render paths. Boot-time syncs used to post active=false before the
+   * saved-mode restore ran, and any interruption in that window (embed
+   * warmup tearing the webview down, killed network call) left the stored
+   * present_mode wiped to false.
+   */
+  function postPresentModeToParent() {
     try {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(
@@ -1834,6 +1846,9 @@ import {
       el.settingsPanel.classList.toggle('open', !ribbonState.collapsed)
     }
     syncPresentModeUi()
+    // Real transition (the early return above filtered echoes) — safe to
+    // notify the outer embed, which persists the flag.
+    postPresentModeToParent()
     syncEditorDockingState()
     scheduleArtifactLayoutRefit()
     // Present-mode entry/exit swaps the effective grid config (everything
