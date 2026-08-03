@@ -485,13 +485,6 @@
         let currentScreenMode = ""
         let currentArtifactName = ""
         let currentPresentMode = false
-        // Latches true after the first iframe URL is built that includes
-        // presentMode=1. Once latched, subsequent loadGameFrame calls in
-        // this outer-embed lifetime will NOT re-add the param — that's what
-        // was creating the exit-loop on iframe reloads. The user can still
-        // re-enter present mode manually via the toggle within the session;
-        // we just won't auto-re-trigger it from the URL.
-        let presentModeAutoRestoreApplied = false
         // Last URL written to the inner iframe. Used to short-circuit
         // loadGameFrame when nothing relevant has changed — token refreshes
         // and other idle-time triggers were re-running the function and
@@ -1235,14 +1228,17 @@
           if (currentArtifactName) {
             qs.set("artifactName", currentArtifactName)
           }
-          // Auto-restore present mode ONCE per outer-embed lifetime so the
-          // first iframe load on file open enters present mode, but any
-          // later iframe reload (picker change, late library-sync token)
-          // doesn't re-trigger it after the user exited. The user can
-          // re-enter manually via the toggle within the session.
-          if (currentPresentMode && !presentModeAutoRestoreApplied) {
+          // Auto-restore present mode on EVERY inner-frame load while the
+          // stored flag says the user was presenting. Inner reloads happen
+          // mid-session (late library-sync token, taskpane open/token
+          // rotation, picker changes) and must not silently drop the user
+          // out of present mode. currentPresentMode only flips on explicit
+          // user transitions now (the station posts prezo:present-mode
+          // solely from applyPresentModeState), so an exit stays an exit —
+          // the old once-per-lifetime latch guarded against boot-state
+          // echoes that no longer exist.
+          if (currentPresentMode) {
             qs.set("presentMode", "1")
-            presentModeAutoRestoreApplied = true
           }
           const nextSrc = `${window.location.origin}/poc/poll-game-poc?${qs.toString()}`
           if (nextSrc === lastFrameSrc) {
