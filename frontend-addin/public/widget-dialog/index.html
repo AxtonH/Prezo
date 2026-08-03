@@ -258,6 +258,51 @@
         outline: 2px solid var(--primary);
         outline-offset: 2px;
       }
+      .confirm-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid #fbbf24;
+        background: #fffbeb;
+        border-radius: 10px;
+        font-size: 13px;
+        color: #92400e;
+      }
+      .confirm-bar.hidden {
+        display: none;
+      }
+      .restore-section {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+      }
+      .restore-section.hidden {
+        display: none;
+      }
+      .restore-title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      #restore-status {
+        font-size: 12px;
+        color: #64748b;
+      }
+      #restore-error {
+        font-size: 12px;
+        color: #dc2626;
+      }
+      #restore-status:empty,
+      #restore-error:empty,
+      #restore-info:empty {
+        display: none;
+      }
       #status,
       #poll-status,
       #game-status {
@@ -508,6 +553,23 @@
             <div id="game-error"></div>
           </div>
         </div>
+        <div id="restore-section" class="restore-section hidden">
+          <div>
+            <div class="restore-title">Undo last widget change</div>
+            <p id="restore-info" class="muted"></p>
+          </div>
+          <button type="button" class="ghost" id="restore-slide">Restore slide</button>
+          <div id="restore-confirm" class="confirm-bar hidden">
+            <span>
+              Restore the slide as it was before this change? Any edits made to
+              that slide since will be lost.
+            </span>
+            <button type="button" id="restore-confirm-accept">Restore</button>
+            <button type="button" class="ghost" id="restore-confirm-cancel">Cancel</button>
+          </div>
+          <div id="restore-status"></div>
+          <div id="restore-error" class="error"></div>
+        </div>
       </div>
 
       <div id="view-qna" class="view hidden">
@@ -610,6 +672,12 @@
         </div>
         <div class="actions">
           <button type="button" id="insert-qna">Insert widget</button>
+          <button type="button" class="ghost" id="remove-qna">Remove widget from slide</button>
+          <div id="qna-confirm" class="confirm-bar hidden">
+            <span id="qna-confirm-text"></span>
+            <button type="button" id="qna-confirm-accept">Replace</button>
+            <button type="button" class="ghost" id="qna-confirm-cancel">Cancel</button>
+          </div>
           <div id="status"></div>
           <div id="error"></div>
           <div id="debug" class="muted"></div>
@@ -729,6 +797,12 @@
         </div>
         <div class="actions">
           <button type="button" id="insert-discussion">Insert widget</button>
+          <button type="button" class="ghost" id="remove-discussion">Remove widget from slide</button>
+          <div id="discussion-confirm" class="confirm-bar hidden">
+            <span id="discussion-confirm-text"></span>
+            <button type="button" id="discussion-confirm-accept">Replace</button>
+            <button type="button" class="ghost" id="discussion-confirm-cancel">Cancel</button>
+          </div>
           <div id="discussion-status"></div>
           <div id="discussion-error"></div>
           <div id="discussion-debug" class="muted"></div>
@@ -855,6 +929,12 @@
         </div>
         <div class="actions">
           <button type="button" id="insert-poll">Insert poll</button>
+          <button type="button" class="ghost" id="remove-poll">Remove widget from slide</button>
+          <div id="poll-confirm" class="confirm-bar hidden">
+            <span id="poll-confirm-text"></span>
+            <button type="button" id="poll-confirm-accept">Replace</button>
+            <button type="button" class="ghost" id="poll-confirm-cancel">Cancel</button>
+          </div>
           <div id="poll-status"></div>
           <div id="poll-error"></div>
           <div id="poll-debug" class="muted"></div>
