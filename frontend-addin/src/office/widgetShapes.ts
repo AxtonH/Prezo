@@ -727,6 +727,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
+  const useShapeVisibility = supportsShapeVisibility()
   await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
@@ -826,6 +827,9 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     shadow.fill.setSolidColor(style.shadowColor)
     shadow.fill.transparency = style.shadowOpacity
     shadow.lineFormat.visible = false
+    /** Insert-time names keep the Selection Pane readable; updates never
+     * rename, so designer renames always stick. */
+    shadow.name = 'Prezo Q&A Shadow'
     shadow.tags.add(WIDGET_TAG, 'true')
     shadow.tags.add('PrezoWidgetRole', 'shadow')
 
@@ -838,6 +842,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     container.fill.setSolidColor(style.panelColor)
     container.lineFormat.color = style.borderColor
     container.lineFormat.weight = 1
+    container.name = 'Prezo Q&A Panel'
     container.tags.add(WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'container')
 
@@ -849,6 +854,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     })
     meta.textFrame.wordWrap = true
     applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+    meta.name = 'Prezo Q&A Eyebrow'
     meta.tags.add(WIDGET_TAG, 'true')
     meta.tags.add('PrezoWidgetRole', 'meta')
 
@@ -864,6 +870,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       bold: true,
       color: style.textColor
     })
+    title.name = 'Prezo Q&A Title'
     title.tags.add(WIDGET_TAG, 'true')
     title.tags.add('PrezoWidgetRole', 'title')
 
@@ -878,6 +885,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     )
     subtitle.textFrame.wordWrap = true
     applyFont(subtitle.textFrame.textRange, style, { size: 13, color: style.mutedColor })
+    subtitle.name = 'Prezo Q&A Subtitle'
     subtitle.tags.add(WIDGET_TAG, 'true')
     subtitle.tags.add('PrezoWidgetRole', 'subtitle')
 
@@ -900,6 +908,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       bold: true,
       color: style.accentColor
     })
+    badge.name = 'Prezo Q&A Badge'
     badge.tags.add(WIDGET_TAG, 'true')
     badge.tags.add('PrezoWidgetRole', 'badge')
 
@@ -914,6 +923,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
     )
     body.textFrame.wordWrap = true
     applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+    body.name = 'Prezo Q&A Body'
     body.tags.add(WIDGET_TAG, 'true')
     body.tags.add('PrezoWidgetRole', 'body')
 
@@ -936,6 +946,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
       item.lineFormat.weight = 1
       item.fill.transparency = 1
       item.lineFormat.visible = false
+      item.name = `Prezo Q&A Item ${index + 1} Card`
       item.tags.add(WIDGET_TAG, 'true')
       item.tags.add('PrezoWidgetRole', 'item')
 
@@ -950,6 +961,7 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
         size: 14,
         color: style.textColor
       })
+      question.name = `Prezo Q&A Item ${index + 1} Question`
       question.tags.add(WIDGET_TAG, 'true')
       question.tags.add('PrezoWidgetRole', 'item-text')
 
@@ -964,8 +976,17 @@ export async function insertQnaWidget(sessionId?: string | null, code?: string |
         size: 12,
         color: style.mutedColor
       })
+      votes.name = `Prezo Q&A Item ${index + 1} Votes`
       votes.tags.add(WIDGET_TAG, 'true')
       votes.tags.add('PrezoWidgetRole', 'item-votes')
+
+      /** Rows are content-driven and start empty, so start them truly hidden
+       * on capable hosts; the update loop reveals rows that gain content. */
+      if (useShapeVisibility) {
+        item.visible = false
+        question.visible = false
+        votes.visible = false
+      }
 
       itemShapes.push({ container: item, text: question, votes })
     }
@@ -1025,6 +1046,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
+  const useShapeVisibility = supportsShapeVisibility()
   await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
@@ -1122,6 +1144,9 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     shadow.fill.setSolidColor(style.shadowColor)
     shadow.fill.transparency = style.shadowOpacity
     shadow.lineFormat.visible = false
+    /** Insert-time names keep the Selection Pane readable; updates never
+     * rename, so designer renames always stick. */
+    shadow.name = 'Prezo Discussion Shadow'
     shadow.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     shadow.tags.add('PrezoWidgetRole', 'shadow')
 
@@ -1134,6 +1159,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     container.fill.setSolidColor(style.panelColor)
     container.lineFormat.color = style.borderColor
     container.lineFormat.weight = 1
+    container.name = 'Prezo Discussion Panel'
     container.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'container')
 
@@ -1145,6 +1171,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     })
     meta.textFrame.wordWrap = true
     applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+    meta.name = 'Prezo Discussion Eyebrow'
     meta.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     meta.tags.add('PrezoWidgetRole', 'meta')
 
@@ -1160,6 +1187,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
       bold: true,
       color: style.textColor
     })
+    title.name = 'Prezo Discussion Title'
     title.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     title.tags.add('PrezoWidgetRole', 'title')
 
@@ -1174,6 +1202,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     )
     subtitle.textFrame.wordWrap = true
     applyFont(subtitle.textFrame.textRange, style, { size: 13, color: style.mutedColor })
+    subtitle.name = 'Prezo Discussion Subtitle'
     subtitle.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     subtitle.tags.add('PrezoWidgetRole', 'subtitle')
 
@@ -1196,6 +1225,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
       bold: true,
       color: style.accentColor
     })
+    badge.name = 'Prezo Discussion Badge'
     badge.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     badge.tags.add('PrezoWidgetRole', 'badge')
 
@@ -1210,6 +1240,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     )
     body.textFrame.wordWrap = true
     applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+    body.name = 'Prezo Discussion Body'
     body.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     body.tags.add('PrezoWidgetRole', 'body')
 
@@ -1232,6 +1263,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
       item.lineFormat.weight = 1
       item.fill.transparency = 1
       item.lineFormat.visible = false
+      item.name = `Prezo Discussion Item ${index + 1} Card`
       item.tags.add(DISCUSSION_WIDGET_TAG, 'true')
       item.tags.add('PrezoWidgetRole', 'item')
 
@@ -1246,6 +1278,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
         size: 14,
         color: style.textColor
       })
+      question.name = `Prezo Discussion Item ${index + 1} Answer`
       question.tags.add(DISCUSSION_WIDGET_TAG, 'true')
       question.tags.add('PrezoWidgetRole', 'item-text')
 
@@ -1260,8 +1293,17 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
         size: 12,
         color: style.mutedColor
       })
+      votes.name = `Prezo Discussion Item ${index + 1} Votes`
       votes.tags.add(DISCUSSION_WIDGET_TAG, 'true')
       votes.tags.add('PrezoWidgetRole', 'item-votes')
+
+      /** Rows are content-driven and start empty, so start them truly hidden
+       * on capable hosts; the update loop reveals rows that gain content. */
+      if (useShapeVisibility) {
+        item.visible = false
+        question.visible = false
+        votes.visible = false
+      }
 
       itemShapes.push({ container: item, text: question, votes })
     }
@@ -1321,6 +1363,9 @@ export async function updateQnaWidget(
 
   const promptMap = new Map(prompts.map((prompt) => [prompt.id, prompt]))
   const tags = config.tags
+  const useShapeVisibility = supportsShapeVisibility()
+  const withVisible = (props: string[]) =>
+    useShapeVisibility ? [...props, 'visible'] : props
   await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
     slides.load('items')
@@ -1395,9 +1440,9 @@ export async function updateQnaWidget(
         const container = info.slide.shapes.getItemOrNullObject(item.container)
         const text = info.slide.shapes.getItemOrNullObject(item.text)
         const votes = info.slide.shapes.getItemOrNullObject(item.votes)
-        container.load('id')
-        text.load('id')
-        votes.load('id')
+        container.load(withVisible(['id']))
+        text.load(withVisible(['id']))
+        votes.load(withVisible(['id']))
         return { container, text, votes }
       })
       if (containerShape) {
@@ -1551,11 +1596,20 @@ export async function updateQnaWidget(
           }
           const question = approved[index]
           if (!question) {
+            /** Empty row: hide it for real on capable hosts so it leaves the
+             * canvas/tab order; older hosts keep the transparency fallback. */
+            if (useShapeVisibility) {
+              setShapesVisibility([item.container, item.text, item.votes], false)
+              return
+            }
             item.container.fill.transparency = 1
             item.container.lineFormat.visible = false
             item.text.textFrame.textRange.text = ''
             item.votes.textFrame.textRange.text = ''
             return
+          }
+          if (useShapeVisibility) {
+            setShapesVisibility([item.container, item.text, item.votes], true)
           }
           item.container.fill.transparency = 0
           item.container.lineFormat.visible = true
@@ -1589,6 +1643,7 @@ export async function insertPollWidget(
   const scale = style.spacingScale
   const maxOptions = style.maxOptions
   const hasSession = Boolean(sessionId)
+  const useShapeVisibility = supportsShapeVisibility()
   await runPowerPoint(async (context) => {
     const slides = context.presentation.getSelectedSlides()
     slides.load('items')
@@ -1669,6 +1724,10 @@ export async function insertPollWidget(
     shadow.fill.setSolidColor(style.shadowColor)
     shadow.fill.transparency = style.shadowOpacity
     shadow.lineFormat.visible = false
+    /** Named shapes keep PowerPoint's Selection Pane readable for designers
+     * ("Prezo Poll Option 3 Bar" instead of "Rectangle 47"). Insert-time
+     * only — updates never rename, so designer renames always stick. */
+    shadow.name = 'Prezo Poll Shadow'
     shadow.tags.add(POLL_WIDGET_TAG, 'true')
     shadow.tags.add('PrezoWidgetRole', 'poll-shadow')
 
@@ -1681,6 +1740,7 @@ export async function insertPollWidget(
     container.fill.setSolidColor(style.panelColor)
     container.lineFormat.color = style.borderColor
     container.lineFormat.weight = 1
+    container.name = 'Prezo Poll Panel'
     container.tags.add(POLL_WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'poll-container')
 
@@ -1696,6 +1756,7 @@ export async function insertPollWidget(
       bold: true,
       color: style.textColor
     })
+    title.name = 'Prezo Poll Title'
     title.tags.add(POLL_WIDGET_TAG, 'true')
     title.tags.add('PrezoWidgetRole', 'poll-title')
     title.tags.add(POLL_TEXT_SYNC_TAG, buildPollTitle(code))
@@ -1708,6 +1769,7 @@ export async function insertPollWidget(
     })
     question.textFrame.wordWrap = true
     applyFont(question.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+    question.name = 'Prezo Poll Question'
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
     question.tags.add(POLL_TEXT_SYNC_TAG, 'No polls yet.')
@@ -1746,6 +1808,7 @@ export async function insertPollWidget(
       label.textFrame.wordWrap = true
       applyFont(label.textFrame.textRange, style, { size: 13, color: style.textColor })
       label.textFrame.textRange.paragraphFormat.horizontalAlignment = isVertical ? 'Center' : 'Left'
+      label.name = `Prezo Poll Option ${index + 1} Label`
       label.tags.add(POLL_WIDGET_TAG, 'true')
       label.tags.add('PrezoWidgetRole', 'poll-label')
       label.tags.add(POLL_TEXT_SYNC_TAG, showItem ? `Option ${index + 1}` : '')
@@ -1760,6 +1823,7 @@ export async function insertPollWidget(
       bg.fill.setSolidColor(style.barColor)
       bg.fill.transparency = showItem ? 0 : 0.35
       bg.lineFormat.visible = false
+      bg.name = `Prezo Poll Option ${index + 1} Bar Track`
       bg.tags.add(POLL_WIDGET_TAG, 'true')
       bg.tags.add('PrezoWidgetRole', 'poll-bar-bg')
 
@@ -1775,12 +1839,22 @@ export async function insertPollWidget(
       fill.fill.setSolidColor(style.accentColor)
       fill.fill.transparency = showItem ? 0 : 1
       fill.lineFormat.visible = false
+      fill.name = `Prezo Poll Option ${index + 1} Bar Fill`
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
       const barGroup = slide.shapes.addGroup([bg, fill])
+      barGroup.name = `Prezo Poll Option ${index + 1} Bar`
       barGroup.tags.add(POLL_WIDGET_TAG, 'true')
       barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+
+      /** Rows beyond the style's option count start truly hidden on capable
+       * hosts — no ghost shapes on the canvas from the first insert. The
+       * update loop reveals them if a bigger poll is bound later. */
+      if (!showItem && useShapeVisibility) {
+        label.visible = false
+        barGroup.visible = false
+      }
 
       label.load('id')
       barGroup.load('id')
@@ -1820,6 +1894,63 @@ export async function insertPollWidget(
     slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(shapeIds))
     await context.sync()
   })
+}
+
+/** Shape.visible ships in PowerPointApi 1.10 (the same set as Shape.rotation,
+ * which the poll updater already writes). Hosts below it fall back to the
+ * legacy transparency-based hiding, so nothing regresses. */
+const supportsShapeVisibility = (): boolean => {
+  try {
+    return Boolean(
+      typeof Office !== 'undefined' &&
+        Office.context?.requirements?.isSetSupported?.('PowerPointApi', '1.10')
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Reading an unloaded scalar off a RichApi proxy throws — treat that as
+ * "unknown" so callers write unconditionally instead of crashing. */
+const loadedVisibleState = (shape: PowerPoint.Shape): boolean | null => {
+  try {
+    const value = shape.visible
+    return typeof value === 'boolean' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** Type-guarded group check tolerant of shapes whose `type` wasn't loaded on
+ * this traversal path (e.g. a bar group created in the same batch). */
+const isLoadedGroupShape = (
+  shape: PowerPoint.Shape | null | undefined
+): shape is PowerPoint.Shape => {
+  if (!shape || isShapeNullObject(shape)) {
+    return false
+  }
+  try {
+    return shape.type === 'Group'
+  } catch {
+    return false
+  }
+}
+
+/** Set Shape.visible on each shape, skipping writes whose loaded value
+ * already matches so repeat updates don't dirty the deck or the undo stack. */
+const setShapesVisibility = (
+  shapes: Array<PowerPoint.Shape | null | undefined>,
+  visible: boolean
+) => {
+  for (const shape of shapes) {
+    if (!shape || isShapeNullObject(shape)) {
+      continue
+    }
+    if (loadedVisibleState(shape) === visible) {
+      continue
+    }
+    shape.visible = visible
+  }
 }
 
 /** Vote-change bar animation. Duration is wall-clock: a throttled webview
@@ -1927,6 +2058,11 @@ export async function updatePollWidget(
     return
   }
   const animateBars = Boolean(options?.animateBars)
+  const useShapeVisibility = supportsShapeVisibility()
+  /** Only append 'visible' to load lists on capable hosts — loading a
+   * property the host doesn't know errors the whole sync. */
+  const withVisible = (props: string[]) =>
+    useShapeVisibility ? [...props, 'visible'] : props
 
   const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
@@ -2225,9 +2361,9 @@ export async function updatePollWidget(
             : info.slide.shapes.getItemOrNullObject(item.group)
           : null
         if (itemGroup) {
-          itemGroup.load(['id', 'type'])
+          itemGroup.load(withVisible(['id', 'type']))
         }
-        label.load(['id', 'type'])
+        label.load(withVisible(['id', 'type']))
         return {
           label,
           group: itemGroup,
@@ -2249,8 +2385,8 @@ export async function updatePollWidget(
         const fill = barScope
           ? barScope.getItemOrNullObject(entry.fillId)
           : info.slide.shapes.getItemOrNullObject(entry.fillId)
-        bg.load(['id', 'width', 'left', 'height', 'top', 'type'])
-        fill.load(['id', 'width', 'left', 'height', 'top', 'type'])
+        bg.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
+        fill.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
         return { label: entry.label, group: entry.group, bg, fill }
       })
 
@@ -2420,12 +2556,12 @@ export async function updatePollWidget(
         }
         if (taggedItems.length > 0) {
           itemShapes = taggedItems.map((item) => {
-            item.label.load('id')
+            item.label.load(withVisible(['id']))
             if (item.group) {
-              item.group.load('id')
+              item.group.load(withVisible(['id', 'type']))
             }
-            item.bg.load(['id', 'width', 'left', 'height', 'top'])
-            item.fill.load(['id', 'width', 'left', 'height', 'top'])
+            item.bg.load(withVisible(['id', 'width', 'left', 'height', 'top']))
+            item.fill.load(withVisible(['id', 'width', 'left', 'height', 'top']))
             return item
           })
           await context.sync()
@@ -2483,7 +2619,7 @@ export async function updatePollWidget(
             const barGroup = info.slide.shapes.addGroup([item.bg, item.fill])
             barGroup.tags.add(POLL_WIDGET_TAG, 'true')
             barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
-            barGroup.load('id')
+            barGroup.load(withVisible(['id']))
             const groupItems = barGroup.group.shapes
             groupItems.load('items')
             return { index, barGroup, groupItems }
@@ -2494,7 +2630,7 @@ export async function updatePollWidget(
             const taggedItems = groupItems.items.map((child) => {
               const roleTag = child.tags.getItemOrNullObject('PrezoWidgetRole')
               roleTag.load('value')
-              child.load(['id', 'width', 'left', 'height', 'top'])
+              child.load(withVisible(['id', 'width', 'left', 'height', 'top']))
               return { child, roleTag }
             })
             return { index, barGroup, taggedItems }
@@ -2698,6 +2834,30 @@ export async function updatePollWidget(
           isFiniteNum(bgTop) && isFiniteNum(bgLeft) && isFiniteNum(bgWidth) && isFiniteNum(bgHeight)
 
         if (!data || index >= visibleOptions) {
+          const rowGroup = isLoadedGroupShape(item.group) ? item.group : null
+          if (useShapeVisibility && hasPollData) {
+            /**
+             * Surplus row for the bound poll: hide it outright instead of
+             * the legacy transparency trick. Hidden shapes leave the canvas,
+             * tab order, and select-all, but keep every bit of designer
+             * styling (including label text) for when a rebind reveals the
+             * row again. Geometry/transparency writes are skipped entirely.
+             */
+            await tryItemWrite(() => {
+              setShapesVisibility(
+                rowGroup ? [item.label, rowGroup] : [item.label, item.bg, item.fill],
+                false
+              )
+            }, `row hide ${index}`)
+            continue
+          }
+          if (useShapeVisibility) {
+            /** No poll bound: this is the designable placeholder skeleton —
+             * rows previously hidden under a binding must come back. */
+            await tryItemWrite(() => {
+              setShapesVisibility([item.label, rowGroup, item.bg, item.fill], true)
+            }, `row show ${index}`)
+          }
           await tryItemWrite(
             () => syncPollText(labelTextStates[index] ?? null, '', { force: true }),
             `label clear ${index}`
@@ -2736,6 +2896,16 @@ export async function updatePollWidget(
           continue
         }
 
+        if (useShapeVisibility) {
+          /** All four written (not just the group): rows hidden per-shape by
+           * an earlier pass (pre-group-migration) must fully reappear. */
+          await tryItemWrite(() => {
+            setShapesVisibility(
+              [item.label, isLoadedGroupShape(item.group) ? item.group : null, item.bg, item.fill],
+              true
+            )
+          }, `row show ${index}`)
+        }
         await tryItemWrite(
           () =>
             syncPollText(labelTextStates[index] ?? null, data.label, {
