@@ -81,7 +81,17 @@ async def session_socket(websocket: WebSocket, session_id: str) -> None:
         )
         await websocket.send_json(activity.model_dump(mode="json"))
         while True:
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            # Heartbeat: clients send "ping" so they can detect half-open
+            # sockets (no traffic despite pings => force reconnect). Any
+            # other inbound text is ignored, as before.
+            if message == "ping":
+                pong = SessionActivity(
+                    type="pong",
+                    payload={},
+                    ts=datetime.now(timezone.utc),
+                )
+                await websocket.send_json(pong.model_dump(mode="json"))
     except NotFoundError:
         await websocket.close(code=1008)
     except SupabaseError as exc:

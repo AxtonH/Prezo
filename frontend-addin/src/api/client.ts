@@ -257,9 +257,12 @@ export const api = {
     request<Session>(`/sessions/${sessionId}`, { method: 'DELETE' }, true),
   getSessionByCode: (code: string) =>
     request<Session>(`/sessions/code/${encodeURIComponent(code)}`),
-  /** Sends auth when signed in so snapshot.session includes is_original_host for host UI. */
+  /** Sends auth when signed in so snapshot.session includes is_original_host for host UI.
+   * cache: 'no-cache' forces ETag revalidation on every call — the endpoint's
+   * max-age/stale-while-revalidate headers otherwise let the browser serve
+   * vote counts up to ~30s stale to the disconnected-socket polling loop. */
   getSnapshot: (sessionId: string) =>
-    request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`, {}, true),
+    request<SessionSnapshot>(`/sessions/${sessionId}/snapshot`, { cache: 'no-cache' }, true),
   openQna: (sessionId: string) =>
     request<Session>(`/sessions/${sessionId}/qna/open`, { method: 'POST' }, true),
   closeQna: (sessionId: string) =>
