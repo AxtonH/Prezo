@@ -140,6 +140,24 @@ export default function App() {
       return
     }
 
+    /** Host deleted/reset audience Q&A — drop the removed questions live. */
+    if (activity.type === 'audience_questions_deleted' && Array.isArray(activity.payload.question_ids)) {
+      const ids = new Set(activity.payload.question_ids as string[])
+      if (ids.size > 0) {
+        setQuestions((prev) =>
+          prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
+        )
+      }
+      return
+    }
+
+    /** Discussion reset: its questions are removed while the prompt itself stays. */
+    if (activity.type === 'prompt_questions_deleted' && typeof activity.payload.prompt_id === 'string') {
+      const promptId = activity.payload.prompt_id as string
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
+      return
+    }
+
     if (activity.payload.question) {
       const question = activity.payload.question as Question
       setQuestions((prev) => upsertById(prev, question))

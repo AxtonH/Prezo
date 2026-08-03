@@ -277,6 +277,31 @@ async def report_poll_presence(
     return PollPresenceAck(mode=mode, status=status)
 
 
+@router.post("/{poll_id}/reset", response_model=Poll)
+async def reset_poll(
+    session_id: str,
+    poll_id: str,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> Poll:
+    """Clear every vote on a poll while keeping the poll itself.
+
+    Broadcasts poll_vote_updated with the zeroed poll so all surfaces (host,
+    audience, station) update through the existing vote-update path.
+    """
+    try:
+        poll = await store.reset_poll_votes(session_id, poll_id, user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    activity = make_activity(
+        "poll_vote_updated", {"poll": poll.model_dump(mode="json")}
+    )
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+    return poll
+
+
 @router.delete("/{poll_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_poll(
     session_id: str,

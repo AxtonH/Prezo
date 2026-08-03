@@ -18,6 +18,8 @@ export interface ActivePollActivityCardProps {
   onResume?: (pollId: string) => void
   /** Permanently remove this poll from the session. */
   onDelete?: () => void
+  /** Clear all votes for this poll while keeping the poll itself. */
+  onReset?: () => void
   /**
    * PowerPoint only: link the poll widget on the selected slide to this poll (updates tags + text only).
    */
@@ -36,6 +38,7 @@ export function ActivePollActivityCard({
   onStop,
   onResume,
   onDelete,
+  onReset,
   onBindWidget,
   onSetMode
 }: ActivePollActivityCardProps) {
@@ -67,6 +70,20 @@ export function ActivePollActivityCard({
       onConfigure={onConfigure ? () => onConfigure(poll.id) : undefined}
     />
   )
+
+  const resetButton = onReset ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      title="Clear all votes for this poll — the poll itself stays"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-amber-50 !text-amber-800 !border !border-amber-200 hover:!bg-amber-100 !transition-colors"
+    >
+      Reset
+    </button>
+  ) : null
 
   const handleBindWidget = async () => {
     if (!onBindWidget) {
@@ -196,6 +213,7 @@ export function ActivePollActivityCard({
                 Stop poll
               </button>
               {followSlidesButton}
+              {resetButton}
               {onDelete ? (
                 <button
                   type="button"
@@ -238,6 +256,7 @@ export function ActivePollActivityCard({
                 Pin open
               </button>
               {followSlidesButton}
+              {resetButton}
               {onDelete ? (
                 <button
                   type="button"

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from ..auth import AuthUser, get_current_user, get_library_user
 from ..deps import get_manager, get_store
@@ -21,6 +22,10 @@ from ..store import InMemoryStore, NotFoundError
 from .slide_presence import SlidePresenceChannel
 
 router = APIRouter(prefix="/sessions/{session_id}/qna-prompts", tags=["qna-prompts"])
+
+
+class PromptQuestionsDeletedResponse(BaseModel):
+    question_ids: list[str]
 
 # Presence + state tracking for slide-driven (auto) discussion prompts —
 # same design as polls (see api/polls.py): keepalives are storage-free and
@@ -241,6 +246,30 @@ async def report_prompt_presence(
 
     await _sweep_stale_auto_prompts(session_id, prompt_id, store, manager, user)
     return QnaPromptPresenceAck(mode=mode, status=prompt_status)
+
+
+@router.delete("/{prompt_id}/questions", response_model=PromptQuestionsDeletedResponse)
+async def delete_prompt_questions(
+    session_id: str,
+    prompt_id: str,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> PromptQuestionsDeletedResponse:
+    """Reset a discussion: remove all of its questions, keep the prompt itself."""
+    try:
+        question_ids = await store.delete_prompt_questions(
+            session_id, prompt_id, user.id
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    activity = make_activity(
+        "prompt_questions_deleted",
+        {"prompt_id": prompt_id, "question_ids": question_ids},
+    )
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+    return PromptQuestionsDeletedResponse(question_ids=question_ids)
 
 
 @router.delete("/{prompt_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -22,6 +22,8 @@ export interface SessionPollsDashboardPageProps {
   onStopPoll?: (pollId: string) => void | Promise<void>
   onResumePoll?: (pollId: string) => void | Promise<void>
   onDeletePoll?: (pollId: string) => void | Promise<void>
+  /** Clear all votes for a poll while keeping the poll itself. */
+  onResetPoll?: (pollId: string) => void | Promise<void>
   onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   onCreatePoll: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
   /** PowerPoint add-in: bind slide widget to a poll. */
@@ -36,6 +38,7 @@ export function SessionPollsDashboardPage({
   onStopPoll,
   onResumePoll,
   onDeletePoll,
+  onResetPoll,
   onSetPollMode,
   onCreatePoll,
   onBindPollWidget
@@ -149,6 +152,9 @@ export function SessionPollsDashboardPage({
                     onDeletePoll={onDeletePoll}
                     onDeleteQna={undefined}
                     onDeleteDiscussion={undefined}
+                    onResetPoll={onResetPoll}
+                    onResetQna={undefined}
+                    onResetDiscussion={undefined}
                     onSetPollMode={onSetPollMode}
                     onApproveDiscussionQuestion={undefined}
                     onHideDiscussionQuestion={undefined}

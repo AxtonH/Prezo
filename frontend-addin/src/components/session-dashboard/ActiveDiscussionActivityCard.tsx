@@ -21,6 +21,8 @@ export interface ActiveDiscussionActivityCardProps {
   onStop?: (promptId: string) => void
   onResume?: (promptId: string) => void
   onDelete?: () => void
+  /** Clear all responses for this discussion while keeping the prompt itself. */
+  onReset?: () => void
   /** Hand control back to the slideshow (auto) or pin. */
   onSetMode?: (promptId: string, mode: PollMode) => void | Promise<void>
   onApproveQuestion?: (questionId: string) => void | Promise<void>
@@ -102,6 +104,7 @@ export function ActiveDiscussionActivityCard({
   onStop,
   onResume,
   onDelete,
+  onReset,
   onSetMode,
   onApproveQuestion,
   onHideQuestion,
@@ -155,6 +158,20 @@ export function ActiveDiscussionActivityCard({
       onConfigure={onConfigure ? () => onConfigure(prompt.id) : undefined}
     />
   )
+
+  const resetButton = onReset ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      title="Clear all responses for this discussion — the prompt stays"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-amber-50 !text-amber-800 !border !border-amber-200 hover:!bg-amber-100 !transition-colors"
+    >
+      Reset
+    </button>
+  ) : null
 
   const bindButton = onBindWidget ? (
     <button
@@ -329,6 +346,7 @@ export function ActiveDiscussionActivityCard({
               Stop discussion
             </button>
             {followSlidesButton}
+            {resetButton}
             {onDelete ? (
               <button
                 type="button"
@@ -358,6 +376,7 @@ export function ActiveDiscussionActivityCard({
               Pin open
             </button>
             {followSlidesButton}
+            {resetButton}
             {onDelete ? (
               <button
                 type="button"

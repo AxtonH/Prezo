@@ -20,6 +20,8 @@ export interface ActiveQnaActivityCardProps {
   onStop?: () => void
   onResume?: () => void
   onDelete?: () => void
+  /** Clear all audience questions while keeping the Q&amp;A channel itself. */
+  onReset?: () => void
   /** Hand control back to the slideshow (auto) or pin. */
   onSetMode?: (mode: PollMode) => void | Promise<void>
   onApproveQuestion?: (questionId: string) => void | Promise<void>
@@ -96,6 +98,7 @@ export function ActiveQnaActivityCard({
   onStop,
   onResume,
   onDelete,
+  onReset,
   onSetMode,
   onApproveQuestion,
   onHideQuestion
@@ -127,6 +130,20 @@ export function ActiveQnaActivityCard({
       onConfigure={onConfigure}
     />
   )
+
+  const resetButton = onReset ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      title="Clear all audience questions — the Q&A channel stays"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-amber-50 !text-amber-800 !border !border-amber-200 hover:!bg-amber-100 !transition-colors"
+    >
+      Reset
+    </button>
+  ) : null
 
   return (
     <CollapsibleActivityPanelShell
@@ -280,6 +297,7 @@ export function ActiveQnaActivityCard({
               Stop Q&amp;A
             </button>
             {followSlidesButton}
+            {resetButton}
             {onDelete ? (
               <button
                 type="button"
@@ -308,6 +326,7 @@ export function ActiveQnaActivityCard({
               Pin open
             </button>
             {followSlidesButton}
+            {resetButton}
             {onDelete ? (
               <button
                 type="button"

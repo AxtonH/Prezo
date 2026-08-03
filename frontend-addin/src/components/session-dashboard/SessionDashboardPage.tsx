@@ -45,6 +45,12 @@ export interface SessionDashboardPageProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Clear all votes for a poll while keeping the poll itself. */
+  onResetPoll?: (pollId: string) => void | Promise<void>
+  /** Clear all audience questions while keeping the Q&amp;A channel itself. */
+  onResetQna?: () => void | Promise<void>
+  /** Clear all responses for a discussion while keeping the prompt itself. */
+  onResetDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a poll between auto (slide-driven) and pinned control. */
   onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   /** Switch session Q&A between auto and pinned control. */
@@ -90,6 +96,9 @@ export function SessionDashboardPage({
   onDeletePoll,
   onDeleteQna,
   onDeleteDiscussion,
+  onResetPoll,
+  onResetQna,
+  onResetDiscussion,
   onSetPollMode,
   onSetQnaMode,
   onSetDiscussionMode,
@@ -231,6 +240,9 @@ export function SessionDashboardPage({
           onDeletePoll={onDeletePoll}
           onDeleteQna={onDeleteQna}
           onDeleteDiscussion={onDeleteDiscussion}
+          onResetPoll={onResetPoll}
+          onResetQna={onResetQna}
+          onResetDiscussion={onResetDiscussion}
           onSetPollMode={onSetPollMode}
           qnaControlMode={session.qna_control_mode}
           onSetQnaMode={onSetQnaMode}

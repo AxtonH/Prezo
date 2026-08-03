@@ -35,6 +35,8 @@ export interface SessionQnaDashboardPageProps {
   onStopQna: () => Promise<void> | void
   onResumeQna?: () => Promise<void> | void
   onDeleteQna?: () => void | Promise<void>
+  /** Clear all audience questions while keeping the Q&amp;A channel itself. */
+  onResetQna?: () => void | Promise<void>
   /** Switch session Q&A between auto (slide-driven) and pinned control. */
   onSetQnaMode?: (mode: PollMode) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -51,6 +53,7 @@ export function SessionQnaDashboardPage({
   onStopQna,
   onResumeQna,
   onDeleteQna,
+  onResetQna,
   onSetQnaMode,
   onApproveAudienceQuestion,
   onHideAudienceQuestion
@@ -220,6 +223,9 @@ export function SessionQnaDashboardPage({
                     onDeletePoll={undefined}
                     onDeleteQna={onDeleteQna}
                     onDeleteDiscussion={undefined}
+                    onResetPoll={undefined}
+                    onResetQna={onResetQna}
+                    onResetDiscussion={undefined}
                     qnaControlMode={session.qna_control_mode}
                     onSetQnaMode={onSetQnaMode}
                     onApproveDiscussionQuestion={undefined}

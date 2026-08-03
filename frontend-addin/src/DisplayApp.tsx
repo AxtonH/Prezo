@@ -50,6 +50,13 @@ export function DisplayApp() {
       return
     }
 
+    /** Discussion reset: its questions are removed while the prompt itself stays. */
+    if (activity.type === 'prompt_questions_deleted' && typeof activity.payload.prompt_id === 'string') {
+      const promptId = activity.payload.prompt_id as string
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
+      return
+    }
+
     if (activity.payload.question) {
       const question = activity.payload.question as Question
       setQuestions((prev) => upsertById(prev, question))

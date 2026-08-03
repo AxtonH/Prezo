@@ -9,7 +9,9 @@ tests. Extracted from app.api.ai.
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -45,6 +47,12 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 # stop_reason=max_tokens. 32000 leaves ~16k for thinking on top of the output.
 ANTHROPIC_ARTIFACT_MAX_TOKENS = 32000
 
+# Anthropic calls stream, so the httpx read timeout applies between SSE chunks
+# rather than to the whole generation; timeout_seconds bounds total wall clock.
+# 120s of silence means a dead connection (the API sends periodic pings), while
+# a healthy Opus build emits deltas continuously.
+ANTHROPIC_STREAM_READ_TIMEOUT_SECONDS = 120.0
+
 # Intake replies are a single short question or a small JSON brief.
 ANTHROPIC_INTAKE_MAX_TOKENS = 1200
 
@@ -66,15 +74,21 @@ def build_provider_timeout_detail(
     timeout_seconds: float,
     request_stage: str = "",
     remaining_budget_seconds: float | None = None,
+    call_budget_seconds: float | None = None,
 ) -> str:
     stage_text = f" during {request_stage}" if request_stage else ""
     detail = (
         f"Unable to reach {provider_name} API at {base_url}{stage_text}: "
         f"{exception_name} after {timeout_seconds:.0f}s."
     )
+    # For streamed calls the read timeout (between chunks) and the wall-clock
+    # call budget differ; call_budget_seconds reports the latter accurately.
+    budget_seconds = (
+        call_budget_seconds if call_budget_seconds is not None else timeout_seconds
+    )
     if remaining_budget_seconds is not None:
         detail = (
-            f"{detail} Call budget was {timeout_seconds:.0f}s; "
+            f"{detail} Call budget was {budget_seconds:.0f}s; "
             f"server budget remaining at call start was {max(0.0, remaining_budget_seconds):.0f}s."
         )
     return detail
@@ -88,6 +102,14 @@ def build_provider_request_error_detail(
 ) -> str:
     stage_text = f" during {request_stage}" if request_stage else ""
     return f"Unable to reach {provider_name} API at {base_url}{stage_text}: {detail}"
+
+def parse_json_payload(raw: str | bytes) -> Any:
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return {}
 
 async def request_anthropic_text(
     *,
@@ -136,11 +158,21 @@ async def request_anthropic_text(
     if anthropic_model_accepts_sampling_params(resolved_model):
         body["temperature"] = temperature
 
+    # Stream so the read timeout applies per SSE chunk instead of to the whole
+    # generation — Opus artifact builds routinely outlive any sane whole-response
+    # read timeout. Total wall clock is enforced against timeout_seconds below.
+    body["stream"] = True
+    read_timeout_seconds = min(ANTHROPIC_STREAM_READ_TIMEOUT_SECONDS, timeout_seconds)
+    started_at = time.monotonic()
+    text_parts_by_block: dict[int, list[str]] = {}
+    stop_reason = ""
+    stream_error_detail = ""
     try:
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds, connect=10.0)
+            timeout=httpx.Timeout(read_timeout_seconds, connect=10.0)
         ) as client:
-            response = await client.post(
+            async with client.stream(
+                "POST",
                 endpoint,
                 headers={
                     "Content-Type": "application/json",
@@ -148,18 +180,76 @@ async def request_anthropic_text(
                     "anthropic-version": ANTHROPIC_VERSION,
                 },
                 json=body,
-            )
+            ) as response:
+                if response.status_code >= 400:
+                    raw_payload = parse_json_payload(await response.aread())
+                    detail = extract_anthropic_error(raw_payload) or (
+                        f"Anthropic request failed ({response.status_code})"
+                    )
+                    logger.error(
+                        "Anthropic API error: status=%s detail=%s model=%s stage=%s",
+                        response.status_code, detail, model, request_stage,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY, detail=detail
+                    )
+                async for line in response.aiter_lines():
+                    if time.monotonic() - started_at > timeout_seconds:
+                        logger.error(
+                            "Anthropic stream exceeded call budget: stage=%s budget=%.1fs",
+                            request_stage, timeout_seconds,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail=build_provider_timeout_detail(
+                                "Anthropic",
+                                base_url,
+                                exception_name="DeadlineExceeded",
+                                timeout_seconds=timeout_seconds,
+                                request_stage=request_stage,
+                                remaining_budget_seconds=remaining_budget_seconds,
+                            ),
+                        )
+                    if not line.startswith("data:"):
+                        continue
+                    event = parse_json_payload(line[len("data:"):])
+                    event_type = event.get("type") if isinstance(event, dict) else ""
+                    if event_type == "content_block_delta":
+                        delta = event.get("delta")
+                        if isinstance(delta, dict) and delta.get("type") == "text_delta":
+                            piece = delta.get("text")
+                            if isinstance(piece, str) and piece:
+                                index = event.get("index")
+                                block_index = index if isinstance(index, int) else 0
+                                text_parts_by_block.setdefault(block_index, []).append(piece)
+                    elif event_type == "message_delta":
+                        delta = event.get("delta")
+                        if isinstance(delta, dict):
+                            value = delta.get("stop_reason")
+                            if isinstance(value, str) and value.strip():
+                                stop_reason = value.strip().lower()
+                    elif event_type == "error":
+                        stream_error_detail = extract_anthropic_error(event) or (
+                            "Anthropic stream reported an error."
+                        )
+                        break
+                    elif event_type == "message_stop":
+                        break
     except httpx.TimeoutException as exc:
-        logger.error("Anthropic timeout: %s stage=%s timeout=%.1fs", exc.__class__.__name__, request_stage, timeout_seconds)
+        logger.error(
+            "Anthropic timeout: %s stage=%s read_timeout=%.1fs budget=%.1fs",
+            exc.__class__.__name__, request_stage, read_timeout_seconds, timeout_seconds,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=build_provider_timeout_detail(
                 "Anthropic",
                 base_url,
                 exception_name=exc.__class__.__name__,
-                timeout_seconds=timeout_seconds,
+                timeout_seconds=read_timeout_seconds,
                 request_stage=request_stage,
                 remaining_budget_seconds=remaining_budget_seconds,
+                call_budget_seconds=timeout_seconds,
             ),
         ) from exc
     except httpx.RequestError as exc:
@@ -175,24 +265,25 @@ async def request_anthropic_text(
             ),
         ) from exc
 
-    raw_payload: Any = {}
-    if response.content:
-        try:
-            raw_payload = response.json()
-        except ValueError:
-            raw_payload = {}
-    if response.status_code >= 400:
-        detail = extract_anthropic_error(raw_payload) or (
-            f"Anthropic request failed ({response.status_code})"
-        )
+    if stream_error_detail:
         logger.error(
-            "Anthropic API error: status=%s detail=%s model=%s stage=%s",
-            response.status_code, detail, model, request_stage,
+            "Anthropic stream error: detail=%s model=%s stage=%s",
+            stream_error_detail, model, request_stage,
         )
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=stream_error_detail
+        )
 
-    text = extract_anthropic_text(raw_payload)
-    stop_reason = extract_anthropic_stop_reason(raw_payload)
+    # Same block semantics as extract_anthropic_text: strip each text block,
+    # join non-empty blocks with newlines.
+    text = "\n".join(
+        block_text
+        for block_text in (
+            "".join(parts).strip()
+            for _, parts in sorted(text_parts_by_block.items())
+        )
+        if block_text
+    ).strip()
     if not text:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

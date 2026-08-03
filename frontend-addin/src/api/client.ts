@@ -304,6 +304,13 @@ export const api = {
     }, true),
   deleteQnaPrompt: (sessionId: string, promptId: string) =>
     request<void>(`/sessions/${sessionId}/qna-prompts/${promptId}`, { method: 'DELETE' }, true),
+  /** Reset a discussion: remove all of its questions, keep the prompt itself. */
+  deletePromptQuestions: (sessionId: string, promptId: string) =>
+    request<{ question_ids: string[] }>(
+      `/sessions/${sessionId}/qna-prompts/${promptId}/questions`,
+      { method: 'DELETE' },
+      true
+    ),
   approveQuestion: (sessionId: string, questionId: string) =>
     request<Question>(`/sessions/${sessionId}/questions/${questionId}/approve`, {
       method: 'POST'
@@ -391,6 +398,9 @@ export const api = {
     ),
   deletePoll: (sessionId: string, pollId: string) =>
     request<void>(`/sessions/${sessionId}/polls/${pollId}`, { method: 'DELETE' }, true),
+  /** Reset a poll: clear all votes and voter history, keep the poll itself. */
+  resetPollVotes: (sessionId: string, pollId: string) =>
+    request<Poll>(`/sessions/${sessionId}/polls/${pollId}/reset`, { method: 'POST' }, true),
   updatePoll: (
     sessionId: string,
     pollId: string,

@@ -95,7 +95,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com/v1"
     anthropic_artifact_build_model: str = "claude-opus-5"
-    anthropic_artifact_build_timeout_seconds: float = 180.0
+    # Opus 5 initial builds (thinking on by default, 32k max_tokens) regularly
+    # run past 3 minutes; the total artifact budget below must stay larger than
+    # this cap plus the follow-up repair reserve.
+    anthropic_artifact_build_timeout_seconds: float = 300.0
     anthropic_intake_model: str = "claude-haiku-4-5"
     anthropic_intake_timeout_seconds: float = 30.0
     gemini_api_key: str | None = None
@@ -110,7 +113,7 @@ class Settings(BaseSettings):
     gemini_artifact_build_timeout_seconds: float = 180.0
     gemini_artifact_edit_timeout_seconds: float = 240.0
     gemini_artifact_repair_timeout_seconds: float = 240.0
-    gemini_artifact_total_timeout_seconds: float = 270.0
+    gemini_artifact_total_timeout_seconds: float = 420.0
     gemini_artifact_answer_timeout_seconds: float = 90.0
 
     @property

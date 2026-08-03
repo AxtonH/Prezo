@@ -24,6 +24,8 @@ export interface SessionDiscussionDashboardPageProps {
   onStopDiscussion?: (promptId: string) => void | Promise<void>
   onResumeDiscussion?: (promptId: string) => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Clear all responses for a discussion while keeping the prompt itself. */
+  onResetDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a discussion prompt between auto (slide-driven) and pinned control. */
   onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
@@ -42,6 +44,7 @@ export function SessionDiscussionDashboardPage({
   onStopDiscussion,
   onResumeDiscussion,
   onDeleteDiscussion,
+  onResetDiscussion,
   onSetDiscussionMode,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
@@ -157,6 +160,9 @@ export function SessionDiscussionDashboardPage({
                     onDeletePoll={undefined}
                     onDeleteQna={undefined}
                     onDeleteDiscussion={onDeleteDiscussion}
+                    onResetPoll={undefined}
+                    onResetQna={undefined}
+                    onResetDiscussion={onResetDiscussion}
                     onSetDiscussionMode={onSetDiscussionMode}
                     onApproveDiscussionQuestion={onApproveDiscussionQuestion}
                     onHideDiscussionQuestion={onHideDiscussionQuestion}

@@ -854,6 +854,7 @@ function HostConsole({
         Boolean(activity.payload.poll) ||
         Boolean(activity.payload.question) ||
         activity.type === 'audience_questions_deleted' ||
+        activity.type === 'prompt_questions_deleted' ||
         activity.type === 'poll_deleted' ||
         activity.type === 'qna_prompt_deleted'
       if (shouldRefreshSessionStats) {
@@ -898,6 +899,13 @@ function HostConsole({
           prev.filter((q) => Boolean(q.prompt_id) || !ids.has(q.id))
         )
       }
+      return
+    }
+
+    /** Discussion reset: its questions are removed while the prompt itself stays. */
+    if (activity.type === 'prompt_questions_deleted' && typeof activity.payload.prompt_id === 'string') {
+      const promptId = activity.payload.prompt_id as string
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
       return
     }
 
@@ -1482,6 +1490,52 @@ function HostConsole({
     }
   }
 
+  const resetPoll = async (pollId: string) => {
+    if (!session) {
+      return
+    }
+    try {
+      const poll = await api.resetPollVotes(session.id, pollId)
+      setError(null)
+      setPolls((prev) => upsertById(prev, poll))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset poll'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const resetDiscussionPrompt = async (promptId: string) => {
+    if (!session) {
+      return
+    }
+    try {
+      await api.deletePromptQuestions(session.id, promptId)
+      setError(null)
+      setQuestions((prev) => prev.filter((q) => q.prompt_id !== promptId))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset discussion'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  /** Reset (unlike delete) keeps the Q&A channel open and its host flags intact. */
+  const resetQnaPanel = async () => {
+    if (!session) {
+      return
+    }
+    try {
+      await api.deleteAudienceQuestions(session.id)
+      setQuestions((prev) => prev.filter((q) => Boolean(q.prompt_id)))
+      setError(null)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reset Q&A'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
   const isAddinHost = isPowerPointAddinHost()
 
   // Warm the embed cache for every Prezo embed in the open deck the first
@@ -1973,6 +2027,7 @@ function HostConsole({
                   onStopPoll={(pollId) => closePoll(pollId)}
                   onResumePoll={(pollId) => void openPoll(pollId)}
                   onDeletePoll={deletePoll}
+                  onResetPoll={resetPoll}
                   onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
                   onCreatePoll={createPoll}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
@@ -1992,6 +2047,7 @@ function HostConsole({
                   onStopDiscussion={(promptId) => void closePrompt(promptId)}
                   onResumeDiscussion={(promptId) => void openPrompt(promptId)}
                   onDeleteDiscussion={deleteDiscussionPrompt}
+                  onResetDiscussion={resetDiscussionPrompt}
                   onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
@@ -2022,6 +2078,7 @@ function HostConsole({
                     )
                   }
                   onDeleteQna={deleteQnaPanel}
+                  onResetQna={resetQnaPanel}
                   onSetQnaMode={(mode) => void setQnaMode(mode)}
                   onApproveAudienceQuestion={approveQuestion}
                   onHideAudienceQuestion={hideQuestion}
@@ -2079,6 +2136,9 @@ function HostConsole({
                   onDeletePoll={deletePoll}
                   onDeleteQna={deleteQnaPanel}
                   onDeleteDiscussion={deleteDiscussionPrompt}
+                  onResetPoll={resetPoll}
+                  onResetQna={resetQnaPanel}
+                  onResetDiscussion={resetDiscussionPrompt}
                   onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
                   onSetQnaMode={(mode) => void setQnaMode(mode)}
                   onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}

@@ -672,6 +672,22 @@ class InMemoryStore:
             option.votes = max(0, option.votes - 1)
             return self._to_poll(poll)
 
+    async def reset_poll_votes(
+        self, session_id: str, poll_id: str, user_id: str
+    ) -> Poll:
+        """Zero every option's count and forget voter history, keeping the poll.
+
+        Clearing history matters: it lets previous voters vote again after the
+        reset instead of being treated as already-voted.
+        """
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            poll = self._get_poll(session_id, poll_id)
+            for option in poll.options:
+                option.votes = 0
+            self._poll_votes.pop(poll_id, None)
+            return self._to_poll(poll)
+
     async def delete_poll(self, session_id: str, poll_id: str, user_id: str) -> None:
         async with self._lock:
             self._ensure_host_access(session_id, user_id)
@@ -711,6 +727,27 @@ class InMemoryStore:
                 qid
                 for qid in self._questions_by_session.get(session_id, [])
                 if self._questions[qid].prompt_id is None
+            ]
+            for qid in qids_to_remove:
+                self._questions.pop(qid, None)
+                self._question_votes.pop(qid, None)
+                try:
+                    self._questions_by_session[session_id].remove(qid)
+                except ValueError:
+                    pass
+            return qids_to_remove
+
+    async def delete_prompt_questions(
+        self, session_id: str, prompt_id: str, user_id: str
+    ) -> list[str]:
+        """Remove every question posted to an open-discussion prompt, keeping the prompt itself."""
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            self._get_prompt(session_id, prompt_id)
+            qids_to_remove = [
+                qid
+                for qid, q in self._questions.items()
+                if q.session_id == session_id and q.prompt_id == prompt_id
             ]
             for qid in qids_to_remove:
                 self._questions.pop(qid, None)

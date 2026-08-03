@@ -5,6 +5,7 @@ import { ActiveDiscussionActivityCard } from './ActiveDiscussionActivityCard'
 import { ActivePollActivityCard } from './ActivePollActivityCard'
 import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
 import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
+import { ResetActivityConfirmModal } from './ResetActivityConfirmModal'
 
 export interface SessionActiveActivitiesPanelProps {
   /**
@@ -45,6 +46,12 @@ export interface SessionActiveActivitiesPanelProps {
   onDeletePoll?: (pollId: string) => void | Promise<void>
   onDeleteQna?: () => void | Promise<void>
   onDeleteDiscussion?: (promptId: string) => void | Promise<void>
+  /** Clear all votes for a poll while keeping the poll itself. */
+  onResetPoll?: (pollId: string) => void | Promise<void>
+  /** Clear all audience questions while keeping the Q&amp;A channel itself. */
+  onResetQna?: () => void | Promise<void>
+  /** Clear all responses for a discussion while keeping the prompt itself. */
+  onResetDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a poll between auto (slide-driven) and pinned control. */
   onSetPollMode?: (pollId: string, mode: PollMode) => void | Promise<void>
   /** Current control mode of session Q&A (for the card's chip). */
@@ -113,6 +120,9 @@ export function SessionActiveActivitiesPanel({
   onDeletePoll,
   onDeleteQna,
   onDeleteDiscussion,
+  onResetPoll,
+  onResetQna,
+  onResetDiscussion,
   onSetPollMode,
   qnaControlMode,
   onSetQnaMode,
@@ -129,6 +139,11 @@ export function SessionActiveActivitiesPanel({
   >(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [resetTarget, setResetTarget] = useState<
+    null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
+  >(null)
+  const [resetBusy, setResetBusy] = useState(false)
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const sortedOpenPolls = useMemo(() => sortByCreatedAsc(openPolls), [openPolls])
   const sortedClosedPolls = useMemo(() => sortByCreatedAsc(closedPolls), [closedPolls])
@@ -279,6 +294,36 @@ export function SessionActiveActivitiesPanel({
     }
   }
 
+  const closeResetModal = () => {
+    if (!resetBusy) {
+      setResetTarget(null)
+      setResetError(null)
+    }
+  }
+
+  const confirmReset = async () => {
+    if (!resetTarget) {
+      return
+    }
+    setResetBusy(true)
+    setResetError(null)
+    try {
+      if (resetTarget.kind === 'poll') {
+        await onResetPoll?.(resetTarget.id)
+      } else if (resetTarget.kind === 'qna') {
+        await onResetQna?.()
+      } else {
+        await onResetDiscussion?.(resetTarget.id)
+      }
+      setResetTarget(null)
+      setResetError(null)
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setResetBusy(false)
+    }
+  }
+
   return (
     <>
       <DeleteActivityConfirmModal
@@ -287,6 +332,13 @@ export function SessionActiveActivitiesPanel({
         onConfirm={confirmDelete}
         busy={deleteBusy}
         error={deleteError}
+      />
+      <ResetActivityConfirmModal
+        open={resetTarget !== null}
+        onCancel={closeResetModal}
+        onConfirm={confirmReset}
+        busy={resetBusy}
+        error={resetError}
       />
       {!hasAnyActivity ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
@@ -312,6 +364,11 @@ export function SessionActiveActivitiesPanel({
                   onConfigure={onConfigurePoll}
                   onStop={onStopPoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
+                  onReset={
+                    onResetPoll
+                      ? () => setResetTarget({ kind: 'poll', id: row.poll.id })
+                      : undefined
+                  }
                   onBindWidget={onBindPollWidget}
                   onSetMode={onSetPollMode}
                 />
@@ -328,6 +385,7 @@ export function SessionActiveActivitiesPanel({
                   onConfigure={onConfigureQna}
                   onStop={onStopQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onReset={onResetQna ? () => setResetTarget({ kind: 'qna' }) : undefined}
                   onSetMode={onSetQnaMode}
                   onApproveQuestion={onApproveAudienceQuestion}
                   onHideQuestion={onHideAudienceQuestion}
@@ -345,6 +403,11 @@ export function SessionActiveActivitiesPanel({
                 onConfigure={onConfigureDiscussion}
                 onStop={onStopDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onReset={
+                  onResetDiscussion
+                    ? () => setResetTarget({ kind: 'discussion', id: prompt.id })
+                    : undefined
+                }
                 onSetMode={onSetDiscussionMode}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}
@@ -363,6 +426,11 @@ export function SessionActiveActivitiesPanel({
                   onConfigure={onConfigurePoll}
                   onResume={onResumePoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
+                  onReset={
+                    onResetPoll
+                      ? () => setResetTarget({ kind: 'poll', id: row.poll.id })
+                      : undefined
+                  }
                   onBindWidget={onBindPollWidget}
                   onSetMode={onSetPollMode}
                 />
@@ -379,6 +447,7 @@ export function SessionActiveActivitiesPanel({
                   onConfigure={onConfigureQna}
                   onResume={onResumeQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
+                  onReset={onResetQna ? () => setResetTarget({ kind: 'qna' }) : undefined}
                   onSetMode={onSetQnaMode}
                   onApproveQuestion={onApproveAudienceQuestion}
                   onHideQuestion={onHideAudienceQuestion}
@@ -396,6 +465,11 @@ export function SessionActiveActivitiesPanel({
                 onConfigure={onConfigureDiscussion}
                 onResume={onResumeDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
+                onReset={
+                  onResetDiscussion
+                    ? () => setResetTarget({ kind: 'discussion', id: prompt.id })
+                    : undefined
+                }
                 onSetMode={onSetDiscussionMode}
                 onApproveQuestion={onApproveDiscussionQuestion}
                 onHideQuestion={onHideDiscussionQuestion}

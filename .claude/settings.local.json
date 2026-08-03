@@ -154,7 +154,12 @@
       "PowerShell(node \"C:\\\\Users\\\\Geeks\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Geeks-Desktop-SlidoTest-repo\\\\573c3ce4-9d5c-453d-9409-3bdde0ee3348\\\\scratchpad\\\\move-ai.js\")",
       "PowerShell(node --experimental-vm-modules -e \"const fs=require\\('fs'\\);const vm=require\\('vm'\\);const base='c:/Users/Geeks/Desktop/SlidoTest/repo/frontend-addin/public/poc/gamified/';for\\(const f of ['poll-game-gamified-app.js','poll-game-gamified-ai-plan.js','poll-game-gamified-override-diff.js']\\){new vm.SourceTextModule\\(fs.readFileSync\\(base+f,'utf8'\\),{identifier:f}\\);console.log\\('parse OK:',f\\)}\")",
       "PowerShell(node \"C:\\\\Users\\\\Geeks\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Geeks-Desktop-SlidoTest-repo\\\\573c3ce4-9d5c-453d-9409-3bdde0ee3348\\\\scratchpad\\\\tidy-imports2.js\")",
-      "PowerShell(Set-Location 'c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin'; npm run build 2>&1 | Select-Object -Last 2; \\(Get-Content 'public\\\\poc\\\\gamified\\\\poll-game-gamified-app.js' | Measure-Object\\).Count)"
+      "PowerShell(Set-Location 'c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin'; npm run build 2>&1 | Select-Object -Last 2; \\(Get-Content 'public\\\\poc\\\\gamified\\\\poll-game-gamified-app.js' | Measure-Object\\).Count)",
+      "PowerShell(Select-String -Path 'c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin\\\\public\\\\poc\\\\poll-game-poc.css' -Pattern 'bg-a|bg-b' | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" }; Select-String -Path 'c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin\\\\public\\\\poc\\\\gamified\\\\poll-game-gamified-app.js','c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin\\\\public\\\\poc\\\\gamified\\\\poll-game-gamified-theme-ui.js' -Pattern \"'--bg-a'|--bg-b\" | ForEach-Object { \"$\\($_.Filename\\):$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" })",
+      "PowerShell(Select-String -Path 'c:\\\\Users\\\\Geeks\\\\Desktop\\\\SlidoTest\\\\repo\\\\frontend-addin\\\\public\\\\poc\\\\poll-game-poc.css' -Pattern 'var\\\\\\(--bg' -Context 0,0 | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line.Trim\\(\\)\\)\" } | Select-Object -First 10)",
+      "WebFetch(domain:www.mentimeter.com)",
+      "WebFetch(domain:www.slido.com)",
+      "WebFetch(domain:checkthat.ai)"
     ],
     "additionalDirectories": [
       "c:\\Users\\Geeks\\Desktop\\SlidoTest\\repo\\installer"
