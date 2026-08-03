@@ -1404,6 +1404,7 @@
             parsed.meta,
             parsed.badge,
             parsed.body,
+            parsed.counter,
             ...itemIds
           ].filter(Boolean)
           const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
@@ -1544,6 +1545,24 @@
       badge.tags.add(WIDGET_TAG, 'true')
       badge.tags.add('PrezoWidgetRole', 'badge')
 
+      const counter = slide.shapes.addTextBox('0 questions', {
+        left: left + width - paddingX - 150,
+        top: titleTop + badgeHeight + 6,
+        width: 150,
+        height: 14
+      })
+      counter.textFrame.wordWrap = true
+      applyFont(counter.textFrame.textRange.font, style, {
+        size: 11,
+        color: style.mutedColor
+      })
+      counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+      counter.name = 'Prezo Q&A Interaction Counter'
+      counter.tags.add(WIDGET_TAG, 'true')
+      counter.tags.add('PrezoWidgetRole', 'counter')
+      counter.tags.add('PrezoPollWidgetAutoText', '0 questions')
+      counter.load('id')
+
       const body = slide.shapes.addTextBox(
         hasSession ? emptyBody : PLACEHOLDER_BODY,
         {
@@ -1631,6 +1650,7 @@
         meta: meta.id,
         badge: badge.id,
         body: body.id,
+        counter: counter.id,
         items: itemShapes.map((item) => ({
           container: item.container.id,
           text: item.text.id,
@@ -1718,6 +1738,7 @@
             parsed.meta,
             parsed.badge,
             parsed.body,
+            parsed.counter,
             ...itemIds
           ].filter(Boolean)
           const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
@@ -1856,6 +1877,24 @@
       badge.tags.add(DISCUSSION_WIDGET_TAG, 'true')
       badge.tags.add('PrezoWidgetRole', 'badge')
 
+      const counter = slide.shapes.addTextBox('0 answers', {
+        left: left + width - paddingX - 150,
+        top: titleTop + badgeHeight + 6,
+        width: 150,
+        height: 14
+      })
+      counter.textFrame.wordWrap = true
+      applyFont(counter.textFrame.textRange.font, style, {
+        size: 11,
+        color: style.mutedColor
+      })
+      counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+      counter.name = 'Prezo Discussion Interaction Counter'
+      counter.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+      counter.tags.add('PrezoWidgetRole', 'counter')
+      counter.tags.add('PrezoPollWidgetAutoText', '0 answers')
+      counter.load('id')
+
       const body = slide.shapes.addTextBox(
         hasSession ? emptyBody : PLACEHOLDER_BODY,
         {
@@ -1943,6 +1982,7 @@
         meta: meta.id,
         badge: badge.id,
         body: body.id,
+        counter: counter.id,
         items: itemShapes.map((item) => ({
           container: item.container.id,
           text: item.text.id,
@@ -2016,13 +2056,14 @@
               item.fill
             ])
             const ids = (parsed.group
-              ? [parsed.group]
+              ? [parsed.group, parsed.counter]
               : [
                   parsed.shadow,
                   parsed.container,
                   parsed.title,
                   parsed.question,
                   parsed.body,
+                  parsed.counter,
                   ...itemIds
                 ]
             ).filter(Boolean)
@@ -2110,6 +2151,21 @@
       question.tags.add(POLL_WIDGET_TAG, 'true')
       question.tags.add('PrezoWidgetRole', 'poll-question')
 
+      const counter = slide.shapes.addTextBox('0 votes', {
+        left: left + width - 24 - 140,
+        top: top + 18 * scale,
+        width: 140,
+        height: 16
+      })
+      counter.textFrame.wordWrap = true
+      applyFont(counter.textFrame.textRange, style, { size: 12, color: style.mutedColor })
+      counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+      counter.name = 'Prezo Poll Vote Counter'
+      counter.tags.add(POLL_WIDGET_TAG, 'true')
+      counter.tags.add('PrezoWidgetRole', 'poll-counter')
+      counter.tags.add('PrezoPollWidgetAutoText', '0 votes')
+      counter.load('id')
+
       const optionStartTop = top + optionStartOffset
       const fullBarWidth = width - paddingX * 2
       const barLeft = left + paddingX
@@ -2188,6 +2244,7 @@
         container: container.id,
         title: title.id,
         question: question.id,
+        counter: counter.id,
         items: itemShapes.map((item) => ({
           label: item.label.id,
           bg: item.bg.id,
@@ -2350,6 +2407,7 @@
           parsed.title,
           parsed.question,
           parsed.body,
+          parsed.counter,
           ...itemIds
         ]
       }
@@ -2380,6 +2438,7 @@
           parsed.meta,
           parsed.badge,
           parsed.body,
+          parsed.counter,
           ...itemIds
         ]
       }
@@ -2408,6 +2467,7 @@
           parsed.meta,
           parsed.badge,
           parsed.body,
+          parsed.counter,
           ...itemIds
         ]
       }

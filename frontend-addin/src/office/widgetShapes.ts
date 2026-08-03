@@ -60,6 +60,7 @@ type WidgetShapeIds = {
   meta?: string
   badge?: string
   shadow?: string
+  counter?: string
   items?: Array<{
     container: string
     text: string
@@ -74,6 +75,7 @@ type PollWidgetShapeIds = {
   body?: string
   shadow?: string
   group?: string
+  counter?: string
   items?: Array<{
     label: string
     group?: string
@@ -104,6 +106,9 @@ type QnaWidgetConfig = {
   badgePromptLabel: string
   emptyBodyAudience: string
   emptyBodyPrompt: string
+  /** Noun for the interaction counter shape ("5 questions" / "1 answer"). */
+  counterSingular: string
+  counterPlural: string
   useAudienceWhenUnbound: boolean
   unboundMode?: QnaMode
   /** When no prompt is explicitly bound, pick one to display (e.g. latest open). */
@@ -267,6 +272,8 @@ const QNA_WIDGET_CONFIG: QnaWidgetConfig = {
   badgePromptLabel: 'Answers',
   emptyBodyAudience: 'No approved questions yet.',
   emptyBodyPrompt: 'No answers yet.',
+  counterSingular: 'question',
+  counterPlural: 'questions',
   useAudienceWhenUnbound: true,
   unboundMode: 'audience',
   buildLegacyTitle: buildTitle
@@ -290,6 +297,8 @@ const DISCUSSION_WIDGET_CONFIG: QnaWidgetConfig = {
   badgePromptLabel: 'Answers',
   emptyBodyAudience: 'Select a prompt to show answers.',
   emptyBodyPrompt: 'No answers yet.',
+  counterSingular: 'answer',
+  counterPlural: 'answers',
   useAudienceWhenUnbound: false,
   unboundMode: 'audience',
   pickUnboundPrompt: pickLatestOpenPrompt,
@@ -623,6 +632,55 @@ const syncPollText = (
 
 
 
+const COUNTER_NUMBER_RE = /\d[\d,]*/
+
+const buildCountText = (count: number, singular: string, plural: string) =>
+  `${count} ${count === 1 ? singular : plural}`
+
+/**
+ * Update a counter shape's number while preserving the user's text template.
+ *
+ * Auto state (empty text, or text still byte-identical to our last default
+ * write): write the fresh default ("12 votes") and record it in the auto tag.
+ * User-edited state: swap only the first number in their text ("Total: 12
+ * people" -> "Total: 15 people") and deliberately DON'T update the auto tag —
+ * the tag stays at the last default write, so the template keeps being
+ * number-swapped on every update instead of reverting to the default one
+ * update later. If the user removed the number entirely, their text wins and
+ * we stop touching the shape.
+ */
+const syncCounterText = (
+  state: PollTextSyncState | null,
+  count: number,
+  defaultText: string
+) => {
+  if (!state || isShapeNullObject(state.shape)) {
+    return
+  }
+  const currentText = state.shape.textFrame.textRange.text ?? ''
+  const hasAutoTag = !state.autoTag.isNullObject
+  const lastAutoText = hasAutoTag ? (state.autoTag.value ?? '') : ''
+  const isAuto = !currentText.trim() || (hasAutoTag && currentText === lastAutoText)
+
+  if (isAuto) {
+    if (currentText !== defaultText) {
+      state.shape.textFrame.textRange.text = defaultText
+      reapplyPollTextFont(state.shape, state.font)
+    }
+    setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, defaultText)
+    return
+  }
+
+  if (!COUNTER_NUMBER_RE.test(currentText)) {
+    return
+  }
+  const targetText = currentText.replace(COUNTER_NUMBER_RE, String(count))
+  if (currentText !== targetText) {
+    state.shape.textFrame.textRange.text = targetText
+    reapplyPollTextFont(state.shape, state.font)
+  }
+}
+
 const buildBody = (
   questions: Question[],
   mode: QnaMode,
@@ -786,6 +844,7 @@ export async function insertQnaWidget(
           parsed.meta,
           parsed.badge,
           parsed.body,
+          parsed.counter,
           ...itemIds
         ].filter(
           (value): value is string => Boolean(value)
@@ -935,6 +994,21 @@ export async function insertQnaWidget(
     badge.tags.add(WIDGET_TAG, 'true')
     badge.tags.add('PrezoWidgetRole', 'badge')
 
+    const counter = slide.shapes.addTextBox('0 questions', {
+      left: left + width - paddingX - 150,
+      top: titleTop + badgeHeight + 6,
+      width: 150,
+      height: 14
+    })
+    counter.textFrame.wordWrap = true
+    applyFont(counter.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+    counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+    counter.name = 'Prezo Q&A Interaction Counter'
+    counter.tags.add(WIDGET_TAG, 'true')
+    counter.tags.add('PrezoWidgetRole', 'counter')
+    counter.tags.add(POLL_TEXT_SYNC_TAG, '0 questions')
+    counter.load('id')
+
     const body = slide.shapes.addTextBox(
       hasSession ? QNA_WIDGET_CONFIG.emptyBodyAudience : PLACEHOLDER_BODY,
       {
@@ -1036,6 +1110,7 @@ export async function insertQnaWidget(
       meta: meta.id,
       badge: badge.id,
       body: body.id,
+      counter: counter.id,
       items: itemShapes.map((item) => ({
         container: item.container.id,
         text: item.text.id,
@@ -1105,6 +1180,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
           parsed.meta,
           parsed.badge,
           parsed.body,
+          parsed.counter,
           ...itemIds
         ].filter(
           (value): value is string => Boolean(value)
@@ -1252,6 +1328,21 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
     badge.tags.add(DISCUSSION_WIDGET_TAG, 'true')
     badge.tags.add('PrezoWidgetRole', 'badge')
 
+    const counter = slide.shapes.addTextBox('0 answers', {
+      left: left + width - paddingX - 150,
+      top: titleTop + badgeHeight + 6,
+      width: 150,
+      height: 14
+    })
+    counter.textFrame.wordWrap = true
+    applyFont(counter.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+    counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+    counter.name = 'Prezo Discussion Interaction Counter'
+    counter.tags.add(DISCUSSION_WIDGET_TAG, 'true')
+    counter.tags.add('PrezoWidgetRole', 'counter')
+    counter.tags.add(POLL_TEXT_SYNC_TAG, '0 answers')
+    counter.load('id')
+
     const body = slide.shapes.addTextBox(
       hasSession ? DISCUSSION_WIDGET_CONFIG.emptyBodyAudience : PLACEHOLDER_BODY,
       {
@@ -1353,6 +1444,7 @@ export async function insertDiscussionWidget(sessionId?: string | null, code?: s
       meta: meta.id,
       badge: badge.id,
       body: body.id,
+      counter: counter.id,
       items: itemShapes.map((item) => ({
         container: item.container.id,
         text: item.text.id,
@@ -1459,6 +1551,9 @@ export async function updateQnaWidget(
       const badge = shapeIds.badge
         ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
         : null
+      const counterShape = shapeIds.counter
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.counter)
+        : null
       const itemShapes = (shapeIds.items ?? []).map((item) => {
         const container = info.slide.shapes.getItemOrNullObject(item.container)
         const text = info.slide.shapes.getItemOrNullObject(item.text)
@@ -1484,6 +1579,9 @@ export async function updateQnaWidget(
       }
       if (badge) {
         badge.load('id')
+      }
+      if (counterShape) {
+        counterShape.load('id')
       }
       await context.sync()
 
@@ -1604,6 +1702,20 @@ export async function updateQnaWidget(
           config
         )
       }
+      /** Interaction counter: total submissions in this widget's scope (all
+       * statuses). Text only, template-preserving — see syncCounterText. */
+      if (counterShape && !counterShape.isNullObject) {
+        const counterState = await safeLoadPollTextSyncState(counterShape, context)
+        syncCounterText(
+          counterState,
+          filteredQuestions.length,
+          buildCountText(
+            filteredQuestions.length,
+            config.counterSingular,
+            config.counterPlural
+          )
+        )
+      }
       if (itemShapes.length > 0) {
         const hasApproved = approved.length > 0
         if (!body.isNullObject) {
@@ -1694,13 +1806,14 @@ export async function insertPollWidget(
           const itemIds =
             parsed.items?.flatMap((item) => [item.label, item.group, item.bg, item.fill]) ?? []
           const ids = (parsed.group
-            ? [parsed.group]
+            ? [parsed.group, parsed.counter]
             : [
                 parsed.shadow,
                 parsed.container,
                 parsed.title,
                 parsed.question,
                 parsed.body,
+                parsed.counter,
                 ...itemIds
               ]
           ).filter((value): value is string => Boolean(value))
@@ -1796,6 +1909,21 @@ export async function insertPollWidget(
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
     question.tags.add(POLL_TEXT_SYNC_TAG, 'No polls yet.')
+
+    const counter = slide.shapes.addTextBox('0 votes', {
+      left: left + width - 24 - 140,
+      top: top + 18 * scale,
+      width: 140,
+      height: 16
+    })
+    counter.textFrame.wordWrap = true
+    applyFont(counter.textFrame.textRange, style, { size: 12, color: style.mutedColor })
+    counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+    counter.name = 'Prezo Poll Vote Counter'
+    counter.tags.add(POLL_WIDGET_TAG, 'true')
+    counter.tags.add('PrezoWidgetRole', 'poll-counter')
+    counter.tags.add(POLL_TEXT_SYNC_TAG, '0 votes')
+    counter.load('id')
 
     const optionStartTop = top + optionStartOffset
     const fullBarWidth = width - paddingX * 2
@@ -1897,6 +2025,7 @@ export async function insertPollWidget(
       container: container.id,
       title: title.id,
       question: question.id,
+      counter: counter.id,
       items: itemShapes.map((item) => ({
         label: item.label.id,
         group: item.group.id,
@@ -2121,6 +2250,7 @@ export async function updatePollWidget(
       let title: PowerPoint.Shape | null = null
       let question: PowerPoint.Shape | null = null
       let body: PowerPoint.Shape | null = null
+      let counter: PowerPoint.Shape | null = null
 
       tagged.forEach(({ shape, pollTag, roleTag }) => {
         const hasPollTag = !pollTag.isNullObject && pollTag.value === 'true'
@@ -2144,6 +2274,9 @@ export async function updatePollWidget(
               return
             case 'poll-body':
               body = shape
+              return
+            case 'poll-counter':
+              counter = shape
               return
             case 'poll-label':
               labels.push(shape)
@@ -2255,6 +2388,7 @@ export async function updatePollWidget(
         title: getShapeId(title) as string,
         question: getShapeId(question),
         body: getShapeId(body),
+        counter: getShapeId(counter),
         items
       }
     }
@@ -2376,6 +2510,12 @@ export async function updatePollWidget(
         bodyShape.load(['id', 'type'])
       }
 
+      let counterShape: PowerPoint.Shape | null = null
+      if (shapeIds.counter) {
+        counterShape = resolveShape(shapeIds.counter)
+        counterShape.load(['id', 'type'])
+      }
+
       const itemEntries = (shapeIds.items ?? []).map((item) => {
         const label = resolveShape(item.label)
         const itemGroup = item.group
@@ -2445,6 +2585,7 @@ export async function updatePollWidget(
         let taggedTitle: PowerPoint.Shape | null = null
         let taggedQuestion: PowerPoint.Shape | null = null
         let taggedBody: PowerPoint.Shape | null = null
+        let taggedCounter: PowerPoint.Shape | null = null
         tagged.forEach(({ shape, roleTag }) => {
           if (roleTag.isNullObject || !roleTag.value) {
             return
@@ -2464,6 +2605,9 @@ export async function updatePollWidget(
               break
             case 'poll-body':
               taggedBody = shape
+              break
+            case 'poll-counter':
+              taggedCounter = shape
               break
             case 'poll-label':
               labels.push(shape)
@@ -2577,6 +2721,9 @@ export async function updatePollWidget(
         if (taggedBody) {
           bodyShape = taggedBody
         }
+        if (taggedCounter) {
+          counterShape = taggedCounter
+        }
         if (taggedItems.length > 0) {
           itemShapes = taggedItems.map((item) => {
             item.label.load(withVisible(['id']))
@@ -2613,6 +2760,10 @@ export async function updatePollWidget(
               taggedBody && !isShapeNullObject(taggedBody)
                 ? getShapeId(taggedBody)
                 : shapeIds.body,
+            counter:
+              taggedCounter && !isShapeNullObject(taggedCounter)
+                ? getShapeId(taggedCounter)
+                : shapeIds.counter,
             items:
               taggedItems.length > 0
                 ? taggedItems.map((item) => ({
@@ -2801,6 +2952,7 @@ export async function updatePollWidget(
       const titleTextState = await safeLoadPollTextSyncState(title, context)
       const questionTextState = await safeLoadPollTextSyncState(questionShape, context)
       const bodyTextState = await safeLoadPollTextSyncState(bodyShape, context)
+      const counterTextState = await safeLoadPollTextSyncState(counterShape, context)
       const labelTextStates: (PollTextSyncState | null)[] = []
       for (const item of itemShapes) {
         labelTextStates.push(await safeLoadPollTextSyncState(item.label, context))
@@ -2822,6 +2974,15 @@ export async function updatePollWidget(
             .join('\n')}`
         )
       }
+
+      /** Total-votes counter: text only, never geometry — the shape stays
+       * freely movable/resizable and keeps a user-edited template. */
+      const totalVotes = optionData.reduce((sum, option) => sum + option.votes, 0)
+      syncCounterText(
+        counterTextState,
+        totalVotes,
+        buildCountText(totalVotes, 'vote', 'votes')
+      )
 
       const isFiniteNum = (n: unknown): n is number =>
         typeof n === 'number' && Number.isFinite(n)
