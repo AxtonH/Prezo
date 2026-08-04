@@ -3,9 +3,9 @@ import { useState } from 'react'
 import type { PollMode, QnaPrompt, Question } from '../../api/types'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
-  ConfigureActivityButton,
-  controlModeShellVariant,
-  FollowSlidesButton
+  ActivityActionsGrid,
+  ActivityActionTile,
+  controlModeShellVariant
 } from './ControlModeUi'
 import { formatRelativeTime } from './formatRelativeTime'
 
@@ -126,13 +126,16 @@ export function ActiveDiscussionActivityCard({
    */
   const inactive = closed && mode !== 'auto'
 
-  const followSlidesButton = (
-    <FollowSlidesButton
-      mode={mode}
-      title="Let the slideshow control this discussion: it opens when its slide is presented and closes when the show moves on"
-      onFollow={onSetMode ? () => onSetMode(prompt.id, 'auto') : undefined}
-    />
-  )
+  const followSlidesTile =
+    onSetMode && mode !== 'auto' ? (
+      <ActivityActionTile
+        icon="slideshow"
+        label="Follow slides"
+        tone="info"
+        title="Let the slideshow control this discussion: it opens when its slide is presented and closes when the show moves on"
+        onClick={() => void onSetMode(prompt.id, 'auto')}
+      />
+    ) : null
 
   const [bindBusy, setBindBusy] = useState(false)
   const [bindMessage, setBindMessage] = useState<string | null>(null)
@@ -155,76 +158,80 @@ export function ActiveDiscussionActivityCard({
     }
   }
 
-  const configureButton = (
-    <ConfigureActivityButton
+  const configureTile = onConfigure ? (
+    <ActivityActionTile
+      icon="tune"
+      label="Configure"
       title="Open Prezo editing station for this discussion"
-      onConfigure={onConfigure ? () => onConfigure(prompt.id) : undefined}
+      onClick={() => onConfigure(prompt.id)}
     />
-  )
+  ) : null
 
-  const editButton = onEdit ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onEdit()
-      }}
+  const editTile = onEdit ? (
+    <ActivityActionTile
+      icon="edit"
+      label="Edit"
       title="Change the discussion prompt — slides and screens update immediately"
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
-    >
-      Edit
-    </button>
+      onClick={onEdit}
+    />
   ) : null
 
   /**
    * Stop = pin closed. On a live card it closes now; on an off-air auto card
    * it disarms slide control so the discussion won't go live with its slide.
    */
-  const stopButton = (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onStop?.(prompt.id)
-      }}
+  const stopTile = (
+    <ActivityActionTile
+      icon="stop_circle"
+      label="Stop discussion"
+      tone="danger"
       title={
         closed
           ? 'Keep closed even when the slideshow reaches its slide'
           : 'Close now and keep closed regardless of the slideshow'
       }
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-rose-50 !text-rose-700 !border !border-rose-200 hover:!bg-rose-100 !transition-colors"
-    >
-      Stop discussion
-    </button>
+      onClick={() => onStop?.(prompt.id)}
+    />
   )
 
-  const resetButton = onReset ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onReset()
-      }}
+  const pinOpenTile = (
+    <ActivityActionTile
+      icon="play_circle"
+      label="Pin open"
+      tone="success"
+      title="Open now and keep open regardless of the slideshow"
+      onClick={() => onResume?.(prompt.id)}
+    />
+  )
+
+  const resetTile = onReset ? (
+    <ActivityActionTile
+      icon="restart_alt"
+      label="Reset"
+      tone="warn"
       title="Clear all responses for this discussion — the prompt stays"
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-amber-50 !text-amber-800 !border !border-amber-200 hover:!bg-amber-100 !transition-colors"
-    >
-      Reset
-    </button>
+      onClick={onReset}
+    />
   ) : null
 
-  const bindButton = onBindWidget ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        void handleBindWidget()
-      }}
-      disabled={bindBusy}
+  const deleteTile = onDelete ? (
+    <ActivityActionTile
+      icon="delete"
+      label="Delete"
+      tone="destructive"
+      title="Permanently remove this discussion from the session"
+      onClick={onDelete}
+    />
+  ) : null
+
+  const bindTile = onBindWidget ? (
+    <ActivityActionTile
+      icon="link"
+      label={bindBusy ? 'Binding…' : 'Bind widget'}
       title="Link the open discussion widget on the selected PowerPoint slide to this discussion"
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-white !text-slate-800 !border !border-slate-200 hover:!bg-slate-50 !transition-colors disabled:!opacity-60"
-    >
-      {bindBusy ? 'Binding…' : 'Bind widget'}
-    </button>
+      onClick={() => void handleBindWidget()}
+      disabled={bindBusy}
+    />
   ) : null
 
   return (
@@ -371,58 +378,26 @@ export function ActiveDiscussionActivityCard({
         )}
 
         {!closed ? (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {configureButton}
-            {editButton}
-            {stopButton}
-            {followSlidesButton}
-            {resetButton}
-            {onDelete ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete()
-                }}
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
-              >
-                Delete
-              </button>
-            ) : null}
-            {bindButton}
-          </div>
+          <ActivityActionsGrid className="pt-1">
+            {configureTile}
+            {editTile}
+            {stopTile}
+            {followSlidesTile}
+            {resetTile}
+            {bindTile}
+            {deleteTile}
+          </ActivityActionsGrid>
         ) : (
-          <div className="flex flex-wrap gap-2 pt-1">
-            {configureButton}
-            {editButton}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onResume?.(prompt.id)
-              }}
-              title="Open now and keep open regardless of the slideshow"
-              className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-emerald-50 !text-emerald-800 !border !border-emerald-200 hover:!bg-emerald-100 !transition-colors"
-            >
-              Pin open
-            </button>
-            {mode === 'auto' && onStop ? stopButton : null}
-            {followSlidesButton}
-            {resetButton}
-            {onDelete ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete()
-                }}
-                className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-red-600 !text-white !border-0 hover:!bg-red-700 !transition-colors"
-              >
-                Delete
-              </button>
-            ) : null}
-            {bindButton}
-          </div>
+          <ActivityActionsGrid className="pt-1">
+            {configureTile}
+            {editTile}
+            {pinOpenTile}
+            {mode === 'auto' && onStop ? stopTile : null}
+            {followSlidesTile}
+            {resetTile}
+            {bindTile}
+            {deleteTile}
+          </ActivityActionsGrid>
         )}
         {onBindWidget && (bindMessage || bindError) ? (
           <div className="space-y-1 pt-1">

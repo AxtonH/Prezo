@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { PollMode } from '../../api/types'
 
 /**
@@ -17,57 +19,115 @@ export function controlModeShellVariant(
   return mode === 'auto' ? 'auto' : mode === 'open' ? 'pinned' : 'inactive'
 }
 
-/** "Configure" → open the Prezo editing station for this activity's artifact. */
-export function ConfigureActivityButton({
-  title,
-  onConfigure
-}: {
-  /** Tooltip phrased for the specific activity. */
-  title: string
-  onConfigure?: () => void
-}) {
-  if (!onConfigure) {
-    return null
+export type ActivityActionTone =
+  | 'neutral'
+  | 'info'
+  | 'success'
+  | 'warn'
+  | 'danger'
+  | 'destructive'
+
+/**
+ * Every tile shares the same quiet white surface — the action's semantics
+ * live in the icon color and the hover tint, so a full set of actions reads
+ * as one symmetric palette instead of seven competing pills.
+ */
+const ACTION_TILE_TONES: Record<
+  ActivityActionTone,
+  { icon: string; label: string; hover: string }
+> = {
+  neutral: {
+    icon: 'text-slate-500',
+    label: 'text-slate-800',
+    hover: 'hover:!bg-slate-50 hover:!border-slate-300'
+  },
+  info: {
+    icon: 'text-sky-600',
+    label: 'text-slate-800',
+    hover: 'hover:!bg-sky-50 hover:!border-sky-300'
+  },
+  success: {
+    icon: 'text-emerald-600',
+    label: 'text-slate-800',
+    hover: 'hover:!bg-emerald-50 hover:!border-emerald-300'
+  },
+  warn: {
+    icon: 'text-amber-600',
+    label: 'text-slate-800',
+    hover: 'hover:!bg-amber-50 hover:!border-amber-300'
+  },
+  danger: {
+    icon: 'text-rose-600',
+    label: 'text-slate-800',
+    hover: 'hover:!bg-rose-50 hover:!border-rose-300'
+  },
+  destructive: {
+    icon: 'text-red-600',
+    label: 'text-red-700',
+    hover: 'hover:!bg-red-50 hover:!border-red-300'
   }
+}
+
+/**
+ * Uniform grid for the card action tiles: 3 per row (2 on narrow taskpanes),
+ * equal-height rows, so the set stays symmetric at any width and reflows
+ * cleanly when the card expands or the pane resizes.
+ */
+export function ActivityActionsGrid({
+  children,
+  className = ''
+}: {
+  children: ReactNode
+  className?: string
+}) {
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onConfigure()
-      }}
-      title={title}
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
+    <div
+      className={`grid grid-cols-2 min-[420px]:grid-cols-3 auto-rows-fr gap-2 ${className}`}
     >
-      Configure
-    </button>
+      {children}
+    </div>
   )
 }
 
-export function FollowSlidesButton({
-  mode,
+/** One action tile: icon over a short label, long explanation in the tooltip. */
+export function ActivityActionTile({
+  icon,
+  label,
   title,
-  onFollow
+  tone = 'neutral',
+  onClick,
+  disabled = false
 }: {
-  mode: PollMode
+  /** Material Symbols name. */
+  icon: string
+  label: string
   /** Tooltip phrased for the specific activity. */
-  title: string
-  onFollow?: () => void | Promise<void>
+  title?: string
+  tone?: ActivityActionTone
+  onClick?: () => void
+  disabled?: boolean
 }) {
-  if (!onFollow || mode === 'auto') {
-    return null
-  }
+  const toneClasses = ACTION_TILE_TONES[tone]
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation()
-        void onFollow()
+        onClick?.()
       }}
       title={title}
-      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-sky-50 !text-sky-800 !border !border-sky-200 hover:!bg-sky-100 !transition-colors"
+      className={`!flex !flex-col !items-center !justify-center !gap-1 !rounded-xl !border !border-slate-200 !bg-white !px-2 !py-2.5 !shadow-none !transition-colors disabled:!opacity-60 disabled:!cursor-not-allowed ${toneClasses.hover}`}
     >
-      Follow slides
+      <span
+        className={`material-symbols-outlined text-[1.25rem] leading-none ${toneClasses.icon}`}
+        aria-hidden
+      >
+        {icon}
+      </span>
+      <span className={`text-xs font-semibold leading-tight text-center ${toneClasses.label}`}>
+        {label}
+      </span>
     </button>
   )
 }
