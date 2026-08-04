@@ -129,8 +129,8 @@ export function ActiveQnaActivityCard({
 
   const configureTile = onConfigure ? (
     <ActivityActionTile
-      icon="tune"
-      label="Configure"
+      icon="edit"
+      label="Designer"
       title="Open Prezo editing station for the session Q&A"
       onClick={onConfigure}
     />

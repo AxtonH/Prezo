@@ -160,8 +160,8 @@ export function ActiveDiscussionActivityCard({
 
   const configureTile = onConfigure ? (
     <ActivityActionTile
-      icon="tune"
-      label="Configure"
+      icon="edit"
+      label="Designer"
       title="Open Prezo editing station for this discussion"
       onClick={() => onConfigure(prompt.id)}
     />
@@ -169,7 +169,7 @@ export function ActiveDiscussionActivityCard({
 
   const editTile = onEdit ? (
     <ActivityActionTile
-      icon="edit"
+      icon="tune"
       label="Edit"
       title="Change the discussion prompt — slides and screens update immediately"
       onClick={onEdit}

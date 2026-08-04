@@ -72,8 +72,8 @@ export function ActivePollActivityCard({
 
   const configureTile = onConfigure ? (
     <ActivityActionTile
-      icon="tune"
-      label="Configure"
+      icon="edit"
+      label="Designer"
       title="Open Prezo editing station for this poll"
       onClick={() => onConfigure(poll.id)}
     />
@@ -81,7 +81,7 @@ export function ActivePollActivityCard({
 
   const editTile = onEdit ? (
     <ActivityActionTile
-      icon="edit"
+      icon="tune"
       label="Edit"
       title="Change the question and answer options — slides and screens update immediately"
       onClick={onEdit}

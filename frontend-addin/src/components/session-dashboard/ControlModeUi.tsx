@@ -71,7 +71,9 @@ const ACTION_TILE_TONES: Record<
 /**
  * Uniform grid for the card action tiles: 3 per row (2 on narrow taskpanes),
  * equal-height rows, so the set stays symmetric at any width and reflows
- * cleanly when the card expands or the pane resizes.
+ * cleanly when the card expands or the pane resizes. A lone tile in the last
+ * row (typically Delete) is centered in 3-column layout and stretched
+ * full-width in 2-column layout instead of hanging off the left edge.
  */
 export function ActivityActionsGrid({
   children,
@@ -82,7 +84,7 @@ export function ActivityActionsGrid({
 }) {
   return (
     <div
-      className={`grid grid-cols-2 min-[420px]:grid-cols-3 auto-rows-fr gap-2 ${className}`}
+      className={`grid grid-cols-2 min-[420px]:grid-cols-3 auto-rows-fr gap-2 max-[419px]:[&>*:nth-child(2n+1):last-child]:col-span-2 min-[420px]:[&>*:nth-child(3n+1):last-child]:col-start-2 ${className}`}
     >
       {children}
     </div>
