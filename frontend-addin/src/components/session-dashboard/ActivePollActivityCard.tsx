@@ -13,6 +13,8 @@ export interface ActivePollActivityCardProps {
   /** Stopped polls render at the bottom with inactive styling. */
   variant?: 'active' | 'inactive'
   onConfigure?: (pollId: string) => void
+  /** Open the edit dialog to reconfigure this poll's question and options. */
+  onEdit?: () => void
   onStop?: (pollId: string) => void
   /** Re-open a closed poll from the inactive panel. */
   onResume?: (pollId: string) => void
@@ -35,6 +37,7 @@ export function ActivePollActivityCard({
   poll,
   variant = 'active',
   onConfigure,
+  onEdit,
   onStop,
   onResume,
   onDelete,
@@ -70,6 +73,20 @@ export function ActivePollActivityCard({
       onConfigure={onConfigure ? () => onConfigure(poll.id) : undefined}
     />
   )
+
+  const editButton = onEdit ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onEdit()
+      }}
+      title="Change the question and answer options — slides and screens update immediately"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
+    >
+      Edit
+    </button>
+  ) : null
 
   /**
    * Stop = pin closed. On a live card it closes now; on an off-air auto card
@@ -223,6 +240,7 @@ export function ActivePollActivityCard({
           {!closed ? (
             <div className="flex flex-wrap gap-2 pt-2">
               {configureButton}
+              {editButton}
               {stopButton}
               {followSlidesButton}
               {resetButton}
@@ -256,6 +274,7 @@ export function ActivePollActivityCard({
           ) : (
             <div className="flex flex-wrap gap-2 pt-2">
               {configureButton}
+              {editButton}
               <button
                 type="button"
                 onClick={(e) => {

@@ -5,6 +5,7 @@ import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
 import { CreateActivityMenu } from './CreateActivityMenu'
+import type { PollEditUpdate } from './EditActivityModal'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
@@ -57,6 +58,10 @@ export interface SessionDashboardPageProps {
   onSetQnaMode?: (mode: PollMode) => void | Promise<void>
   /** Switch a discussion prompt between auto and pinned control. */
   onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
+  /** Save a poll reconfiguration from the edit dialog. */
+  onUpdatePoll?: (pollId: string, update: PollEditUpdate) => Promise<void>
+  /** Save a discussion prompt change from the edit dialog. */
+  onUpdateDiscussion?: (promptId: string, prompt: string) => Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
@@ -102,6 +107,8 @@ export function SessionDashboardPage({
   onSetPollMode,
   onSetQnaMode,
   onSetDiscussionMode,
+  onUpdatePoll,
+  onUpdateDiscussion,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onApproveAudienceQuestion,
@@ -247,6 +254,8 @@ export function SessionDashboardPage({
           qnaControlMode={session.qna_control_mode}
           onSetQnaMode={onSetQnaMode}
           onSetDiscussionMode={onSetDiscussionMode}
+          onUpdatePoll={onUpdatePoll}
+          onUpdateDiscussion={onUpdateDiscussion}
           onApproveDiscussionQuestion={onApproveDiscussionQuestion}
           onHideDiscussionQuestion={onHideDiscussionQuestion}
           onApproveAudienceQuestion={onApproveAudienceQuestion}

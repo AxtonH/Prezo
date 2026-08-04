@@ -111,6 +111,7 @@ _ARTIFACT_KIND_VOCAB: dict[str, dict[str, Any]] = {
             "- Never blank the stage between updates and never use hide-then-show, fade-to-black, blackout overlays, or other hard reset transitions unless the user explicitly asks for that effect.",
             "- Build around a stable scene root and persistent option nodes keyed by option id.",
             "- Reconcile by option id and update only changed elements when possible.",
+            "- The option set can change while live (the host can add, remove, or relabel options): create a keyed node for any option id with no existing node, remove nodes whose option id is no longer in state.poll.options, and always render label text from the incoming state.",
             "- Renderer idempotence is required: repeated calls with the same or newer state must not increase option-row count or duplicate labels.",
             "- Do not reinsert or reorder every existing lane/row node with appendChild/removeChild on each update. If rank changes, animate vertical movement with transforms on stable mounted nodes.",
             "- If the scene contains moving objects such as cars, runners, avatars, or tokens, keep the same DOM nodes mounted and animate them forward from prior state instead of destroying and recreating them.",

@@ -336,9 +336,14 @@ async def update_poll(
             user.id,
             question=payload.question,
             option_labels=payload.options,
+            add_options=payload.add_options,
+            remove_option_ids=payload.remove_option_ids,
+            allow_multiple=payload.allow_multiple,
         )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     activity = make_activity("poll_updated", {"poll": poll.model_dump(mode="json")})
     await store.record_activity(session_id, activity)
     await manager.broadcast(session_id, activity)

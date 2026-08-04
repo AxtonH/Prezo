@@ -20,3 +20,9 @@ export { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 export { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 export { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 export type { SessionActiveActivitiesPanelProps } from './SessionActiveActivitiesPanel'
+export { EditActivityModal } from './EditActivityModal'
+export type {
+  EditActivityModalProps,
+  EditActivityTarget,
+  PollEditUpdate
+} from './EditActivityModal'

@@ -150,6 +150,21 @@
   }
   function stabilizeOptions(options) {
     var source = Array.isArray(options) ? options : []
+    var sourceComplete = source.length > 0
+    for (var checkIndex = 0; checkIndex < source.length; checkIndex += 1) {
+      if (!isObject(source[checkIndex])) {
+        sourceComplete = false
+        break
+      }
+    }
+    if (sourceComplete) {
+      // A complete option list is authoritative: the host can remove
+      // options via the edit dialog, so padding from stale blueprints
+      // here would resurrect deleted rows as permanent ghosts. Truncate
+      // the blueprint slots to match before they are re-synced.
+      optionSlotBlueprints.length = source.length
+      return source
+    }
     var targetLength = Math.max(source.length, optionSlotBlueprints.length)
     if (!targetLength) {
       return source

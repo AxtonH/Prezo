@@ -15,6 +15,7 @@ from ..models import (
     QnaPromptModeUpdate,
     QnaPromptPresenceAck,
     QnaPromptStatus,
+    QnaPromptUpdate,
     SessionActivity,
 )
 from ..realtime import ConnectionManager
@@ -152,6 +153,30 @@ async def _apply_prompt_mode(
     else:
         _cache_prompt(prompt)
     # Carries the new mode so host UIs stay in sync when status didn't move.
+    activity = make_activity(
+        "qna_prompt_updated", {"prompt": prompt.model_dump(mode="json")}
+    )
+    await store.record_activity(session_id, activity)
+    await manager.broadcast(session_id, activity)
+    return prompt
+
+
+@router.patch("/{prompt_id}", response_model=QnaPrompt)
+async def update_prompt(
+    session_id: str,
+    prompt_id: str,
+    payload: QnaPromptUpdate,
+    store: InMemoryStore = Depends(get_store),
+    manager: ConnectionManager = Depends(get_manager),
+    user: AuthUser = Depends(get_current_user),
+) -> QnaPrompt:
+    try:
+        prompt = await store.update_qna_prompt(
+            session_id, prompt_id, user.id, prompt=payload.prompt
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _cache_prompt(prompt)
     activity = make_activity(
         "qna_prompt_updated", {"prompt": prompt.model_dump(mode="json")}
     )

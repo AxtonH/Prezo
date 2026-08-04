@@ -28,6 +28,8 @@ export interface SessionDiscussionDashboardPageProps {
   onResetDiscussion?: (promptId: string) => void | Promise<void>
   /** Switch a discussion prompt between auto (slide-driven) and pinned control. */
   onSetDiscussionMode?: (promptId: string, mode: PollMode) => void | Promise<void>
+  /** Save a discussion prompt change from the edit dialog. */
+  onUpdateDiscussion?: (promptId: string, prompt: string) => Promise<void>
   onApproveDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onHideDiscussionQuestion?: (questionId: string) => void | Promise<void>
   onCreateDiscussion: (prompt: string) => Promise<void>
@@ -46,6 +48,7 @@ export function SessionDiscussionDashboardPage({
   onDeleteDiscussion,
   onResetDiscussion,
   onSetDiscussionMode,
+  onUpdateDiscussion,
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onCreateDiscussion,
@@ -164,6 +167,7 @@ export function SessionDiscussionDashboardPage({
                     onResetQna={undefined}
                     onResetDiscussion={onResetDiscussion}
                     onSetDiscussionMode={onSetDiscussionMode}
+                    onUpdateDiscussion={onUpdateDiscussion}
                     onApproveDiscussionQuestion={onApproveDiscussionQuestion}
                     onHideDiscussionQuestion={onHideDiscussionQuestion}
                     onApproveAudienceQuestion={undefined}

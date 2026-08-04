@@ -407,11 +407,22 @@ export const api = {
   updatePoll: (
     sessionId: string,
     pollId: string,
-    update: { question?: string; options?: Record<string, string> }
+    update: {
+      question?: string
+      options?: Record<string, string>
+      add_options?: string[]
+      remove_option_ids?: string[]
+      allow_multiple?: boolean
+    }
   ) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}`, {
       method: 'PATCH',
       body: JSON.stringify(update)
+    }, true),
+  updateQnaPrompt: (sessionId: string, promptId: string, prompt: string) =>
+    request<QnaPrompt>(`/sessions/${sessionId}/qna-prompts/${promptId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ prompt })
     }, true),
   votePoll: (sessionId: string, pollId: string, optionId: string, clientId?: string) =>
     request<Poll>(`/sessions/${sessionId}/polls/${pollId}/vote`, {

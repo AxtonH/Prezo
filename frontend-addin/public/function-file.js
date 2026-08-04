@@ -827,6 +827,14 @@
           ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
           : style.maxOptions
         const hasPollData = Boolean(poll)
+        /** Mirrors src/office/widgetShapes.ts: the taskpane hides surplus
+         * rows via Shape.visible (PowerPointApi 1.10) — this path must be
+         * able to reveal them again when an edit grows the option set. */
+        const useShapeVisibility =
+          typeof Office !== 'undefined' &&
+          Boolean(
+            Office?.context?.requirements?.isSetSupported?.('PowerPointApi', '1.10')
+          )
 
         if (!shapeIds) {
           shapeIds = await recoverPollShapeIds(info.slide, isVertical)
@@ -886,10 +894,12 @@
           const label = resolveShape(item.label)
           const bg = resolveShape(item.bg)
           const fill = resolveShape(item.fill)
+          const group = item.group ? resolveShape(item.group) : null
           label.load('id')
           bg.load(['id', 'width', 'left'])
           fill.load('id')
-          return { label, bg, fill }
+          if (group) group.load('id')
+          return { label, bg, fill, group }
         })
 
         await context.sync()
@@ -1162,12 +1172,39 @@
             : 0
         await updateCounterShape(context, counterShape, totalVotes, 'vote', 'votes')
 
+        /** Row show/hide via Shape.visible, mirroring widgetShapes.ts —
+         * grouped rows toggle the group, ungrouped rows toggle bg+fill. */
+        const setRowVisibility = (item, visible) => {
+          try {
+            item.label.visible = visible
+            if (item.group && !item.group.isNullObject) {
+              item.group.visible = visible
+            } else {
+              item.bg.visible = visible
+              item.fill.visible = visible
+            }
+          } catch {
+            /* host rejected visibility writes — transparency still applies */
+          }
+        }
+
         itemShapes.forEach((item, index) => {
           const data = optionData[index]
           if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
             return
           }
           if (!data || index >= visibleOptions) {
+            if (useShapeVisibility && hasPollData) {
+              /** Surplus row for the bound poll: hide it outright and keep
+               * the designer styling (including label text) for a reveal. */
+              setRowVisibility(item, false)
+              return
+            }
+            if (useShapeVisibility) {
+              /** No poll bound: the designable placeholder skeleton — rows
+               * previously hidden under a binding must come back. */
+              setRowVisibility(item, true)
+            }
             item.label.textFrame.textRange.text = ''
             if (isVertical) {
               const barHeight = item.bg.height
@@ -1184,6 +1221,11 @@
             item.fill.fill.transparency = 1
             item.bg.fill.transparency = hasPollData ? 1 : 0.35
             return
+          }
+          if (useShapeVisibility) {
+            /** Rows hidden while the bound poll had fewer options must
+             * reappear when an edit grows the option set. */
+            setRowVisibility(item, true)
           }
           item.label.textFrame.textRange.text = data.label
           if (isVertical) {
@@ -2577,8 +2619,9 @@
     return slide
   }
 
-  /** Top-level shapes carrying the family tag. Children inside bar groups are
-   * not in slide.shapes, so deleting the returned shapes never double-deletes. */
+  /** Shapes carrying the family tag on the slide. NOTE: slide.shapes can
+   * surface a group AND the tagged children inside it — callers must treat
+   * the returned list as containing potential group/child duplicates. */
   const loadTaggedFamilyShapes = async (context, slide, family) => {
     const shapes = slide.shapes
     shapes.load('items')
@@ -2586,7 +2629,7 @@
     const tagged = shapes.items.map((shape) => {
       const tag = shape.tags.getItemOrNullObject(family.widgetTag)
       tag.load('value')
-      shape.load('id')
+      shape.load(['id', 'type'])
       return { shape, tag }
     })
     await context.sync()
@@ -2631,7 +2674,7 @@
           const parsed = JSON.parse(shapesTag.value)
           const ids = family.collectIds(parsed).filter(Boolean)
           storedShapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
-          storedShapes.forEach((shape) => shape.load('id'))
+          storedShapes.forEach((shape) => shape.load(['id', 'type']))
           await context.sync()
         } catch {
           storedShapes = []
@@ -2652,10 +2695,28 @@
         deletable.push(shape)
       })
 
-      deletable.forEach((shape) => shape.delete())
+      /**
+       * Delete groups first and give EVERY delete its own isolated sync.
+       * The candidate list can contain a bar group and the child shapes
+       * inside it (both carry the family tag, and slide.shapes surfaces
+       * both); deleting the group kills its children, and a second delete
+       * on a dead child throws GeneralException. RichApi batches are not
+       * atomic — that mid-batch throw used to leave the widget
+       * half-deleted. Isolation turns it into a harmless no-op.
+       */
+      const groups = deletable.filter((shape) => shape.type === 'Group')
+      const loose = deletable.filter((shape) => shape.type !== 'Group')
+      for (const shape of groups.concat(loose)) {
+        try {
+          shape.delete()
+          await context.sync()
+          removed = true
+        } catch {
+          // Already gone (child of a group deleted above) — fine.
+        }
+      }
       family.slideTags.forEach((tagName) => slide.tags.delete(tagName))
       await context.sync()
-      removed = deletable.length > 0
     })
     return removed
   }

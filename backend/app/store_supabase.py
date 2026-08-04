@@ -919,6 +919,23 @@ class SupabaseStore:
         self._invalidate_session_snapshot(session_id)
         return self._to_prompt(data[0])
 
+    async def update_qna_prompt(
+        self, session_id: str, prompt_id: str, user_id: str, *, prompt: str
+    ) -> QnaPrompt:
+        await self.get_session(session_id, user_id)
+        response = await self._request(
+            "PATCH",
+            "qna_prompts",
+            params={"id": f"eq.{prompt_id}", "session_id": f"eq.{session_id}"},
+            json={"prompt": prompt},
+            prefer="return=representation",
+        )
+        data = response.json()
+        if not data:
+            raise NotFoundError("prompt not found")
+        self._invalidate_session_snapshot(session_id)
+        return self._to_prompt(data[0])
+
     async def set_qna_prompt_status(
         self,
         session_id: str,
@@ -1170,27 +1187,49 @@ class SupabaseStore:
         *,
         question: str | None = None,
         option_labels: dict[str, str] | None = None,
+        add_options: list[str] | None = None,
+        remove_option_ids: list[str] | None = None,
+        allow_multiple: bool | None = None,
     ) -> Poll:
         await self.get_session(session_id, user_id)
+        rows = await self._select(
+            "polls",
+            {"select": "*", "id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
+        )
+        if not rows:
+            raise NotFoundError("poll not found")
+        data = rows
+        current_options = await self._select(
+            "poll_options",
+            {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},
+        )
+        current_ids = {opt["id"] for opt in current_options}
+        removed = {oid for oid in (remove_option_ids or []) if oid in current_ids}
+        remaining = len(current_options) - len(removed) + len(add_options or [])
+        if remaining < 2:
+            raise ConflictError("a poll needs at least two options")
+        if remaining > 10:
+            raise ConflictError("a poll can have at most ten options")
+
+        poll_patch: dict[str, object] = {}
         if question is not None:
+            poll_patch["question"] = question
+        if allow_multiple is not None and allow_multiple != data[0].get("allow_multiple"):
+            if any((opt.get("votes") or 0) > 0 for opt in current_options):
+                raise ConflictError("cannot change choice mode after votes are cast")
+            poll_patch["allow_multiple"] = allow_multiple
+        if poll_patch:
             response = await self._request(
                 "PATCH",
                 "polls",
                 params={"id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
-                json={"question": question},
+                json=poll_patch,
                 prefer="return=representation",
             )
             data = response.json()
             if not data:
                 raise NotFoundError("poll not found")
-        else:
-            rows = await self._select(
-                "polls",
-                {"select": "*", "id": f"eq.{poll_id}", "session_id": f"eq.{session_id}"},
-            )
-            if not rows:
-                raise NotFoundError("poll not found")
-            data = rows
+
         if option_labels:
             for opt_id, label in option_labels.items():
                 await self._request(
@@ -1200,6 +1239,38 @@ class SupabaseStore:
                     json={"label": label},
                     prefer="return=representation",
                 )
+        if removed:
+            # poll_votes rows cascade with the option, so counts stay consistent.
+            await self._request(
+                "DELETE",
+                "poll_options",
+                params={
+                    "poll_id": f"eq.{poll_id}",
+                    "id": f"in.({','.join(sorted(removed))})",
+                },
+            )
+        if add_options:
+            next_position = (
+                max((opt.get("position") or 0) for opt in current_options) + 1
+                if current_options
+                else 0
+            )
+            option_payload = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "poll_id": poll_id,
+                    "label": label,
+                    "votes": 0,
+                    "position": next_position + index,
+                }
+                for index, label in enumerate(add_options)
+            ]
+            await self._request(
+                "POST",
+                "poll_options",
+                json=option_payload,
+                prefer="return=representation",
+            )
         options = await self._select(
             "poll_options",
             {"select": "*", "poll_id": f"eq.{poll_id}", "order": "position.asc"},

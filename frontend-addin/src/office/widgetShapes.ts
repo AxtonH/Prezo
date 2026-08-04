@@ -589,9 +589,11 @@ const syncPollText = (
   const lastAutoText = hasAutoTag ? (state.autoTag.value ?? '') : ''
   const isFullyAuto = hasAutoTag && currentText === lastAutoText
 
-  /** If the user reformatted the label (e.g. dropped "(N) •"), preserve their template by regenerating in-place. */
+  /** If the user reformatted the label (e.g. dropped "(N) •"), preserve their template by regenerating in-place.
+   * `force` skips regeneration too: after a host edit the old prefix IS the stale
+   * content being replaced, so preserving the template would keep the old label. */
   const regenerated =
-    option && !isFullyAuto ? regeneratePollLabel(currentText, option) : null
+    option && !isFullyAuto && !force ? regeneratePollLabel(currentText, option) : null
   const targetText = regenerated ?? nextText
 
   if (!hasAutoTag) {
@@ -742,6 +744,7 @@ const buildPollOptions = (poll: Poll | null) => {
     const ratio = totalVotes > 0 ? option.votes / totalVotes : 0
     const percent = Math.round(ratio * 100)
     return {
+      id: option.id,
       label: `${option.label} (${option.votes}) • ${percent}%`,
       ratio,
       name: option.label,
@@ -2209,6 +2212,15 @@ export async function updatePollWidget(
      * the deck is in slideshow view — animating in edit view would pile
      * frame-by-frame writes onto the user's undo stack. */
     animateBars?: boolean
+    /**
+     * Passed once right after the host edits a poll: overwrite the edited
+     * fields even on shapes whose text the designer retyped. Without it,
+     * syncPollText preserves the user's template — including the now-stale
+     * old label/question. Fonts, colors, and geometry are untouched (the
+     * write path snapshots and reapplies the font), and only widgets bound
+     * to the edited poll are affected.
+     */
+    forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
   }
 ) {
   if (!isPowerPointShapeApiAvailable()) {
@@ -2458,6 +2470,11 @@ export async function updatePollWidget(
         ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
         : style.maxOptions
       const hasPollData = Boolean(poll)
+      const forceText =
+        options?.forceText && poll && poll.id === options.forceText.pollId
+          ? options.forceText
+          : null
+      const forceOptionIds = new Set(forceText?.optionIds ?? [])
 
       if (!shapeIds) {
         shapeIds = await recoverPollShapeIds(info.slide, isVertical)
@@ -2996,13 +3013,20 @@ export async function updatePollWidget(
       syncPollText(titleTextState, titleText)
 
       if (questionShape && !questionShape.isNullObject) {
-        syncPollText(questionTextState, questionText)
+        syncPollText(
+          questionTextState,
+          questionText,
+          forceText?.question ? { force: true } : undefined
+        )
       } else if (bodyShape && !bodyShape.isNullObject) {
         syncPollText(
           bodyTextState,
           `${questionText}\n${optionData
             .map((option, index) => `${index + 1}. ${option.label}`)
-            .join('\n')}`
+            .join('\n')}`,
+          forceText && (forceText.question || forceOptionIds.size > 0)
+            ? { force: true }
+            : undefined
         )
       }
 
@@ -3124,7 +3148,8 @@ export async function updatePollWidget(
         await tryItemWrite(
           () =>
             syncPollText(labelTextStates[index] ?? null, data.label, {
-              option: { name: data.name, votes: data.votes, percent: data.percent }
+              option: { name: data.name, votes: data.votes, percent: data.percent },
+              force: forceOptionIds.has(data.id)
             }),
           `label ${index}`
         )

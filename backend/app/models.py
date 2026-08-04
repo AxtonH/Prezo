@@ -147,6 +147,18 @@ class PollUpdate(BaseModel):
         default=None,
         description="Map of option_id → new label text",
     )
+    add_options: list[str] | None = Field(
+        default=None,
+        description="Labels of new options to append after the existing ones",
+    )
+    remove_option_ids: list[str] | None = Field(
+        default=None,
+        description="Ids of options to delete; their recorded votes are discarded",
+    )
+    allow_multiple: bool | None = Field(
+        default=None,
+        description="Only changeable while the poll has no votes",
+    )
 
 
 class PollVote(BaseModel):
@@ -155,6 +167,10 @@ class PollVote(BaseModel):
 
 
 class QnaPromptCreate(BaseModel):
+    prompt: str = Field(min_length=1, max_length=200)
+
+
+class QnaPromptUpdate(BaseModel):
     prompt: str = Field(min_length=1, max_length=200)
 
 

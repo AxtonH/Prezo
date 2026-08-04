@@ -18,6 +18,8 @@ export interface ActiveDiscussionActivityCardProps {
   variant?: 'active' | 'inactive'
   /** Open the Prezo editing station focused on this discussion's artifact. */
   onConfigure?: (promptId: string) => void
+  /** Open the edit dialog to reconfigure this discussion's prompt. */
+  onEdit?: () => void
   onStop?: (promptId: string) => void
   onResume?: (promptId: string) => void
   onDelete?: () => void
@@ -101,6 +103,7 @@ export function ActiveDiscussionActivityCard({
   approvedQuestions,
   variant = 'active',
   onConfigure,
+  onEdit,
   onStop,
   onResume,
   onDelete,
@@ -158,6 +161,20 @@ export function ActiveDiscussionActivityCard({
       onConfigure={onConfigure ? () => onConfigure(prompt.id) : undefined}
     />
   )
+
+  const editButton = onEdit ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onEdit()
+      }}
+      title="Change the discussion prompt — slides and screens update immediately"
+      className="!px-4 !py-2 !rounded-lg !text-sm !font-semibold !bg-slate-100 !text-slate-800 !border-0 hover:!bg-slate-200 !transition-colors"
+    >
+      Edit
+    </button>
+  ) : null
 
   /**
    * Stop = pin closed. On a live card it closes now; on an off-air auto card
@@ -356,6 +373,7 @@ export function ActiveDiscussionActivityCard({
         {!closed ? (
           <div className="flex flex-wrap gap-2 pt-1">
             {configureButton}
+            {editButton}
             {stopButton}
             {followSlidesButton}
             {resetButton}
@@ -376,6 +394,7 @@ export function ActiveDiscussionActivityCard({
         ) : (
           <div className="flex flex-wrap gap-2 pt-1">
             {configureButton}
+            {editButton}
             <button
               type="button"
               onClick={(e) => {

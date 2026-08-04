@@ -28,7 +28,8 @@ import {
   SessionDiscussionDashboardPage,
   SessionEditorEmbed,
   SessionPollsDashboardPage,
-  SessionQnaDashboardPage
+  SessionQnaDashboardPage,
+  type PollEditUpdate
 } from './components/session-dashboard'
 import { SessionSetup } from './components/SessionSetup'
 import { BrandIdentitiesPage } from './components/brand-identities'
@@ -753,12 +754,16 @@ function HostConsole({
     sessionId: string | null
     code: string | null
     polls: Poll[]
+    /** One-shot: set by a host poll edit so the next widget write overwrites
+     * the edited fields even on designer-retyped shapes; consumed per run. */
+    forceText: { pollId: string; question?: boolean; optionIds?: string[] } | null
   }>({
     inFlight: false,
     queued: false,
     sessionId: null,
     code: null,
-    polls: []
+    polls: [],
+    forceText: null
   })
 
   type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
@@ -1019,11 +1024,19 @@ function HostConsole({
   }, [session?.id, session?.code, questions, prompts])
 
   const schedulePollWidgetUpdate = useCallback(
-    (sessionId: string, code: string | null, nextPolls: Poll[]) => {
+    (
+      sessionId: string,
+      code: string | null,
+      nextPolls: Poll[],
+      forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
+    ) => {
       const state = pollWidgetUpdateRef.current
       state.sessionId = sessionId
       state.code = code
       state.polls = nextPolls
+      if (forceText) {
+        state.forceText = forceText
+      }
       if (state.inFlight) {
         state.queued = true
         return
@@ -1035,11 +1048,14 @@ function HostConsole({
           return
         }
         current.inFlight = true
+        const force = current.forceText
+        current.forceText = null
         try {
           /** Evaluated per write, not per schedule: a queued update that runs
            * after a view flip should honor the view it writes into. */
           await updatePollWidget(current.sessionId, current.code, current.polls, {
-            animateBars: isSlideShowViewActive()
+            animateBars: isSlideShowViewActive(),
+            forceText: force ?? undefined
           })
         } catch (err) {
           console.warn('Failed to update poll widget shapes', err)
@@ -1504,6 +1520,51 @@ function HostConsole({
       setPolls((prev) => upsertById(prev, poll))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to reset poll'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const updatePollActivity = async (pollId: string, update: PollEditUpdate) => {
+    if (!session) {
+      throw new Error('Session not available. Try again.')
+    }
+    try {
+      const poll = await api.updatePoll(session.id, pollId, update)
+      setError(null)
+      setPolls((prev) => upsertById(prev, poll))
+      /** Forced pass so slide widgets bound to this poll pick up the edited
+       * text even where a designer retyped it — a regular sync would preserve
+       * the (now stale) custom text. Fonts, colors, and geometry stay. */
+      schedulePollWidgetUpdate(
+        session.id,
+        session.code,
+        upsertById(latestPollsRef.current, poll),
+        {
+          pollId,
+          question: update.question !== undefined,
+          optionIds: update.options ? Object.keys(update.options) : undefined
+        }
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update poll'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
+  const updateDiscussionPromptText = async (promptId: string, promptText: string) => {
+    if (!session) {
+      throw new Error('Session not available. Try again.')
+    }
+    try {
+      const prompt = await api.updateQnaPrompt(session.id, promptId, promptText)
+      setError(null)
+      /** The prompts effect re-renders the discussion widget, whose title is
+       * written unconditionally — no forced pass needed. */
+      setPrompts((prev) => upsertById(prev, prompt))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update discussion'
       setError(message)
       throw new Error(message)
     }
@@ -2033,6 +2094,7 @@ function HostConsole({
                   onDeletePoll={deletePoll}
                   onResetPoll={resetPoll}
                   onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
+                  onUpdatePoll={updatePollActivity}
                   onCreatePoll={createPoll}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
                 />
@@ -2053,6 +2115,7 @@ function HostConsole({
                   onDeleteDiscussion={deleteDiscussionPrompt}
                   onResetDiscussion={resetDiscussionPrompt}
                   onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}
+                  onUpdateDiscussion={updateDiscussionPromptText}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onCreateDiscussion={createDiscussionPrompt}
@@ -2146,6 +2209,8 @@ function HostConsole({
                   onSetPollMode={(pollId, mode) => void setPollMode(pollId, mode)}
                   onSetQnaMode={(mode) => void setQnaMode(mode)}
                   onSetDiscussionMode={(promptId, mode) => void setPromptMode(promptId, mode)}
+                  onUpdatePoll={updatePollActivity}
+                  onUpdateDiscussion={updateDiscussionPromptText}
                   onApproveDiscussionQuestion={approveQuestion}
                   onHideDiscussionQuestion={hideQuestion}
                   onApproveAudienceQuestion={approveQuestion}

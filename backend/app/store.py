@@ -517,6 +517,15 @@ class InMemoryStore:
             prompt.mode = mode
             return self._to_prompt(prompt)
 
+    async def update_qna_prompt(
+        self, session_id: str, prompt_id: str, user_id: str, *, prompt: str
+    ) -> QnaPrompt:
+        async with self._lock:
+            self._ensure_host_access(session_id, user_id)
+            data = self._get_prompt(session_id, prompt_id)
+            data.prompt = prompt
+            return self._to_prompt(data)
+
     async def set_question_status(
         self,
         session_id: str,
@@ -596,16 +605,45 @@ class InMemoryStore:
         *,
         question: str | None = None,
         option_labels: dict[str, str] | None = None,
+        add_options: list[str] | None = None,
+        remove_option_ids: list[str] | None = None,
+        allow_multiple: bool | None = None,
     ) -> Poll:
         async with self._lock:
             self._ensure_host_access(session_id, user_id)
             poll = self._get_poll(session_id, poll_id)
+            removed = {
+                oid for oid in (remove_option_ids or []) if any(o.id == oid for o in poll.options)
+            }
+            remaining = len(poll.options) - len(removed) + len(add_options or [])
+            if remaining < 2:
+                raise ConflictError("a poll needs at least two options")
+            if remaining > 10:
+                raise ConflictError("a poll can have at most ten options")
+            if allow_multiple is not None and allow_multiple != poll.allow_multiple:
+                if any(opt.votes for opt in poll.options):
+                    raise ConflictError(
+                        "cannot change choice mode after votes are cast"
+                    )
+                poll.allow_multiple = allow_multiple
             if question is not None:
                 poll.question = question
             if option_labels:
                 for opt in poll.options:
                     if opt.id in option_labels:
                         opt.label = option_labels[opt.id]
+            if removed:
+                poll.options = [o for o in poll.options if o.id not in removed]
+                histories = self._poll_votes.get(poll_id)
+                if histories:
+                    for client_id in list(histories):
+                        histories[client_id] -= removed
+                        if not histories[client_id]:
+                            del histories[client_id]
+            for label in add_options or []:
+                poll.options.append(
+                    PollOptionData(id=uuid.uuid4().hex, label=label, votes=0)
+                )
             return self._to_poll(poll)
 
     async def vote_poll(
