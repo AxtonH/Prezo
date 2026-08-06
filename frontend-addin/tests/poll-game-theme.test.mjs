@@ -76,7 +76,12 @@ test('color utilities', () => {
   assert.equal(sanitizeInlineColorValue('bogus'), '')
   assert.equal(sanitizeOptionalDimension('', 10, 100), null)
   assert.equal(sanitizeOptionalDimension(5, 10, 100), 10)
-  assert.equal(sanitizeVisualMode('CLASSIC', 'artifact'), 'classic')
+  assert.equal(sanitizeVisualMode('artifact', 'artifact'), 'artifact')
+  assert.equal(
+    sanitizeVisualMode('CLASSIC', 'artifact'),
+    'artifact',
+    'classic bars retired: legacy persisted values coerce to artifact'
+  )
 })
 
 test('sanitizeAiThemePatch keeps allowed keys and falls back to the current theme', () => {
@@ -95,6 +100,6 @@ test('sanitizeAiThemePatch keeps allowed keys and falls back to the current them
   assert.equal(patch.bgB, currentTheme.bgB, 'invalid color falls back to current value')
   assert.ok(patch.barHeight <= 44, 'number clamped to allowed range')
   assert.ok(!('hackedKey' in patch))
-  assert.equal(patch.visualMode, 'classic')
+  assert.equal(patch.visualMode, 'artifact', 'AI patches cannot resurrect classic mode')
   assert.deepEqual(sanitizeAiThemePatch(null, currentTheme), {})
 })

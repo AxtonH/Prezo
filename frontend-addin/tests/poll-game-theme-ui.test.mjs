@@ -272,7 +272,11 @@ test('bindThemeControls wires inputs to updateTheme and visualMode re-renders', 
     const rendersBefore = calls.renderFromSnapshot
     modeSelect.value = 'classic'
     modeSelect.trigger('change')
-    assert.equal(getTheme().visualMode, 'classic')
+    assert.equal(
+      getTheme().visualMode,
+      'artifact',
+      'classic bars retired: stale control values coerce to artifact'
+    )
     assert.ok(calls.renderFromSnapshot > rendersBefore, 'visualMode change re-renders')
   } finally {
     dom.restore()

@@ -3842,6 +3842,18 @@ body.present-mode .resize-selection {
   display: none !important;
 }
 
+/* The artifact intake wizard is authoring UI — audiences must never see it.
+   With no artifact built, the stage placeholder is the present-mode surface
+   (renderArtifactAwaitingPrompt), not the composer. */
+body.present-mode .artifact-composer,
+body.present-mode .artifact-composer-fab,
+body.present-mode-artifact .artifact-composer,
+body.present-mode-artifact .artifact-composer-fab {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 body.present-mode .wrap {
   position: fixed;
   top: 12px;

@@ -403,12 +403,11 @@ export function sanitizeFontFamily(value, fallback) {
   return text.replace(/[{};]/g, '').slice(0, 120)
 }
 
-export function sanitizeVisualMode(value, fallback) {
-  const mode = asText(value).toLowerCase()
-  if (mode === 'classic' || mode === ARTIFACT_VISUAL_MODE) {
-    return mode
-  }
-  return fallback
+export function sanitizeVisualMode(_value, _fallback) {
+  // Classic bars is retired, but 'classic' still arrives from persisted
+  // sources (embed rows, saved themes, drafts, ?visualMode= params, AI
+  // patches) — every value must coerce to the only supported mode.
+  return ARTIFACT_VISUAL_MODE
 }
 
 export function sanitizeUrl(value, fallback) {

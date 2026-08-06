@@ -859,6 +859,7 @@ import {
   let pendingArtifactRestoreName = artifactNameFromQuery
   let artifactRestoreTimerId = 0
   let artifactRestoreAttempts = 0
+  let artifactRestoreExhausted = false
   const ARTIFACT_RESTORE_INTERVAL_MS = 1500
   const ARTIFACT_RESTORE_MAX_ATTEMPTS = 20
 
@@ -906,6 +907,18 @@ import {
     }
     artifactRestoreAttempts += 1
     if (artifactRestoreAttempts >= ARTIFACT_RESTORE_MAX_ATTEMPTS) {
+      // Giving up must be visible: a presented slide with a saved artifact
+      // that never syncs (late/absent library token) would otherwise stay
+      // blank with no explanation. renderArtifactAwaitingPrompt reads the
+      // flag on later renders; the direct call covers embeds that get no
+      // further snapshot pushes while idle.
+      artifactRestoreExhausted = true
+      if (!asText(state.artifact.html) && !state.artifact.busy && !hasArtifactPrompt()) {
+        showArtifactStagePlaceholder(
+          "Couldn't load this activity's saved visual. Sign in to Prezo in the add-in panel, then reopen this slide.",
+          'error'
+        )
+      }
       return
     }
     artifactRestoreTimerId = window.setTimeout(
@@ -5346,7 +5359,25 @@ import {
   }
 
   function renderArtifactAwaitingPrompt() {
-    hideArtifactStage()
+    // The no-artifact stage must never be silently blank: present mode hides
+    // the intake composer, so the stage surface is the only thing a viewer
+    // sees. Restore-in-flight shows a loader, restore failure keeps its
+    // error, and a genuinely empty activity says so.
+    if (pendingArtifactRestoreName) {
+      showArtifactStageLoader('Loading your saved visual...')
+      return
+    }
+    if (artifactRestoreExhausted) {
+      showArtifactStagePlaceholder(
+        "Couldn't load this activity's saved visual. Sign in to Prezo in the add-in panel, then reopen this slide.",
+        'error'
+      )
+      return
+    }
+    showArtifactStagePlaceholder(
+      'No visual built for this activity yet. Use the artifact wizard to create one.',
+      'pending'
+    )
   }
 
   /** qna/discussion twin of the poll snapshot render: selects the activity,

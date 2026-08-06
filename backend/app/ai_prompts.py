@@ -70,8 +70,7 @@ POLL_GAME_SYSTEM_INSTRUCTION = "\n".join(
         "trackColor, fillA, fillB, bgImageOpacity, overlayOpacity, gridOpacity, "
         "panelOpacity, trackOpacity, barHeight, barRadius, questionSize, labelSize, "
         "logoWidth, logoOpacity, assetWidth, assetOpacity, bgImageUrl, "
-        "visualMode, artifactLayout, logoUrl, assetUrl, fontFamily.",
-        "visualMode values: classic, artifact.",
+        "artifactLayout, logoUrl, assetUrl, fontFamily.",
         "artifactLayout values: horizontal, vertical.",
         "Allowed move targets: panel, eyebrow, question, meta, footer, options, logo, asset, bgImage, overlay, grid.",
         "Allowed resize targets: panel, eyebrow, question, meta, footer, logo, asset, bgImage, overlay, grid.",
