@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, API_BASE_URL } from './api/client'
 import type {
@@ -111,6 +111,12 @@ export default function App() {
   const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({})
   const [promptStatus, setPromptStatus] = useState<Record<string, string>>({})
   const [joinError, setJoinError] = useState<string | null>(null)
+  // A /join/<code> URL (the QR target) joins immediately — no extra click.
+  // While that attempt is in flight we show a connecting panel instead of
+  // the join form; on failure the form appears with the code prefilled.
+  const [joinCode] = useState(() => parseJoinCode())
+  const [isAutoJoining, setIsAutoJoining] = useState(Boolean(joinCode))
+  const autoJoinStartedRef = useRef(false)
   const pollVoteHistoryRef = useRef<Record<string, Set<string>>>({})
   const pollVotePendingRef = useRef<
     Record<string, { inFlight: boolean; queuedOptionId: string | null }>
@@ -205,6 +211,18 @@ export default function App() {
       setJoinError(err instanceof Error ? err.message : 'Session not found')
     }
   }
+
+  useEffect(() => {
+    // Ref guard: StrictMode double-mounts effects in dev; join exactly once.
+    if (!joinCode || autoJoinStartedRef.current) {
+      return
+    }
+    autoJoinStartedRef.current = true
+    void joinSession(joinCode.trim().toUpperCase()).finally(() => {
+      setIsAutoJoining(false)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinCode])
 
   const submitQuestion = async (text: string) => {
     if (!session) {
@@ -485,7 +503,6 @@ export default function App() {
     [prompts]
   )
 
-  const joinCode = parseJoinCode()
   const joinLink = session?.join_url ?? `${AUDIENCE_BASE_URL}/`
 
   return (
@@ -518,7 +535,14 @@ export default function App() {
       </div>
 
       {!session ? (
-        <JoinPanel defaultCode={joinCode} onJoin={joinSession} error={joinError} />
+        isAutoJoining ? (
+          <div className="panel">
+            <h1>Joining session…</h1>
+            <p className="muted">Connecting you to the live session.</p>
+          </div>
+        ) : (
+          <JoinPanel defaultCode={joinCode} onJoin={joinSession} error={joinError} />
+        )
       ) : (
         <div className="grid">
           <div className="panel hero">
