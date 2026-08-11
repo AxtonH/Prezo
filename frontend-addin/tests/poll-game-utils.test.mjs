@@ -34,6 +34,9 @@ test('api base and ws base normalization', () => {
   assert.equal(normalizeApiBase('https://x.example//'), 'https://x.example')
   assert.equal(toWsBase('https://x.example'), 'wss://x.example')
   assert.equal(toWsBase('http://x.example'), 'ws://x.example')
+  // Path-based bases (dev proxy) keep their prefix on the WS URL.
+  assert.equal(toWsBase('https://localhost:5173/prezo-api'), 'wss://localhost:5173/prezo-api')
+  assert.equal(toWsBase('https://localhost:5173/prezo-api/'), 'wss://localhost:5173/prezo-api')
   assert.equal(toWsBase('not a url'), '')
 })
 

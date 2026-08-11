@@ -43,7 +43,11 @@ export function toWsBase(apiBase) {
   try {
     const parsed = new URL(apiBase)
     const protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${parsed.host}`
+    // Keep the path: path-based API bases (e.g. the dev proxy's /prezo-api)
+    // need it on the WS URL too, or the socket bypasses the proxy and dies —
+    // leaving votes to the 15s disconnected-poll fallback.
+    const basePath = parsed.pathname.replace(/\/+$/, '')
+    return `${protocol}//${parsed.host}${basePath}`
   } catch {
     return ''
   }
