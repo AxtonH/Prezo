@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 const certDir =
@@ -22,15 +22,64 @@ const loadHttpsOptions = () => {
   }
 }
 
-export default defineConfig(({ command }) => ({
-  plugins: [react()],
-  server:
-    command === 'serve'
-      ? {
-          host: 'localhost',
-          port: 5173,
-          strictPort: true,
-          https: loadHttpsOptions()
+/**
+ * Mirror serve-dist.mjs's extensionless resolution in dev: production maps
+ * `/poc/poll-game-poc` -> `poc/poll-game-poc.html`, but Vite's SPA fallback
+ * would answer index.html instead — which loads the host console inside its
+ * own Editor iframe, recursively. Rewrite extensionless requests to the
+ * matching public/*.html file before the fallback can claim them.
+ */
+const extensionlessPublicHtml = (): Plugin => {
+  const publicDir = path.resolve(__dirname, 'public')
+  return {
+    name: 'prezo-extensionless-public-html',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const rawUrl = req.url || ''
+        const [pathname] = rawUrl.split('?')
+        if (pathname && pathname !== '/' && !path.posix.extname(pathname)) {
+          const candidate = path.join(publicDir, `${pathname.replace(/^\/+/, '')}.html`)
+          if (candidate.startsWith(publicDir) && fs.existsSync(candidate)) {
+            req.url = `${pathname}.html${rawUrl.slice(pathname.length)}`
+          }
         }
-      : undefined
-}))
+        next()
+      })
+    }
+  }
+}
+
+export default defineConfig(({ command, mode }) => {
+  /**
+   * Dev-only escape hatch: set PREZO_DEV_API_PROXY_TARGET (e.g. the deployed
+   * Railway backend) in .env to serve the UI locally against that backend
+   * without CORS — the browser stays same-origin on /prezo-api and Vite
+   * forwards server-side. Pair with VITE_API_BASE_URL=https://localhost:5173/prezo-api
+   * and VITE_WS_BASE_URL=wss://localhost:5173/prezo-api. Unset = no proxy.
+   */
+  const env = loadEnv(mode, process.cwd(), '')
+  const apiProxyTarget = env.PREZO_DEV_API_PROXY_TARGET
+
+  return {
+    plugins: [react(), extensionlessPublicHtml()],
+    server:
+      command === 'serve'
+        ? {
+            host: 'localhost',
+            port: 5173,
+            strictPort: true,
+            https: loadHttpsOptions(),
+            proxy: apiProxyTarget
+              ? {
+                  '/prezo-api': {
+                    target: apiProxyTarget,
+                    changeOrigin: true,
+                    ws: true,
+                    rewrite: (p: string) => p.replace(/^\/prezo-api/, '')
+                  }
+                }
+              : undefined
+          }
+        : undefined
+  }
+})

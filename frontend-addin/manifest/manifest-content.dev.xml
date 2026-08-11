@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Dev variant of the content (slide embed) manifest: local Vite dev server,
+     distinct Id + "(Dev)" name so it coexists with the production add-in.
+     Register alongside manifest.dev.xml (see that file's header). Note: game
+     slides inserted while running the PROD add-in reference the prod content
+     add-in and keep loading deployed code — insert a fresh game slide from
+     the dev taskpane to test local embed code in a slideshow. -->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="ContentApp">
+  <Id>b3a9c2d4-7e15-4f6a-9c08-5d21e7b4a973</Id>
+  <Version>1.0.0.2</Version>
+  <ProviderName>Prezo</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Prezo Game Surface (Dev)" />
+  <Description DefaultValue="Embeds a live Prezo poll game surface directly on a slide (local dev server)." />
+  <IconUrl DefaultValue="https://localhost:5173/prezo-icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:5173/prezo-icon-80.png" />
+  <SupportUrl DefaultValue="https://localhost:5173/" />
+  <AppDomains>
+    <AppDomain>https://localhost:5173</AppDomain>
+    <AppDomain>https://prezo-backend.up.railway.app</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:5173/embed/poll-game-content" />
+    <RequestedHeight>600</RequestedHeight>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <AllowSnapshot>true</AllowSnapshot>
+</OfficeApp>
