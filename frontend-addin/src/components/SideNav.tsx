@@ -11,21 +11,12 @@ interface SideNavProps {
   editorLink: string | null
   /** Opens the Prezo Editor in the session workspace (in-app), e.g. from the footer while Settings is open. */
   onOpenEditorInline?: () => void
-  isAddinHost: boolean
   displayName: string
   avatarUrl: string | null
   /** When set, "My Sessions" returns to the all-sessions list (host console). */
   onMySessions?: () => void
   /** True while a live session is open — highlights My Sessions and enables navigation back to the list. */
   hasLiveSession?: boolean
-  /** Opens the new-session modal (same as the top bar “Start a new session” action). */
-  onCreateSession?: () => void
-  /** True while the new-session modal is open — highlights “Create a session” in the nav. */
-  createSessionModalOpen?: boolean
-  /** Opens join-by-code modal (same pattern as Start a new session). */
-  onJoinSession?: () => void
-  /** True while join-by-code modal is open — highlights "Join a session" in the nav. */
-  joinSessionModalOpen?: boolean
   /** Which primary area is shown — drives sidebar highlight. */
   activeSection?: 'sessions' | 'settings' | 'brandIdentities'
   /** Opens full-page settings (host profile, account). */
@@ -34,7 +25,7 @@ interface SideNavProps {
   onBrandIdentities?: () => void
   /**
    * When true (user has a live session open in the host console), show Dashboard / Polls /
-   * Open discussion / Q&A instead of My Sessions / Join / Brand identity / Analytics / Integrations.
+   * Open discussion / Q&A instead of My Sessions / Brand identity / Analytics / Integrations.
    */
   workspaceMode?: boolean
   activeWorkspaceNav?: WorkspaceNavId
@@ -64,15 +55,10 @@ export function SideNav({
   onLogout,
   editorLink,
   onOpenEditorInline,
-  isAddinHost,
   displayName,
   avatarUrl,
   onMySessions,
   hasLiveSession = false,
-  onCreateSession,
-  createSessionModalOpen = false,
-  onJoinSession,
-  joinSessionModalOpen = false,
   activeSection = 'sessions',
   onOpenSettings,
   onBrandIdentities,
@@ -82,26 +68,16 @@ export function SideNav({
   collapsed = false,
   onToggleSidebarCollapse
 }: SideNavProps) {
-  const joinModalOpen = joinSessionModalOpen
-  const createModalOpen = createSessionModalOpen
-  const sessionsNavActive =
-    activeSection === 'sessions' && !joinModalOpen && !createModalOpen
-  const settingsNavActive = activeSection === 'settings' && !joinModalOpen && !createModalOpen
-  const brandIdentitiesNavActive =
-    activeSection === 'brandIdentities' && !joinModalOpen && !createModalOpen
-  const joinNavActive = joinModalOpen && !createModalOpen
-  const createNavActive = createModalOpen
+  const sessionsNavActive = activeSection === 'sessions'
+  const settingsNavActive = activeSection === 'settings'
+  const brandIdentitiesNavActive = activeSection === 'brandIdentities'
   const navActiveClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 bg-white text-primary border-l-4 border-primary transition-all duration-200 ease-in-out'
   const navIdleClass =
     'w-full text-left flex items-center gap-3 px-4 py-3 text-slate-900/70 hover:bg-slate-200 transition-all duration-200 ease-in-out'
 
   const workspaceItemActive = (id: WorkspaceNavId) =>
-    workspaceMode &&
-    activeSection === 'sessions' &&
-    !joinModalOpen &&
-    !createModalOpen &&
-    activeWorkspaceNav === id
+    workspaceMode && activeSection === 'sessions' && activeWorkspaceNav === id
 
   /** In workspace mode, submenu items sit under the session icon with inset + left rail. */
   const workspaceSubmenuBase =
@@ -204,34 +180,6 @@ export function SideNav({
                 <span className="font-medium">{MY_SESSIONS_ITEM.label}</span>
               </a>
             )}
-
-            {onCreateSession ? (
-              <button
-                type="button"
-                onClick={onCreateSession}
-                className={sessionNavBtn(createNavActive)}
-                title={collapsed ? 'Create a new session' : undefined}
-              >
-                <span className="material-symbols-outlined text-[1.25rem]">add</span>
-                {!collapsed ? (
-                  <span className={createNavActive ? 'font-medium' : ''}>Create a session</span>
-                ) : null}
-              </button>
-            ) : null}
-
-            {!isAddinHost && onJoinSession ? (
-              <button
-                type="button"
-                onClick={onJoinSession}
-                className={sessionNavBtn(joinNavActive)}
-                title={collapsed ? 'Join a session' : undefined}
-              >
-                <span className="material-symbols-outlined text-[1.25rem]">login</span>
-                {!collapsed ? (
-                  <span className={joinNavActive ? 'font-medium' : ''}>Join a session</span>
-                ) : null}
-              </button>
-            ) : null}
 
             {onBrandIdentities ? (
               <button

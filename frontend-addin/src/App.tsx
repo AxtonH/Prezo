@@ -1747,7 +1747,6 @@ function HostConsole({
             setWorkspaceNav('editor')
           }}
           collapsed={hostSideNavCollapsed}
-          isAddinHost={isAddinHost}
           displayName={hostProfile.display_name?.trim() || 'Host'}
           avatarUrl={hostProfile.avatar_url}
           onMySessions={navigateToSessionsHome}
@@ -1761,18 +1760,6 @@ function HostConsole({
           }
           onOpenSettings={() => setHostConsoleView('settings')}
           onBrandIdentities={() => setHostConsoleView('brandIdentities')}
-          createSessionModalOpen={showCreateForm}
-          onCreateSession={() => {
-            setShowJoinByCodeForm(false)
-            setJoinByCodeError(null)
-            setShowCreateForm(true)
-          }}
-          joinSessionModalOpen={showJoinByCodeForm}
-          onJoinSession={() => {
-            setJoinByCodeError(null)
-            setShowCreateForm(false)
-            setShowJoinByCodeForm(true)
-          }}
           workspaceMode={Boolean(session) && hostConsoleView === 'host'}
           activeWorkspaceNav={workspaceNav}
           onWorkspaceNav={setWorkspaceNav}
@@ -2034,6 +2021,16 @@ function HostConsole({
                     setJoinByCodeError(null)
                     setShowCreateForm(true)
                   }}
+                  onOpenJoinSession={
+                    isAddinHost
+                      ? undefined
+                      : () => {
+                          setJoinByCodeError(null)
+                          setShowCreateForm(false)
+                          setShowJoinByCodeForm(true)
+                        }
+                  }
+                  hasAnySessions={sessionsReady ? recentSessions.length > 0 : undefined}
                   sessionListFilter={sessionFilter}
                   onSessionListFilterChange={setSessionFilter}
                   sessionListCounts={sessionsReady ? sessionTabCounts : undefined}
@@ -2042,9 +2039,9 @@ function HostConsole({
                     sessionSearchQuery.trim()
                       ? 'No sessions match your search in this tab. Try another keyword or clear the search.'
                       : sessionFilter === 'active'
-                        ? 'No active sessions right now. Start a new session or join one with a code.'
+                        ? 'No active sessions right now. Create a new session or join one with a code.'
                         : sessionFilter === 'host'
-                          ? 'You don\'t have any sessions you own yet. Click "Start a new session" to create one.'
+                          ? 'You don\'t have any sessions you own yet. Create a new session to get started.'
                           : 'You\'re not a co-host on any sessions yet. Join a session with a code to appear here.'
                   }
                   statsBySessionId={sessionStatsBySessionId}
@@ -2063,7 +2060,9 @@ function HostConsole({
                   listMaxHeightClass={
                     isAddinHost
                       ? undefined
-                      : 'max-h-[min(30.875rem,calc(100vh-10rem))]'
+                      : /* Fill the viewport below the tab row (21rem ≈ top bar + heading + tabs
+                           + page padding); the 18rem floor keeps short windows usable. */
+                        'max-h-[max(18rem,calc(100vh-21rem))]'
                   }
                 />
               ) : workspaceNav === 'editor' ? (

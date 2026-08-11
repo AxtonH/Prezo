@@ -19,9 +19,19 @@ interface SessionSetupProps {
   onDelete?: (session: Session) => void
   onRefresh?: () => void
   deletingSessionId?: string | null
+  /** Add-in taskpane: hides the compact list-header actions (the taskpane header has its own "Start a new session" button). */
   isCompact?: boolean
-  /** Opens the existing “new session” modal (same as sidebar / header). */
+  /** Opens the existing “new session” modal (same as the taskpane header button). */
   onOpenCreateSession?: () => void
+  /** Opens the join-by-code modal (web host console only). */
+  onOpenJoinSession?: () => void
+  /**
+   * Whether the user has at least one session anywhere (unfiltered by tab or
+   * search); undefined while the first load is pending. Drives the create CTA:
+   * false → large dashed hero, otherwise → compact "+ New session" in the list
+   * header, so real sessions keep the space.
+   */
+  hasAnySessions?: boolean
   /** Tailwind classes for the scrollable session list max height (default fits ~6 rows before scroll). */
   listMaxHeightClass?: string
   /** Shown when the list finished loading and has no rows (e.g. Owner vs Co-Host filter). */
@@ -56,15 +66,16 @@ export function SessionSetup({
   onDelete,
   onRefresh,
   deletingSessionId = null,
-  isCompact: _isCompact = false,
+  isCompact = false,
   onOpenCreateSession,
+  onOpenJoinSession,
+  hasAnySessions,
   listMaxHeightClass = 'max-h-[min(18.875rem,calc(100vh-14rem))]',
-  emptyListMessage = 'You don\'t have any active sessions yet. Click "Start a new session" to create one.',
+  emptyListMessage = 'You don\'t have any active sessions yet. Create a new session to get started.',
   sessionListFilter,
   onSessionListFilterChange,
   sessionListCounts
 }: SessionSetupProps) {
-  void _isCompact
   void _onCreate
   void _onJoinByCode
   const [isUpdatingHostAccess, setIsUpdatingHostAccess] = useState(false)
@@ -149,54 +160,122 @@ export function SessionSetup({
           : null
       : null
 
+  /**
+   * First run only (user has no sessions anywhere): large dashed create hero
+   * with the join card underneath. Once real sessions exist — or while the
+   * first load is still pending — both collapse into compact actions in the
+   * list header so the sessions themselves keep the space.
+   */
+  const showCreateHero = hasAnySessions === false
+  const showHeaderActions =
+    !isCompact && !showCreateHero && Boolean(onOpenCreateSession || onOpenJoinSession)
+
   if (!session) {
     return (
       <div className="space-y-6">
-        {onOpenCreateSession ? (
-          <button
-            type="button"
-            onClick={onOpenCreateSession}
-            className="group w-full p-8 rounded-2xl border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-3"
-          >
-            <div className="size-12 rounded-full bg-primary/10 group-hover:bg-primary/15 flex items-center justify-center transition-colors">
-              <span className="material-symbols-outlined text-3xl text-primary">add</span>
-            </div>
-            <div className="text-center">
-              <div className="font-semibold text-slate-900 mb-1">Create New Session</div>
-              <div className="text-sm text-muted">
-                Start building interactive activities for your next presentation
-              </div>
-            </div>
-          </button>
+        {showCreateHero ? (
+          <div className="space-y-3 animate-[riseIn_0.25s_ease_both]">
+            {onOpenCreateSession ? (
+              <button
+                type="button"
+                onClick={onOpenCreateSession}
+                className="group w-full p-8 rounded-2xl border-2 border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 transition-all flex flex-col items-center gap-3"
+              >
+                <div className="size-12 rounded-full bg-primary/10 group-hover:bg-primary/15 flex items-center justify-center transition-colors">
+                  <span className="material-symbols-outlined text-3xl text-primary">add</span>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-slate-900 mb-1">Create New Session</div>
+                  <div className="text-sm text-muted">
+                    Start building interactive activities for your next presentation
+                  </div>
+                </div>
+              </button>
+            ) : null}
+            {onOpenJoinSession ? (
+              <button
+                type="button"
+                onClick={onOpenJoinSession}
+                className="group w-full flex items-center gap-4 px-5 py-4 rounded-2xl border border-slate-200 bg-white hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
+              >
+                <div className="size-10 rounded-xl bg-primary/10 group-hover:bg-primary/15 flex items-center justify-center transition-colors shrink-0">
+                  <span className="material-symbols-outlined text-xl text-primary">login</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-900">Join a session</div>
+                  <div className="text-sm text-muted">
+                    Have a code from another host? Join as a co-host.
+                  </div>
+                </div>
+                <span
+                  className="material-symbols-outlined text-xl text-slate-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                  aria-hidden
+                >
+                  arrow_forward
+                </span>
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
-        {onSessionListFilterChange && sessionListFilter !== undefined ? (
-          <div className="flex gap-8 border-b border-slate-100">
-            {(
-              [
-                { id: 'active' as const, label: 'Active' },
-                { id: 'host' as const, label: 'Host' },
-                { id: 'cohost' as const, label: 'Co-Host' }
-              ] as const
-            ).map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onSessionListFilterChange(id)}
-                className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
-                  sessionListFilter === id
-                    ? '!text-primary !border-primary'
-                    : '!text-muted/50 hover:!text-slate-900 !border-transparent'
-                }`}
-              >
-                {label}
-                {sessionListCounts ? (
-                  <span className="ml-1.5 opacity-60 tabular-nums tracking-normal">
-                    {sessionListCounts[id]}
-                  </span>
+        {!showCreateHero && onSessionListFilterChange && sessionListFilter !== undefined ? (
+          <div className="flex items-end justify-between gap-4 border-b border-slate-100">
+            <div className="flex gap-8">
+              {(
+                [
+                  { id: 'active' as const, label: 'Active' },
+                  { id: 'host' as const, label: 'Host' },
+                  { id: 'cohost' as const, label: 'Co-Host' }
+                ] as const
+              ).map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => onSessionListFilterChange(id)}
+                  className={`!bg-transparent !border-0 !border-b-2 !rounded-none !shadow-none !pb-3 !px-0 !text-sm !font-bold !uppercase !tracking-widest !transition-colors ${
+                    sessionListFilter === id
+                      ? '!text-primary !border-primary'
+                      : '!text-muted/50 hover:!text-slate-900 !border-transparent'
+                  }`}
+                >
+                  {label}
+                  {sessionListCounts ? (
+                    <span className="ml-1.5 opacity-60 tabular-nums tracking-normal">
+                      {sessionListCounts[id]}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            {showHeaderActions ? (
+              <div className="flex items-center gap-2 pb-2 animate-[riseIn_0.25s_ease_both]">
+                {onOpenJoinSession ? (
+                  <button
+                    type="button"
+                    onClick={onOpenJoinSession}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all"
+                    title="Join a session with a code"
+                  >
+                    <span className="material-symbols-outlined text-lg leading-none" aria-hidden>
+                      login
+                    </span>
+                    Join
+                  </button>
                 ) : null}
-              </button>
-            ))}
+                {onOpenCreateSession ? (
+                  <button
+                    type="button"
+                    onClick={onOpenCreateSession}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-sm font-semibold shadow-sm hover:bg-primary-dark active:scale-[0.98] transition-all"
+                  >
+                    <span className="material-symbols-outlined text-lg leading-none" aria-hidden>
+                      add
+                    </span>
+                    New session
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -398,7 +477,7 @@ export function SessionSetup({
           </div>
         ) : null}
 
-        {isLoading && !hasRecentSessions ? (
+        {isLoading && !hasRecentSessions && !showCreateHero ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 pb-1">
             {Array.from({ length: 6 }, (_, i) => (
               <div
@@ -433,7 +512,8 @@ export function SessionSetup({
             ) : null}
           </div>
         ) : null}
-        {!isLoading && !loadError && !hasRecentSessions ? (
+        {/* The create hero IS the empty state on first run — skip the generic copy there. */}
+        {!isLoading && !loadError && !hasRecentSessions && !showCreateHero ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center">
               <span className="material-symbols-outlined text-xl text-slate-400">layers</span>
