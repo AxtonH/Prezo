@@ -23,6 +23,7 @@
   var HIDDEN_APPLIED_MESSAGE_TYPE = 'prezo-hidden-applied'
   var GRID_CONFIG_MESSAGE_TYPE = 'prezo-grid-config'
   var INSTANCE_ID = 7
+  var ACTIVITY_KIND = 'poll'
   var defaultState = {
     poll: { id: "", question: "", title: "", prompt: "", status: "", options: [], totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },
     question: "",
@@ -2658,6 +2659,9 @@
       if (!savedHtml || typeof savedHtml !== "string") continue
       // Skip nodes that had no style overrides (plain text, no spans)
       if (savedHtml.indexOf("<") === -1) continue
+      var styleProbe = document.createElement("div")
+      styleProbe.innerHTML = savedHtml
+      if (!nodeHasStyledContent(styleProbe)) continue
       var parts = key.split(":")
       var field = parts[0]
       var optionId = parts[1] || ""

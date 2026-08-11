@@ -236,9 +236,12 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     `  var HIDDEN_APPLIED_MESSAGE_TYPE = '${ARTIFACT_HIDDEN_APPLIED_MESSAGE_TYPE}'`,
     `  var GRID_CONFIG_MESSAGE_TYPE = '${ARTIFACT_GRID_CONFIG_MESSAGE_TYPE}'`,
     `  var INSTANCE_ID = ${safeInstanceId}`,
+    // Every kind declares ACTIVITY_KIND: the shared text-style bridge lines
+    // reference it (row-template styling gates on !== "poll"), so a poll
+    // bridge without it throws ReferenceError mid-render.
+    `  var ACTIVITY_KIND = '${kind}'`,
     ...(isQnaKind
       ? [
-          `  var ACTIVITY_KIND = '${kind}'`,
           '  var defaultState = {',
           '    kind: ACTIVITY_KIND,',
           '    qna: { id: "", title: "", prompt: "", question: "", status: "", questions: [], totalQuestions: 0, totalVotes: 0, total_votes: 0, votes: 0, voteCount: 0 },',

@@ -2629,6 +2629,9 @@
       if (!savedHtml || typeof savedHtml !== "string") continue
       // Skip nodes that had no style overrides (plain text, no spans)
       if (savedHtml.indexOf("<") === -1) continue
+      var styleProbe = document.createElement("div")
+      styleProbe.innerHTML = savedHtml
+      if (!nodeHasStyledContent(styleProbe)) continue
       var parts = key.split(":")
       var field = parts[0]
       var optionId = parts[1] || ""

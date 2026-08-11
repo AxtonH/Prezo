@@ -993,6 +993,14 @@ export function buildTextStyleBridgeLines() {
     '      if (!savedHtml || typeof savedHtml !== "string") continue',
     '      // Skip nodes that had no style overrides (plain text, no spans)',
     '      if (savedHtml.indexOf("<") === -1) continue',
+    // Markup alone is not styling: renderer-owned wrappers (e.g. a totals
+    // block built from plain <span>s) must NOT be re-imposed from the
+    // pre-render snapshot every render — that detaches the renderer's cached
+    // refs and freezes the value at its snapshot. Only restore html that
+    // carries actual style/formatting nodes.
+    '      var styleProbe = document.createElement("div")',
+    '      styleProbe.innerHTML = savedHtml',
+    '      if (!nodeHasStyledContent(styleProbe)) continue',
     '      var parts = key.split(":")',
     '      var field = parts[0]',
     '      var optionId = parts[1] || ""',
