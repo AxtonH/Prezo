@@ -1,6 +1,12 @@
 import type { Poll, QnaMode, QnaPrompt, Question } from '../api/types'
 
 import { runPowerPoint } from './powerpointRun'
+import { getPresentedSheetId } from './presentedSlide'
+import {
+  pollProjection,
+  promptProjection,
+  questionProjection
+} from './widgetDataSignatures'
 
 const WIDGET_TAG = 'PrezoWidget'
 const SESSION_TAG = 'PrezoWidgetSessionId'
@@ -512,6 +518,142 @@ type PollTextSyncState = {
   font: PollTextFontSnapshot
 }
 
+/**
+ * Last-applied data signature per widget slide, so update passes skip
+ * widgets whose bound data didn't change. One vote then costs one widget's
+ * round trips instead of every widget in the deck, and slides that were
+ * scanned and found widget-free are never rescanned.
+ *
+ * Key: `${widgetKind}|${sessionId}|${slide.id}`. Values are either the JSON
+ * signature the last successful pass applied, or NO_WIDGET_SIGNATURE for
+ * slides a recovery scan proved empty (data-independent: an ordinary content
+ * slide stays skipped no matter how the data changes). Entries are dropped
+ * when a slide's update fails so the next pass retries in full. Bypassed for
+ * pending widgets, forced text passes, and repair passes on the selected
+ * slide (the "user may have just edited this" signal).
+ */
+const appliedWidgetSignatures = new Map<string, string>()
+const NO_WIDGET_SIGNATURE = 'no-widget'
+
+/** Options shared by the widget update entry points. */
+type WidgetUpdatePassOptions = {
+  /** Re-process the currently selected slide even when its data signature is
+   * unchanged — selection-change refreshes pass this so user edits on the
+   * slide being worked on are repaired without paying for the whole deck. */
+  repairSelectedSlide?: boolean
+}
+
+/** Reading an unloaded scalar off a RichApi proxy throws — treat as unknown. */
+const loadedNumber = (read: () => unknown): number | null => {
+  try {
+    const value = read()
+    return typeof value === 'number' && Number.isFinite(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+const loadedString = (read: () => unknown): string | null => {
+  try {
+    const value = read()
+    return typeof value === 'string' ? value : null
+  } catch {
+    return null
+  }
+}
+
+const loadedBoolean = (read: () => unknown): boolean | null => {
+  try {
+    const value = read()
+    return typeof value === 'boolean' ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** Write helpers that skip no-op writes: repeat update passes must not dirty
+ * the deck, grow the undo stack, or trigger autosave when nothing changed. */
+const setFillTransparencyIfChanged = (
+  shape: PowerPoint.Shape,
+  transparency: number
+) => {
+  const current = loadedNumber(() => shape.fill.transparency)
+  if (current !== null && Math.abs(current - transparency) < 0.001) {
+    return
+  }
+  shape.fill.transparency = transparency
+}
+
+const setLineVisibleIfChanged = (shape: PowerPoint.Shape, visible: boolean) => {
+  if (loadedBoolean(() => shape.lineFormat.visible) === visible) {
+    return
+  }
+  shape.lineFormat.visible = visible
+}
+
+const setShapeTextIfChanged = (shape: PowerPoint.Shape, text: string) => {
+  if (loadedString(() => shape.textFrame.textRange.text) === text) {
+    return
+  }
+  shape.textFrame.textRange.text = text
+}
+
+/**
+ * Queue the loads `safeLoadPollTextSyncState` would issue, without syncing.
+ * Callers batch many shapes into one context.sync() (the sequential
+ * per-shape syncs were the single biggest cost of a poll widget pass), then
+ * build snapshots via `snapshotPollTextSyncState`. On a failed batched sync,
+ * fall back to the per-shape `safeLoadPollTextSyncState` so one exotic shape
+ * can't take down the widget — same isolation as before, now off the hot
+ * path. Requires shape.type to already be loaded (all call sites load it in
+ * their preceding phase); a shape whose type read throws is treated as
+ * text-incapable rather than poisoning the batch.
+ */
+const queuePollTextSyncStateLoad = (
+  shape: PowerPoint.Shape | null | undefined
+): { shape: PowerPoint.Shape; autoTag: PowerPoint.Tag } | null => {
+  if (!shape || isShapeNullObject(shape)) {
+    return null
+  }
+  try {
+    if (!shapeSupportsText(shape)) {
+      return null
+    }
+  } catch {
+    return null
+  }
+  const autoTag = shape.tags.getItemOrNullObject(POLL_TEXT_SYNC_TAG)
+  autoTag.load('value')
+  shape.textFrame.textRange.load('text')
+  shape.textFrame.textRange.font.load(['name', 'size', 'bold', 'italic', 'color'])
+  return { shape, autoTag }
+}
+
+/** Build the state snapshot after the batched sync resolved the queued loads. */
+const snapshotPollTextSyncState = (
+  queued: { shape: PowerPoint.Shape; autoTag: PowerPoint.Tag } | null
+): PollTextSyncState | null => {
+  if (!queued || isShapeNullObject(queued.shape)) {
+    return null
+  }
+  try {
+    const font = queued.shape.textFrame.textRange.font
+    const snapshot: PollTextFontSnapshot = {
+      name: typeof font.name === 'string' && font.name ? font.name : undefined,
+      size:
+        typeof font.size === 'number' && Number.isFinite(font.size) && font.size > 0
+          ? font.size
+          : undefined,
+      bold: typeof font.bold === 'boolean' ? font.bold : undefined,
+      italic: typeof font.italic === 'boolean' ? font.italic : undefined,
+      color: typeof font.color === 'string' && font.color ? font.color : undefined
+    }
+    return { shape: queued.shape, autoTag: queued.autoTag, font: snapshot }
+  } catch {
+    return null
+  }
+}
+
 /** Per-shape text-state load that tolerates InvalidArgument on Shape.textFrame (e.g. when a shape type's textFrame isn't supported despite matching our heuristic). */
 const safeLoadPollTextSyncState = async (
   shape: PowerPoint.Shape | null | undefined,
@@ -629,7 +771,11 @@ const syncPollText = (
     state.shape.textFrame.textRange.text = targetText
     reapplyPollTextFont(state.shape, state.font)
   }
-  setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, targetText)
+  /** Skip the tag delete+add when it already holds the target — repeat
+   * passes over unchanged data must not queue any document mutation. */
+  if (lastAutoText !== targetText) {
+    setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, targetText)
+  }
 }
 
 
@@ -674,7 +820,10 @@ const syncCounterText = (
       state.shape.textFrame.textRange.text = defaultText
       reapplyPollTextFont(state.shape, state.font)
     }
-    setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, defaultText)
+    /** Same no-op guard as syncPollText: unchanged counters write nothing. */
+    if (!(hasAutoTag && lastAutoText === defaultText)) {
+      setShapeTag(state.shape, POLL_TEXT_SYNC_TAG, defaultText)
+    }
     return
   }
 
@@ -1478,7 +1627,8 @@ export async function updateQnaWidget(
   code: string | null | undefined,
   questions: Question[],
   prompts: QnaPrompt[],
-  config: QnaWidgetConfig = QNA_WIDGET_CONFIG
+  config: QnaWidgetConfig = QNA_WIDGET_CONFIG,
+  options?: WidgetUpdatePassOptions
 ) {
   if (!isPowerPointShapeApiAvailable()) {
     return
@@ -1491,8 +1641,23 @@ export async function updateQnaWidget(
     useShapeVisibility ? [...props, 'visible'] : props
   await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
-    slides.load('items')
+    slides.load('items/id')
+    const selectedSlides = options?.repairSelectedSlide
+      ? context.presentation.getSelectedSlides()
+      : null
+    if (selectedSlides) {
+      selectedSlides.load('items/id')
+    }
     await context.sync()
+
+    const repairSlideIds = new Set<string>()
+    if (selectedSlides) {
+      try {
+        selectedSlides.items.forEach((slide) => repairSlideIds.add(slide.id))
+      } catch {
+        // Empty or unreadable selection — no repair bypass this pass.
+      }
+    }
 
     const slideInfos = slides.items.map((slide) => {
       const sessionTag = slide.tags.getItemOrNullObject(tags.sessionTag)
@@ -1542,114 +1707,6 @@ export async function updateQnaWidget(
         }
       }
 
-      const containerShape = shapeIds.container
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.container)
-        : null
-      const shadowShape = shapeIds.shadow
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
-        : null
-      const title = info.slide.shapes.getItemOrNullObject(shapeIds.title)
-      const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
-      const subtitle = shapeIds.subtitle
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
-        : null
-      const meta = shapeIds.meta
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.meta)
-        : null
-      const badge = shapeIds.badge
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
-        : null
-      const counterShape = shapeIds.counter
-        ? info.slide.shapes.getItemOrNullObject(shapeIds.counter)
-        : null
-      const itemShapes = (shapeIds.items ?? []).map((item) => {
-        const container = info.slide.shapes.getItemOrNullObject(item.container)
-        const text = info.slide.shapes.getItemOrNullObject(item.text)
-        const votes = info.slide.shapes.getItemOrNullObject(item.votes)
-        container.load(withVisible(['id']))
-        text.load(withVisible(['id']))
-        votes.load(withVisible(['id']))
-        return { container, text, votes }
-      })
-      if (containerShape) {
-        containerShape.load('id')
-      }
-      if (shadowShape) {
-        shadowShape.load('id')
-      }
-      title.load('id')
-      body.load('id')
-      if (subtitle) {
-        subtitle.load('id')
-      }
-      if (meta) {
-        meta.load('id')
-      }
-      if (badge) {
-        badge.load('id')
-      }
-      if (counterShape) {
-        counterShape.load('id')
-      }
-      await context.sync()
-
-      if (applyStyle) {
-        if (shadowShape && !shadowShape.isNullObject) {
-          shadowShape.fill.setSolidColor(style.shadowColor)
-          shadowShape.fill.transparency = style.shadowOpacity
-          shadowShape.lineFormat.visible = false
-        }
-        if (containerShape && !containerShape.isNullObject) {
-          containerShape.fill.setSolidColor(style.panelColor)
-          containerShape.lineFormat.color = style.borderColor
-          containerShape.lineFormat.weight = 1
-        }
-        if (meta && !meta.isNullObject) {
-          applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
-        }
-        if (!title.isNullObject) {
-          applyFont(title.textFrame.textRange, style, {
-            size: 18,
-            bold: true,
-            color: style.textColor
-          })
-        }
-        if (subtitle && !subtitle.isNullObject) {
-          applyFont(subtitle.textFrame.textRange, style, {
-            size: 13,
-            color: style.mutedColor
-          })
-        }
-        if (badge && !badge.isNullObject) {
-          badge.fill.setSolidColor(badgeFillFor(style))
-          badge.lineFormat.visible = false
-          applyFont(badge.textFrame.textRange, style, {
-            size: 11,
-            bold: true,
-            color: style.accentColor
-          })
-        }
-        if (!body.isNullObject) {
-          applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
-        }
-        itemShapes.forEach((item) => {
-          if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
-            return
-          }
-          item.container.fill.setSolidColor(style.cardColor)
-          item.container.lineFormat.color = style.borderColor
-          item.container.lineFormat.weight = 1
-          applyFont(item.text.textFrame.textRange, style, {
-            size: 14,
-            color: style.textColor
-          })
-          applyFont(item.votes.textFrame.textRange, style, {
-            size: 12,
-            color: style.mutedColor
-          })
-        })
-      }
-
       const explicitBoundPromptId =
         !info.promptBindingTag.isNullObject && info.promptBindingTag.value
           ? info.promptBindingTag.value.trim()
@@ -1682,56 +1739,233 @@ export async function updateQnaWidget(
           ? promptTitle ||
             (boundPromptId ? config.promptMissingTitle : config.promptPanelTitle)
           : config.panelTitle
-      if (!title.isNullObject) {
+
+      /** Skip widgets whose rendered inputs match what the last successful
+       * pass applied — no shape loads, no writes. See appliedWidgetSignatures. */
+      const slideKey = `${tags.widgetTag}|${sessionId}|${info.slide.id}`
+      const dataSignature = JSON.stringify([
+        code ?? null,
+        info.shapeTag.value,
+        info.styleTag.isNullObject ? null : info.styleTag.value,
+        explicitBoundPromptId,
+        boundPrompt ? promptProjection(boundPrompt) : boundPromptId || null,
+        filteredQuestions.map(questionProjection)
+      ])
+      if (
+        !isPending &&
+        !repairSlideIds.has(info.slide.id) &&
+        appliedWidgetSignatures.get(slideKey) === dataSignature
+      ) {
+        continue
+      }
+
+      try {
+      const containerShape = shapeIds.container
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.container)
+        : null
+      const shadowShape = shapeIds.shadow
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.shadow)
+        : null
+      const title = info.slide.shapes.getItemOrNullObject(shapeIds.title)
+      const body = info.slide.shapes.getItemOrNullObject(shapeIds.body)
+      const subtitle = shapeIds.subtitle
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.subtitle)
+        : null
+      const meta = shapeIds.meta
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.meta)
+        : null
+      const badge = shapeIds.badge
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.badge)
+        : null
+      const counterShape = shapeIds.counter
+        ? info.slide.shapes.getItemOrNullObject(shapeIds.counter)
+        : null
+      const itemShapes = (shapeIds.items ?? []).map((item) => {
+        const container = info.slide.shapes.getItemOrNullObject(item.container)
+        const text = info.slide.shapes.getItemOrNullObject(item.text)
+        const votes = info.slide.shapes.getItemOrNullObject(item.votes)
+        container.load(withVisible(['id', 'type']))
+        text.load(withVisible(['id', 'type']))
+        votes.load(withVisible(['id', 'type']))
+        return { container, text, votes }
+      })
+      if (containerShape) {
+        containerShape.load(['id', 'type'])
+      }
+      if (shadowShape) {
+        shadowShape.load(['id', 'type'])
+      }
+      title.load(['id', 'type'])
+      body.load(['id', 'type'])
+      if (subtitle) {
+        subtitle.load(['id', 'type'])
+      }
+      if (meta) {
+        meta.load(['id', 'type'])
+      }
+      if (badge) {
+        badge.load(['id', 'type'])
+      }
+      if (counterShape) {
+        counterShape.load(['id', 'type'])
+      }
+      await context.sync()
+
+      /** Second batched load: current text for every text-capable shape (so
+       * the writes below can skip no-ops), the counter's text-sync state, and
+       * the item cards' fill/line state — one sync for all of it. */
+      const queueTextLoad = (shape: PowerPoint.Shape | null) => {
+        if (shape && !isShapeNullObject(shape) && shapeSupportsText(shape)) {
+          shape.textFrame.textRange.load('text')
+        }
+      }
+      queueTextLoad(title)
+      queueTextLoad(body)
+      queueTextLoad(subtitle)
+      queueTextLoad(meta)
+      queueTextLoad(badge)
+      itemShapes.forEach((item) => {
+        queueTextLoad(item.text)
+        queueTextLoad(item.votes)
+        if (shapeSupportsFill(item.container)) {
+          item.container.load(['fill/transparency', 'lineFormat/visible'])
+        }
+      })
+      const queuedCounterState = queuePollTextSyncStateLoad(counterShape)
+      let counterState: PollTextSyncState | null = null
+      try {
+        await context.sync()
+        counterState = snapshotPollTextSyncState(queuedCounterState)
+      } catch {
+        /** A shape the type heuristic couldn't screen blew up the batch:
+         * fall back to the old behavior — unguarded writes below, counter
+         * state loaded in per-shape isolation. */
+        counterState = await safeLoadPollTextSyncState(counterShape, context)
+      }
+
+      if (applyStyle) {
+        if (shapeSupportsFill(shadowShape)) {
+          shadowShape!.fill.setSolidColor(style.shadowColor)
+          shadowShape!.fill.transparency = style.shadowOpacity
+          shadowShape!.lineFormat.visible = false
+        }
+        if (shapeSupportsFill(containerShape)) {
+          containerShape!.fill.setSolidColor(style.panelColor)
+          containerShape!.lineFormat.color = style.borderColor
+          containerShape!.lineFormat.weight = 1
+        }
+        if (meta && shapeSupportsText(meta)) {
+          applyFont(meta.textFrame.textRange, style, { size: 11, color: style.mutedColor })
+        }
+        if (shapeSupportsText(title)) {
+          applyFont(title.textFrame.textRange, style, {
+            size: 18,
+            bold: true,
+            color: style.textColor
+          })
+        }
+        if (subtitle && shapeSupportsText(subtitle)) {
+          applyFont(subtitle.textFrame.textRange, style, {
+            size: 13,
+            color: style.mutedColor
+          })
+        }
+        if (badge && !badge.isNullObject) {
+          if (shapeSupportsFill(badge)) {
+            badge.fill.setSolidColor(badgeFillFor(style))
+            badge.lineFormat.visible = false
+          }
+          if (shapeSupportsText(badge)) {
+            applyFont(badge.textFrame.textRange, style, {
+              size: 11,
+              bold: true,
+              color: style.accentColor
+            })
+          }
+        }
+        if (shapeSupportsText(body)) {
+          applyFont(body.textFrame.textRange, style, { size: 14, color: style.mutedColor })
+        }
+        itemShapes.forEach((item) => {
+          if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
+            return
+          }
+          if (shapeSupportsFill(item.container)) {
+            item.container.fill.setSolidColor(style.cardColor)
+            item.container.lineFormat.color = style.borderColor
+            item.container.lineFormat.weight = 1
+          }
+          if (shapeSupportsText(item.text)) {
+            applyFont(item.text.textFrame.textRange, style, {
+              size: 14,
+              color: style.textColor
+            })
+          }
+          if (shapeSupportsText(item.votes)) {
+            applyFont(item.votes.textFrame.textRange, style, {
+              size: 12,
+              color: style.mutedColor
+            })
+          }
+        })
+      }
+
+      /** All text writes below are diffed against the loaded current text —
+       * unchanged widgets queue no mutations (undo stack and autosave stay
+       * quiet), and text-incapable swap-ins are skipped instead of throwing. */
+      if (shapeSupportsText(title)) {
         const hasNewLayout = Boolean(
           (shapeIds.items && shapeIds.items.length > 0) ||
             shapeIds.subtitle ||
             shapeIds.meta ||
             shapeIds.badge
         )
-        title.textFrame.textRange.text = hasNewLayout
-          ? panelTitle
-          : config.buildLegacyTitle(code, resolvedMode, promptTitle ?? null)
+        setShapeTextIfChanged(
+          title,
+          hasNewLayout
+            ? panelTitle
+            : config.buildLegacyTitle(code, resolvedMode, promptTitle ?? null)
+        )
       }
-      if (meta && !meta.isNullObject) {
-        meta.textFrame.textRange.text =
+      if (meta && shapeSupportsText(meta)) {
+        setShapeTextIfChanged(
+          meta,
           resolvedMode === 'prompt'
             ? config.promptEyebrowText ?? config.eyebrowText
             : config.eyebrowText
+        )
       }
-      if (subtitle && !subtitle.isNullObject) {
-        subtitle.textFrame.textRange.text = buildMeta(code)
+      if (subtitle && shapeSupportsText(subtitle)) {
+        setShapeTextIfChanged(subtitle, buildMeta(code))
       }
-      if (badge && !badge.isNullObject) {
-        badge.textFrame.textRange.text = buildBadgeText(
-          resolvedMode,
-          pendingCount,
-          approved.length,
-          config
+      if (badge && shapeSupportsText(badge)) {
+        setShapeTextIfChanged(
+          badge,
+          buildBadgeText(resolvedMode, pendingCount, approved.length, config)
         )
       }
       /** Interaction counter: total submissions in this widget's scope (all
        * statuses). Text only, template-preserving — see syncCounterText. */
-      if (counterShape && !counterShape.isNullObject) {
-        const counterState = await safeLoadPollTextSyncState(counterShape, context)
-        syncCounterText(
-          counterState,
+      syncCounterText(
+        counterState,
+        filteredQuestions.length,
+        buildCountText(
           filteredQuestions.length,
-          buildCountText(
-            filteredQuestions.length,
-            config.counterSingular,
-            config.counterPlural
-          )
+          config.counterSingular,
+          config.counterPlural
         )
-      }
+      )
       if (itemShapes.length > 0) {
         const hasApproved = approved.length > 0
-        if (!body.isNullObject) {
-          body.textFrame.textRange.text = hasApproved
-            ? ''
-            : resolvedMode === 'prompt'
-              ? config.emptyBodyPrompt
-              : config.emptyBodyAudience
+        if (shapeSupportsText(body)) {
+          setShapeTextIfChanged(
+            body,
+            hasApproved
+              ? ''
+              : resolvedMode === 'prompt'
+                ? config.emptyBodyPrompt
+                : config.emptyBodyAudience
+          )
         }
         itemShapes.forEach((item, index) => {
           if (item.container.isNullObject || item.text.isNullObject || item.votes.isNullObject) {
@@ -1745,27 +1979,49 @@ export async function updateQnaWidget(
               setShapesVisibility([item.container, item.text, item.votes], false)
               return
             }
-            item.container.fill.transparency = 1
-            item.container.lineFormat.visible = false
-            item.text.textFrame.textRange.text = ''
-            item.votes.textFrame.textRange.text = ''
+            if (shapeSupportsFill(item.container)) {
+              setFillTransparencyIfChanged(item.container, 1)
+              setLineVisibleIfChanged(item.container, false)
+            }
+            if (shapeSupportsText(item.text)) {
+              setShapeTextIfChanged(item.text, '')
+            }
+            if (shapeSupportsText(item.votes)) {
+              setShapeTextIfChanged(item.votes, '')
+            }
             return
           }
           if (useShapeVisibility) {
             setShapesVisibility([item.container, item.text, item.votes], true)
           }
-          item.container.fill.transparency = 0
-          item.container.lineFormat.visible = true
-          item.text.textFrame.textRange.text = question.text
-          item.votes.textFrame.textRange.text = `${question.votes} votes`
+          if (shapeSupportsFill(item.container)) {
+            setFillTransparencyIfChanged(item.container, 0)
+            setLineVisibleIfChanged(item.container, true)
+          }
+          if (shapeSupportsText(item.text)) {
+            setShapeTextIfChanged(item.text, question.text)
+          }
+          if (shapeSupportsText(item.votes)) {
+            setShapeTextIfChanged(item.votes, `${question.votes} votes`)
+          }
         })
-      } else if (!body.isNullObject) {
-        body.textFrame.textRange.text = buildBody(filteredQuestions, resolvedMode, config)
+      } else if (shapeSupportsText(body)) {
+        setShapeTextIfChanged(body, buildBody(filteredQuestions, resolvedMode, config))
       }
 
       if (isPending) {
         setSlideTag(info.slide, tags.sessionTag, sessionId)
         info.slide.tags.delete(tags.pendingTag)
+      }
+
+      /** Per-widget flush + cache write. A failure drops the cache entry so
+       * the next pass retries this widget in full, and no longer takes every
+       * other widget's queued writes down with it. */
+      await context.sync()
+      appliedWidgetSignatures.set(slideKey, dataSignature)
+      } catch (err) {
+        appliedWidgetSignatures.delete(slideKey)
+        console.warn(`Q&A widget update failed on slide id ${info.slide.id}`, err)
       }
     }
 
@@ -2149,6 +2405,33 @@ const applyBarGeometry = (fill: PowerPoint.Shape, geometry: PollBarGeometry) => 
   fill.top = geometry.top
 }
 
+/** Sub-visible geometry drift threshold: below this many points, skip the
+ * write entirely so repeat passes don't dirty the deck or the undo stack. */
+const BAR_GEOMETRY_EPSILON_PT = 0.05
+
+const applyBarGeometryIfChanged = (
+  fill: PowerPoint.Shape,
+  geometry: PollBarGeometry
+) => {
+  const left = loadedNumber(() => fill.left)
+  const top = loadedNumber(() => fill.top)
+  const width = loadedNumber(() => fill.width)
+  const height = loadedNumber(() => fill.height)
+  if (
+    left !== null &&
+    top !== null &&
+    width !== null &&
+    height !== null &&
+    Math.abs(left - geometry.left) < BAR_GEOMETRY_EPSILON_PT &&
+    Math.abs(top - geometry.top) < BAR_GEOMETRY_EPSILON_PT &&
+    Math.abs(width - geometry.width) < BAR_GEOMETRY_EPSILON_PT &&
+    Math.abs(height - geometry.height) < BAR_GEOMETRY_EPSILON_PT
+  ) {
+    return
+  }
+  applyBarGeometry(fill, geometry)
+}
+
 /** Tween poll bar fills to their target geometry with a short ease-out.
  * All bars on a slide share the same frames so options grow together. Only
  * the geometry properties the one-shot updater already owns are written —
@@ -2207,7 +2490,7 @@ export async function updatePollWidget(
   sessionId: string,
   code: string | null | undefined,
   polls: Poll[],
-  options?: {
+  options?: WidgetUpdatePassOptions & {
     /** Tween bar geometry instead of snapping. Callers pass this only while
      * the deck is in slideshow view — animating in edit view would pile
      * frame-by-frame writes onto the user's undo stack. */
@@ -2227,6 +2510,11 @@ export async function updatePollWidget(
     return
   }
   const animateBars = Boolean(options?.animateBars)
+  /** Bars tween only on the slide the audience is looking at; widgets on
+   * other slides snap to target instead — nobody sees those move, and each
+   * animation costs ~20 host round trips. Unknown (null) keeps legacy
+   * animate-everything behavior. */
+  const presentedSheetId = animateBars ? await getPresentedSheetId() : null
   const useShapeVisibility = supportsShapeVisibility()
   /** Only append 'visible' to load lists on capable hosts — loading a
    * property the host doesn't know errors the whole sync. */
@@ -2238,8 +2526,23 @@ export async function updatePollWidget(
 
   await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
-    slides.load('items')
+    slides.load('items/id')
+    const selectedSlides = options?.repairSelectedSlide
+      ? context.presentation.getSelectedSlides()
+      : null
+    if (selectedSlides) {
+      selectedSlides.load('items/id')
+    }
     await context.sync()
+
+    const repairSlideIds = new Set<string>()
+    if (selectedSlides) {
+      try {
+        selectedSlides.items.forEach((slide) => repairSlideIds.add(slide.id))
+      } catch {
+        // Empty or unreadable selection — no repair bypass this pass.
+      }
+    }
 
     const recoverPollShapeIds = async (
       slide: PowerPoint.Slide,
@@ -2430,6 +2733,7 @@ export async function updatePollWidget(
     for (const info of slideInfos) {
       slideIndex += 1
       let syncPhase = 'init'
+      let slideKey: string | null = null
       try {
       const isPending =
         !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
@@ -2476,6 +2780,33 @@ export async function updatePollWidget(
           : null
       const forceOptionIds = new Set(forceText?.optionIds ?? [])
 
+      /** Skip work the deck already shows — see appliedWidgetSignatures.
+       * The signature covers everything this pass would render from (bound
+       * poll content, code, style + shapes tags); pending widgets, forced
+       * text passes, and repair passes on the selected slide always run. */
+      slideKey = `poll|${sessionId}|${info.slide.id}`
+      const dataSignature = JSON.stringify([
+        code ?? null,
+        info.shapeTag.isNullObject ? null : info.shapeTag.value,
+        info.styleTag.isNullObject ? null : info.styleTag.value,
+        boundPollId,
+        poll ? pollProjection(poll) : null
+      ])
+      if (!isPending && !forceText && !repairSlideIds.has(info.slide.id)) {
+        const cached = appliedWidgetSignatures.get(slideKey)
+        if (cached === dataSignature) {
+          continue
+        }
+        /** Slides once scanned and found widget-free stay skipped no matter
+         * how the data changes (the sentinel is data-independent), so content
+         * slides stop paying the recovery scan on every pass. Slides that
+         * carry this session's tag, pending inserts, and repair passes never
+         * sentinel-skip. */
+        if (cached === NO_WIDGET_SIGNATURE && !shapeIds && !hasSessionMatch) {
+          continue
+        }
+      }
+
       if (!shapeIds) {
         shapeIds = await recoverPollShapeIds(info.slide, isVertical)
         recovered = Boolean(shapeIds)
@@ -2485,6 +2816,12 @@ export async function updatePollWidget(
       }
 
       if (!shapeIds) {
+        /** Recovery found nothing. Ordinary content slides land here — cache
+         * the verdict so they are never rescanned. Slides still tagged for
+         * this session (a widget in a broken state) keep retrying. */
+        if (!hasSessionMatch && !isPending) {
+          appliedWidgetSignatures.set(slideKey, NO_WIDGET_SIGNATURE)
+        }
         continue
       }
 
@@ -2496,7 +2833,7 @@ export async function updatePollWidget(
         ? info.slide.shapes.getItemOrNullObject(shapeIds.group)
         : null
       if (groupShape) {
-        groupShape.load(['id', 'type'])
+        groupShape.load(['id', 'type', 'rotation'])
       }
 
       syncPhase = 'load-group-type'
@@ -2997,17 +3334,54 @@ export async function updatePollWidget(
       })
 
       syncPhase = 'load-text-states'
-      const titleTextState = await safeLoadPollTextSyncState(title, context)
-      const questionTextState = await safeLoadPollTextSyncState(questionShape, context)
-      const bodyTextState = await safeLoadPollTextSyncState(bodyShape, context)
-      const counterTextState = await safeLoadPollTextSyncState(counterShape, context)
-      const labelTextStates: (PollTextSyncState | null)[] = []
-      for (const item of itemShapes) {
-        labelTextStates.push(await safeLoadPollTextSyncState(item.label, context))
+      /** One batched sync for every text-sync state plus the bars' current
+       * fill transparency (for no-op write elimination below). The sequential
+       * per-shape state loads this replaces were the largest cost of a pass. */
+      itemShapes.forEach((item) => {
+        if (shapeSupportsFill(item.bg)) {
+          item.bg.load('fill/transparency')
+        }
+        if (shapeSupportsFill(item.fill)) {
+          item.fill.load('fill/transparency')
+        }
+      })
+      const queuedTitle = queuePollTextSyncStateLoad(title)
+      const queuedQuestion = queuePollTextSyncStateLoad(questionShape)
+      const queuedBody = queuePollTextSyncStateLoad(bodyShape)
+      const queuedCounter = queuePollTextSyncStateLoad(counterShape)
+      const queuedLabels = itemShapes.map((item) => queuePollTextSyncStateLoad(item.label))
+      let titleTextState: PollTextSyncState | null = null
+      let questionTextState: PollTextSyncState | null = null
+      let bodyTextState: PollTextSyncState | null = null
+      let counterTextState: PollTextSyncState | null = null
+      let labelTextStates: (PollTextSyncState | null)[] = []
+      try {
+        await context.sync()
+        titleTextState = snapshotPollTextSyncState(queuedTitle)
+        questionTextState = snapshotPollTextSyncState(queuedQuestion)
+        bodyTextState = snapshotPollTextSyncState(queuedBody)
+        counterTextState = snapshotPollTextSyncState(queuedCounter)
+        labelTextStates = queuedLabels.map(snapshotPollTextSyncState)
+      } catch {
+        /** Batch poisoned by one exotic shape — reload each state with the
+         * old per-shape isolation so the rest of the widget still updates. */
+        titleTextState = await safeLoadPollTextSyncState(title, context)
+        questionTextState = await safeLoadPollTextSyncState(questionShape, context)
+        bodyTextState = await safeLoadPollTextSyncState(bodyShape, context)
+        counterTextState = await safeLoadPollTextSyncState(counterShape, context)
+        labelTextStates = []
+        for (const item of itemShapes) {
+          labelTextStates.push(await safeLoadPollTextSyncState(item.label, context))
+        }
       }
 
       if (groupShape && !groupShape.isNullObject) {
-        groupShape.rotation = 0
+        /** Bar geometry math assumes an unrotated group; only pay the write
+         * (and the undo entry) when the group actually drifted. */
+        const rotation = loadedNumber(() => groupShape.rotation)
+        if (rotation === null || rotation !== 0) {
+          groupShape.rotation = 0
+        }
       }
 
       syncPollText(titleTextState, titleText)
@@ -3055,7 +3429,24 @@ export async function updatePollWidget(
         }
       }
 
+      /**
+       * Item writes are staged and flushed in ONE sync per widget; only when
+       * that batched flush fails does each write retry with the per-item
+       * isolation (tryItemWrite) that used to run unconditionally. Same
+       * robustness against one bad shape, without ~5 round trips per option
+       * row on the common path. Staged functions must stay idempotent — the
+       * fallback re-runs them.
+       */
+      const stagedItemWrites: Array<{ fn: () => void; label: string }> = []
+      const stageItemWrite = (fn: () => void, label: string) => {
+        stagedItemWrites.push({ fn, label })
+      }
+
       const pendingBarAnimations: PollBarAnimation[] = []
+      /** Bars tween only on the presented slide; the rest snap silently. */
+      const slideSheetId = String(info.slide.id).split('#')[0]
+      const animateThisSlide =
+        animateBars && (presentedSheetId === null || slideSheetId === presentedSheetId)
 
       for (let index = 0; index < itemShapes.length; index += 1) {
         const item = itemShapes[index]
@@ -3082,7 +3473,7 @@ export async function updatePollWidget(
              * styling (including label text) for when a rebind reveals the
              * row again. Geometry/transparency writes are skipped entirely.
              */
-            await tryItemWrite(() => {
+            stageItemWrite(() => {
               setShapesVisibility(
                 rowGroup ? [item.label, rowGroup] : [item.label, item.bg, item.fill],
                 false
@@ -3093,27 +3484,32 @@ export async function updatePollWidget(
           if (useShapeVisibility) {
             /** No poll bound: this is the designable placeholder skeleton —
              * rows previously hidden under a binding must come back. */
-            await tryItemWrite(() => {
+            stageItemWrite(() => {
               setShapesVisibility([item.label, rowGroup, item.bg, item.fill], true)
             }, `row show ${index}`)
           }
-          await tryItemWrite(
+          stageItemWrite(
             () => syncPollText(labelTextStates[index] ?? null, '', { force: true }),
             `label clear ${index}`
           )
           if (canStyleBars && bgGeometryValid) {
-            await tryItemWrite(() => {
-              if (isVertical) {
-                item.fill.height = 2
-                item.fill.top = bgTop + Math.max(0, bgHeight - 2)
-                item.fill.width = bgWidth
-                item.fill.left = bgLeft
-              } else {
-                item.fill.width = 2
-                item.fill.height = bgHeight
-                item.fill.left = bgLeft
-                item.fill.top = bgTop
-              }
+            stageItemWrite(() => {
+              applyBarGeometryIfChanged(
+                item.fill,
+                isVertical
+                  ? {
+                      left: bgLeft,
+                      top: bgTop + Math.max(0, bgHeight - 2),
+                      width: bgWidth,
+                      height: 2
+                    }
+                  : {
+                      left: bgLeft,
+                      top: bgTop,
+                      width: 2,
+                      height: bgHeight
+                    }
+              )
             }, `bar dims ${index}`)
             /**
              * Bar transparency reflects visibility, not aesthetics. The
@@ -3125,11 +3521,11 @@ export async function updatePollWidget(
              * colors and geometry remain untouched — only the on/off
              * visibility flag is system-controlled.
              */
-            await tryItemWrite(() => {
-              item.fill.fill.transparency = 1
+            stageItemWrite(() => {
+              setFillTransparencyIfChanged(item.fill, 1)
             }, `fill transparency ${index}`)
-            await tryItemWrite(() => {
-              item.bg.fill.transparency = hasPollData ? 1 : 0.35
+            stageItemWrite(() => {
+              setFillTransparencyIfChanged(item.bg, hasPollData ? 1 : 0.35)
             }, `bg transparency ${index}`)
           }
           continue
@@ -3138,14 +3534,14 @@ export async function updatePollWidget(
         if (useShapeVisibility) {
           /** All four written (not just the group): rows hidden per-shape by
            * an earlier pass (pre-group-migration) must fully reappear. */
-          await tryItemWrite(() => {
+          stageItemWrite(() => {
             setShapesVisibility(
               [item.label, isLoadedGroupShape(item.group) ? item.group : null, item.bg, item.fill],
               true
             )
           }, `row show ${index}`)
         }
-        await tryItemWrite(
+        stageItemWrite(
           () =>
             syncPollText(labelTextStates[index] ?? null, data.label, {
               option: { name: data.name, votes: data.votes, percent: data.percent },
@@ -3183,7 +3579,7 @@ export async function updatePollWidget(
             ? Math.abs(targetGeometry.height - item.fill.height)
             : Math.abs(targetGeometry.width - item.fill.width)
 
-          if (animateBars && fillGeometryValid && valueAxisDelta >= POLL_BAR_ANIMATION_MIN_DELTA_PT) {
+          if (animateThisSlide && fillGeometryValid && valueAxisDelta >= POLL_BAR_ANIMATION_MIN_DELTA_PT) {
             pendingBarAnimations.push({
               fill: item.fill,
               from: {
@@ -3199,26 +3595,55 @@ export async function updatePollWidget(
              * 0) waits until the shrink finishes inside animatePollBars. See
              * the hidden branch above for why transparency is
              * system-controlled rather than gated on style lock. */
-            await tryItemWrite(() => {
+            stageItemWrite(() => {
               if (data.ratio > 0) {
-                item.fill.fill.transparency = 0
+                setFillTransparencyIfChanged(item.fill, 0)
               }
-              item.bg.fill.transparency = 0
+              setFillTransparencyIfChanged(item.bg, 0)
             }, `bar transparency ${index}`)
             continue
           }
 
-          await tryItemWrite(() => {
-            applyBarGeometry(item.fill, targetGeometry)
+          stageItemWrite(() => {
+            applyBarGeometryIfChanged(item.fill, targetGeometry)
           }, `bar dims ${index}`)
           /** See the matching note on the hidden branch above for why
               transparency is system-controlled rather than gated on style lock. */
-          await tryItemWrite(() => {
-            item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
+          stageItemWrite(() => {
+            setFillTransparencyIfChanged(item.fill, data.ratio === 0 ? 1 : 0)
           }, `fill transparency ${index}`)
-          await tryItemWrite(() => {
-            item.bg.fill.transparency = 0
+          stageItemWrite(() => {
+            setFillTransparencyIfChanged(item.bg, 0)
           }, `bg transparency ${index}`)
+        }
+      }
+
+      if (stagedItemWrites.length > 0) {
+        syncPhase = 'flush-item-writes'
+        let stagedFlushed = false
+        try {
+          for (const write of stagedItemWrites) {
+            try {
+              write.fn()
+            } catch (itemErr) {
+              console.warn(
+                `Poll widget: skipped ${write.label} on slide index ${slideIndex}`,
+                itemErr
+              )
+            }
+          }
+          await context.sync()
+          stagedFlushed = true
+        } catch (flushErr) {
+          console.warn(
+            `Poll widget: batched item writes failed on slide index ${slideIndex}; retrying items in isolation`,
+            flushErr
+          )
+        }
+        if (!stagedFlushed) {
+          for (const write of stagedItemWrites) {
+            await tryItemWrite(write.fn, write.label)
+          }
         }
       }
 
@@ -3235,7 +3660,15 @@ export async function updatePollWidget(
       /** Flush this slide's queued mutations so one bad slide doesn't poison the next iteration's context state. */
       syncPhase = 'flush-slide-mutations'
       await context.sync()
+      /** Remember what this pass applied so unchanged data skips the widget
+       * next time. Recovery/migration passes that rewrote the shapes tag get
+       * one extra echo pass (the signature snapshots the pre-pass tag) and
+       * then converge. */
+      appliedWidgetSignatures.set(slideKey, dataSignature)
       } catch (err) {
+        if (slideKey) {
+          appliedWidgetSignatures.delete(slideKey)
+        }
         const debugInfo =
           err && typeof err === 'object' && 'debugInfo' in err
             ? (err as { debugInfo?: unknown }).debugInfo
@@ -3258,9 +3691,17 @@ export async function updateDiscussionWidget(
   sessionId: string,
   code: string | null | undefined,
   questions: Question[],
-  prompts: QnaPrompt[]
+  prompts: QnaPrompt[],
+  options?: WidgetUpdatePassOptions
 ) {
-  await updateQnaWidget(sessionId, code, questions, prompts, DISCUSSION_WIDGET_CONFIG)
+  await updateQnaWidget(
+    sessionId,
+    code,
+    questions,
+    prompts,
+    DISCUSSION_WIDGET_CONFIG,
+    options
+  )
 }
 
 export async function setQnaWidgetBinding(
