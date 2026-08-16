@@ -94,6 +94,28 @@ async def _seed_poll_cache(store: InMemoryStore, session_id: str) -> None:
         _cache_poll(poll)
 
 
+async def _with_authoritative_mode(
+    session_id: str, poll: Poll, store: InMemoryStore
+) -> Poll:
+    """Overlay poll.mode from the state cache before responding/broadcasting.
+
+    The Supabase vote RPCs (vote_poll_atomic / remove_poll_vote_atomic) build
+    their return payload by hand and predate polls.mode, so the deserialized
+    Poll silently carries the default 'auto' — and the host UI then upserts
+    that over a pinned poll, flipping its card from Pin open to Auto follow
+    on every vote. The cache is authoritative in this process (every
+    mode/status mutation flows through this module); seed it once per
+    session on a miss. Do NOT cache the poll here — its mode may be the
+    RPC's bogus default."""
+    cached = channel.state.get((session_id, poll.id))
+    if cached is None:
+        await _seed_poll_cache(store, session_id)
+        cached = channel.state.get((session_id, poll.id))
+    if cached is not None:
+        poll.mode = cached[0]
+    return poll
+
+
 async def _sweep_stale_auto_polls(
     session_id: str,
     exclude_poll_id: str,
@@ -373,6 +395,7 @@ async def vote_poll(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    poll = await _with_authoritative_mode(session_id, poll, store)
     activity = make_activity("poll_vote_updated", {"poll": poll.model_dump(mode="json")})
     asyncio.create_task(store.record_activity(session_id, activity))
     asyncio.create_task(manager.broadcast(session_id, activity))
@@ -406,6 +429,7 @@ async def remove_poll_vote(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    poll = await _with_authoritative_mode(session_id, poll, store)
     activity = make_activity(
         "poll_vote_updated", {"poll": poll.model_dump(mode="json")}
     )
