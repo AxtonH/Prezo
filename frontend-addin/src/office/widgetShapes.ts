@@ -2554,6 +2554,16 @@ export async function updatePollWidget(
   const withVisible = (props: string[]) =>
     useShapeVisibility ? [...props, 'visible'] : props
 
+  /** Field diagnostic (opt-in): run localStorage.setItem('prezoWidgetDebug','1')
+   * in the taskpane webview console, then every pass logs which bar writes it
+   * staged, the geometry it read, and whether the batched flush landed. */
+  let widgetDebugEnabled = false
+  try {
+    widgetDebugEnabled = window.localStorage?.getItem('prezoWidgetDebug') === '1'
+  } catch {
+    widgetDebugEnabled = false
+  }
+
   const pollMap = new Map(polls.map((poll) => [poll.id, poll]))
   const titleText = buildPollTitle(code)
 
@@ -3479,6 +3489,7 @@ export async function updatePollWidget(
       const stageItemWrite = (fn: () => void, label: string) => {
         stagedItemWrites.push({ fn, label })
       }
+      const barDiagnostics: Array<Record<string, unknown>> = []
 
       const pendingBarAnimations: PollBarAnimation[] = []
       /** Bars tween only on the presented slide; the rest snap silently. */
@@ -3490,6 +3501,15 @@ export async function updatePollWidget(
         const item = itemShapes[index]
         const data = optionData[index]
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
+          if (widgetDebugEnabled) {
+            barDiagnostics.push({
+              index,
+              skipped: 'null-shape',
+              label: item.label.isNullObject,
+              bg: item.bg.isNullObject,
+              fill: item.fill.isNullObject
+            })
+          }
           continue
         }
         /** Skip bar geometry/color writes entirely if bg or fill was swapped for a non-fillable shape on another device. */
@@ -3500,6 +3520,25 @@ export async function updatePollWidget(
         const bgHeight = item.bg.height
         const bgGeometryValid =
           isFiniteNum(bgTop) && isFiniteNum(bgLeft) && isFiniteNum(bgWidth) && isFiniteNum(bgHeight)
+        if (widgetDebugEnabled) {
+          barDiagnostics.push({
+            index,
+            hasData: Boolean(data),
+            visibleRow: index < visibleOptions,
+            ratio: data?.ratio ?? null,
+            canStyleBars,
+            bgGeometryValid,
+            bgType: loadedString(() => item.bg.type),
+            fillType: loadedString(() => item.fill.type),
+            bg: { top: bgTop, left: bgLeft, width: bgWidth, height: bgHeight },
+            fill: {
+              left: loadedNumber(() => item.fill.left),
+              top: loadedNumber(() => item.fill.top),
+              width: loadedNumber(() => item.fill.width),
+              height: loadedNumber(() => item.fill.height)
+            }
+          })
+        }
 
         if (!data || index >= visibleOptions) {
           const rowGroup = isLoadedGroupShape(item.group) ? item.group : null
@@ -3665,9 +3704,9 @@ export async function updatePollWidget(
         }
       }
 
+      let stagedFlushed = stagedItemWrites.length === 0
       if (stagedItemWrites.length > 0) {
         syncPhase = 'flush-item-writes'
-        let stagedFlushed = false
         try {
           for (const write of stagedItemWrites) {
             try {
@@ -3692,6 +3731,21 @@ export async function updatePollWidget(
             await tryItemWrite(write.fn, write.label)
           }
         }
+      }
+
+      if (widgetDebugEnabled) {
+        console.info('Poll widget pass', {
+          at: new Date().toISOString(),
+          slideKey,
+          boundPollId,
+          hasPollData,
+          visibleOptions,
+          useShapeVisibility,
+          forced: Boolean(forceText),
+          stagedFlushed,
+          staged: stagedItemWrites.map((write) => write.label),
+          bars: barDiagnostics
+        })
       }
 
       if (pendingBarAnimations.length > 0) {
