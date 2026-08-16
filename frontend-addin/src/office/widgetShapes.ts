@@ -57,6 +57,9 @@ const DISCUSSION_PANEL_TITLE = 'Open discussion'
 const DISCUSSION_EYEBROW_TEXT = 'PREZO OPEN DISCUSSION'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
 const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
+/** Unbound poll widgets render this instead of auto-following a poll —
+ * binding is an explicit host action (Bind widget on the poll card). */
+const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
 
 type WidgetShapeIds = {
   container: string
@@ -498,7 +501,11 @@ const looksLikeAutoPollText = (value: string) => {
   if (text.startsWith('Live poll:') || text.startsWith('Poll:')) {
     return true
   }
-  if (text === 'No polls yet.' || text === 'Poll not found.') {
+  if (
+    text === 'No polls yet.' ||
+    text === 'Poll not found.' ||
+    text === POLL_BIND_PLACEHOLDER
+  ) {
     return true
   }
   return /\(\d+\)\s*(?:•|â€¢)\s*\d+%$/.test(text)
@@ -856,25 +863,6 @@ const buildBody = (
 
 const buildPollTitle = (code?: string | null) =>
   code ? `Prezo Poll • ${code}` : 'Prezo Poll'
-
-const pickPoll = (polls: Poll[]) => {
-  if (polls.length === 0) {
-    return null
-  }
-  const open = polls.find((poll) => poll.status === 'open')
-  if (open) {
-    return open
-  }
-  const sorted = [...polls].sort((a, b) => {
-    const aTime = Date.parse(a.created_at)
-    const bTime = Date.parse(b.created_at)
-    if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
-      return 0
-    }
-    return bTime - aTime
-  })
-  return sorted[0] ?? polls[0]
-}
 
 const buildPollQuestion = (poll: Poll | null) => {
   if (!poll) {
@@ -2161,7 +2149,7 @@ export async function insertPollWidget(
     title.tags.add('PrezoWidgetRole', 'poll-title')
     title.tags.add(POLL_TEXT_SYNC_TAG, buildPollTitle(code))
 
-    const question = slide.shapes.addTextBox('No polls yet.', {
+    const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
       left: left + 24,
       top: top + 62 * scale,
       width: width - 48,
@@ -2172,7 +2160,7 @@ export async function insertPollWidget(
     question.name = 'Prezo Poll Question'
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
-    question.tags.add(POLL_TEXT_SYNC_TAG, 'No polls yet.')
+    question.tags.add(POLL_TEXT_SYNC_TAG, POLL_BIND_PLACEHOLDER)
 
     const counter = slide.shapes.addTextBox('0 votes', {
       left: left + width - 24 - 140,
@@ -2496,12 +2484,13 @@ export async function updatePollWidget(
      * frame-by-frame writes onto the user's undo stack. */
     animateBars?: boolean
     /**
-     * Passed once right after the host edits a poll: overwrite the edited
-     * fields even on shapes whose text the designer retyped. Without it,
-     * syncPollText preserves the user's template — including the now-stale
-     * old label/question. Fonts, colors, and geometry are untouched (the
-     * write path snapshots and reapplies the font), and only widgets bound
-     * to the edited poll are affected.
+     * Passed once right after the host edits a poll or binds a widget to
+     * one: overwrite the edited fields even on shapes whose text the
+     * designer retyped. Without it, syncPollText preserves the user's
+     * template — including the now-stale old label/question. Fonts, colors,
+     * and geometry are untouched (the write path snapshots and reapplies
+     * the font), and only widgets bound to the edited poll are affected.
+     * Also bypasses the applied-signature skip for the matching slide.
      */
     forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
   }
@@ -2765,10 +2754,15 @@ export async function updatePollWidget(
         !info.bindingTag.isNullObject && info.bindingTag.value
           ? info.bindingTag.value.trim()
           : ''
-      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : pickPoll(polls)
+      /** Unbound widgets never auto-follow a poll: they hold the designable
+       * placeholder skeleton until the host explicitly binds one. */
+      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : null
       const optionData = buildPollOptions(poll)
-      const questionText =
-        boundPollId && !poll ? 'Poll not found.' : buildPollQuestion(poll)
+      const questionText = boundPollId
+        ? poll
+          ? buildPollQuestion(poll)
+          : 'Poll not found.'
+        : POLL_BIND_PLACEHOLDER
       const isVertical = style.orientation === 'vertical'
       const visibleOptions = poll
         ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
@@ -3488,9 +3482,18 @@ export async function updatePollWidget(
               setShapesVisibility([item.label, rowGroup, item.bg, item.fill], true)
             }, `row show ${index}`)
           }
+          /** Skeleton rows keep an insert-style "Option N" label (non-forced,
+           * so designer retypes survive; stale auto text from a previous
+           * binding still gets replaced). Rows beyond the skeleton — and
+           * surplus rows on legacy no-visibility hosts — clear instead. */
+          const placeholderLabel =
+            !hasPollData && index < visibleOptions ? `Option ${index + 1}` : ''
           stageItemWrite(
-            () => syncPollText(labelTextStates[index] ?? null, '', { force: true }),
-            `label clear ${index}`
+            () =>
+              syncPollText(labelTextStates[index] ?? null, placeholderLabel, {
+                force: !placeholderLabel
+              }),
+            `label ${placeholderLabel ? 'placeholder' : 'clear'} ${index}`
           )
           if (canStyleBars && bgGeometryValid) {
             stageItemWrite(() => {
