@@ -129,7 +129,7 @@ type QnaWidgetConfig = {
   ) => string
 }
 
-type QnaStyleConfig = {
+export type QnaStyleConfig = {
   fontFamily: string | null
   textColor: string
   mutedColor: string
@@ -144,7 +144,7 @@ type QnaStyleConfig = {
   lockStyle?: boolean
 }
 
-type PollStyleConfig = {
+export type PollStyleConfig = {
   fontFamily: string | null
   textColor: string
   mutedColor: string
@@ -935,16 +935,37 @@ export class WidgetExistsError extends Error {
 export async function insertQnaWidget(
   sessionId?: string | null,
   code?: string | null,
-  options?: { replace?: boolean }
+  options?: {
+    replace?: boolean
+    /** Designer-dialog style overrides, persisted to the style tag. */
+    style?: Partial<QnaStyleConfig> | null
+    /** Initial mode baked into the header text; prompt mode titles the panel
+     * with the prompt question. The mode itself lives in the session config
+     * (API), not on the slide. */
+    qna?: { mode?: QnaMode | string | null; prompt?: string | null } | null
+  }
 ) {
   if (!isPowerPointShapeApiAvailable()) {
     return
   }
 
-  const style = normalizeQnaStyle()
+  const style = normalizeQnaStyle(options?.style)
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
+  const qnaMode: QnaMode = options?.qna?.mode === 'prompt' ? 'prompt' : 'audience'
+  const qnaPrompt =
+    typeof options?.qna?.prompt === 'string' ? options.qna.prompt.trim() : ''
+  const eyebrowText =
+    qnaMode === 'prompt'
+      ? QNA_WIDGET_CONFIG.promptEyebrowText ?? EYEBROW_TEXT
+      : EYEBROW_TEXT
+  const panelTitle =
+    qnaMode === 'prompt' ? qnaPrompt || PROMPT_PANEL_TITLE : PANEL_TITLE
+  const emptyBody =
+    qnaMode === 'prompt'
+      ? QNA_WIDGET_CONFIG.emptyBodyPrompt
+      : QNA_WIDGET_CONFIG.emptyBodyAudience
   const useShapeVisibility = supportsShapeVisibility()
   const allowReplace = Boolean(options?.replace)
   await runPowerPoint(async (context) => {
@@ -1073,7 +1094,7 @@ export async function insertQnaWidget(
     container.tags.add(WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'container')
 
-    const meta = slide.shapes.addTextBox(EYEBROW_TEXT, {
+    const meta = slide.shapes.addTextBox(eyebrowText, {
       left: left + paddingX,
       top: headerTop,
       width: Math.max(160, textWidth),
@@ -1085,7 +1106,7 @@ export async function insertQnaWidget(
     meta.tags.add(WIDGET_TAG, 'true')
     meta.tags.add('PrezoWidgetRole', 'meta')
 
-    const title = slide.shapes.addTextBox(PANEL_TITLE, {
+    const title = slide.shapes.addTextBox(panelTitle, {
       left: left + paddingX,
       top: titleTop,
       width: Math.max(160, textWidth),
@@ -1125,7 +1146,7 @@ export async function insertQnaWidget(
     badge.fill.setSolidColor(badgeFillFor(style))
     badge.lineFormat.visible = false
     badge.textFrame.textRange.text = buildBadgeText(
-      'audience',
+      qnaMode,
       0,
       0,
       QNA_WIDGET_CONFIG
@@ -1155,7 +1176,7 @@ export async function insertQnaWidget(
     counter.load('id')
 
     const body = slide.shapes.addTextBox(
-      hasSession ? QNA_WIDGET_CONFIG.emptyBodyAudience : PLACEHOLDER_BODY,
+      hasSession ? emptyBody : PLACEHOLDER_BODY,
       {
       left: left + paddingX,
       top: bodyTop,
@@ -1280,12 +1301,16 @@ export async function insertQnaWidget(
 }
 
 
-export async function insertDiscussionWidget(sessionId?: string | null, code?: string | null) {
+export async function insertDiscussionWidget(
+  sessionId?: string | null,
+  code?: string | null,
+  styleOverrides?: Partial<QnaStyleConfig> | null
+) {
   if (!isPowerPointShapeApiAvailable()) {
     return
   }
 
-  const style = normalizeQnaStyle()
+  const style = normalizeQnaStyle(styleOverrides)
   const scale = style.spacingScale
   const maxQuestions = style.maxQuestions
   const hasSession = Boolean(sessionId)
@@ -3860,4 +3885,215 @@ export async function setPollWidgetBinding(sessionId: string, pollId?: string | 
     slide.tags.delete(POLL_PENDING_TAG)
     await context.sync()
   })
+}
+
+/**
+ * Widget lifecycle helpers (used by the ribbon/designer command surface).
+ * PowerPoint gives add-ins no undo transactions — a widget insert is dozens
+ * of shape operations across several batches, so Ctrl+Z can never cleanly
+ * reverse it. Lifecycle is therefore explicit: inserts never silently delete
+ * an existing widget (the dialog asks first) and removal is a dedicated
+ * action rather than a doomed undo hunt.
+ */
+export type WidgetFamilyKey = 'poll' | 'qna' | 'discussion'
+
+type WidgetFamily = {
+  widgetTag: string
+  shapesTag: string
+  slideTags: string[]
+  collectIds: (parsed: Record<string, unknown>) => Array<string | undefined | null>
+}
+
+const familyItemIds = (
+  parsed: Record<string, unknown>,
+  keys: string[]
+): Array<string | undefined | null> => {
+  const items = Array.isArray(parsed.items) ? (parsed.items as Array<Record<string, unknown>>) : []
+  return items.flatMap((item) => keys.map((key) => item?.[key] as string | undefined))
+}
+
+const WIDGET_FAMILIES: Record<WidgetFamilyKey, WidgetFamily> = {
+  poll: {
+    widgetTag: POLL_WIDGET_TAG,
+    shapesTag: POLL_SHAPES_TAG,
+    slideTags: [
+      POLL_SESSION_TAG,
+      POLL_PENDING_TAG,
+      POLL_STYLE_TAG,
+      POLL_SHAPES_TAG,
+      POLL_BINDING_TAG
+    ],
+    collectIds: (parsed) => [
+      parsed.group as string | undefined,
+      parsed.shadow as string | undefined,
+      parsed.container as string | undefined,
+      parsed.title as string | undefined,
+      parsed.question as string | undefined,
+      parsed.body as string | undefined,
+      parsed.counter as string | undefined,
+      ...familyItemIds(parsed, ['label', 'group', 'bg', 'fill'])
+    ]
+  },
+  qna: {
+    widgetTag: WIDGET_TAG,
+    shapesTag: SHAPES_TAG,
+    slideTags: [
+      SESSION_TAG,
+      WIDGET_PENDING_TAG,
+      WIDGET_STYLE_TAG,
+      SHAPES_TAG,
+      LEGACY_QNA_MODE_TAG,
+      LEGACY_QNA_PROMPT_TAG,
+      QNA_PROMPT_BINDING_TAG
+    ],
+    collectIds: (parsed) => [
+      parsed.shadow as string | undefined,
+      parsed.container as string | undefined,
+      parsed.title as string | undefined,
+      parsed.subtitle as string | undefined,
+      parsed.meta as string | undefined,
+      parsed.badge as string | undefined,
+      parsed.body as string | undefined,
+      parsed.counter as string | undefined,
+      ...familyItemIds(parsed, ['container', 'text', 'votes'])
+    ]
+  },
+  discussion: {
+    widgetTag: DISCUSSION_WIDGET_TAG,
+    shapesTag: DISCUSSION_SHAPES_TAG,
+    slideTags: [
+      DISCUSSION_SESSION_TAG,
+      DISCUSSION_PENDING_TAG,
+      DISCUSSION_STYLE_TAG,
+      DISCUSSION_SHAPES_TAG,
+      DISCUSSION_PROMPT_BINDING_TAG
+    ],
+    collectIds: (parsed) => [
+      parsed.shadow as string | undefined,
+      parsed.container as string | undefined,
+      parsed.title as string | undefined,
+      parsed.subtitle as string | undefined,
+      parsed.meta as string | undefined,
+      parsed.badge as string | undefined,
+      parsed.body as string | undefined,
+      parsed.counter as string | undefined,
+      ...familyItemIds(parsed, ['container', 'text', 'votes'])
+    ]
+  }
+}
+
+const getSelectedSlideForLifecycle = async (context: PowerPoint.RequestContext) => {
+  const slides = context.presentation.getSelectedSlides()
+  slides.load('items')
+  await context.sync()
+  const slide = slides.items[0]
+  if (!slide) {
+    throw new Error('Select a slide first.')
+  }
+  return slide
+}
+
+/** Shapes carrying the family tag on the slide. NOTE: slide.shapes can
+ * surface a group AND the tagged children inside it — callers must treat
+ * the returned list as containing potential group/child duplicates. */
+const loadTaggedFamilyShapes = async (
+  context: PowerPoint.RequestContext,
+  slide: PowerPoint.Slide,
+  family: WidgetFamily
+) => {
+  const shapes = slide.shapes
+  shapes.load('items')
+  await context.sync()
+  const tagged = shapes.items.map((shape) => {
+    const tag = shape.tags.getItemOrNullObject(family.widgetTag)
+    tag.load('value')
+    shape.load(['id', 'type'])
+    return { shape, tag }
+  })
+  await context.sync()
+  return tagged
+    .filter(({ tag }) => !tag.isNullObject && tag.value === 'true')
+    .map(({ shape }) => shape)
+}
+
+export async function selectedSlideHasWidget(familyKey: WidgetFamilyKey): Promise<boolean> {
+  const family = WIDGET_FAMILIES[familyKey]
+  let found = false
+  await runPowerPoint(async (context) => {
+    const slide = await getSelectedSlideForLifecycle(context)
+    const shapesTag = slide.tags.getItemOrNullObject(family.shapesTag)
+    shapesTag.load('value')
+    await context.sync()
+    if (!shapesTag.isNullObject && shapesTag.value) {
+      found = true
+      return
+    }
+    const taggedShapes = await loadTaggedFamilyShapes(context, slide, family)
+    found = taggedShapes.length > 0
+  })
+  return found
+}
+
+/** Delete every shape of the family on the selected slide (stored ids plus
+ * tag scan, deduped) and clear its slide tags. Returns true if anything was
+ * actually removed. */
+export async function removeWidgetFromSelectedSlide(
+  familyKey: WidgetFamilyKey
+): Promise<boolean> {
+  const family = WIDGET_FAMILIES[familyKey]
+  let removed = false
+  await runPowerPoint(async (context) => {
+    const slide = await getSelectedSlideForLifecycle(context)
+    const shapesTag = slide.tags.getItemOrNullObject(family.shapesTag)
+    shapesTag.load('value')
+    await context.sync()
+
+    let storedShapes: PowerPoint.Shape[] = []
+    if (!shapesTag.isNullObject && shapesTag.value) {
+      try {
+        const parsed = JSON.parse(shapesTag.value) as Record<string, unknown>
+        const ids = family.collectIds(parsed).filter((id): id is string => Boolean(id))
+        storedShapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+        storedShapes.forEach((shape) => shape.load(['id', 'type']))
+        await context.sync()
+      } catch {
+        storedShapes = []
+      }
+    }
+
+    const taggedShapes = await loadTaggedFamilyShapes(context, slide, family)
+    const seenIds = new Set<string>()
+    const deletable: PowerPoint.Shape[] = []
+    storedShapes.concat(taggedShapes).forEach((shape) => {
+      if (shape.isNullObject || seenIds.has(shape.id)) {
+        return
+      }
+      seenIds.add(shape.id)
+      deletable.push(shape)
+    })
+
+    /**
+     * Delete groups first and give EVERY delete its own isolated sync.
+     * The candidate list can contain a bar group and the child shapes
+     * inside it (both carry the family tag, and slide.shapes surfaces
+     * both); deleting the group kills its children, and a second delete
+     * on a dead child throws GeneralException. RichApi batches are not
+     * atomic — that mid-batch throw used to leave the widget
+     * half-deleted. Isolation turns it into a harmless no-op.
+     */
+    const groups = deletable.filter((shape) => shape.type === 'Group')
+    const loose = deletable.filter((shape) => shape.type !== 'Group')
+    for (const shape of groups.concat(loose)) {
+      try {
+        shape.delete()
+        await context.sync()
+        removed = true
+      } catch {
+        // Already gone (child of a group deleted above) — fine.
+      }
+    }
+    family.slideTags.forEach((tagName) => slide.tags.delete(tagName))
+    await context.sync()
+  })
+  return removed
 }
