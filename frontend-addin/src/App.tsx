@@ -48,6 +48,10 @@ import {
   updateQnaWidget
 } from './office/widgetShapes'
 import {
+  pollWidgetsDataSignature,
+  qnaWidgetsDataSignature
+} from './office/widgetDataSignatures'
+import {
   clearAllAudienceQnaOpenedAt,
   clearAudienceQnaOpenedAt,
   setAudienceQnaOpenedAt
@@ -72,6 +76,12 @@ import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
 const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
+/** Trailing gap between coalesced widget passes: while votes stream in,
+ * back-to-back full passes would keep PowerPoint's UI thread saturated. */
+const WIDGET_PASS_GAP_MS = 300
+/** Selection changes arrive in bursts while the user works the deck — one
+ * debounced repair pass instead of three full passes per click. */
+const SELECTION_REFRESH_DEBOUNCE_MS = 400
 
 /**
  * Module-level prefetch: starts the network request the instant this JS module
@@ -757,14 +767,40 @@ function HostConsole({
     /** One-shot: set by a host poll edit so the next widget write overwrites
      * the edited fields even on designer-retyped shapes; consumed per run. */
     forceText: { pollId: string; question?: boolean; optionIds?: string[] } | null
+    /** One-shot: selection-change refreshes set this so the pass re-checks
+     * the selected slide even when its data signature is unchanged. */
+    repairSelectedSlide: boolean
   }>({
     inFlight: false,
     queued: false,
     sessionId: null,
     code: null,
     polls: [],
-    forceText: null
+    forceText: null,
+    repairSelectedSlide: false
   })
+  const qnaWidgetUpdateRef = useRef<{
+    inFlight: boolean
+    queued: boolean
+    sessionId: string | null
+    code: string | null
+    questions: Question[]
+    prompts: QnaPrompt[]
+    repairSelectedSlide: boolean
+  }>({
+    inFlight: false,
+    queued: false,
+    sessionId: null,
+    code: null,
+    questions: [],
+    prompts: [],
+    repairSelectedSlide: false
+  })
+  /** Last data signatures handed to the widget schedulers — effects skip
+   * scheduling when the widget-relevant projection didn't change (fresh
+   * arrays with identical content: snapshot polls, duplicate socket events). */
+  const lastScheduledPollSignatureRef = useRef<string | null>(null)
+  const lastScheduledQnaSignatureRef = useRef<string | null>(null)
 
   type HostHistoryState = { prezoHost?: 'list' | 'session'; sessionId?: string }
 
@@ -1001,41 +1037,25 @@ function HostConsole({
     }
   }, [session?.id, socketStatus])
 
-  useEffect(() => {
-    if (!session) {
-      return
-    }
-    void updateQnaWidget(
-      session.id,
-      session.code,
-      questions,
-      prompts
-    ).catch((err) =>
-      console.warn('Failed to update widget shapes', err)
-    )
-    void updateDiscussionWidget(
-      session.id,
-      session.code,
-      questions,
-      prompts
-    ).catch((err) =>
-      console.warn('Failed to update open discussion widget shapes', err)
-    )
-  }, [session?.id, session?.code, questions, prompts])
-
   const schedulePollWidgetUpdate = useCallback(
     (
       sessionId: string,
       code: string | null,
       nextPolls: Poll[],
-      forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
+      flags?: {
+        forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
+        repairSelectedSlide?: boolean
+      }
     ) => {
       const state = pollWidgetUpdateRef.current
       state.sessionId = sessionId
       state.code = code
       state.polls = nextPolls
-      if (forceText) {
-        state.forceText = forceText
+      if (flags?.forceText) {
+        state.forceText = flags.forceText
+      }
+      if (flags?.repairSelectedSlide) {
+        state.repairSelectedSlide = true
       }
       if (state.inFlight) {
         state.queued = true
@@ -1045,30 +1065,112 @@ function HostConsole({
       const runUpdate = async () => {
         const current = pollWidgetUpdateRef.current
         if (!current.sessionId) {
+          current.inFlight = false
+          current.queued = false
           return
         }
         current.inFlight = true
         const force = current.forceText
         current.forceText = null
+        const repairSelectedSlide = current.repairSelectedSlide
+        current.repairSelectedSlide = false
         try {
           /** Evaluated per write, not per schedule: a queued update that runs
            * after a view flip should honor the view it writes into. */
           await updatePollWidget(current.sessionId, current.code, current.polls, {
             animateBars: isSlideShowViewActive(),
-            forceText: force ?? undefined
+            forceText: force ?? undefined,
+            repairSelectedSlide
           })
         } catch (err) {
           console.warn('Failed to update poll widget shapes', err)
         } finally {
-          current.inFlight = false
           if (current.queued) {
             current.queued = false
-            runUpdate()
+            /** inFlight stays true through the gap so fresh events queue
+             * behind the pending pass instead of racing it. */
+            window.setTimeout(() => {
+              void runUpdate()
+            }, WIDGET_PASS_GAP_MS)
+          } else {
+            current.inFlight = false
           }
         }
       }
 
-      runUpdate()
+      void runUpdate()
+    },
+    []
+  )
+
+  const scheduleQnaWidgetUpdate = useCallback(
+    (
+      sessionId: string,
+      code: string | null,
+      nextQuestions: Question[],
+      nextPrompts: QnaPrompt[],
+      flags?: { repairSelectedSlide?: boolean }
+    ) => {
+      const state = qnaWidgetUpdateRef.current
+      state.sessionId = sessionId
+      state.code = code
+      state.questions = nextQuestions
+      state.prompts = nextPrompts
+      if (flags?.repairSelectedSlide) {
+        state.repairSelectedSlide = true
+      }
+      if (state.inFlight) {
+        state.queued = true
+        return
+      }
+
+      const runUpdate = async () => {
+        const current = qnaWidgetUpdateRef.current
+        if (!current.sessionId) {
+          current.inFlight = false
+          current.queued = false
+          return
+        }
+        current.inFlight = true
+        const repairSelectedSlide = current.repairSelectedSlide
+        current.repairSelectedSlide = false
+        const passOptions = { repairSelectedSlide }
+        try {
+          await updateQnaWidget(
+            current.sessionId,
+            current.code,
+            current.questions,
+            current.prompts,
+            undefined,
+            passOptions
+          )
+        } catch (err) {
+          console.warn('Failed to update widget shapes', err)
+        }
+        try {
+          await updateDiscussionWidget(
+            current.sessionId,
+            current.code,
+            current.questions,
+            current.prompts,
+            passOptions
+          )
+        } catch (err) {
+          console.warn('Failed to update open discussion widget shapes', err)
+        }
+        if (current.queued) {
+          current.queued = false
+          /** inFlight stays true through the gap so fresh events queue
+           * behind the pending pass instead of racing it. */
+          window.setTimeout(() => {
+            void runUpdate()
+          }, WIDGET_PASS_GAP_MS)
+        } else {
+          current.inFlight = false
+        }
+      }
+
+      void runUpdate()
     },
     []
   )
@@ -1077,6 +1179,28 @@ function HostConsole({
     if (!session) {
       return
     }
+    const signature = qnaWidgetsDataSignature(
+      session.id,
+      session.code,
+      questions,
+      prompts
+    )
+    if (signature === lastScheduledQnaSignatureRef.current) {
+      return
+    }
+    lastScheduledQnaSignatureRef.current = signature
+    scheduleQnaWidgetUpdate(session.id, session.code, questions, prompts)
+  }, [session?.id, session?.code, questions, prompts, scheduleQnaWidgetUpdate])
+
+  useEffect(() => {
+    if (!session) {
+      return
+    }
+    const signature = pollWidgetsDataSignature(session.id, session.code, polls)
+    if (signature === lastScheduledPollSignatureRef.current) {
+      return
+    }
+    lastScheduledPollSignatureRef.current = signature
     schedulePollWidgetUpdate(session.id, session.code, polls)
   }, [session?.id, session?.code, polls, schedulePollWidgetUpdate])
 
@@ -1085,45 +1209,56 @@ function HostConsole({
       return
     }
 
-    const refresh = () => {
+    /** Repair pass: widgets whose data is unchanged are skipped by their
+     * applied-signature cache, except on the currently selected slide — the
+     * one the user may have just edited. */
+    const runRefresh = () => {
       const currentSession = latestSessionRef.current
       if (!currentSession) {
         return
       }
-      void updateQnaWidget(
+      scheduleQnaWidgetUpdate(
         currentSession.id,
         currentSession.code,
         latestQuestionsRef.current,
-        latestPromptsRef.current
-      ).catch((err) => console.warn('Failed to refresh Q&A widget shapes', err))
-      void updateDiscussionWidget(
-        currentSession.id,
-        currentSession.code,
-        latestQuestionsRef.current,
-        latestPromptsRef.current
-      ).catch((err) =>
-        console.warn('Failed to refresh open discussion widget shapes', err)
+        latestPromptsRef.current,
+        { repairSelectedSlide: true }
       )
       schedulePollWidgetUpdate(
         currentSession.id,
         currentSession.code,
-        latestPollsRef.current
+        latestPollsRef.current,
+        { repairSelectedSlide: true }
       )
+    }
+
+    let refreshTimer: number | null = null
+    const refresh = () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer)
+      }
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null
+        runRefresh()
+      }, SELECTION_REFRESH_DEBOUNCE_MS)
     }
 
     Office.context.document.addHandlerAsync(
       Office.EventType.DocumentSelectionChanged,
       refresh
     )
-    refresh()
+    runRefresh()
 
     return () => {
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer)
+      }
       Office.context.document.removeHandlerAsync(
         Office.EventType.DocumentSelectionChanged,
         { handler: refresh }
       )
     }
-  }, [session?.id])
+  }, [session?.id, scheduleQnaWidgetUpdate, schedulePollWidgetUpdate])
 
   const loadSessions = useCallback(async (limit: number) => {
     setSessionsError(null)
@@ -1536,16 +1671,21 @@ function HostConsole({
       /** Forced pass so slide widgets bound to this poll pick up the edited
        * text even where a designer retyped it — a regular sync would preserve
        * the (now stale) custom text. Fonts, colors, and geometry stay. */
-      schedulePollWidgetUpdate(
+      const nextPolls = upsertById(latestPollsRef.current, poll)
+      /** Pre-store the signature so the polls effect doesn't schedule a
+       * duplicate pass for the same content right behind this one. */
+      lastScheduledPollSignatureRef.current = pollWidgetsDataSignature(
         session.id,
         session.code,
-        upsertById(latestPollsRef.current, poll),
-        {
+        nextPolls
+      )
+      schedulePollWidgetUpdate(session.id, session.code, nextPolls, {
+        forceText: {
           pollId,
           question: update.question !== undefined,
           optionIds: update.options ? Object.keys(update.options) : undefined
         }
-      )
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update poll'
       setError(message)
