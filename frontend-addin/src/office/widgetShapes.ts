@@ -2204,6 +2204,12 @@ export async function insertPollWidget(
 
     const optionStartTop = top + optionStartOffset
     const fullBarWidth = width - paddingX * 2
+    const pendingItems: Array<{
+      label: PowerPoint.Shape
+      bg: PowerPoint.Shape
+      fill: PowerPoint.Shape
+      showItem: boolean
+    }> = []
     const itemShapes: Array<{
       label: PowerPoint.Shape
       group: PowerPoint.Shape
@@ -2271,16 +2277,29 @@ export async function insertPollWidget(
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
+      /** Rows beyond the style's option count start truly hidden on capable
+       * hosts — no ghost shapes on the canvas from the first insert. The
+       * update loop reveals them if a bigger poll is bound later. (The bar
+       * group is hidden below, after it exists.) */
+      if (!showItem && useShapeVisibility) {
+        label.visible = false
+      }
+
+      pendingItems.push({ label, bg, fill, showItem })
+    }
+
+    /** addGroup rejects shapes that only exist as queued proxies in the
+     * current batch (InvalidArgument on desktop hosts), so commit the bar
+     * shapes first, then group each track/fill pair. */
+    await context.sync()
+
+    for (let index = 0; index < pendingItems.length; index += 1) {
+      const { label, bg, fill, showItem } = pendingItems[index]
       const barGroup = slide.shapes.addGroup([bg, fill])
       barGroup.name = `Prezo Poll Option ${index + 1} Bar`
       barGroup.tags.add(POLL_WIDGET_TAG, 'true')
       barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
-
-      /** Rows beyond the style's option count start truly hidden on capable
-       * hosts — no ghost shapes on the canvas from the first insert. The
-       * update loop reveals them if a bigger poll is bound later. */
       if (!showItem && useShapeVisibility) {
-        label.visible = false
         barGroup.visible = false
       }
 
