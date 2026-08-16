@@ -1794,7 +1794,20 @@ function HostConsole({
       }
       await setPollWidgetBinding(session.id, pollId)
       try {
-        await updatePollWidget(session.id, session.code, polls)
+        /** Forced pass, same as updatePollActivity: the widget's current text
+         * belongs to whatever it showed before (placeholder skeleton, the
+         * unbound fallback poll, or a previous binding), so a regular sync
+         * treats it as a designer template and keeps the old option names.
+         * Forcing also bypasses the applied-signature skip, so rebinding the
+         * same poll acts as a repair instead of a no-op. */
+        const boundPoll = polls.find((poll) => poll.id === pollId)
+        await updatePollWidget(session.id, session.code, polls, {
+          forceText: {
+            pollId,
+            question: true,
+            optionIds: boundPoll?.options.map((option) => option.id)
+          }
+        })
       } catch (err) {
         const message =
           err instanceof Error && err.message
