@@ -17,6 +17,10 @@ const OFFICE_JS_SRC = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.j
  * Office injects query params (e.g. _host_Info) when the add-in runs in a host.
  * Loading office.js in a plain browser tab pulls Microsoft scripts/telemetry and is unnecessary.
  * Set VITE_ALWAYS_LOAD_OFFICE_JS=true if your host omits these params.
+ *
+ * Desktop hosts append _host_Info themselves, but PowerPoint on the WEB does
+ * not (it passes host info via window.name), so the manifests put an explicit
+ * officeHost=1 on the taskpane URL — the deterministic marker for every host.
  */
 function shouldLoadOfficeJs(): boolean {
   if (import.meta.env.VITE_ALWAYS_LOAD_OFFICE_JS === 'true') {
@@ -24,7 +28,11 @@ function shouldLoadOfficeJs(): boolean {
   }
   try {
     const q = window.location.search
-    if (q.includes('_host_Info') || q.includes('host_Info')) {
+    if (
+      q.includes('_host_Info') ||
+      q.includes('host_Info') ||
+      q.includes('officeHost=1')
+    ) {
       return true
     }
   } catch {

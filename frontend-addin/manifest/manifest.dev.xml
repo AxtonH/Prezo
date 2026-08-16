@@ -32,7 +32,7 @@
     </Sets>
   </Requirements>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:5173/" />
+    <SourceLocation DefaultValue="https://localhost:5173/?officeHost=1" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -93,7 +93,7 @@
         <bt:Image id="Prezo.Icon80" DefaultValue="https://localhost:5173/prezo-icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://localhost:5173/" />
+        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://localhost:5173/?officeHost=1" />
         <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://localhost:5173/function-file/" />
       </bt:Urls>
       <bt:ShortStrings>
