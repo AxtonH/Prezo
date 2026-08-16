@@ -35,13 +35,11 @@ import { SessionSetup } from './components/SessionSetup'
 import { BrandIdentitiesPage } from './components/brand-identities'
 import { SettingsPage } from './components/settings'
 import { SideNav, type WorkspaceNavId } from './components/SideNav'
-import { WidgetDebugPanel } from './components/WidgetDebugPanel'
 import { useDebouncedValue } from './hooks/useDebouncedValue'
 import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
-import { logWidgetDebug } from './office/widgetDebugLog'
 import {
   setDiscussionWidgetBinding,
   setPollWidgetBinding,
@@ -84,11 +82,6 @@ const WIDGET_PASS_GAP_MS = 300
 /** Selection changes arrive in bursts while the user works the deck — one
  * debounced repair pass instead of three full passes per click. */
 const SELECTION_REFRESH_DEBOUNCE_MS = 400
-/** Give up waiting on a widget pass after this long: Office host calls can
- * stall indefinitely (slideshow transitions, boot storms), and an unsettled
- * pass must not latch the scheduler shut. Longer than powerpointRun's 30s
- * predecessor timeout so a pass queued behind one stall still gets to run. */
-const WIDGET_PASS_STALL_MS = 45000
 
 /**
  * Module-level prefetch: starts the network request the instant this JS module
@@ -1064,12 +1057,6 @@ function HostConsole({
       if (flags?.repairSelectedSlide) {
         state.repairSelectedSlide = true
       }
-      logWidgetDebug('poll-schedule', {
-        inFlight: state.inFlight,
-        queuedBefore: state.queued,
-        forced: Boolean(flags?.forceText),
-        repair: Boolean(flags?.repairSelectedSlide)
-      })
       if (state.inFlight) {
         state.queued = true
         return
@@ -1087,51 +1074,16 @@ function HostConsole({
         current.forceText = null
         const repairSelectedSlide = current.repairSelectedSlide
         current.repairSelectedSlide = false
-        const startedAt = Date.now()
-        logWidgetDebug('poll-pass-start', {
-          forced: Boolean(force),
-          repair: repairSelectedSlide,
-          slideShow: isSlideShowViewActive()
-        })
         try {
           /** Evaluated per write, not per schedule: a queued update that runs
            * after a view flip should honor the view it writes into. */
-          const passPromise = updatePollWidget(
-            current.sessionId,
-            current.code,
-            current.polls,
-            {
-              animateBars: isSlideShowViewActive(),
-              forceText: force ?? undefined,
-              repairSelectedSlide
-            }
-          ).then(
-            () => 'done' as const,
-            (err) => {
-              console.warn('Failed to update poll widget shapes', err)
-              logWidgetDebug('poll-pass-error', {
-                message: err instanceof Error ? err.message : String(err)
-              })
-              return 'error' as const
-            }
-          )
-          /**
-           * Stall guard: Office host calls can hang forever, and an unsettled
-           * pass used to leave inFlight latched — every later vote update was
-           * silently swallowed until the taskpane reloaded. Abandon the wait
-           * (the pass may still finish in the background) and queue a fresh
-           * pass so the widget converges on current data.
-           */
-          const outcome = await Promise.race([
-            passPromise,
-            new Promise<'stalled'>((resolve) => {
-              window.setTimeout(() => resolve('stalled'), WIDGET_PASS_STALL_MS)
-            })
-          ])
-          logWidgetDebug(`poll-pass-${outcome}`, { ms: Date.now() - startedAt })
-          if (outcome === 'stalled') {
-            current.queued = true
-          }
+          await updatePollWidget(current.sessionId, current.code, current.polls, {
+            animateBars: isSlideShowViewActive(),
+            forceText: force ?? undefined,
+            repairSelectedSlide
+          })
+        } catch (err) {
+          console.warn('Failed to update poll widget shapes', err)
         } finally {
           if (current.queued) {
             current.queued = false
@@ -1183,49 +1135,28 @@ function HostConsole({
         const repairSelectedSlide = current.repairSelectedSlide
         current.repairSelectedSlide = false
         const passOptions = { repairSelectedSlide }
-        /** Same stall guard as the poll scheduler: an unsettled host call
-         * must not latch inFlight shut forever. */
-        const passPromise = (async () => {
-          try {
-            await updateQnaWidget(
-              current.sessionId!,
-              current.code,
-              current.questions,
-              current.prompts,
-              undefined,
-              passOptions
-            )
-          } catch (err) {
-            console.warn('Failed to update widget shapes', err)
-            logWidgetDebug('qna-pass-error', {
-              message: err instanceof Error ? err.message : String(err)
-            })
-          }
-          try {
-            await updateDiscussionWidget(
-              current.sessionId!,
-              current.code,
-              current.questions,
-              current.prompts,
-              passOptions
-            )
-          } catch (err) {
-            console.warn('Failed to update open discussion widget shapes', err)
-            logWidgetDebug('discussion-pass-error', {
-              message: err instanceof Error ? err.message : String(err)
-            })
-          }
-          return 'done' as const
-        })()
-        const outcome = await Promise.race([
-          passPromise,
-          new Promise<'stalled'>((resolve) => {
-            window.setTimeout(() => resolve('stalled'), WIDGET_PASS_STALL_MS)
-          })
-        ])
-        if (outcome === 'stalled') {
-          logWidgetDebug('qna-pass-stalled', {})
-          current.queued = true
+        try {
+          await updateQnaWidget(
+            current.sessionId,
+            current.code,
+            current.questions,
+            current.prompts,
+            undefined,
+            passOptions
+          )
+        } catch (err) {
+          console.warn('Failed to update widget shapes', err)
+        }
+        try {
+          await updateDiscussionWidget(
+            current.sessionId,
+            current.code,
+            current.questions,
+            current.prompts,
+            passOptions
+          )
+        } catch (err) {
+          console.warn('Failed to update open discussion widget shapes', err)
         }
         if (current.queued) {
           current.queued = false
@@ -1863,20 +1794,7 @@ function HostConsole({
       }
       await setPollWidgetBinding(session.id, pollId)
       try {
-        /** Forced pass, same as updatePollActivity: the widget's current text
-         * belongs to whatever it showed before (placeholder skeleton, the
-         * unbound fallback poll, or a previous binding), so a regular sync
-         * treats it as a designer template and keeps the old option names.
-         * Forcing also bypasses the applied-signature skip, so rebinding the
-         * same poll acts as a repair instead of a no-op. */
-        const boundPoll = polls.find((poll) => poll.id === pollId)
-        await updatePollWidget(session.id, session.code, polls, {
-          forceText: {
-            pollId,
-            question: true,
-            optionIds: boundPoll?.options.map((option) => option.id)
-          }
-        })
+        await updatePollWidget(session.id, session.code, polls)
       } catch (err) {
         const message =
           err instanceof Error && err.message
@@ -1989,8 +1907,6 @@ function HostConsole({
         />
       ) : null}
 
-      {/* TEMPORARY: stale-widget field debugging — see WidgetDebugPanel. */}
-      {isAddinHost && session ? <WidgetDebugPanel /> : null}
       <main
         className={`flex-1 min-h-0 min-w-0 ${
           session && workspaceNav === 'editor'

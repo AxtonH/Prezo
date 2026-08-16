@@ -325,10 +325,24 @@
       .join('\n')
   }
 
-  /** Mirrors src/office/widgetShapes.ts: unbound poll widgets never
-   * auto-follow a poll — they hold this placeholder until the host binds
-   * one from the poll card. Keep the wording in sync with the taskpane. */
-  const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
+  const pickPoll = (polls) => {
+    if (!polls || polls.length === 0) {
+      return null
+    }
+    const open = polls.find((poll) => poll.status === 'open')
+    if (open) {
+      return open
+    }
+    const sorted = [...polls].sort((a, b) => {
+      const aTime = Date.parse(a.created_at)
+      const bTime = Date.parse(b.created_at)
+      if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+        return 0
+      }
+      return bTime - aTime
+    })
+    return sorted[0] || polls[0]
+  }
 
   const buildPollQuestion = (poll) => {
     if (!poll) {
@@ -804,13 +818,10 @@
           !info.bindingTag.isNullObject && info.bindingTag.value
             ? info.bindingTag.value.trim()
             : ''
-        const poll = boundPollId ? pollMap.get(boundPollId) || null : null
+        const poll = boundPollId ? pollMap.get(boundPollId) || null : pickPoll(polls || [])
         const optionData = buildPollOptions(poll)
-        const questionText = boundPollId
-          ? poll
-            ? buildPollQuestion(poll)
-            : 'Poll not found.'
-          : POLL_BIND_PLACEHOLDER
+        const questionText =
+          boundPollId && !poll ? 'Poll not found.' : buildPollQuestion(poll)
         const isVertical = style.orientation === 'vertical'
         const visibleOptions = poll
           ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
@@ -1194,10 +1205,7 @@
                * previously hidden under a binding must come back. */
               setRowVisibility(item, true)
             }
-            /** Skeleton rows keep an insert-style "Option N" label; rows
-             * beyond the skeleton (and surplus rows on legacy hosts) clear. */
-            item.label.textFrame.textRange.text =
-              !hasPollData && index < visibleOptions ? `Option ${index + 1}` : ''
+            item.label.textFrame.textRange.text = ''
             if (isVertical) {
               const barHeight = item.bg.height
               item.fill.height = 2
@@ -2266,7 +2274,7 @@
       title.tags.add(POLL_WIDGET_TAG, 'true')
       title.tags.add('PrezoWidgetRole', 'poll-title')
 
-      const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
+      const question = slide.shapes.addTextBox('No polls yet.', {
         left: left + 24,
         top: top + 62 * scale,
         width: width - 48,

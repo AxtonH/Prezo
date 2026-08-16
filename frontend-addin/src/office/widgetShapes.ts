@@ -1,7 +1,6 @@
 import type { Poll, QnaMode, QnaPrompt, Question } from '../api/types'
 
 import { runPowerPoint } from './powerpointRun'
-import { logWidgetDebug } from './widgetDebugLog'
 import { getPresentedSheetId } from './presentedSlide'
 import {
   pollProjection,
@@ -58,9 +57,6 @@ const DISCUSSION_PANEL_TITLE = 'Open discussion'
 const DISCUSSION_EYEBROW_TEXT = 'PREZO OPEN DISCUSSION'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
 const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
-/** Unbound poll widgets render this instead of auto-following a poll —
- * binding is an explicit host action (Bind widget on the poll card). */
-const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
 
 type WidgetShapeIds = {
   container: string
@@ -502,11 +498,7 @@ const looksLikeAutoPollText = (value: string) => {
   if (text.startsWith('Live poll:') || text.startsWith('Poll:')) {
     return true
   }
-  if (
-    text === 'No polls yet.' ||
-    text === 'Poll not found.' ||
-    text === POLL_BIND_PLACEHOLDER
-  ) {
+  if (text === 'No polls yet.' || text === 'Poll not found.') {
     return true
   }
   return /\(\d+\)\s*(?:•|â€¢)\s*\d+%$/.test(text)
@@ -864,6 +856,25 @@ const buildBody = (
 
 const buildPollTitle = (code?: string | null) =>
   code ? `Prezo Poll • ${code}` : 'Prezo Poll'
+
+const pickPoll = (polls: Poll[]) => {
+  if (polls.length === 0) {
+    return null
+  }
+  const open = polls.find((poll) => poll.status === 'open')
+  if (open) {
+    return open
+  }
+  const sorted = [...polls].sort((a, b) => {
+    const aTime = Date.parse(a.created_at)
+    const bTime = Date.parse(b.created_at)
+    if (Number.isNaN(aTime) || Number.isNaN(bTime)) {
+      return 0
+    }
+    return bTime - aTime
+  })
+  return sorted[0] ?? polls[0]
+}
 
 const buildPollQuestion = (poll: Poll | null) => {
   if (!poll) {
@@ -2150,7 +2161,7 @@ export async function insertPollWidget(
     title.tags.add('PrezoWidgetRole', 'poll-title')
     title.tags.add(POLL_TEXT_SYNC_TAG, buildPollTitle(code))
 
-    const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
+    const question = slide.shapes.addTextBox('No polls yet.', {
       left: left + 24,
       top: top + 62 * scale,
       width: width - 48,
@@ -2161,7 +2172,7 @@ export async function insertPollWidget(
     question.name = 'Prezo Poll Question'
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
-    question.tags.add(POLL_TEXT_SYNC_TAG, POLL_BIND_PLACEHOLDER)
+    question.tags.add(POLL_TEXT_SYNC_TAG, 'No polls yet.')
 
     const counter = slide.shapes.addTextBox('0 votes', {
       left: left + width - 24 - 140,
@@ -2182,6 +2193,7 @@ export async function insertPollWidget(
     const fullBarWidth = width - paddingX * 2
     const itemShapes: Array<{
       label: PowerPoint.Shape
+      group: PowerPoint.Shape
       bg: PowerPoint.Shape
       fill: PowerPoint.Shape
     }> = []
@@ -2246,23 +2258,24 @@ export async function insertPollWidget(
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
+      const barGroup = slide.shapes.addGroup([bg, fill])
+      barGroup.name = `Prezo Poll Option ${index + 1} Bar`
+      barGroup.tags.add(POLL_WIDGET_TAG, 'true')
+      barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+
       /** Rows beyond the style's option count start truly hidden on capable
        * hosts — no ghost shapes on the canvas from the first insert. The
-       * update loop reveals them if a bigger poll is bound later. Bars are
-       * deliberately NOT grouped: PowerPoint silently ignores position/size
-       * writes on shapes inside a group (the sync succeeds, geometry never
-       * changes — field-proven on desktop and web), so grouped fills can
-       * never show results. */
+       * update loop reveals them if a bigger poll is bound later. */
       if (!showItem && useShapeVisibility) {
         label.visible = false
-        bg.visible = false
-        fill.visible = false
+        barGroup.visible = false
       }
 
       label.load('id')
+      barGroup.load('id')
       bg.load('id')
       fill.load('id')
-      itemShapes.push({ label, bg, fill })
+      itemShapes.push({ label, group: barGroup, bg, fill })
     }
 
     shadow.load('id')
@@ -2279,6 +2292,7 @@ export async function insertPollWidget(
       counter: counter.id,
       items: itemShapes.map((item) => ({
         label: item.label.id,
+        group: item.group.id,
         bg: item.bg.id,
         fill: item.fill.id
       }))
@@ -2482,13 +2496,12 @@ export async function updatePollWidget(
      * frame-by-frame writes onto the user's undo stack. */
     animateBars?: boolean
     /**
-     * Passed once right after the host edits a poll or binds a widget to
-     * one: overwrite the edited fields even on shapes whose text the
-     * designer retyped. Without it, syncPollText preserves the user's
-     * template — including the now-stale old label/question. Fonts, colors,
-     * and geometry are untouched (the write path snapshots and reapplies
-     * the font), and only widgets bound to the edited poll are affected.
-     * Also bypasses the applied-signature skip for the matching slide.
+     * Passed once right after the host edits a poll: overwrite the edited
+     * fields even on shapes whose text the designer retyped. Without it,
+     * syncPollText preserves the user's template — including the now-stale
+     * old label/question. Fonts, colors, and geometry are untouched (the
+     * write path snapshots and reapplies the font), and only widgets bound
+     * to the edited poll are affected.
      */
     forceText?: { pollId: string; question?: boolean; optionIds?: string[] }
   }
@@ -2752,15 +2765,10 @@ export async function updatePollWidget(
         !info.bindingTag.isNullObject && info.bindingTag.value
           ? info.bindingTag.value.trim()
           : ''
-      /** Unbound widgets never auto-follow a poll: they hold the designable
-       * placeholder skeleton until the host explicitly binds one. */
-      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : null
+      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : pickPoll(polls)
       const optionData = buildPollOptions(poll)
-      const questionText = boundPollId
-        ? poll
-          ? buildPollQuestion(poll)
-          : 'Poll not found.'
-        : POLL_BIND_PLACEHOLDER
+      const questionText =
+        boundPollId && !poll ? 'Poll not found.' : buildPollQuestion(poll)
       const isVertical = style.orientation === 'vertical'
       const visibleOptions = poll
         ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
@@ -3155,72 +3163,112 @@ export async function updatePollWidget(
         setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(shapeIds))
       }
 
-      /**
-       * Ungroup migration: bar track/fill pairs used to be grouped, but
-       * PowerPoint silently ignores position/size writes on shapes inside a
-       * group (the sync succeeds, the geometry never changes — field-proven
-       * on desktop and web), so grouped fills can never show results.
-       * Dissolve the groups, re-resolve the children at slide scope (ids
-       * survive grouping and ungrouping), and rewrite the shapes tag without
-       * group ids so later passes skip this path.
-       */
       if (!shapeScope) {
-        const groupedBarItems = itemShapes
+        const legacyBarItems = itemShapes
           .map((item, index) => ({ item, index }))
-          .filter(({ item }) => isLoadedGroupShape(item.group))
+          .filter(
+            ({ item }) =>
+              (!item.group || item.group.isNullObject) &&
+              !item.bg.isNullObject &&
+              !item.fill.isNullObject
+          )
 
-        if (groupedBarItems.length > 0) {
-          syncPhase = 'ungroup-bars'
-          for (const { item } of groupedBarItems) {
-            item.group!.group.ungroup()
-          }
-          await context.sync()
-
-          const reResolved = groupedBarItems.map(({ item, index }) => {
-            const bg = info.slide.shapes.getItemOrNullObject(getShapeId(item.bg) ?? '')
-            const fill = info.slide.shapes.getItemOrNullObject(getShapeId(item.fill) ?? '')
-            bg.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
-            fill.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
-            return { index, bg, fill }
+        if (legacyBarItems.length > 0) {
+          const createdGroups = legacyBarItems.map(({ item, index }) => {
+            const barGroup = info.slide.shapes.addGroup([item.bg, item.fill])
+            barGroup.tags.add(POLL_WIDGET_TAG, 'true')
+            barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+            barGroup.load(withVisible(['id']))
+            const groupItems = barGroup.group.shapes
+            groupItems.load('items')
+            return { index, barGroup, groupItems }
           })
           await context.sync()
 
-          const ungroupedByIndex = new Map<
+          const taggedGroups = createdGroups.map(({ index, barGroup, groupItems }) => {
+            const taggedItems = groupItems.items.map((child) => {
+              const roleTag = child.tags.getItemOrNullObject('PrezoWidgetRole')
+              roleTag.load('value')
+              child.load(withVisible(['id', 'width', 'left', 'height', 'top']))
+              return { child, roleTag }
+            })
+            return { index, barGroup, taggedItems }
+          })
+          await context.sync()
+
+          const groupedByIndex = new Map<
             number,
-            { bg: PowerPoint.Shape; fill: PowerPoint.Shape }
+            { group: PowerPoint.Shape; bg: PowerPoint.Shape; fill: PowerPoint.Shape }
           >()
-          reResolved.forEach(({ index, bg, fill }) => {
-            /** A child that fails to re-resolve keeps its old (grouped)
-             * proxies for this pass; the role-tag recovery scan repairs the
-             * stored ids on a later pass. */
-            if (!bg.isNullObject && !fill.isNullObject) {
-              ungroupedByIndex.set(index, { bg, fill })
+
+          taggedGroups.forEach(({ index, barGroup, taggedItems }) => {
+            let bg: PowerPoint.Shape | null = null
+            let fill: PowerPoint.Shape | null = null
+            taggedItems.forEach(({ child, roleTag }) => {
+              if (roleTag.isNullObject || !roleTag.value) {
+                return
+              }
+              if (roleTag.value === 'poll-bar-bg') {
+                bg = child
+                return
+              }
+              if (roleTag.value === 'poll-bar-fill') {
+                fill = child
+              }
+            })
+            if (!bg && taggedItems[0]) {
+              bg = taggedItems[0].child
+            }
+            if (!fill && taggedItems[1]) {
+              fill = taggedItems[1].child
+            }
+            if (bg && fill) {
+              groupedByIndex.set(index, { group: barGroup, bg, fill })
             }
           })
 
-          if (ungroupedByIndex.size > 0) {
+          if (groupedByIndex.size > 0) {
             itemShapes = itemShapes.map((item, index) => {
-              const ungrouped = ungroupedByIndex.get(index)
-              if (!ungrouped) {
+              const grouped = groupedByIndex.get(index)
+              if (!grouped) {
                 return item
               }
               return {
                 label: item.label,
-                group: null,
-                bg: ungrouped.bg,
-                fill: ungrouped.fill
+                group: grouped.group,
+                bg: grouped.bg,
+                fill: grouped.fill
               }
             })
 
-            const migratedItems: Array<{ label: string; bg: string; fill: string }> = []
+            const migratedItems: Array<{
+              label: string
+              group?: string
+              bg: string
+              fill: string
+            }> = []
             itemShapes.forEach((item) => {
               const labelId = getShapeId(item.label)
+              const groupId = getShapeId(item.group)
               const bgId = getShapeId(item.bg)
               const fillId = getShapeId(item.fill)
               if (!labelId || !bgId || !fillId) {
                 return
               }
-              migratedItems.push({ label: labelId, bg: bgId, fill: fillId })
+              const migratedItem: {
+                label: string
+                group?: string
+                bg: string
+                fill: string
+              } = {
+                label: labelId,
+                bg: bgId,
+                fill: fillId
+              }
+              if (groupId) {
+                migratedItem.group = groupId
+              }
+              migratedItems.push(migratedItem)
             })
 
             if (migratedItems.length > 0) {
@@ -3393,7 +3441,6 @@ export async function updatePollWidget(
       const stageItemWrite = (fn: () => void, label: string) => {
         stagedItemWrites.push({ fn, label })
       }
-      const barDiagnostics: Array<Record<string, unknown>> = []
 
       const pendingBarAnimations: PollBarAnimation[] = []
       /** Bars tween only on the presented slide; the rest snap silently. */
@@ -3405,13 +3452,6 @@ export async function updatePollWidget(
         const item = itemShapes[index]
         const data = optionData[index]
         if (item.label.isNullObject || item.bg.isNullObject || item.fill.isNullObject) {
-          barDiagnostics.push({
-            index,
-            skipped: 'null-shape',
-            label: item.label.isNullObject,
-            bg: item.bg.isNullObject,
-            fill: item.fill.isNullObject
-          })
           continue
         }
         /** Skip bar geometry/color writes entirely if bg or fill was swapped for a non-fillable shape on another device. */
@@ -3422,22 +3462,6 @@ export async function updatePollWidget(
         const bgHeight = item.bg.height
         const bgGeometryValid =
           isFiniteNum(bgTop) && isFiniteNum(bgLeft) && isFiniteNum(bgWidth) && isFiniteNum(bgHeight)
-        barDiagnostics.push({
-          index,
-          hasData: Boolean(data),
-          visibleRow: index < visibleOptions,
-          ratio: data?.ratio ?? null,
-          canStyleBars,
-          bgGeometryValid,
-          grouped: isLoadedGroupShape(item.group),
-          bg: { top: bgTop, left: bgLeft, width: bgWidth, height: bgHeight },
-          fill: {
-            left: loadedNumber(() => item.fill.left),
-            top: loadedNumber(() => item.fill.top),
-            width: loadedNumber(() => item.fill.width),
-            height: loadedNumber(() => item.fill.height)
-          }
-        })
 
         if (!data || index >= visibleOptions) {
           const rowGroup = isLoadedGroupShape(item.group) ? item.group : null
@@ -3464,18 +3488,9 @@ export async function updatePollWidget(
               setShapesVisibility([item.label, rowGroup, item.bg, item.fill], true)
             }, `row show ${index}`)
           }
-          /** Skeleton rows keep an insert-style "Option N" label (non-forced,
-           * so designer retypes survive; stale auto text from a previous
-           * binding still gets replaced). Rows beyond the skeleton — and
-           * surplus rows on legacy no-visibility hosts — clear instead. */
-          const placeholderLabel =
-            !hasPollData && index < visibleOptions ? `Option ${index + 1}` : ''
           stageItemWrite(
-            () =>
-              syncPollText(labelTextStates[index] ?? null, placeholderLabel, {
-                force: !placeholderLabel
-              }),
-            `label ${placeholderLabel ? 'placeholder' : 'clear'} ${index}`
+            () => syncPollText(labelTextStates[index] ?? null, '', { force: true }),
+            `label clear ${index}`
           )
           if (canStyleBars && bgGeometryValid) {
             stageItemWrite(() => {
@@ -3603,9 +3618,9 @@ export async function updatePollWidget(
         }
       }
 
-      let stagedFlushed = stagedItemWrites.length === 0
       if (stagedItemWrites.length > 0) {
         syncPhase = 'flush-item-writes'
+        let stagedFlushed = false
         try {
           for (const write of stagedItemWrites) {
             try {
@@ -3631,17 +3646,6 @@ export async function updatePollWidget(
           }
         }
       }
-
-      logWidgetDebug('poll-slide-pass', {
-        slideKey,
-        boundPollId,
-        hasPollData,
-        forced: Boolean(forceText),
-        animate: animateThisSlide,
-        stagedFlushed,
-        staged: stagedItemWrites.map((write) => write.label),
-        bars: barDiagnostics
-      })
 
       if (pendingBarAnimations.length > 0) {
         syncPhase = 'animate-bars'
@@ -3674,12 +3678,6 @@ export async function updatePollWidget(
           err,
           debugInfo ? { debugInfo } : ''
         )
-        logWidgetDebug('poll-slide-fail', {
-          slideKey,
-          slideIndex,
-          failedAtPhase: syncPhase,
-          error: err instanceof Error ? err.message : String(err)
-        })
       }
     }
 
