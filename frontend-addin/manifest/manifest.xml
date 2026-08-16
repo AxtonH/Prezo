@@ -25,7 +25,7 @@
     </Sets>
   </Requirements>
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://prezo-addin.up.railway.app/?officeHost=1&amp;v=remove-wc-20260212-1" />
+    <SourceLocation DefaultValue="https://prezo-addin.up.railway.app/?v=remove-wc-20260212-1" />
   </DefaultSettings>
   <Permissions>ReadWriteDocument</Permissions>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
@@ -86,7 +86,7 @@
         <bt:Image id="Prezo.Icon80" DefaultValue="https://prezo-addin.up.railway.app/prezo-icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://prezo-addin.up.railway.app/?officeHost=1&amp;v=remove-wc-20260212-1" />
+        <bt:Url id="Prezo.TaskpaneUrl" DefaultValue="https://prezo-addin.up.railway.app/?v=remove-wc-20260212-1" />
         <bt:Url id="Prezo.FunctionFileUrl" DefaultValue="https://prezo-addin.up.railway.app/function-file/?v=remove-wc-20260212-1" />
       </bt:Urls>
       <bt:ShortStrings>

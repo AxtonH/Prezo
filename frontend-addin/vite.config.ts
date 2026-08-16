@@ -62,17 +62,6 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react(), extensionlessPublicHtml()],
-    build: {
-      rollupOptions: {
-        input: {
-          main: path.resolve(__dirname, 'index.html'),
-          /** The manifest's FunctionFile (ribbon command runtime) — a real
-           * Vite entry so it shares src/office/widgetShapes.ts with the
-           * taskpane instead of carrying its own copy of the widget engine. */
-          'function-file': path.resolve(__dirname, 'function-file/index.html')
-        }
-      }
-    },
     server:
       command === 'serve'
         ? {

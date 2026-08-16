@@ -155,20 +155,7 @@ export function ActivePollActivityCard({
     setBindError(null)
     try {
       await onBindWidget(poll.id)
-      /** TEMPORARY field diagnostic (bar-fill investigation): show the pass
-       * report inline so it can be captured without webview console access.
-       * Remove once the grouped-bar write issue is closed. */
-      let debugSuffix = ''
-      try {
-        const report = (window as unknown as Record<string, unknown>)
-          .__prezoPollWidgetDebug
-        if (report) {
-          debugSuffix = ` — debug: ${JSON.stringify(report)}`
-        }
-      } catch {
-        debugSuffix = ''
-      }
-      setBindMessage(`Slide widget linked to this poll.${debugSuffix}`)
+      setBindMessage('Slide widget linked to this poll.')
     } catch (err) {
       setBindError(err instanceof Error ? err.message : 'Could not bind widget.')
     } finally {
