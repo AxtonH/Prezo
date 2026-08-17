@@ -594,6 +594,18 @@ const setFillTransparencyIfChanged = (
   shape.fill.transparency = transparency
 }
 
+/** Pre-check for setFillTransparencyIfChanged so callers can skip the whole
+ * per-item sync (an undo-stack "Perform Add-in action" entry) when nothing
+ * would be written. Unloaded transparency reports true — the write path
+ * stays the safe fallback. */
+const fillTransparencyNeedsWrite = (
+  shape: PowerPoint.Shape,
+  transparency: number
+) => {
+  const current = loadedNumber(() => shape.fill.transparency)
+  return current === null || Math.abs(current - transparency) >= 0.001
+}
+
 const setLineVisibleIfChanged = (shape: PowerPoint.Shape, visible: boolean) => {
   if (loadedBoolean(() => shape.lineFormat.visible) === visible) {
     return
@@ -2409,6 +2421,35 @@ const applyBarGeometry = (fill: PowerPoint.Shape, geometry: PollBarGeometry) => 
   fill.top = geometry.top
 }
 
+/** Skip-threshold for re-writing bar geometry that is already in place —
+ * far below anything visible, above host float rounding. Undo-stack
+ * hygiene: every landed write batch becomes a "Perform Add-in action" undo
+ * entry, so repair passes (selection change on a slide with a widget) must
+ * not re-write geometry that already matches. */
+const POLL_BAR_GEOMETRY_EPSILON_PT = 0.05
+
+/** True when the fill's loaded geometry differs from the target. Unloaded
+ * geometry reports true so the write path stays the safe fallback. Only
+ * used for the one-shot update writes — animation frames always write. */
+const barGeometryNeedsWrite = (
+  fill: PowerPoint.Shape,
+  target: PollBarGeometry
+) => {
+  const left = loadedNumber(() => fill.left)
+  const top = loadedNumber(() => fill.top)
+  const width = loadedNumber(() => fill.width)
+  const height = loadedNumber(() => fill.height)
+  if (left === null || top === null || width === null || height === null) {
+    return true
+  }
+  return (
+    Math.abs(left - target.left) > POLL_BAR_GEOMETRY_EPSILON_PT ||
+    Math.abs(top - target.top) > POLL_BAR_GEOMETRY_EPSILON_PT ||
+    Math.abs(width - target.width) > POLL_BAR_GEOMETRY_EPSILON_PT ||
+    Math.abs(height - target.height) > POLL_BAR_GEOMETRY_EPSILON_PT
+  )
+}
+
 /** Tween poll bar fills to their target geometry with a short ease-out.
  * All bars on a slide share the same frames so options grow together. Only
  * the geometry properties the one-shot updater already owns are written —
@@ -3489,6 +3530,19 @@ export async function updatePollWidget(
              * shapes stay visible and designable while unbound. */
             const isSkeletonRow = !hasPollData && index < visibleOptions
             const skeletonFillHeight = Math.max(2, bgHeight * POLL_SKELETON_FILL_RATIO)
+            const targetGeometry: PollBarGeometry = isVertical
+              ? {
+                  left: bgLeft,
+                  top: bgTop + Math.max(0, bgHeight - (isSkeletonRow ? skeletonFillHeight : 2)),
+                  width: bgWidth,
+                  height: isSkeletonRow ? skeletonFillHeight : 2
+                }
+              : {
+                  left: bgLeft,
+                  top: bgTop,
+                  width: isSkeletonRow ? Math.max(2, bgWidth * POLL_SKELETON_FILL_RATIO) : 2,
+                  height: bgHeight
+                }
             /**
              * Bar geometry/fill writes deliberately do NOT go through the
              * staged single-flush: field testing showed geometry writes on
@@ -3496,28 +3550,15 @@ export async function updatePollWidget(
              * in the big batch — the sync succeeds, the shapes never change
              * — while the same writes land reliably in small per-item syncs
              * (this is also how the pre-perf-pass code and the bar animation
-             * frames write, both field-proven). Only widgets whose data
-             * changed reach this code (applied-signature skip), so the
-             * extra round trips are paid rarely.
+             * frames write, both field-proven). Already-correct bars skip
+             * the write AND the sync — a landed write is an undo-stack
+             * entry, and repair passes run on every selection change.
              */
-            await tryItemWrite(() => {
-              applyBarGeometry(
-                item.fill,
-                isVertical
-                  ? {
-                      left: bgLeft,
-                      top: bgTop + Math.max(0, bgHeight - (isSkeletonRow ? skeletonFillHeight : 2)),
-                      width: bgWidth,
-                      height: isSkeletonRow ? skeletonFillHeight : 2
-                    }
-                  : {
-                      left: bgLeft,
-                      top: bgTop,
-                      width: isSkeletonRow ? Math.max(2, bgWidth * POLL_SKELETON_FILL_RATIO) : 2,
-                      height: bgHeight
-                    }
-              )
-            }, `bar dims ${index}`)
+            if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
+              await tryItemWrite(() => {
+                applyBarGeometry(item.fill, targetGeometry)
+              }, `bar dims ${index}`)
+            }
             /**
              * Bar transparency reflects visibility, not aesthetics. The
              * pre-allocated MAX_POLL_OPTIONS row shapes get hidden/shown
@@ -3528,10 +3569,17 @@ export async function updatePollWidget(
              * colors and geometry remain untouched — only the on/off
              * visibility flag is system-controlled.
              */
-            await tryItemWrite(() => {
-              item.fill.fill.transparency = isSkeletonRow ? 0 : 1
-              item.bg.fill.transparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
-            }, `bar transparency ${index}`)
+            const fillTransparency = isSkeletonRow ? 0 : 1
+            const bgTransparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
+            if (
+              fillTransparencyNeedsWrite(item.fill, fillTransparency) ||
+              fillTransparencyNeedsWrite(item.bg, bgTransparency)
+            ) {
+              await tryItemWrite(() => {
+                setFillTransparencyIfChanged(item.fill, fillTransparency)
+                setFillTransparencyIfChanged(item.bg, bgTransparency)
+              }, `bar transparency ${index}`)
+            }
           }
           continue
         }
@@ -3600,27 +3648,42 @@ export async function updatePollWidget(
              * 0) waits until the shrink finishes inside animatePollBars. See
              * the hidden branch above for why transparency is
              * system-controlled rather than gated on style lock. */
-            await tryItemWrite(() => {
-              if (data.ratio > 0) {
-                item.fill.fill.transparency = 0
-              }
-              item.bg.fill.transparency = 0
-            }, `bar transparency ${index}`)
+            if (
+              (data.ratio > 0 && fillTransparencyNeedsWrite(item.fill, 0)) ||
+              fillTransparencyNeedsWrite(item.bg, 0)
+            ) {
+              await tryItemWrite(() => {
+                if (data.ratio > 0) {
+                  setFillTransparencyIfChanged(item.fill, 0)
+                }
+                setFillTransparencyIfChanged(item.bg, 0)
+              }, `bar transparency ${index}`)
+            }
             continue
           }
 
           /** Direct per-item writes, NOT staged — see the note on the hidden
            * branch: bar geometry silently fails to land in the big staged
-           * flush but lands reliably in small per-item syncs. */
-          await tryItemWrite(() => {
-            applyBarGeometry(item.fill, targetGeometry)
-          }, `bar dims ${index}`)
+           * flush but lands reliably in small per-item syncs. Already-correct
+           * bars skip the write AND the sync (undo-stack hygiene — repair
+           * passes run on every selection change). */
+          if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
+            await tryItemWrite(() => {
+              applyBarGeometry(item.fill, targetGeometry)
+            }, `bar dims ${index}`)
+          }
           /** See the matching note on the hidden branch above for why
               transparency is system-controlled rather than gated on style lock. */
-          await tryItemWrite(() => {
-            item.fill.fill.transparency = data.ratio === 0 ? 1 : 0
-            item.bg.fill.transparency = 0
-          }, `bar transparency ${index}`)
+          const boundFillTransparency = data.ratio === 0 ? 1 : 0
+          if (
+            fillTransparencyNeedsWrite(item.fill, boundFillTransparency) ||
+            fillTransparencyNeedsWrite(item.bg, 0)
+          ) {
+            await tryItemWrite(() => {
+              setFillTransparencyIfChanged(item.fill, boundFillTransparency)
+              setFillTransparencyIfChanged(item.bg, 0)
+            }, `bar transparency ${index}`)
+          }
         }
       }
 
