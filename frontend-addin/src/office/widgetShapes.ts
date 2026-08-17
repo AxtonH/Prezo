@@ -60,6 +60,9 @@ const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 /** Unbound poll widgets render this instead of auto-following a poll —
  * binding is an explicit host action (Bind widget on the poll card). */
 const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
+/** Unbound skeleton bars stay partially filled (insert-time and after
+ * session login alike) so designers can see and restyle the fill shapes. */
+const POLL_SKELETON_FILL_RATIO = 0.35
 
 type WidgetShapeIds = {
   container: string
@@ -2231,12 +2234,16 @@ export async function insertPollWidget(
       bg.tags.add('PrezoWidgetRole', 'poll-bar-bg')
 
       const fillHeight = isVertical
-        ? Math.max(2, verticalBarAreaHeight * 0.35)
+        ? Math.max(2, verticalBarAreaHeight * POLL_SKELETON_FILL_RATIO)
         : barThickness
       const fill = slide.shapes.addGeometricShape('Rectangle', {
         left: isVertical ? verticalBarLeft : left + paddingX,
         top: isVertical ? barTop + (verticalBarAreaHeight - fillHeight) : barTop,
-        width: isVertical ? verticalBarWidth : showItem ? Math.max(2, fullBarWidth * 0.35) : 2,
+        width: isVertical
+          ? verticalBarWidth
+          : showItem
+            ? Math.max(2, fullBarWidth * POLL_SKELETON_FILL_RATIO)
+            : 2,
         height: isVertical ? fillHeight : barThickness
       })
       fill.fill.setSolidColor(style.accentColor)
@@ -3469,6 +3476,10 @@ export async function updatePollWidget(
             `label ${placeholderLabel ? 'placeholder' : 'clear'} ${index}`
           )
           if (canStyleBars && bgGeometryValid) {
+            /** Skeleton rows keep the insert-time partial fill so the fill
+             * shapes stay visible and designable while unbound. */
+            const isSkeletonRow = !hasPollData && index < visibleOptions
+            const skeletonFillHeight = Math.max(2, bgHeight * POLL_SKELETON_FILL_RATIO)
             /**
              * Bar geometry/fill writes deliberately do NOT go through the
              * staged single-flush: field testing showed geometry writes on
@@ -3486,14 +3497,14 @@ export async function updatePollWidget(
                 isVertical
                   ? {
                       left: bgLeft,
-                      top: bgTop + Math.max(0, bgHeight - 2),
+                      top: bgTop + Math.max(0, bgHeight - (isSkeletonRow ? skeletonFillHeight : 2)),
                       width: bgWidth,
-                      height: 2
+                      height: isSkeletonRow ? skeletonFillHeight : 2
                     }
                   : {
                       left: bgLeft,
                       top: bgTop,
-                      width: 2,
+                      width: isSkeletonRow ? Math.max(2, bgWidth * POLL_SKELETON_FILL_RATIO) : 2,
                       height: bgHeight
                     }
               )
@@ -3509,8 +3520,8 @@ export async function updatePollWidget(
              * visibility flag is system-controlled.
              */
             await tryItemWrite(() => {
-              item.fill.fill.transparency = 1
-              item.bg.fill.transparency = hasPollData ? 1 : 0.35
+              item.fill.fill.transparency = isSkeletonRow ? 0 : 1
+              item.bg.fill.transparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
             }, `bar transparency ${index}`)
           }
           continue

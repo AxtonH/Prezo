@@ -1196,22 +1196,25 @@
             }
             /** Skeleton rows keep an insert-style "Option N" label; rows
              * beyond the skeleton (and surplus rows on legacy hosts) clear. */
-            item.label.textFrame.textRange.text =
-              !hasPollData && index < visibleOptions ? `Option ${index + 1}` : ''
+            const isSkeletonRow = !hasPollData && index < visibleOptions
+            item.label.textFrame.textRange.text = isSkeletonRow ? `Option ${index + 1}` : ''
+            /** Skeleton rows keep the insert-time partial fill (35%) so the
+             * fill shapes stay visible and designable while unbound. */
             if (isVertical) {
               const barHeight = item.bg.height
-              item.fill.height = 2
-              item.fill.top = item.bg.top + Math.max(0, barHeight - 2)
+              const fillHeight = isSkeletonRow ? Math.max(2, barHeight * 0.35) : 2
+              item.fill.height = fillHeight
+              item.fill.top = item.bg.top + Math.max(0, barHeight - fillHeight)
               item.fill.width = item.bg.width
               item.fill.left = item.bg.left
             } else {
-              item.fill.width = 2
+              item.fill.width = isSkeletonRow ? Math.max(2, item.bg.width * 0.35) : 2
               item.fill.height = item.bg.height
               item.fill.left = item.bg.left
               item.fill.top = item.bg.top
             }
-            item.fill.fill.transparency = 1
-            item.bg.fill.transparency = hasPollData ? 1 : 0.35
+            item.fill.fill.transparency = isSkeletonRow ? 0 : 1
+            item.bg.fill.transparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
             return
           }
           if (useShapeVisibility) {
