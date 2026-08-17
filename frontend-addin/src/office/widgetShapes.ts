@@ -594,18 +594,6 @@ const setFillTransparencyIfChanged = (
   shape.fill.transparency = transparency
 }
 
-/** Pre-check for setFillTransparencyIfChanged so callers can skip the whole
- * per-item sync (an undo-stack "Perform Add-in action" entry) when nothing
- * would be written. Unloaded transparency reports true — the write path
- * stays the safe fallback. */
-const fillTransparencyNeedsWrite = (
-  shape: PowerPoint.Shape,
-  transparency: number
-) => {
-  const current = loadedNumber(() => shape.fill.transparency)
-  return current === null || Math.abs(current - transparency) >= 0.001
-}
-
 const setLineVisibleIfChanged = (shape: PowerPoint.Shape, visible: boolean) => {
   if (loadedBoolean(() => shape.lineFormat.visible) === visible) {
     return
@@ -2421,35 +2409,6 @@ const applyBarGeometry = (fill: PowerPoint.Shape, geometry: PollBarGeometry) => 
   fill.top = geometry.top
 }
 
-/** Skip-threshold for re-writing bar geometry that is already in place —
- * far below anything visible, above host float rounding. Undo-stack
- * hygiene: every landed write batch becomes a "Perform Add-in action" undo
- * entry, so repair passes (selection change on a slide with a widget) must
- * not re-write geometry that already matches. */
-const POLL_BAR_GEOMETRY_EPSILON_PT = 0.05
-
-/** True when the fill's loaded geometry differs from the target. Unloaded
- * geometry reports true so the write path stays the safe fallback. Only
- * used for the one-shot update writes — animation frames always write. */
-const barGeometryNeedsWrite = (
-  fill: PowerPoint.Shape,
-  target: PollBarGeometry
-) => {
-  const left = loadedNumber(() => fill.left)
-  const top = loadedNumber(() => fill.top)
-  const width = loadedNumber(() => fill.width)
-  const height = loadedNumber(() => fill.height)
-  if (left === null || top === null || width === null || height === null) {
-    return true
-  }
-  return (
-    Math.abs(left - target.left) > POLL_BAR_GEOMETRY_EPSILON_PT ||
-    Math.abs(top - target.top) > POLL_BAR_GEOMETRY_EPSILON_PT ||
-    Math.abs(width - target.width) > POLL_BAR_GEOMETRY_EPSILON_PT ||
-    Math.abs(height - target.height) > POLL_BAR_GEOMETRY_EPSILON_PT
-  )
-}
-
 /** Tween poll bar fills to their target geometry with a short ease-out.
  * All bars on a slide share the same frames so options grow together. Only
  * the geometry properties the one-shot updater already owns are written —
@@ -2832,16 +2791,18 @@ export async function updatePollWidget(
       }
       /**
        * Pure repair: a selection-change pass over a widget whose rendered
-       * data did NOT change (the click-on-widget case). Only these passes
-       * may trust the no-op bar-write guards. Every data-bearing pass
-       * (changed signature, bind/edit force, pending insert) must SEND the
-       * bar writes even when the loaded model already matches the target:
-       * the document model and the rendered shapes can disagree (a batched
-       * write lands in the model without repainting — the 80b99cd freeze),
-       * no API read can observe the render, and an actually-sent per-item
-       * write is the only thing that provably repaints (fdb1686,
-       * field-proven). Guards on pure repair are safe because a matching
-       * model there was put in place by a repainting per-item write.
+       * data did NOT change (the click-on-widget case). These passes never
+       * touch the bars AT ALL — no writes, and no model-read guards either,
+       * because the document model cannot testify about the render (writes
+       * can land in the model without repainting; model-read guards froze
+       * bars three times: dc7efcf, 80b99cd, 615b6a9). Skipping outright
+       * makes clicking a widget structurally free of undo entries. The
+       * trade-off is deliberate: a hand-dragged bar re-fits on the next
+       * data change or bind instead of instantly — the add-in should not
+       * fight a designer mid-edit anyway. Every data-bearing pass (changed
+       * signature, bind/edit force, pending insert) SENDS all bar writes
+       * unconditionally in per-item syncs — the only field-proven way to
+       * repaint (fdb1686, 1b70f65, d400945).
        */
       const isPureRepairPass =
         !isPending && !forceText && cachedSignature === dataSignature
@@ -3570,7 +3531,7 @@ export async function updatePollWidget(
              * the pre-write guards below safe: the model can only match the
              * target if a repainting write put it there.
              */
-            if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
+            if (!isPureRepairPass) {
               await tryItemWrite(() => {
                 applyBarGeometry(item.fill, targetGeometry)
               }, `bar dims ${index}`)
@@ -3587,11 +3548,7 @@ export async function updatePollWidget(
              */
             const fillTransparency = isSkeletonRow ? 0 : 1
             const bgTransparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
-            if (
-              !isPureRepairPass ||
-              fillTransparencyNeedsWrite(item.fill, fillTransparency) ||
-              fillTransparencyNeedsWrite(item.bg, bgTransparency)
-            ) {
+            if (!isPureRepairPass) {
               await tryItemWrite(() => {
                 item.fill.fill.transparency = fillTransparency
                 item.bg.fill.transparency = bgTransparency
@@ -3665,11 +3622,7 @@ export async function updatePollWidget(
              * 0) waits until the shrink finishes inside animatePollBars. See
              * the hidden branch above for why transparency is
              * system-controlled rather than gated on style lock. */
-            if (
-              !isPureRepairPass ||
-              (data.ratio > 0 && fillTransparencyNeedsWrite(item.fill, 0)) ||
-              fillTransparencyNeedsWrite(item.bg, 0)
-            ) {
+            if (!isPureRepairPass) {
               await tryItemWrite(() => {
                 if (data.ratio > 0) {
                   item.fill.fill.transparency = 0
@@ -3682,11 +3635,11 @@ export async function updatePollWidget(
 
           /** Per-item writes, NEVER batched — see the note on the hidden
            * branch: batched bar geometry updates the model without
-           * repainting on desktop hosts. On pure repair passes,
-           * already-correct bars skip the write AND the sync (undo-stack
-           * hygiene — repair runs on every selection change); every other
-           * pass sends the write regardless. */
-          if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
+           * repainting on desktop hosts. Pure repair passes skip bars
+           * entirely (undo-stack hygiene — repair runs on every selection
+           * change, and model-read guards are banned); every other pass
+           * sends the write unconditionally. */
+          if (!isPureRepairPass) {
             await tryItemWrite(() => {
               applyBarGeometry(item.fill, targetGeometry)
             }, `bar dims ${index}`)
@@ -3694,11 +3647,7 @@ export async function updatePollWidget(
           /** See the matching note on the hidden branch above for why
               transparency is system-controlled rather than gated on style lock. */
           const boundFillTransparency = data.ratio === 0 ? 1 : 0
-          if (
-            !isPureRepairPass ||
-            fillTransparencyNeedsWrite(item.fill, boundFillTransparency) ||
-            fillTransparencyNeedsWrite(item.bg, 0)
-          ) {
+          if (!isPureRepairPass) {
             await tryItemWrite(() => {
               item.fill.fill.transparency = boundFillTransparency
               item.bg.fill.transparency = 0
