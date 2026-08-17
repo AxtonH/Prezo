@@ -972,13 +972,11 @@ export async function insertQnaWidget(
     existingShapesTag.load('value')
     await context.sync()
 
-    const hasExistingWidget = !existingShapesTag.isNullObject && Boolean(existingShapesTag.value)
-    if (hasExistingWidget && !allowReplace) {
-      throw new WidgetExistsError(
-        'This slide already has a Q&A widget. Replace it or remove it first.'
-      )
-    }
-
+    /** Manually deleting the widget shapes leaves the slide tags behind, so
+     * a stale shapes tag alone must not block the insert (it used to force
+     * a bogus replace confirmation). Only shapes the tag references that
+     * are still on the slide count as an existing widget. */
+    let existingShapes: PowerPoint.Shape[] = []
     if (!existingShapesTag.isNullObject && existingShapesTag.value) {
       try {
         const parsed = JSON.parse(existingShapesTag.value) as Partial<WidgetShapeIds>
@@ -1000,14 +998,25 @@ export async function insertQnaWidget(
         const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
         shapes.forEach((shape) => shape.load('id'))
         await context.sync()
-        shapes.forEach((shape) => {
-          if (!shape.isNullObject) {
-            shape.delete()
-          }
-        })
-        await context.sync()
+        existingShapes = shapes.filter((shape) => !shape.isNullObject)
       } catch {
         // If parsing fails, we just overwrite tags below.
+      }
+    }
+
+    const hasExistingWidget = existingShapes.length > 0
+    if (hasExistingWidget && !allowReplace) {
+      throw new WidgetExistsError(
+        'This slide already has a Q&A widget. Replace it or remove it first.'
+      )
+    }
+
+    if (!existingShapesTag.isNullObject && existingShapesTag.value) {
+      if (existingShapes.length > 0) {
+        existingShapes.forEach((shape) => {
+          shape.delete()
+        })
+        await context.sync()
       }
       slide.tags.delete(SESSION_TAG)
       slide.tags.delete(WIDGET_PENDING_TAG)

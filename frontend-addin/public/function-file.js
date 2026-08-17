@@ -2642,8 +2642,24 @@
       shapesTag.load('value')
       await context.sync()
       if (!shapesTag.isNullObject && shapesTag.value) {
-        found = true
-        return
+        /** Manually deleting the widget shapes leaves the slide tags behind,
+         * so a stale shapes tag alone must not count as "has widget" (it
+         * used to trigger a bogus replace warning). Trust it only if at
+         * least one referenced shape is still on the slide; otherwise fall
+         * through to the live tag scan. */
+        try {
+          const parsed = JSON.parse(shapesTag.value)
+          const ids = family.collectIds(parsed).filter(Boolean)
+          const stored = ids.map((id) => slide.shapes.getItemOrNullObject(id))
+          stored.forEach((shape) => shape.load('id'))
+          await context.sync()
+          if (stored.some((shape) => !shape.isNullObject)) {
+            found = true
+            return
+          }
+        } catch {
+          // Unparseable tag — the tag scan below decides.
+        }
       }
       const taggedShapes = await loadTaggedFamilyShapes(context, slide, family)
       found = taggedShapes.length > 0
