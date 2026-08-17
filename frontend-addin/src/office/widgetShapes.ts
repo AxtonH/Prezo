@@ -3472,6 +3472,70 @@ export async function updatePollWidget(
       const animateThisSlide =
         animateBars && (presentedSheetId === null || slideSheetId === presentedSheetId)
 
+      /**
+       * Bar geometry/transparency writes for the whole widget, collected in
+       * the item loop and flushed in ONE bars-only sync (undo-stack hygiene:
+       * every mutation sync is a "Perform Add-in action" entry, and the old
+       * two-syncs-per-row flow made a single bind cost ~10 entries). The
+       * known host bug — bar writes silently dropped from a big mixed flush
+       * — is caught by a read-back verification (loads cost no undo entry):
+       * any row whose landed values still differ re-runs through the
+       * field-proven per-item tryItemWrite path. Only rows that actually
+       * need a write are collected, so a no-change pass flushes nothing.
+       */
+      type PendingBarWrite = {
+        index: number
+        fill: PowerPoint.Shape
+        bg: PowerPoint.Shape
+        geometry: PollBarGeometry | null
+        fillTransparency: number | null
+        bgTransparency: number | null
+      }
+      const pendingBarWrites: PendingBarWrite[] = []
+      const collectBarWrite = (
+        index: number,
+        item: { fill: PowerPoint.Shape; bg: PowerPoint.Shape },
+        geometry: PollBarGeometry | null,
+        fillTransparency: number | null,
+        bgTransparency: number | null
+      ) => {
+        const geometryNeeded = geometry !== null && barGeometryNeedsWrite(item.fill, geometry)
+        const fillTNeeded =
+          fillTransparency !== null && fillTransparencyNeedsWrite(item.fill, fillTransparency)
+        const bgTNeeded =
+          bgTransparency !== null && fillTransparencyNeedsWrite(item.bg, bgTransparency)
+        if (!geometryNeeded && !fillTNeeded && !bgTNeeded) {
+          return
+        }
+        pendingBarWrites.push({
+          index,
+          fill: item.fill,
+          bg: item.bg,
+          geometry: geometryNeeded ? geometry : null,
+          fillTransparency: fillTNeeded ? fillTransparency : null,
+          bgTransparency: bgTNeeded ? bgTransparency : null
+        })
+      }
+      const applyPendingBarWrite = (write: PendingBarWrite) => {
+        if (write.geometry) {
+          applyBarGeometry(write.fill, write.geometry)
+        }
+        if (write.fillTransparency !== null) {
+          write.fill.fill.transparency = write.fillTransparency
+        }
+        if (write.bgTransparency !== null) {
+          write.bg.fill.transparency = write.bgTransparency
+        }
+      }
+      /** True when this write's target is fully reflected in the shape's
+       * loaded state — used on the read-back to find silently dropped rows. */
+      const pendingBarWriteLanded = (write: PendingBarWrite) =>
+        (write.geometry === null || !barGeometryNeedsWrite(write.fill, write.geometry)) &&
+        (write.fillTransparency === null ||
+          !fillTransparencyNeedsWrite(write.fill, write.fillTransparency)) &&
+        (write.bgTransparency === null ||
+          !fillTransparencyNeedsWrite(write.bg, write.bgTransparency))
+
       for (let index = 0; index < itemShapes.length; index += 1) {
         const item = itemShapes[index]
         const data = optionData[index]
@@ -3544,22 +3608,6 @@ export async function updatePollWidget(
                   height: bgHeight
                 }
             /**
-             * Bar geometry/fill writes deliberately do NOT go through the
-             * staged single-flush: field testing showed geometry writes on
-             * the (grouped) bar shapes silently fail to land when flushed
-             * in the big batch — the sync succeeds, the shapes never change
-             * — while the same writes land reliably in small per-item syncs
-             * (this is also how the pre-perf-pass code and the bar animation
-             * frames write, both field-proven). Already-correct bars skip
-             * the write AND the sync — a landed write is an undo-stack
-             * entry, and repair passes run on every selection change.
-             */
-            if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
-              await tryItemWrite(() => {
-                applyBarGeometry(item.fill, targetGeometry)
-              }, `bar dims ${index}`)
-            }
-            /**
              * Bar transparency reflects visibility, not aesthetics. The
              * pre-allocated MAX_POLL_OPTIONS row shapes get hidden/shown
              * as the bound poll's option count changes; without an
@@ -3569,17 +3617,13 @@ export async function updatePollWidget(
              * colors and geometry remain untouched — only the on/off
              * visibility flag is system-controlled.
              */
-            const fillTransparency = isSkeletonRow ? 0 : 1
-            const bgTransparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
-            if (
-              fillTransparencyNeedsWrite(item.fill, fillTransparency) ||
-              fillTransparencyNeedsWrite(item.bg, bgTransparency)
-            ) {
-              await tryItemWrite(() => {
-                setFillTransparencyIfChanged(item.fill, fillTransparency)
-                setFillTransparencyIfChanged(item.bg, bgTransparency)
-              }, `bar transparency ${index}`)
-            }
+            collectBarWrite(
+              index,
+              item,
+              targetGeometry,
+              isSkeletonRow ? 0 : 1,
+              hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
+            )
           }
           continue
         }
@@ -3645,45 +3689,18 @@ export async function updatePollWidget(
               hideAtEnd: data.ratio === 0
             })
             /** Reveal a previously hidden bar before it grows; hiding (ratio
-             * 0) waits until the shrink finishes inside animatePollBars. See
-             * the hidden branch above for why transparency is
-             * system-controlled rather than gated on style lock. */
-            if (
-              (data.ratio > 0 && fillTransparencyNeedsWrite(item.fill, 0)) ||
-              fillTransparencyNeedsWrite(item.bg, 0)
-            ) {
-              await tryItemWrite(() => {
-                if (data.ratio > 0) {
-                  setFillTransparencyIfChanged(item.fill, 0)
-                }
-                setFillTransparencyIfChanged(item.bg, 0)
-              }, `bar transparency ${index}`)
-            }
+             * 0) waits until the shrink finishes inside animatePollBars. The
+             * bars-only flush runs before the animation frames, so the
+             * reveal always lands first. See the hidden branch above for why
+             * transparency is system-controlled rather than gated on style
+             * lock. */
+            collectBarWrite(index, item, null, data.ratio > 0 ? 0 : null, 0)
             continue
           }
 
-          /** Direct per-item writes, NOT staged — see the note on the hidden
-           * branch: bar geometry silently fails to land in the big staged
-           * flush but lands reliably in small per-item syncs. Already-correct
-           * bars skip the write AND the sync (undo-stack hygiene — repair
-           * passes run on every selection change). */
-          if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
-            await tryItemWrite(() => {
-              applyBarGeometry(item.fill, targetGeometry)
-            }, `bar dims ${index}`)
-          }
           /** See the matching note on the hidden branch above for why
               transparency is system-controlled rather than gated on style lock. */
-          const boundFillTransparency = data.ratio === 0 ? 1 : 0
-          if (
-            fillTransparencyNeedsWrite(item.fill, boundFillTransparency) ||
-            fillTransparencyNeedsWrite(item.bg, 0)
-          ) {
-            await tryItemWrite(() => {
-              setFillTransparencyIfChanged(item.fill, boundFillTransparency)
-              setFillTransparencyIfChanged(item.bg, 0)
-            }, `bar transparency ${index}`)
-          }
+          collectBarWrite(index, item, targetGeometry, data.ratio === 0 ? 1 : 0, 0)
         }
       }
 
@@ -3713,6 +3730,58 @@ export async function updatePollWidget(
           for (const write of stagedItemWrites) {
             await tryItemWrite(write.fn, write.label)
           }
+        }
+      }
+
+      if (pendingBarWrites.length > 0) {
+        /**
+         * One bars-only flush for the whole widget, then a read-back check.
+         * The known host bug (bar geometry silently dropped — sync succeeds,
+         * shapes never move) was only ever observed in the big MIXED staged
+         * flush; a bars-only batch is unproven, so every batched write is
+         * verified by re-loading the touched properties (read-only sync, no
+         * undo entry) and comparing against the target. Rows that did not
+         * land re-run through the field-proven per-item tryItemWrite path —
+         * worst case is one extra sync over the old always-per-item flow,
+         * best case a bind costs 1 undo entry for bars instead of ~10.
+         */
+        syncPhase = 'flush-bar-writes'
+        let barBatchVerified = false
+        try {
+          pendingBarWrites.forEach(applyPendingBarWrite)
+          await context.sync()
+          pendingBarWrites.forEach((write) => {
+            if (write.geometry) {
+              write.fill.load(['width', 'height', 'left', 'top'])
+            }
+            if (write.fillTransparency !== null) {
+              write.fill.load('fill/transparency')
+            }
+            if (write.bgTransparency !== null) {
+              write.bg.load('fill/transparency')
+            }
+          })
+          await context.sync()
+          barBatchVerified = true
+        } catch (flushErr) {
+          console.warn(
+            `Poll widget: batched bar writes failed on slide index ${slideIndex}; retrying rows in isolation`,
+            flushErr
+          )
+        }
+        /** Verified batch: rewrite only rows whose read-back still differs
+         * (silent drop). Failed batch: loads never ran, so every row still
+         * reports stale values and re-runs — full per-item fallback. */
+        const droppedBarWrites = pendingBarWrites.filter(
+          (write) => !pendingBarWriteLanded(write)
+        )
+        if (barBatchVerified && droppedBarWrites.length > 0) {
+          console.warn(
+            `Poll widget: ${droppedBarWrites.length} batched bar write(s) did not land on slide index ${slideIndex}; retrying per-item`
+          )
+        }
+        for (const write of droppedBarWrites) {
+          await tryItemWrite(() => applyPendingBarWrite(write), `bar writes ${write.index}`)
         }
       }
 
