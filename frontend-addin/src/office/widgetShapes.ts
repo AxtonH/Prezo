@@ -2816,9 +2816,9 @@ export async function updatePollWidget(
         boundPollId,
         poll ? pollProjection(poll) : null
       ])
+      const cachedSignature = appliedWidgetSignatures.get(slideKey)
       if (!isPending && !forceText && !repairSlideIds.has(info.slide.id)) {
-        const cached = appliedWidgetSignatures.get(slideKey)
-        if (cached === dataSignature) {
+        if (cachedSignature === dataSignature) {
           continue
         }
         /** Slides once scanned and found widget-free stay skipped no matter
@@ -2826,10 +2826,25 @@ export async function updatePollWidget(
          * slides stop paying the recovery scan on every pass. Slides that
          * carry this session's tag, pending inserts, and repair passes never
          * sentinel-skip. */
-        if (cached === NO_WIDGET_SIGNATURE && !shapeIds && !hasSessionMatch) {
+        if (cachedSignature === NO_WIDGET_SIGNATURE && !shapeIds && !hasSessionMatch) {
           continue
         }
       }
+      /**
+       * Pure repair: a selection-change pass over a widget whose rendered
+       * data did NOT change (the click-on-widget case). Only these passes
+       * may trust the no-op bar-write guards. Every data-bearing pass
+       * (changed signature, bind/edit force, pending insert) must SEND the
+       * bar writes even when the loaded model already matches the target:
+       * the document model and the rendered shapes can disagree (a batched
+       * write lands in the model without repainting — the 80b99cd freeze),
+       * no API read can observe the render, and an actually-sent per-item
+       * write is the only thing that provably repaints (fdb1686,
+       * field-proven). Guards on pure repair are safe because a matching
+       * model there was put in place by a repainting per-item write.
+       */
+      const isPureRepairPass =
+        !isPending && !forceText && cachedSignature === dataSignature
 
       if (!shapeIds) {
         shapeIds = await recoverPollShapeIds(info.slide, isVertical)
@@ -3555,7 +3570,7 @@ export async function updatePollWidget(
              * the pre-write guards below safe: the model can only match the
              * target if a repainting write put it there.
              */
-            if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
+            if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
               await tryItemWrite(() => {
                 applyBarGeometry(item.fill, targetGeometry)
               }, `bar dims ${index}`)
@@ -3573,12 +3588,13 @@ export async function updatePollWidget(
             const fillTransparency = isSkeletonRow ? 0 : 1
             const bgTransparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
             if (
+              !isPureRepairPass ||
               fillTransparencyNeedsWrite(item.fill, fillTransparency) ||
               fillTransparencyNeedsWrite(item.bg, bgTransparency)
             ) {
               await tryItemWrite(() => {
-                setFillTransparencyIfChanged(item.fill, fillTransparency)
-                setFillTransparencyIfChanged(item.bg, bgTransparency)
+                item.fill.fill.transparency = fillTransparency
+                item.bg.fill.transparency = bgTransparency
               }, `bar transparency ${index}`)
             }
           }
@@ -3650,14 +3666,15 @@ export async function updatePollWidget(
              * the hidden branch above for why transparency is
              * system-controlled rather than gated on style lock. */
             if (
+              !isPureRepairPass ||
               (data.ratio > 0 && fillTransparencyNeedsWrite(item.fill, 0)) ||
               fillTransparencyNeedsWrite(item.bg, 0)
             ) {
               await tryItemWrite(() => {
                 if (data.ratio > 0) {
-                  setFillTransparencyIfChanged(item.fill, 0)
+                  item.fill.fill.transparency = 0
                 }
-                setFillTransparencyIfChanged(item.bg, 0)
+                item.bg.fill.transparency = 0
               }, `bar transparency ${index}`)
             }
             continue
@@ -3665,10 +3682,11 @@ export async function updatePollWidget(
 
           /** Per-item writes, NEVER batched — see the note on the hidden
            * branch: batched bar geometry updates the model without
-           * repainting on desktop hosts. Already-correct bars skip the
-           * write AND the sync (undo-stack hygiene — repair passes run on
-           * every selection change). */
-          if (barGeometryNeedsWrite(item.fill, targetGeometry)) {
+           * repainting on desktop hosts. On pure repair passes,
+           * already-correct bars skip the write AND the sync (undo-stack
+           * hygiene — repair runs on every selection change); every other
+           * pass sends the write regardless. */
+          if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
             await tryItemWrite(() => {
               applyBarGeometry(item.fill, targetGeometry)
             }, `bar dims ${index}`)
@@ -3677,12 +3695,13 @@ export async function updatePollWidget(
               transparency is system-controlled rather than gated on style lock. */
           const boundFillTransparency = data.ratio === 0 ? 1 : 0
           if (
+            !isPureRepairPass ||
             fillTransparencyNeedsWrite(item.fill, boundFillTransparency) ||
             fillTransparencyNeedsWrite(item.bg, 0)
           ) {
             await tryItemWrite(() => {
-              setFillTransparencyIfChanged(item.fill, boundFillTransparency)
-              setFillTransparencyIfChanged(item.bg, 0)
+              item.fill.fill.transparency = boundFillTransparency
+              item.bg.fill.transparency = 0
             }, `bar transparency ${index}`)
           }
         }
