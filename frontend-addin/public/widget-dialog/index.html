@@ -769,6 +769,16 @@
         </div>
         <div class="grid">
           <div class="panel">
+            <h2>Linked poll</h2>
+            <div class="field">
+              <label for="poll-linked">Poll</label>
+              <select id="poll-linked" disabled>
+                <option value="" selected>None — link later</option>
+              </select>
+            </div>
+            <p id="poll-link-hint" class="muted">Checking for a connected session...</p>
+          </div>
+          <div class="panel">
             <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
               <div>
@@ -869,8 +879,8 @@
                 <option value="vertical">Vertical</option>
               </select>
             </div>
-            <div class="field">
-              <label for="poll-max">Max options</label>
+            <div class="field" id="poll-max-field">
+              <label for="poll-max">Placeholder options</label>
               <select id="poll-max">
                 <option value="2">2</option>
                 <option value="3">3</option>

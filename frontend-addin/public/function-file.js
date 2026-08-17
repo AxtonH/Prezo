@@ -328,7 +328,7 @@
   /** Mirrors src/office/widgetShapes.ts: unbound poll widgets never
    * auto-follow a poll — they hold this placeholder until the host binds
    * one from the poll card. Keep the wording in sync with the taskpane. */
-  const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
+  const POLL_BIND_PLACEHOLDER = 'Link this widget to a poll from the Prezo panel.'
 
   const buildPollQuestion = (poll) => {
     if (!poll) {
@@ -2146,7 +2146,7 @@
       }
     }
   }
-  const insertPollWidget = async (styleOverrides) => {
+  const insertPollWidget = async (styleOverrides, boundPollId) => {
     const style = normalizePollStyle(styleOverrides)
     const scale = style.spacingScale
     const maxOptions = style.maxOptions
@@ -2154,6 +2154,10 @@
     const sessionId = binding && binding.sessionId ? binding.sessionId : null
     const code = binding ? binding.code : null
     const hasSession = Boolean(sessionId)
+    if (boundPollId && !hasSession) {
+      throw new Error('Connect a Prezo session before inserting a linked poll widget.')
+    }
+    const linkPollId = boundPollId ? String(boundPollId) : null
 
     await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
@@ -2407,7 +2411,15 @@
         slide.tags.add(POLL_PENDING_TAG, 'true')
         slide.tags.delete(POLL_SESSION_TAG)
       }
-      slide.tags.delete(POLL_BINDING_TAG)
+      /** Linked insert: write the explicit binding here so the post-insert
+       * refresh below renders the poll immediately — same contract as the
+       * panel's Link widget action, just fused into the insert. Unlinked
+       * inserts stay bind-explicit (no auto-follow). */
+      if (linkPollId) {
+        slide.tags.add(POLL_BINDING_TAG, linkPollId)
+      } else {
+        slide.tags.delete(POLL_BINDING_TAG)
+      }
       slide.tags.add(POLL_STYLE_TAG, JSON.stringify(style))
       slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(shapeIds))
       await context.sync()
@@ -2798,6 +2810,44 @@
         )
       }
     }
+    if (message && message.type === 'request-poll-state') {
+      /** The dialog's "Linked poll" picker: it cannot reach the API itself
+       * (dialog webviews don't reliably share auth storage), so the poll
+       * list is fetched here and pushed back over the message channel. */
+      let binding = null
+      try {
+        binding = await getBinding()
+      } catch {
+        binding = null
+      }
+      if (!binding || !binding.sessionId) {
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'poll-state', hasSession: false, polls: [] })
+        )
+        return
+      }
+      try {
+        const snapshot = await fetchSnapshot(binding)
+        const polls = (snapshot.polls || []).map((poll) => ({
+          id: poll.id,
+          question: poll.question,
+          status: poll.status,
+          options: (poll.options || []).map((option) => ({
+            label: option.label,
+            votes: option.votes || 0
+          }))
+        }))
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'poll-state', hasSession: true, polls })
+        )
+      } catch (error) {
+        const detail = error && error.message ? error.message : 'Failed to load polls'
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'poll-state', hasSession: true, polls: [], error: detail })
+        )
+      }
+      return
+    }
     if (message && message.type === 'insert-poll') {
       try {
         if (!message.replace && (await selectedSlideHasWidget('poll'))) {
@@ -2809,7 +2859,7 @@
         if (message.replace) {
           await removeWidgetFromSelectedSlide('poll')
         }
-        await insertPollWidget(message.style)
+        await insertPollWidget(message.style, message.pollId || null)
         activeDialog.messageChild(JSON.stringify({ type: 'poll-inserted' }))
         activeDialog.close()
         activeDialog = null

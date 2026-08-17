@@ -152,7 +152,7 @@ export function ActiveDiscussionActivityCard({
       await onBindWidget(prompt.id)
       setBindMessage('Slide widget linked to this discussion.')
     } catch (err) {
-      setBindError(err instanceof Error ? err.message : 'Could not bind widget.')
+      setBindError(err instanceof Error ? err.message : 'Could not link widget.')
     } finally {
       setBindBusy(false)
     }
@@ -227,7 +227,7 @@ export function ActiveDiscussionActivityCard({
   const bindTile = onBindWidget ? (
     <ActivityActionTile
       icon="link"
-      label={bindBusy ? 'Binding…' : 'Bind widget'}
+      label={bindBusy ? 'Linking…' : 'Link widget'}
       title="Link the open discussion widget on the selected PowerPoint slide to this discussion"
       onClick={() => void handleBindWidget()}
       disabled={bindBusy}

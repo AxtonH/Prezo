@@ -58,8 +58,12 @@ const DISCUSSION_EYEBROW_TEXT = 'PREZO OPEN DISCUSSION'
 const PLACEHOLDER_SUBTITLE = 'Connect a Prezo session to go live.'
 const PLACEHOLDER_BODY = 'Connect a Prezo session to populate this slide.'
 /** Unbound poll widgets render this instead of auto-following a poll —
- * binding is an explicit host action (Bind widget on the poll card). */
-const POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
+ * binding is an explicit host action (Link widget on the poll card, or the
+ * Linked poll picker in the insert dialog). */
+const POLL_BIND_PLACEHOLDER = 'Link this widget to a poll from the Prezo panel.'
+/** Pre-17/08/2026 placeholder copy — decks inserted before the "bind" →
+ * "link" rename still carry it, so it must stay overwritable. */
+const LEGACY_POLL_BIND_PLACEHOLDER = 'Bind this widget to a poll from the Prezo panel.'
 /** Unbound skeleton bars stay partially filled (insert-time and after
  * session login alike) so designers can see and restyle the fill shapes. */
 const POLL_SKELETON_FILL_RATIO = 0.35
@@ -507,7 +511,8 @@ const looksLikeAutoPollText = (value: string) => {
   if (
     text === 'No polls yet.' ||
     text === 'Poll not found.' ||
-    text === POLL_BIND_PLACEHOLDER
+    text === POLL_BIND_PLACEHOLDER ||
+    text === LEGACY_POLL_BIND_PLACEHOLDER
   ) {
     return true
   }

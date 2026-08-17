@@ -207,7 +207,7 @@ export function PollManager({
                         ) : null}
                         {onBindWidget ? (
                           <button className="ghost" onClick={() => handleBind(poll.id)}>
-                            Bind widget
+                            Link widget
                           </button>
                         ) : null}
                       </div>

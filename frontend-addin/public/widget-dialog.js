@@ -30,6 +30,9 @@
   const previewEl = () => el('qna-preview')
   const discussionPreviewEl = () => el('discussion-preview')
   const pollPreviewEl = () => el('poll-preview')
+  const pollLinkedSelect = () => el('poll-linked')
+  const pollLinkHint = () => el('poll-link-hint')
+  const pollMaxField = () => el('poll-max-field')
 
   const queryDebug = () => {
     try {
@@ -270,6 +273,63 @@
     })
   }
 
+  /**
+   * Linked-poll state, pushed by the parent (function-file) in response to
+   * request-poll-state. The dialog itself never talks to the API — dialog
+   * webviews don't reliably share the add-in's auth storage.
+   */
+  let pollState = { loaded: false, hasSession: false, polls: [], error: null }
+  let defaultPollPreview = null
+
+  const selectedLinkedPoll = () => {
+    const select = pollLinkedSelect()
+    if (!select || !select.value) return null
+    return pollState.polls.find((poll) => poll.id === select.value) || null
+  }
+
+  const updatePollLinkHint = () => {
+    const hint = pollLinkHint()
+    if (!hint) return
+    if (!pollState.loaded) {
+      hint.textContent = 'Checking for a connected session...'
+    } else if (pollState.error) {
+      hint.textContent = 'Could not load polls — insert now and link from the Prezo panel.'
+    } else if (!pollState.hasSession) {
+      hint.textContent =
+        'Connect a session in the Prezo panel to link a poll. You can insert now and link later.'
+    } else if (pollState.polls.length === 0) {
+      hint.textContent =
+        'No polls yet — create one in the Prezo panel, or insert now and link later.'
+    } else if (selectedLinkedPoll()) {
+      hint.textContent = "Inserts already linked — the widget shows this poll's live results."
+    } else {
+      hint.textContent = 'Pick a poll to insert the widget already linked, or link later.'
+    }
+  }
+
+  const renderPollLinkState = () => {
+    const select = pollLinkedSelect()
+    if (!select) return
+    const previous = select.value
+    select.innerHTML = ''
+    const noneOption = document.createElement('option')
+    noneOption.value = ''
+    noneOption.textContent = 'None — link later'
+    select.appendChild(noneOption)
+    pollState.polls.forEach((poll) => {
+      const option = document.createElement('option')
+      option.value = poll.id
+      option.textContent = poll.status === 'open' ? `${poll.question} (live)` : poll.question
+      select.appendChild(option)
+    })
+    if (previous && pollState.polls.some((poll) => poll.id === previous)) {
+      select.value = previous
+    }
+    select.disabled = pollState.polls.length === 0
+    updatePollLinkHint()
+    updatePollPreview()
+  }
+
   const readPollConfig = () => ({
     fontFamily: (pollInputs.font()?.value || '').trim() || null,
     textColor: pollInputs.text()?.value || '#0f172a',
@@ -282,7 +342,11 @@
     spacingScale: clamp(parseFloat(pollInputs.spacing()?.value || '1'), 0.8, 1.3),
     barThicknessScale: clamp(parseFloat(pollInputs.width()?.value || '1'), 0.4, 2),
     orientation: pollInputs.orientation()?.value || 'horizontal',
-    maxOptions: clamp(parseInt(pollInputs.max()?.value || '5', 10), 2, 5)
+    /** Linked inserts size the skeleton from the poll itself; the
+     * placeholder-options picker only governs the unlinked skeleton. */
+    maxOptions: selectedLinkedPoll()
+      ? clamp(selectedLinkedPoll().options.length || 5, 1, 5)
+      : clamp(parseInt(pollInputs.max()?.value || '5', 10), 2, 5)
   })
 
   const updatePollPreview = () => {
@@ -303,6 +367,51 @@
       config.fontFamily ? `'${config.fontFamily}', 'Sora', sans-serif` : `'Sora', sans-serif`
     )
     preview.classList.toggle('preview-vertical', config.orientation === 'vertical')
+
+    /** Linked polls preview the real question and options; the static
+     * markup is kept aside so "link later" restores the sample content. */
+    const questionEl = preview.querySelector('.preview-poll-question')
+    const optionsEl = preview.querySelector('.preview-poll-options')
+    if (defaultPollPreview === null && questionEl && optionsEl) {
+      defaultPollPreview = {
+        question: questionEl.textContent,
+        optionsHtml: optionsEl.innerHTML
+      }
+    }
+    const linked = selectedLinkedPoll()
+    if (linked && questionEl && optionsEl) {
+      const prefix = linked.status === 'open' ? 'Live poll' : 'Poll'
+      questionEl.textContent = `${prefix}: ${linked.question}`
+      const shownOptions = linked.options.slice(0, 5)
+      const totalVotes = shownOptions.reduce((sum, option) => sum + (option.votes || 0), 0)
+      optionsEl.innerHTML = ''
+      shownOptions.forEach((option, index) => {
+        const ratio =
+          totalVotes > 0
+            ? (option.votes || 0) / totalVotes
+            : Math.max(0.08, 0.7 - index * 0.15)
+        const item = document.createElement('div')
+        item.className = 'preview-poll-option'
+        const label = document.createElement('div')
+        label.className = 'preview-poll-label'
+        label.textContent = option.label
+        const bar = document.createElement('div')
+        bar.className = 'preview-poll-bar'
+        const fill = document.createElement('div')
+        fill.className = 'preview-poll-fill'
+        fill.style.setProperty('--fill', ratio.toFixed(2))
+        bar.appendChild(fill)
+        item.appendChild(label)
+        item.appendChild(bar)
+        optionsEl.appendChild(item)
+      })
+    } else if (defaultPollPreview && questionEl && optionsEl) {
+      questionEl.textContent = defaultPollPreview.question
+      optionsEl.innerHTML = defaultPollPreview.optionsHtml
+    }
+    if (pollMaxField()) {
+      pollMaxField().style.display = linked ? 'none' : ''
+    }
 
     const items = preview.querySelectorAll('.preview-poll-option')
     items.forEach((item, index) => {
@@ -365,10 +474,12 @@
     setPollError('')
     setPollStatus('Sending request...')
     setPollBusy(true)
+    const linked = selectedLinkedPoll()
     Office.context.ui.messageParent(
       JSON.stringify({
         type: 'insert-poll',
         style: readPollConfig(),
+        pollId: linked ? linked.id : null,
         replace: replace === true
       })
     )
@@ -551,6 +662,12 @@
       input.addEventListener('input', updatePollPreview)
       input.addEventListener('change', updatePollPreview)
     })
+    if (pollLinkedSelect()) {
+      pollLinkedSelect().addEventListener('change', () => {
+        updatePollLinkHint()
+        updatePollPreview()
+      })
+    }
 
     Office.context.ui.addHandlerAsync(
       Office.EventType.DialogParentMessageReceived,
@@ -573,6 +690,14 @@
         } else if (message && message.type === 'game-inserted') {
           setGameStatus('Game slide inserted.')
           setGameBusy(false)
+        } else if (message && message.type === 'poll-state') {
+          pollState = {
+            loaded: true,
+            hasSession: Boolean(message.hasSession),
+            polls: Array.isArray(message.polls) ? message.polls : [],
+            error: message.error || null
+          }
+          renderPollLinkState()
         } else if (message && message.type === 'confirm-replace') {
           const key = familyFromSource(message.source)
           families[key].setStatus('')
@@ -609,6 +734,15 @@
     updatePreview()
     updateDiscussionPreview()
     updatePollPreview()
+    updatePollLinkHint()
     renderDebug()
+
+    /** Ask the parent for session + poll state (handler above must already
+     * be registered so the response can't race past us). */
+    try {
+      Office.context.ui.messageParent(JSON.stringify({ type: 'request-poll-state' }))
+    } catch {
+      // Opened outside a dialog host — the link picker stays in its empty state.
+    }
   })
 })()

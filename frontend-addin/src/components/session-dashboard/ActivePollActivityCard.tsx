@@ -139,7 +139,7 @@ export function ActivePollActivityCard({
   const bindTile = onBindWidget ? (
     <ActivityActionTile
       icon="link"
-      label={bindBusy ? 'Binding…' : 'Bind widget'}
+      label={bindBusy ? 'Linking…' : 'Link widget'}
       title="Link the poll widget on the selected PowerPoint slide to this poll"
       onClick={() => void handleBindWidget()}
       disabled={bindBusy}
@@ -157,7 +157,7 @@ export function ActivePollActivityCard({
       await onBindWidget(poll.id)
       setBindMessage('Slide widget linked to this poll.')
     } catch (err) {
-      setBindError(err instanceof Error ? err.message : 'Could not bind widget.')
+      setBindError(err instanceof Error ? err.message : 'Could not link widget.')
     } finally {
       setBindBusy(false)
     }

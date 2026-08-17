@@ -161,7 +161,7 @@ export function PromptManager({
                           )}
                           {onBindDiscussionWidget ? (
                             <button className="ghost" onClick={() => handleBind(prompt.id)}>
-                              Bind widget
+                              Link widget
                             </button>
                           ) : null}
                         </div>
