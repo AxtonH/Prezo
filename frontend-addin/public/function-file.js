@@ -2356,11 +2356,29 @@
         fill.tags.add(POLL_WIDGET_TAG, 'true')
         fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
-        label.load('id')
-        bg.load('id')
-        fill.load('id')
-        itemShapes.push({ label, bg, fill })
+        itemShapes.push({ label, bg, fill, group: null })
       }
+
+      /** PLATFORM FACT: addGroup throws InvalidArgument on desktop hosts
+       * when the grouped shapes were created in the SAME un-synced batch
+       * (and the abort leaves shapes stranded) — flush creation first. */
+      await context.sync()
+
+      itemShapes.forEach((item, index) => {
+        /** Rows group as label + track + fill (17/08/2026, mirrors
+         * widgetShapes.ts): the label moves with its bars so a designer
+         * can't accidentally pair a label with the wrong option; ungroup
+         * is the deliberate escape hatch. */
+        const rowGroup = slide.shapes.addGroup([item.label, item.bg, item.fill])
+        rowGroup.name = `Prezo Poll Option ${index + 1} Row`
+        rowGroup.tags.add(POLL_WIDGET_TAG, 'true')
+        rowGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+        item.group = rowGroup
+        item.label.load('id')
+        rowGroup.load('id')
+        item.bg.load('id')
+        item.fill.load('id')
+      })
 
       shadow.load('id')
       container.load('id')
@@ -2376,6 +2394,7 @@
         counter: counter.id,
         items: itemShapes.map((item) => ({
           label: item.label.id,
+          group: item.group.id,
           bg: item.bg.id,
           fill: item.fill.id
         }))

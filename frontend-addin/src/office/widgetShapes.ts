@@ -2193,9 +2193,10 @@ export async function insertPollWidget(
     const fullBarWidth = width - paddingX * 2
     const itemShapes: Array<{
       label: PowerPoint.Shape
-      group: PowerPoint.Shape
+      group: PowerPoint.Shape | null
       bg: PowerPoint.Shape
       fill: PowerPoint.Shape
+      showItem: boolean
     }> = []
 
     for (let index = 0; index < MAX_POLL_OPTIONS; index += 1) {
@@ -2262,25 +2263,38 @@ export async function insertPollWidget(
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
 
-      const barGroup = slide.shapes.addGroup([bg, fill])
-      barGroup.name = `Prezo Poll Option ${index + 1} Bar`
-      barGroup.tags.add(POLL_WIDGET_TAG, 'true')
-      barGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+      itemShapes.push({ label, group: null, bg, fill, showItem })
+    }
+
+    /** PLATFORM FACT: addGroup throws InvalidArgument on desktop hosts when
+     * the shapes being grouped were created in the SAME un-synced batch (and
+     * the abort leaves shapes stranded) — flush creation before grouping. */
+    await context.sync()
+
+    itemShapes.forEach((item, index) => {
+      /** Rows group as label + track + fill (17/08/2026): the label moves
+       * with its bars, so a designer can't accidentally pair a label with
+       * the wrong option — and can still ungroup deliberately. Recovery
+       * pairs grouped rows by membership instead of position. */
+      const rowGroup = slide.shapes.addGroup([item.label, item.bg, item.fill])
+      rowGroup.name = `Prezo Poll Option ${index + 1} Row`
+      rowGroup.tags.add(POLL_WIDGET_TAG, 'true')
+      rowGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+      item.group = rowGroup
 
       /** Rows beyond the style's option count start truly hidden on capable
        * hosts — no ghost shapes on the canvas from the first insert. The
        * update loop reveals them if a bigger poll is bound later. */
-      if (!showItem && useShapeVisibility) {
-        label.visible = false
-        barGroup.visible = false
+      if (!item.showItem && useShapeVisibility) {
+        item.label.visible = false
+        rowGroup.visible = false
       }
 
-      label.load('id')
-      barGroup.load('id')
-      bg.load('id')
-      fill.load('id')
-      itemShapes.push({ label, group: barGroup, bg, fill })
-    }
+      item.label.load('id')
+      rowGroup.load('id')
+      item.bg.load('id')
+      item.fill.load('id')
+    })
 
     shadow.load('id')
     container.load('id')
@@ -2296,7 +2310,7 @@ export async function insertPollWidget(
       counter: counter.id,
       items: itemShapes.map((item) => ({
         label: item.label.id,
-        group: item.group.id,
+        group: item.group!.id,
         bg: item.bg.id,
         fill: item.fill.id
       }))
@@ -2599,11 +2613,13 @@ export async function updatePollWidget(
 
       type PollBarItem = {
         group?: PowerPoint.Shape
+        label?: PowerPoint.Shape
         bg: PowerPoint.Shape
         fill: PowerPoint.Shape
       }
 
       const groupedBarItems: PollBarItem[] = []
+      const groupChildIds = new Set<string>()
       if (barGroups.length > 0) {
         const groupScopes = barGroups.map((shape) => ({
           shape,
@@ -2626,7 +2642,9 @@ export async function updatePollWidget(
         taggedGroups.forEach(({ shape, taggedShapes }) => {
           let bg: PowerPoint.Shape | null = null
           let fill: PowerPoint.Shape | null = null
+          let childLabel: PowerPoint.Shape | null = null
           taggedShapes.forEach(({ child, roleTag }) => {
+            groupChildIds.add(child.id)
             if (roleTag.isNullObject || !roleTag.value) {
               return
             }
@@ -2636,11 +2654,19 @@ export async function updatePollWidget(
             }
             if (roleTag.value === 'poll-bar-fill') {
               fill = child
+              return
+            }
+            /** Row groups (17/08/2026+) carry the label — membership beats
+             * positional pairing, so a row dragged anywhere still recovers
+             * with its own label. */
+            if (roleTag.value === 'poll-label') {
+              childLabel = child
             }
           })
           if (!bg || !fill) {
             const ranked = [...taggedShapes]
               .map(({ child }) => child)
+              .filter((shape) => shape.id !== (childLabel as PowerPoint.Shape | null)?.id)
               .sort((a, b) => b.width * b.height - a.width * a.height)
             if (!bg) {
               bg = ranked[0] ?? null
@@ -2650,14 +2676,17 @@ export async function updatePollWidget(
             }
           }
           if (bg && fill) {
-            groupedBarItems.push({ group: shape, bg, fill })
+            groupedBarItems.push({ group: shape, label: childLabel ?? undefined, bg, fill })
           }
         })
       }
 
       const sortKey = (shape: PowerPoint.Shape) =>
         isVerticalLayout ? shape.left : shape.top
-      labels.sort((a, b) => sortKey(a) - sortKey(b))
+      /** Group children can surface in the top-level scan too — keep them
+       * out of the loose-label pool so they aren't paired twice. */
+      const looseLabels = labels.filter((shape) => !groupChildIds.has(shape.id))
+      looseLabels.sort((a, b) => sortKey(a) - sortKey(b))
 
       const barItems: PollBarItem[] =
         groupedBarItems.length > 0
@@ -2668,17 +2697,29 @@ export async function updatePollWidget(
             }))
       barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
 
-      if (!title || !container || labels.length === 0 || barItems.length === 0) {
+      const hasAnyLabel =
+        looseLabels.length > 0 || groupedBarItems.some((item) => Boolean(item.label))
+      if (!title || !container || !hasAnyLabel || barItems.length === 0) {
         return null
       }
 
-      const itemCount = Math.min(labels.length, barItems.length)
-      const items = Array.from({ length: itemCount }, (_, index) => ({
-        label: getShapeId(labels[index]) as string,
-        group: getShapeId(barItems[index].group),
-        bg: getShapeId(barItems[index].bg) as string,
-        fill: getShapeId(barItems[index].fill) as string
-      }))
+      let looseLabelIndex = 0
+      const items: NonNullable<PollWidgetShapeIds['items']> = []
+      for (const barItem of barItems) {
+        const label = barItem.label ?? looseLabels[looseLabelIndex++]
+        if (!label) {
+          break
+        }
+        items.push({
+          label: getShapeId(label) as string,
+          group: getShapeId(barItem.group),
+          bg: getShapeId(barItem.bg) as string,
+          fill: getShapeId(barItem.fill) as string
+        })
+      }
+      if (items.length === 0) {
+        return null
+      }
 
       return {
         shadow: getShapeId(shadow),
@@ -2888,6 +2929,7 @@ export async function updatePollWidget(
         label.load(withVisible(['id', 'type']))
         return {
           label,
+          labelId: item.label,
           group: itemGroup,
           bgId: item.bg,
           fillId: item.fill
@@ -2897,7 +2939,7 @@ export async function updatePollWidget(
       syncPhase = 'load-shape-entries'
       await context.sync()
 
-      let itemShapes = itemEntries.map((entry) => {
+      const itemCandidates = itemEntries.map((entry) => {
         const entryGroupIsGroup =
           !!entry.group && !entry.group.isNullObject && entry.group.type === 'Group'
         const barScope = entryGroupIsGroup ? entry.group!.group.shapes : shapeScope
@@ -2907,13 +2949,31 @@ export async function updatePollWidget(
         const fill = barScope
           ? barScope.getItemOrNullObject(entry.fillId)
           : info.slide.shapes.getItemOrNullObject(entry.fillId)
+        /** Row groups created since 17/08/2026 hold the label too — resolve
+         * a group-scoped candidate; older decks (loose label + bar-only
+         * group) fall back to the top-level resolution from the previous
+         * phase. */
+        const labelInGroup = entryGroupIsGroup
+          ? entry.group!.group.shapes.getItemOrNullObject(entry.labelId)
+          : null
+        if (labelInGroup) {
+          labelInGroup.load(withVisible(['id', 'type']))
+        }
         bg.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
         fill.load(withVisible(['id', 'width', 'left', 'height', 'top', 'type']))
-        return { label: entry.label, group: entry.group, bg, fill }
+        return { label: entry.label, labelInGroup, group: entry.group, bg, fill }
       })
 
       syncPhase = 'load-bar-shapes'
       await context.sync()
+
+      let itemShapes = itemCandidates.map((item) => ({
+        label:
+          item.labelInGroup && !item.labelInGroup.isNullObject ? item.labelInGroup : item.label,
+        group: item.group,
+        bg: item.bg,
+        fill: item.fill
+      }))
 
       const needsFallback =
         title.isNullObject ||
@@ -2990,11 +3050,13 @@ export async function updatePollWidget(
 
         type PollBarItem = {
           group?: PowerPoint.Shape
+          label?: PowerPoint.Shape
           bg: PowerPoint.Shape
           fill: PowerPoint.Shape
         }
 
         const groupedBarItems: PollBarItem[] = []
+        const groupChildIds = new Set<string>()
         if (barGroups.length > 0) {
           const groupScopes = barGroups.map((shape) => ({
             shape,
@@ -3017,7 +3079,9 @@ export async function updatePollWidget(
           taggedGroups.forEach(({ shape, taggedShapes }) => {
             let bg: PowerPoint.Shape | null = null
             let fill: PowerPoint.Shape | null = null
+            let childLabel: PowerPoint.Shape | null = null
             taggedShapes.forEach(({ child, roleTag }) => {
+              groupChildIds.add(child.id)
               if (roleTag.isNullObject || !roleTag.value) {
                 return
               }
@@ -3027,11 +3091,18 @@ export async function updatePollWidget(
               }
               if (roleTag.value === 'poll-bar-fill') {
                 fill = child
+                return
+              }
+              /** Row groups (17/08/2026+) carry the label — membership beats
+               * positional pairing on recovery. */
+              if (roleTag.value === 'poll-label') {
+                childLabel = child
               }
             })
             if (!bg || !fill) {
               const ranked = [...taggedShapes]
                 .map(({ child }) => child)
+                .filter((shape) => shape.id !== (childLabel as PowerPoint.Shape | null)?.id)
                 .sort((a, b) => b.width * b.height - a.width * a.height)
               if (!bg) {
                 bg = ranked[0] ?? null
@@ -3041,13 +3112,18 @@ export async function updatePollWidget(
               }
             }
             if (bg && fill) {
-              groupedBarItems.push({ group: shape, bg, fill })
+              groupedBarItems.push({ group: shape, label: childLabel ?? undefined, bg, fill })
             }
           })
         }
 
         const sortKey = (shape: PowerPoint.Shape) => (isVertical ? shape.left : shape.top)
-        labels.sort((a, b) => sortKey(a) - sortKey(b))
+        /** Group children surfaced in the top-level scan stay out of the
+         * loose pools — they pair by membership, and the remnant verdict
+         * below must not read a hidden row's children (whose own visible
+         * flag stays true inside a hidden group) as visible anchors. */
+        const looseLabels = labels.filter((shape) => !groupChildIds.has(shape.id))
+        looseLabels.sort((a, b) => sortKey(a) - sortKey(b))
         const barItems: PollBarItem[] =
           groupedBarItems.length > 0
             ? groupedBarItems
@@ -3081,7 +3157,7 @@ export async function updatePollWidget(
           taggedQuestion,
           taggedBody,
           taggedCounter,
-          ...labels,
+          ...looseLabels,
           ...(barGroups.length > 0 ? barGroups : [...bars, ...fills])
         ]
         const presentAnchors = anchorShapes.filter(
@@ -3120,13 +3196,25 @@ export async function updatePollWidget(
           continue
         }
 
-        const itemCount = Math.min(labels.length, barItems.length)
-        const taggedItems = Array.from({ length: itemCount }, (_, index) => ({
-          label: labels[index],
-          group: barItems[index].group ?? null,
-          bg: barItems[index].bg,
-          fill: barItems[index].fill
-        }))
+        let looseLabelIndex = 0
+        const taggedItems: Array<{
+          label: PowerPoint.Shape
+          group: PowerPoint.Shape | null
+          bg: PowerPoint.Shape
+          fill: PowerPoint.Shape
+        }> = []
+        for (const barItem of barItems) {
+          const label = barItem.label ?? looseLabels[looseLabelIndex++]
+          if (!label) {
+            break
+          }
+          taggedItems.push({
+            label,
+            group: barItem.group ?? null,
+            bg: barItem.bg,
+            fill: barItem.fill
+          })
+        }
 
         if (taggedContainer) {
           container = taggedContainer
