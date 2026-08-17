@@ -2831,20 +2831,21 @@ export async function updatePollWidget(
         }
       }
       /**
-       * Pure repair: a selection-change pass over a widget whose rendered
-       * data did NOT change (the click-on-widget case). Only these passes
-       * may trust the no-op bar-write guards. Every data-bearing pass
-       * (changed signature, bind/edit force, pending insert) must SEND the
-       * bar writes even when the loaded model already matches the target:
-       * the document model and the rendered shapes can disagree (a batched
+       * Forced passes (bind / activity edit — "render THIS now") send every
+       * bar write even when the loaded model already matches the target.
+       * That is the deliberate heal lever for model/render desync: the
+       * document model and the rendered shapes can disagree (a batched
        * write lands in the model without repainting — the 80b99cd freeze),
        * no API read can observe the render, and an actually-sent per-item
-       * write is the only thing that provably repaints (fdb1686,
-       * field-proven). Guards on pure repair are safe because a matching
-       * model there was put in place by a repainting per-item write.
+       * write is the only thing that provably repaints. Every OTHER pass
+       * (vote updates, pending inserts, selection-change repairs) may trust
+       * the no-op guards: with batching banned, a matching model can only
+       * have been put there by a repainting per-item write (or by insert,
+       * which paints by construction), so skipping is safe — and it is what
+       * keeps clicks, inserts, and unchanged vote rows out of the undo
+       * stack. A widget whose render is stale anyway is fixed by rebinding.
        */
-      const isPureRepairPass =
-        !isPending && !forceText && cachedSignature === dataSignature
+      const forceBarWrites = Boolean(forceText)
 
       if (!shapeIds) {
         shapeIds = await recoverPollShapeIds(info.slide, isVertical)
@@ -3570,7 +3571,7 @@ export async function updatePollWidget(
              * the pre-write guards below safe: the model can only match the
              * target if a repainting write put it there.
              */
-            if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
+            if (forceBarWrites || barGeometryNeedsWrite(item.fill, targetGeometry)) {
               await tryItemWrite(() => {
                 applyBarGeometry(item.fill, targetGeometry)
               }, `bar dims ${index}`)
@@ -3588,7 +3589,7 @@ export async function updatePollWidget(
             const fillTransparency = isSkeletonRow ? 0 : 1
             const bgTransparency = hasPollData ? 1 : isSkeletonRow ? 0 : 0.35
             if (
-              !isPureRepairPass ||
+              forceBarWrites ||
               fillTransparencyNeedsWrite(item.fill, fillTransparency) ||
               fillTransparencyNeedsWrite(item.bg, bgTransparency)
             ) {
@@ -3666,7 +3667,7 @@ export async function updatePollWidget(
              * the hidden branch above for why transparency is
              * system-controlled rather than gated on style lock. */
             if (
-              !isPureRepairPass ||
+              forceBarWrites ||
               (data.ratio > 0 && fillTransparencyNeedsWrite(item.fill, 0)) ||
               fillTransparencyNeedsWrite(item.bg, 0)
             ) {
@@ -3682,11 +3683,11 @@ export async function updatePollWidget(
 
           /** Per-item writes, NEVER batched — see the note on the hidden
            * branch: batched bar geometry updates the model without
-           * repainting on desktop hosts. On pure repair passes,
-           * already-correct bars skip the write AND the sync (undo-stack
-           * hygiene — repair runs on every selection change); every other
-           * pass sends the write regardless. */
-          if (!isPureRepairPass || barGeometryNeedsWrite(item.fill, targetGeometry)) {
+           * repainting on desktop hosts. Already-correct bars skip the
+           * write AND the sync (undo-stack hygiene: clicks, inserts, and
+           * unchanged vote rows add nothing); forced passes send
+           * regardless — that is the heal lever for a stale render. */
+          if (forceBarWrites || barGeometryNeedsWrite(item.fill, targetGeometry)) {
             await tryItemWrite(() => {
               applyBarGeometry(item.fill, targetGeometry)
             }, `bar dims ${index}`)
@@ -3695,7 +3696,7 @@ export async function updatePollWidget(
               transparency is system-controlled rather than gated on style lock. */
           const boundFillTransparency = data.ratio === 0 ? 1 : 0
           if (
-            !isPureRepairPass ||
+            forceBarWrites ||
             fillTransparencyNeedsWrite(item.fill, boundFillTransparency) ||
             fillTransparencyNeedsWrite(item.bg, 0)
           ) {
