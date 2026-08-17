@@ -99,7 +99,7 @@ function wrapArtifactSnippet(snippet) {
       body {
         margin: 0;
         width: 100%;
-        min-height: 100%;
+        height: 100%;
       }
       body {
         overflow-x: hidden;
@@ -133,11 +133,37 @@ function wrapArtifactSnippet(snippet) {
 </html>`
 }
 
+// Base viewport sizing baked into every artifact document. Without a definite
+// height on html/body, percentage heights inside the scene resolve to auto,
+// the layout collapses to content height and bunches at the top of the canvas
+// (and in present mode the unclaimed remainder reads as stage black). Injected
+// at the START of <head>, before any artifact-authored CSS, so an artifact
+// that deliberately sizes html/body wins every cascade tie with its own
+// values.
+const ARTIFACT_BASE_SIZING_STYLE = `<style data-prezo-viewport-sizing="base">
+html { height: 100%; }
+body { height: 100%; }
+</style>`
+
+function injectBaseSizingStyle(source) {
+  if (/<head\b[^>]*>/i.test(source)) {
+    return source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${ARTIFACT_BASE_SIZING_STYLE}`)
+  }
+  if (/<body\b[^>]*>/i.test(source)) {
+    return source.replace(/<body\b[^>]*>/i, (match) => `${ARTIFACT_BASE_SIZING_STYLE}\n${match}`)
+  }
+  if (/<html\b[^>]*>/i.test(source)) {
+    return source.replace(/<html\b[^>]*>/i, (match) => `${match}\n${ARTIFACT_BASE_SIZING_STYLE}`)
+  }
+  return `${ARTIFACT_BASE_SIZING_STYLE}\n${source}`
+}
+
 function injectBridgeScript(htmlDocument, options = {}) {
   let source = asText(htmlDocument)
   if (!source) {
     return ''
   }
+  source = injectBaseSizingStyle(source)
 
   // Bake the hide stylesheet for deleted elements into <head> (before <body>
   // parses) so the renderer's first paint already excludes them. The iframe's

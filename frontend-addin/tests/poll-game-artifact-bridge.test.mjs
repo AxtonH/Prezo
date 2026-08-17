@@ -1,7 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { computeArtifactFrameFit } from '../public/poc/gamified/poll-game-gamified-artifact-bridge.js'
+import {
+  computeArtifactFrameFit,
+  createPollGameArtifactBridge
+} from '../public/poc/gamified/poll-game-gamified-artifact-bridge.js'
 
 test('edit mode always renders the fixed 16:9 reference and letterboxes off-aspect stages', () => {
   const exact = computeArtifactFrameFit(960, 540, false)
@@ -45,4 +48,74 @@ test('degenerate stage boxes return null', () => {
   assert.equal(computeArtifactFrameFit(0, 500, true), null)
   assert.equal(computeArtifactFrameFit(500, Number.NaN, false), null)
   assert.equal(computeArtifactFrameFit(-10, 500, true), null)
+})
+
+const makeBridgeHarness = ({ stageWidth, stageHeight, inlineStageHeight }) => {
+  const stageEl = {
+    style: { height: inlineStageHeight },
+    clientWidth: stageWidth,
+    clientHeight: stageHeight,
+    offsetWidth: stageWidth,
+    offsetHeight: stageHeight,
+    getBoundingClientRect: () => ({ width: stageWidth, height: stageHeight })
+  }
+  const frameEl = { style: {}, contentWindow: null }
+  const windowObj = {
+    getComputedStyle: () => ({ width: `${stageWidth}px`, height: `${stageHeight}px` }),
+    setTimeout: () => 0,
+    clearTimeout: () => {}
+  }
+  const state = { presentMode: true }
+  const bridge = createPollGameArtifactBridge({
+    windowObj,
+    artifactState: { frameHeight: 519 },
+    stageEl,
+    frameEl,
+    getIsArtifactMode: () => true,
+    getIsPresentMode: () => state.presentMode,
+    getCurrentPollPayload: () => null,
+    buildPayloadKey: () => '',
+    clone: (value) => value,
+    clamp: (value, min, max, fallback) => {
+      const num = Number(value)
+      if (!Number.isFinite(num)) {
+        return fallback
+      }
+      return Math.min(max, Math.max(min, num))
+    },
+    stageAspectRatio: 16 / 9,
+    statePushBatchMs: 50,
+    editRenderConfirmTimeoutMs: 1000,
+    onRenderWatchdogTimeout: () => {}
+  })
+  return { bridge, stageEl, frameEl, state }
+}
+
+test('present mode releases the edit-mode inline stage height so CSS owns the box', () => {
+  // Edit mode writes an inline stage height; left in place it overrides the
+  // present-mode `inset: 0` CSS, freezes the stage at its edit-mode height
+  // and paints the wrap's black background below as a bottom letterbox band.
+  const { bridge, stageEl, frameEl } = makeBridgeHarness({
+    stageWidth: 1152,
+    stageHeight: 648,
+    inlineStageHeight: '519px'
+  })
+  bridge.setFrameHeight(519, { force: true })
+  assert.equal(stageEl.style.height, '', 'stale inline height is cleared in present mode')
+  assert.equal(frameEl.style.width, '1152px', 'frame fills the stage width')
+  assert.equal(frameEl.style.height, '648px', 'frame fills the stage height')
+  assert.equal(frameEl.style.transform, 'translate(0px, 0px)', 'no letterbox offsets in-range')
+})
+
+test('leaving present mode restores the aspect-derived inline stage height', () => {
+  const { bridge, stageEl, state } = makeBridgeHarness({
+    stageWidth: 1152,
+    stageHeight: 648,
+    inlineStageHeight: '519px'
+  })
+  bridge.setFrameHeight(519, { force: true })
+  assert.equal(stageEl.style.height, '')
+  state.presentMode = false
+  bridge.setFrameHeight(519, { force: true })
+  assert.equal(stageEl.style.height, '648px', 'edit mode re-derives the stage height from width')
 })

@@ -216,11 +216,20 @@ export function createPollGameArtifactBridge({
   }
 
   function setFrameHeight(value, options = {}) {
-    // In present mode the stage is sized by CSS (16:9 letterbox box centred in
-    // the viewport — see `.present-mode-artifact .artifact-stage` rules). The
-    // bridge still re-fits the iframe scale on every call so dimensions track
-    // when the viewport changes / fullscreen toggles.
+    // In present mode the stage is sized by CSS (full-bleed `inset: 0` — see
+    // `.present-mode-artifact .artifact-stage` rules). The bridge still
+    // re-fits the iframe scale on every call so dimensions track when the
+    // viewport changes / fullscreen toggles.
     if (getIsPresentMode()) {
+      // Edit mode sizes the stage with an inline height (written below), and
+      // inline styles outrank the present-mode stylesheet: left in place, the
+      // stage stays frozen at its edit-mode height, the wrap's black
+      // background shows below it as a bottom letterbox band, and the
+      // wide-and-short measured aspect reflows the artifact toward 21:9.
+      // Present mode must let the CSS own the box.
+      if (stageEl.style.height) {
+        stageEl.style.height = ''
+      }
       applyFrameFit()
       return
     }
@@ -319,8 +328,13 @@ export function createPollGameArtifactBridge({
     }
     frameEl.style.transformOrigin = 'top left'
     if (presentMode) {
-      frameEl.style.width = `${Math.round(fit.scaledWidth)}px`
-      frameEl.style.height = `${Math.round(fit.scaledHeight)}px`
+      // Ceil, not round: the integer-rounded reference height means the
+      // scaled box is systematically a fraction of a pixel short of the
+      // stage, and a rounded-down height leaves a hairline of stage black
+      // along the bottom. The ≤1px overshoot is clipped by the stage's
+      // `overflow: hidden`.
+      frameEl.style.width = `${Math.ceil(fit.scaledWidth)}px`
+      frameEl.style.height = `${Math.ceil(fit.scaledHeight)}px`
       frameEl.style.transform = `translate(${fit.offsetX}px, ${fit.offsetY}px)`
       postViewportZoom(fit.scale)
     } else {
