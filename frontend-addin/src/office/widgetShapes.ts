@@ -2930,7 +2930,7 @@ export async function updatePollWidget(
         const tagged = fallbackScope.items.map((shape) => {
           const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
           roleTag.load('value')
-          shape.load(['id', 'left', 'top', 'width', 'height', 'type'])
+          shape.load(withVisible(['id', 'left', 'top', 'width', 'height', 'type']))
           return { shape, roleTag }
         })
         await context.sync()
@@ -3056,6 +3056,69 @@ export async function updatePollWidget(
                 fill: fills[index]
               }))
         barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
+
+        /**
+         * Remnant detection: a "widget" whose EVERY recovered shape is
+         * hidden is not a widget — it is the debris of a hand-deleted one.
+         * Hidden surplus rows can't be marquee-selected, so deleting a
+         * widget by selecting its shapes leaves them (plus all the slide
+         * tags, binding included) behind; adopting that debris used to
+         * resurrect ghost polls that still tracked the bound activity.
+         * Real widgets — including designer-customized ones with deleted
+         * parts — always keep at least one visible shape, since hiding is
+         * system-controlled and only ever applied to surplus rows.
+         * Remnants are purged outright: shapes deleted (groups first, each
+         * in an isolated sync — children die with their group and a second
+         * delete throws), poll slide tags cleared, slide sentinel-cached.
+         * Group children surfaced at top level are excluded from the
+         * visibility verdict (their own flag stays true inside a hidden
+         * group) but included in the purge list.
+         */
+        const anchorShapes: Array<PowerPoint.Shape | null> = [
+          taggedContainer,
+          taggedShadow,
+          taggedTitle,
+          taggedQuestion,
+          taggedBody,
+          taggedCounter,
+          ...labels,
+          ...(barGroups.length > 0 ? barGroups : [...bars, ...fills])
+        ]
+        const presentAnchors = anchorShapes.filter(
+          (shape): shape is PowerPoint.Shape => Boolean(shape)
+        )
+        const isRemnantOnly =
+          useShapeVisibility &&
+          presentAnchors.length > 0 &&
+          presentAnchors.every((shape) => loadedVisibleState(shape) === false)
+        if (isRemnantOnly) {
+          syncPhase = 'purge-remnants'
+          const remnantShapes = [
+            ...presentAnchors,
+            ...(barGroups.length > 0 ? [...bars, ...fills] : [])
+          ]
+          const remnantGroups = remnantShapes.filter((shape) => shape.type === 'Group')
+          const remnantLoose = remnantShapes.filter((shape) => shape.type !== 'Group')
+          for (const shape of remnantGroups.concat(remnantLoose)) {
+            try {
+              shape.delete()
+              await context.sync()
+            } catch {
+              // Already gone (child of a group deleted above) — fine.
+            }
+          }
+          info.slide.tags.delete(POLL_SESSION_TAG)
+          info.slide.tags.delete(POLL_PENDING_TAG)
+          info.slide.tags.delete(POLL_STYLE_TAG)
+          info.slide.tags.delete(POLL_SHAPES_TAG)
+          info.slide.tags.delete(POLL_BINDING_TAG)
+          await context.sync()
+          appliedWidgetSignatures.set(slideKey, NO_WIDGET_SIGNATURE)
+          console.info(
+            `Poll widget: purged ${remnantShapes.length} hidden remnant shape(s) on slide index ${slideIndex}`
+          )
+          continue
+        }
 
         const itemCount = Math.min(labels.length, barItems.length)
         const taggedItems = Array.from({ length: itemCount }, (_, index) => ({
