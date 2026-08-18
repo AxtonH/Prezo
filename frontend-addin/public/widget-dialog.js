@@ -303,7 +303,8 @@
     } else if (selectedLinkedPoll()) {
       hint.textContent = "Inserts already linked — the widget shows this poll's live results."
     } else {
-      hint.textContent = 'Pick a poll to insert the widget already linked, or link later.'
+      /** The pick-a-poll tip lives inside the dropdown as its placeholder. */
+      hint.textContent = ''
     }
   }
 
@@ -312,8 +313,24 @@
     if (!select) return
     const previous = select.value
     select.innerHTML = ''
+    const hasPolls = pollState.polls.length > 0
+    if (hasPolls) {
+      /** The tip rides inside the dropdown as a placeholder (disabled +
+       * hidden) so the closed control reads as guidance until the user
+       * commits to a poll or to "None — link later". */
+      const placeholder = document.createElement('option')
+      placeholder.value = ''
+      placeholder.disabled = true
+      placeholder.hidden = true
+      placeholder.selected = true
+      placeholder.textContent =
+        'Pick a poll to insert the widget already linked, or link later.'
+      select.appendChild(placeholder)
+    }
     const noneOption = document.createElement('option')
-    noneOption.value = ''
+    /** "none" (not '') so an explicit link-later choice is distinct from the
+     * placeholder; selectedLinkedPoll treats both as unlinked. */
+    noneOption.value = hasPolls ? 'none' : ''
     noneOption.textContent = 'None — link later'
     select.appendChild(noneOption)
     pollState.polls.forEach((poll) => {
@@ -322,7 +339,10 @@
       option.textContent = poll.status === 'open' ? `${poll.question} (live)` : poll.question
       select.appendChild(option)
     })
-    if (previous && pollState.polls.some((poll) => poll.id === previous)) {
+    if (
+      previous &&
+      (previous === 'none' || pollState.polls.some((poll) => poll.id === previous))
+    ) {
       select.value = previous
     }
     select.disabled = pollState.polls.length === 0
