@@ -51,7 +51,10 @@
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        gap: 12px;
+        gap: 3px;
+      }
+      .editor-header h1 {
+        font-size: 20px;
       }
       button.back-button {
         display: inline-flex;
@@ -226,7 +229,8 @@
        * bottom — style tweaks stay visible without sharing a row. */
       .editor-view:not(.hidden) {
         height: calc(100vh - 52px);
-        min-height: 420px;
+        min-height: 380px;
+        gap: 10px;
       }
       .editor-view .editor-header,
       .editor-view .preview-section,
@@ -333,6 +337,18 @@
         display: flex;
         flex-direction: column;
         gap: 6px;
+      }
+      /** Footer row: Back parked left, primary action stretching right —
+       * one 44px line instead of a stacked button column. */
+      .actions-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .actions-row button:last-child {
+        flex: 1;
+        min-width: 160px;
       }
       .muted {
         color: var(--muted);
@@ -637,20 +653,10 @@
 
       <div id="view-qna" class="view editor-view hidden">
         <div class="editor-header">
-          <button type="button" class="ghost back-button" id="back-qna">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-          <div class="select-hero">
-            <div class="select-eyebrow">Prezo Widgets</div>
-            <h1>Q&amp;A widget</h1>
-            <p class="muted">Shows approved questions on the selected slide.</p>
-          </div>
+          <div class="select-eyebrow">Prezo Widgets</div>
+          <h1>Q&amp;A widget</h1>
         </div>
         <div class="preview-section">
-            <h2>Preview</h2>
             <div id="qna-preview" class="preview-card">
               <div class="preview-header">
                 <div>
@@ -741,8 +747,16 @@
           </div>
         </div>
         <div class="actions">
-          <button type="button" id="insert-qna">Insert widget</button>
-          <button type="button" class="ghost" id="remove-qna">Remove widget from slide</button>
+          <div class="actions-row">
+            <button type="button" class="ghost back-button" id="back-qna">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+              Back
+            </button>
+            <button type="button" class="ghost" id="remove-qna">Remove widget from slide</button>
+            <button type="button" id="insert-qna">Insert widget</button>
+          </div>
           <div id="qna-confirm" class="confirm-bar hidden">
             <span id="qna-confirm-text"></span>
             <button type="button" id="qna-confirm-accept">Replace</button>
@@ -756,20 +770,10 @@
 
       <div id="view-discussion" class="view editor-view hidden">
         <div class="editor-header">
-          <button type="button" class="ghost back-button" id="back-discussion">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-          <div class="select-hero">
-            <div class="select-eyebrow">Prezo Widgets</div>
-            <h1>Open discussion widget</h1>
-            <p class="muted">Highlights answers to a host prompt.</p>
-          </div>
+          <div class="select-eyebrow">Prezo Widgets</div>
+          <h1>Open discussion widget</h1>
         </div>
         <div class="preview-section">
-            <h2>Preview</h2>
             <div id="discussion-preview" class="preview-card">
               <div class="preview-header">
                 <div>
@@ -873,8 +877,16 @@
           </div>
         </div>
         <div class="actions">
-          <button type="button" id="insert-discussion">Insert widget</button>
-          <button type="button" class="ghost" id="remove-discussion">Remove widget from slide</button>
+          <div class="actions-row">
+            <button type="button" class="ghost back-button" id="back-discussion">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+              Back
+            </button>
+            <button type="button" class="ghost" id="remove-discussion">Remove widget from slide</button>
+            <button type="button" id="insert-discussion">Insert widget</button>
+          </div>
           <div id="discussion-confirm" class="confirm-bar hidden">
             <span id="discussion-confirm-text"></span>
             <button type="button" id="discussion-confirm-accept">Replace</button>
@@ -888,20 +900,10 @@
 
       <div id="view-poll" class="view editor-view hidden">
         <div class="editor-header">
-          <button type="button" class="ghost back-button" id="back-poll">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-          <div class="select-hero">
-            <div class="select-eyebrow">Prezo Widgets</div>
-            <h1>Poll widget</h1>
-            <p class="muted">Shows live results for the poll you link.</p>
-          </div>
+          <div class="select-eyebrow">Prezo Widgets</div>
+          <h1>Poll widget</h1>
         </div>
         <div class="preview-section">
-            <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
               <div>
                 <div class="preview-poll-title">Prezo Poll</div>
@@ -1024,8 +1026,16 @@
           </details>
           </div>
         <div class="actions">
-          <button type="button" id="insert-poll">Insert poll</button>
-          <button type="button" class="ghost" id="remove-poll">Remove widget from slide</button>
+          <div class="actions-row">
+            <button type="button" class="ghost back-button" id="back-poll">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+              Back
+            </button>
+            <button type="button" class="ghost" id="remove-poll">Remove widget from slide</button>
+            <button type="button" id="insert-poll">Insert poll</button>
+          </div>
           <div id="poll-confirm" class="confirm-bar hidden">
             <span id="poll-confirm-text"></span>
             <button type="button" id="poll-confirm-accept">Replace</button>
