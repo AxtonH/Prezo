@@ -47,10 +47,26 @@
       .view.hidden {
         display: none;
       }
-      .toolbar {
+      .editor-header {
         display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      button.back-button {
+        display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
+        font-size: 13px;
+        padding: 7px 12px;
+      }
+      button.back-button svg {
+        width: 14px;
+        height: 14px;
+        transition: transform 0.2s ease;
+      }
+      button.back-button:hover svg {
+        transform: translateX(-2px);
       }
       h1 {
         font-size: 22px;
@@ -59,7 +75,9 @@
       }
       h2 {
         margin: 0;
-        font-size: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
       }
       .card {
         border: 1px solid var(--border);
@@ -182,13 +200,13 @@
       }
       .panel {
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 12px;
+        border-radius: 16px;
+        padding: 16px 20px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
         background: var(--surface);
-        box-shadow: var(--shadow);
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       }
       .grid {
         display: grid;
@@ -205,8 +223,9 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        font-size: 14px;
-        font-weight: 700;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
         -webkit-user-select: none;
         user-select: none;
       }
@@ -505,7 +524,7 @@
               </div>
               <div>
                 <div class="card-title">Poll widget</div>
-                <p class="muted">Shows the latest poll on the selected slide.</p>
+                <p class="muted">Shows live results for the poll you link.</p>
               </div>
             </div>
             <div class="card-actions">
@@ -548,9 +567,18 @@
       </div>
 
       <div id="view-qna" class="view hidden">
-        <div class="toolbar">
-          <button type="button" class="ghost" id="back-qna">Back</button>
-          <h1>Q&amp;A Widget</h1>
+        <div class="editor-header">
+          <button type="button" class="ghost back-button" id="back-qna">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+          <div class="select-hero">
+            <div class="select-eyebrow">Prezo Widgets</div>
+            <h1>Q&amp;A widget</h1>
+            <p class="muted">Shows approved questions on the selected slide.</p>
+          </div>
         </div>
         <div class="grid">
           <div class="panel">
@@ -660,9 +688,18 @@
       </div>
 
       <div id="view-discussion" class="view hidden">
-        <div class="toolbar">
-          <button type="button" class="ghost" id="back-discussion">Back</button>
-          <h1>Open Discussion Widget</h1>
+        <div class="editor-header">
+          <button type="button" class="ghost back-button" id="back-discussion">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+          <div class="select-hero">
+            <div class="select-eyebrow">Prezo Widgets</div>
+            <h1>Open discussion widget</h1>
+            <p class="muted">Highlights answers to a host prompt.</p>
+          </div>
         </div>
         <div class="grid">
           <div class="panel">
@@ -785,9 +822,18 @@
       </div>
 
       <div id="view-poll" class="view hidden">
-        <div class="toolbar">
-          <button type="button" class="ghost" id="back-poll">Back</button>
-          <h1>Poll Widget</h1>
+        <div class="editor-header">
+          <button type="button" class="ghost back-button" id="back-poll">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            Back
+          </button>
+          <div class="select-hero">
+            <div class="select-eyebrow">Prezo Widgets</div>
+            <h1>Poll widget</h1>
+            <p class="muted">Shows live results for the poll you link.</p>
+          </div>
         </div>
         <div class="grid">
           <div class="panel">
