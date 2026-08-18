@@ -199,6 +199,28 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
       }
+      details.panel > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 14px;
+        font-weight: 700;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      details.panel > summary::-webkit-details-marker {
+        display: none;
+      }
+      details.panel > summary::after {
+        content: '▸';
+        color: var(--muted);
+        font-size: 12px;
+      }
+      details.panel[open] > summary::after {
+        content: '▾';
+      }
       .field {
         display: flex;
         flex-direction: column;
@@ -769,16 +791,6 @@
         </div>
         <div class="grid">
           <div class="panel">
-            <h2>Linked poll</h2>
-            <div class="field">
-              <label for="poll-linked">Poll</label>
-              <select id="poll-linked" disabled>
-                <option value="" selected>None — link later</option>
-              </select>
-            </div>
-            <p id="poll-link-hint" class="muted">Checking for a connected session...</p>
-          </div>
-          <div class="panel">
             <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
               <div>
@@ -813,8 +825,18 @@
               </div>
             </div>
           </div>
-          <div class="panel">
-            <h2>Style</h2>
+          <details class="panel" open>
+            <summary>Linked poll</summary>
+            <div class="field">
+              <label for="poll-linked">Poll</label>
+              <select id="poll-linked" disabled>
+                <option value="" selected>None — link later</option>
+              </select>
+            </div>
+            <p id="poll-link-hint" class="muted">Checking for a connected session...</p>
+          </details>
+          <details class="panel">
+            <summary>Style</summary>
             <div class="field">
               <label for="poll-font">Font</label>
               <select id="poll-font">
@@ -888,7 +910,7 @@
                 <option value="5" selected>5</option>
               </select>
             </div>
-          </div>
+          </details>
         </div>
         <div class="actions">
           <button type="button" id="insert-poll">Insert poll</button>
