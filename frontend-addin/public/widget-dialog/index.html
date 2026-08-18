@@ -221,18 +221,25 @@
         gap: 12px;
         min-width: 0;
       }
-      /** Wide dialogs put preview and controls side by side with the
-       * preview sticky, so style tweaks stay visible while the control
-       * column scrolls. Narrow dialogs fall back to stacking. */
-      @media (min-width: 720px) {
-        .editor-grid {
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-          align-items: start;
-        }
-        .editor-grid .preview-section {
-          position: sticky;
-          top: 16px;
-        }
+      /** 3DS-style split: header and preview pinned on top, the control
+       * panels scrolling in their own region, actions pinned at the
+       * bottom — style tweaks stay visible without sharing a row. */
+      .editor-view:not(.hidden) {
+        height: calc(100vh - 52px);
+        min-height: 420px;
+      }
+      .editor-view .editor-header,
+      .editor-view .preview-section,
+      .editor-view .actions {
+        flex: none;
+      }
+      .editor-view .editor-controls {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        /** Breathing room so panel borders and focus rings don't clip
+         * against the scroll container. */
+        padding: 2px;
       }
       .color-grid {
         display: grid;
@@ -628,7 +635,7 @@
         </div>
       </div>
 
-      <div id="view-qna" class="view hidden">
+      <div id="view-qna" class="view editor-view hidden">
         <div class="editor-header">
           <button type="button" class="ghost back-button" id="back-qna">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -642,8 +649,7 @@
             <p class="muted">Shows approved questions on the selected slide.</p>
           </div>
         </div>
-        <div class="grid editor-grid">
-          <div class="preview-section">
+        <div class="preview-section">
             <h2>Preview</h2>
             <div id="qna-preview" class="preview-card">
               <div class="preview-header">
@@ -733,7 +739,6 @@
               </select>
             </div>
           </div>
-          </div>
         </div>
         <div class="actions">
           <button type="button" id="insert-qna">Insert widget</button>
@@ -749,7 +754,7 @@
         </div>
       </div>
 
-      <div id="view-discussion" class="view hidden">
+      <div id="view-discussion" class="view editor-view hidden">
         <div class="editor-header">
           <button type="button" class="ghost back-button" id="back-discussion">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -763,8 +768,7 @@
             <p class="muted">Highlights answers to a host prompt.</p>
           </div>
         </div>
-        <div class="grid editor-grid">
-          <div class="preview-section">
+        <div class="preview-section">
             <h2>Preview</h2>
             <div id="discussion-preview" class="preview-card">
               <div class="preview-header">
@@ -867,7 +871,6 @@
               </select>
             </div>
           </div>
-          </div>
         </div>
         <div class="actions">
           <button type="button" id="insert-discussion">Insert widget</button>
@@ -883,7 +886,7 @@
         </div>
       </div>
 
-      <div id="view-poll" class="view hidden">
+      <div id="view-poll" class="view editor-view hidden">
         <div class="editor-header">
           <button type="button" class="ghost back-button" id="back-poll">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -897,8 +900,7 @@
             <p class="muted">Shows live results for the poll you link.</p>
           </div>
         </div>
-        <div class="grid editor-grid">
-          <div class="preview-section">
+        <div class="preview-section">
             <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
               <div>
@@ -934,21 +936,6 @@
             </div>
           </div>
           <div class="editor-controls">
-          <details class="panel" open>
-            <summary>
-              Linked poll
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="m9 18 6-6-6-6" />
-              </svg>
-            </summary>
-            <div class="field">
-              <label for="poll-linked">Poll</label>
-              <select id="poll-linked" disabled>
-                <option value="" selected>Checking for a connected session...</option>
-              </select>
-            </div>
-            <p id="poll-link-hint" class="muted"></p>
-          </details>
           <details class="panel">
             <summary>
               Style
@@ -1020,8 +1007,22 @@
               </select>
             </div>
           </details>
+          <details class="panel" open>
+            <summary>
+              Linked poll
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </summary>
+            <div class="field">
+              <label for="poll-linked">Poll</label>
+              <select id="poll-linked" disabled>
+                <option value="" selected>Checking for a connected session...</option>
+              </select>
+            </div>
+            <p id="poll-link-hint" class="muted"></p>
+          </details>
           </div>
-        </div>
         <div class="actions">
           <button type="button" id="insert-poll">Insert poll</button>
           <button type="button" class="ghost" id="remove-poll">Remove widget from slide</button>
