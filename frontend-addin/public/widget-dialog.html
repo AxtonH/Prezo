@@ -206,8 +206,8 @@
         flex-direction: column;
         /** Block gap must clearly beat the 4px label-to-input gap, or a
          * label reads as equidistant between its control and the one
-         * above it. */
-        gap: 16px;
+         * above it (16px was tried and read as no change). */
+        gap: 22px;
         background: var(--surface);
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       }
@@ -218,7 +218,10 @@
       .color-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 8px;
+        /** One 3x2 cluster: row gap sits between the label-to-input gap
+         * (4px) and the panel block gap (22px) so the six colors read as
+         * a single group. */
+        gap: 12px 16px;
       }
       details.panel > summary {
         cursor: pointer;
@@ -656,8 +659,6 @@
                 <label for="qna-accent">Accent</label>
                 <input id="qna-accent" type="color" value="#2563eb" />
               </div>
-            </div>
-            <div class="color-grid">
               <div class="field">
                 <label for="qna-panel">Panel background</label>
                 <input id="qna-panel" type="color" value="#ffffff" />
@@ -783,8 +784,6 @@
                 <label for="discussion-accent">Accent</label>
                 <input id="discussion-accent" type="color" value="#2563eb" />
               </div>
-            </div>
-            <div class="color-grid">
               <div class="field">
                 <label for="discussion-panel">Panel background</label>
                 <input id="discussion-panel" type="color" value="#ffffff" />
@@ -941,8 +940,6 @@
                 <label for="poll-accent">Accent</label>
                 <input id="poll-accent" type="color" value="#2563eb" />
               </div>
-            </div>
-            <div class="color-grid">
               <div class="field">
                 <label for="poll-panel">Panel background</label>
                 <input id="poll-panel" type="color" value="#ffffff" />
