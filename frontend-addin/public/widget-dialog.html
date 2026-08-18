@@ -215,6 +215,25 @@
         display: grid;
         gap: 12px;
       }
+      .editor-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-width: 0;
+      }
+      /** Wide dialogs put preview and controls side by side with the
+       * preview sticky, so style tweaks stay visible while the control
+       * column scrolls. Narrow dialogs fall back to stacking. */
+      @media (min-width: 720px) {
+        .editor-grid {
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          align-items: start;
+        }
+        .editor-grid .preview-section {
+          position: sticky;
+          top: 16px;
+        }
+      }
       .color-grid {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -623,7 +642,7 @@
             <p class="muted">Shows approved questions on the selected slide.</p>
           </div>
         </div>
-        <div class="grid">
+        <div class="grid editor-grid">
           <div class="preview-section">
             <h2>Preview</h2>
             <div id="qna-preview" class="preview-card">
@@ -649,6 +668,7 @@
               </div>
             </div>
           </div>
+          <div class="editor-controls">
           <div class="panel">
             <h2>Style</h2>
             <div class="field">
@@ -713,6 +733,7 @@
               </select>
             </div>
           </div>
+          </div>
         </div>
         <div class="actions">
           <button type="button" id="insert-qna">Insert widget</button>
@@ -742,7 +763,7 @@
             <p class="muted">Highlights answers to a host prompt.</p>
           </div>
         </div>
-        <div class="grid">
+        <div class="grid editor-grid">
           <div class="preview-section">
             <h2>Preview</h2>
             <div id="discussion-preview" class="preview-card">
@@ -774,6 +795,7 @@
               </div>
             </div>
           </div>
+          <div class="editor-controls">
           <div class="panel">
             <h2>Style</h2>
             <div class="field">
@@ -845,6 +867,7 @@
               </select>
             </div>
           </div>
+          </div>
         </div>
         <div class="actions">
           <button type="button" id="insert-discussion">Insert widget</button>
@@ -874,7 +897,7 @@
             <p class="muted">Shows live results for the poll you link.</p>
           </div>
         </div>
-        <div class="grid">
+        <div class="grid editor-grid">
           <div class="preview-section">
             <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
@@ -910,6 +933,7 @@
               </div>
             </div>
           </div>
+          <div class="editor-controls">
           <details class="panel" open>
             <summary>
               Linked poll
@@ -996,6 +1020,7 @@
               </select>
             </div>
           </details>
+          </div>
         </div>
         <div class="actions">
           <button type="button" id="insert-poll">Insert poll</button>
