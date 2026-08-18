@@ -204,7 +204,10 @@
         padding: 16px 20px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        /** Block gap must clearly beat the 4px label-to-input gap, or a
+         * label reads as equidistant between its control and the one
+         * above it. */
+        gap: 16px;
         background: var(--surface);
         box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       }
