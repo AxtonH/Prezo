@@ -279,6 +279,7 @@
    * webviews don't reliably share the add-in's auth storage.
    */
   let pollState = { loaded: false, hasSession: false, polls: [], error: null }
+  let lastPollStateSignature = null
   let defaultPollPreview = null
 
   const selectedLinkedPoll = () => {
@@ -290,20 +291,16 @@
   const updatePollLinkHint = () => {
     const hint = pollLinkHint()
     if (!hint) return
-    if (!pollState.loaded) {
-      hint.textContent = 'Checking for a connected session...'
-    } else if (pollState.error) {
+    if (pollState.loaded && pollState.error) {
       hint.textContent = 'Could not load polls — insert now and link from the Prezo panel.'
-    } else if (!pollState.hasSession) {
-      hint.textContent =
-        'Connect a session in the Prezo panel to link a poll. You can insert now and link later.'
-    } else if (pollState.polls.length === 0) {
+    } else if (pollState.loaded && pollState.hasSession && pollState.polls.length === 0) {
       hint.textContent =
         'No polls yet — create one in the Prezo panel, or insert now and link later.'
     } else if (selectedLinkedPoll()) {
       hint.textContent = "Inserts already linked — the widget shows this poll's live results."
     } else {
-      /** The pick-a-poll tip lives inside the dropdown as its placeholder. */
+      /** Checking / no-session / pick-a-poll guidance all live inside the
+       * dropdown as its placeholder option. */
       hint.textContent = ''
     }
   }
@@ -314,38 +311,51 @@
     const previous = select.value
     select.innerHTML = ''
     const hasPolls = pollState.polls.length > 0
-    if (hasPolls) {
-      /** The tip rides inside the dropdown as a placeholder (disabled +
-       * hidden) so the closed control reads as guidance until the user
-       * commits to a poll or to "None — link later". */
-      const placeholder = document.createElement('option')
-      placeholder.value = ''
-      placeholder.disabled = true
-      placeholder.hidden = true
-      placeholder.selected = true
-      placeholder.textContent =
-        'Pick a poll to insert the widget already linked, or link later.'
-      select.appendChild(placeholder)
-    }
-    const noneOption = document.createElement('option')
-    /** "none" (not '') so an explicit link-later choice is distinct from the
-     * placeholder; selectedLinkedPoll treats both as unlinked. */
-    noneOption.value = hasPolls ? 'none' : ''
-    noneOption.textContent = 'None — link later'
-    select.appendChild(noneOption)
-    pollState.polls.forEach((poll) => {
+    const addOption = (value, text, isPlaceholder) => {
       const option = document.createElement('option')
-      option.value = poll.id
-      option.textContent = poll.status === 'open' ? `${poll.question} (live)` : poll.question
+      option.value = value
+      option.textContent = text
+      if (isPlaceholder) {
+        /** Placeholders show in the closed control but never in the open
+         * list — guidance the user reads, not a choice they can commit to. */
+        option.disabled = true
+        option.hidden = true
+        option.selected = true
+      }
       select.appendChild(option)
-    })
-    if (
-      previous &&
-      (previous === 'none' || pollState.polls.some((poll) => poll.id === previous))
-    ) {
-      select.value = previous
     }
-    select.disabled = pollState.polls.length === 0
+    if (!pollState.loaded) {
+      addOption('', 'Checking for a connected session...', true)
+    } else if (!pollState.hasSession && !pollState.error) {
+      addOption(
+        '',
+        'Connect a session in the Prezo panel to link a poll. You can insert now and link later.',
+        true
+      )
+    } else if (!hasPolls) {
+      /** Session without polls (or a failed poll fetch): plain link-later
+       * default — the hint line explains why the list is empty. */
+      addOption('', 'None — link later', false)
+    } else {
+      addOption('', 'Pick a poll to insert the widget already linked, or link later.', true)
+      /** "none" (not '') so an explicit link-later choice is distinct from
+       * the placeholder; selectedLinkedPoll treats both as unlinked. */
+      addOption('none', 'None — link later', false)
+      pollState.polls.forEach((poll) => {
+        addOption(
+          poll.id,
+          poll.status === 'open' ? `${poll.question} (live)` : poll.question,
+          false
+        )
+      })
+      if (
+        previous &&
+        (previous === 'none' || pollState.polls.some((poll) => poll.id === previous))
+      ) {
+        select.value = previous
+      }
+    }
+    select.disabled = !hasPolls
     updatePollLinkHint()
     updatePollPreview()
   }
@@ -717,7 +727,22 @@
             polls: Array.isArray(message.polls) ? message.polls : [],
             error: message.error || null
           }
-          renderPollLinkState()
+          /** State is re-requested on an interval while the dialog is open
+           * (joining/leaving a session must reflect without reopening).
+           * Only a STRUCTURAL change rebuilds the select — rebuilding
+           * closes an open dropdown, so votes-only ticks just refresh the
+           * preview fills. */
+          const signature = JSON.stringify([
+            pollState.hasSession,
+            Boolean(pollState.error),
+            pollState.polls.map((poll) => [poll.id, poll.question, poll.status])
+          ])
+          if (signature !== lastPollStateSignature) {
+            lastPollStateSignature = signature
+            renderPollLinkState()
+          } else {
+            updatePollPreview()
+          }
         } else if (message && message.type === 'confirm-replace') {
           const key = familyFromSource(message.source)
           families[key].setStatus('')
@@ -758,11 +783,17 @@
     renderDebug()
 
     /** Ask the parent for session + poll state (handler above must already
-     * be registered so the response can't race past us). */
-    try {
-      Office.context.ui.messageParent(JSON.stringify({ type: 'request-poll-state' }))
-    } catch {
-      // Opened outside a dialog host — the link picker stays in its empty state.
+     * be registered so the response can't race past us), then keep asking
+     * while the dialog is open so joining or leaving a session in the
+     * panel reflects here without a reopen. */
+    const requestPollState = () => {
+      try {
+        Office.context.ui.messageParent(JSON.stringify({ type: 'request-poll-state' }))
+      } catch {
+        // Opened outside a dialog host — the link picker stays in its empty state.
+      }
     }
+    requestPollState()
+    window.setInterval(requestPollState, 5000)
   })
 })()
