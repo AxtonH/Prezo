@@ -273,6 +273,22 @@
     return null
   }
 
+  /**
+   * The taskpane mirrors its live session id into localStorage (written by
+   * persistHostSession in App.tsx — sessionStorage is per-webview, so this
+   * is the only signal that crosses into this runtime). The deck's session
+   * binding is deliberately persistent so widgets keep rendering after
+   * panel navigation; the Linked poll picker, though, should only offer
+   * polls while the panel actually has the session live.
+   */
+  const getLiveHostSessionId = () => {
+    try {
+      return window.localStorage ? localStorage.getItem('prezo.hostLiveSessionId') : null
+    } catch {
+      return null
+    }
+  }
+
   const updateQnaConfig = async (binding, qna) => {
     if (!binding || !binding.sessionId || !qna) {
       return null
@@ -2820,7 +2836,10 @@
       } catch {
         binding = null
       }
-      if (!binding || !binding.sessionId) {
+      /** A deck binding for a session the panel already left reads as
+       * "no session" here — otherwise the picker serves stale polls. */
+      const liveSessionId = getLiveHostSessionId()
+      if (!binding || !binding.sessionId || binding.sessionId !== liveSessionId) {
         activeDialog.messageChild(
           JSON.stringify({ type: 'poll-state', hasSession: false, polls: [] })
         )

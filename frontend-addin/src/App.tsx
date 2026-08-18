@@ -74,6 +74,8 @@ import { isPowerPointAddinHost } from './utils/officeHost'
 import { useEmbedPrefetch } from './lib/embed-cache/use-embed-prefetch'
 
 const HOST_SESSION_STORAGE_ID = 'prezo.hostActiveSessionId'
+/** Read by public/function-file.js (getLiveHostSessionId) — keep the literal in sync. */
+const HOST_LIVE_SESSION_MIRROR_KEY = 'prezo.hostLiveSessionId'
 const HOST_WORKSPACE_NAV_KEY = 'prezo.hostWorkspaceNav'
 const HOST_SIDENAV_COLLAPSED_KEY = 'prezo.hostSideNavCollapsed.v1'
 /** Trailing gap between coalesced widget passes: while votes stream in,
@@ -199,6 +201,19 @@ function persistHostSession(sessionId: string | null, workspaceNav: WorkspaceNav
     } else {
       sessionStorage.removeItem(HOST_SESSION_STORAGE_ID)
       sessionStorage.removeItem(HOST_WORKSPACE_NAV_KEY)
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+  try {
+    /** localStorage mirror for the function-file webview (sessionStorage is
+     * per-webview): the widget dialog's Linked poll picker only offers polls
+     * while the panel actually has the session live — the deck binding alone
+     * is deliberately persistent and would keep serving a left session. */
+    if (sessionId) {
+      localStorage.setItem(HOST_LIVE_SESSION_MIRROR_KEY, sessionId)
+    } else {
+      localStorage.removeItem(HOST_LIVE_SESSION_MIRROR_KEY)
     }
   } catch {
     /* ignore quota / private mode */
