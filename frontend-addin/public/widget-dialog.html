@@ -232,13 +232,23 @@
       details.panel > summary::-webkit-details-marker {
         display: none;
       }
-      details.panel > summary::after {
-        content: '▸';
+      /** SVG caret (not a unicode glyph — Sora lacks ▸/▾ and hosts render
+       * fallback dots); points right when closed, rotates down when open. */
+      details.panel > summary svg {
+        width: 16px;
+        height: 16px;
         color: var(--muted);
-        font-size: 12px;
+        flex: none;
+        transition: transform 0.2s ease;
       }
-      details.panel[open] > summary::after {
-        content: '▾';
+      details.panel[open] > summary svg {
+        transform: rotate(90deg);
+      }
+      .preview-section {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 0 2px;
       }
       .field {
         display: flex;
@@ -581,7 +591,7 @@
           </div>
         </div>
         <div class="grid">
-          <div class="panel">
+          <div class="preview-section">
             <h2>Preview</h2>
             <div id="qna-preview" class="preview-card">
               <div class="preview-header">
@@ -702,7 +712,7 @@
           </div>
         </div>
         <div class="grid">
-          <div class="panel">
+          <div class="preview-section">
             <h2>Preview</h2>
             <div id="discussion-preview" class="preview-card">
               <div class="preview-header">
@@ -836,7 +846,7 @@
           </div>
         </div>
         <div class="grid">
-          <div class="panel">
+          <div class="preview-section">
             <h2>Preview</h2>
             <div id="poll-preview" class="preview-card">
               <div>
@@ -872,7 +882,12 @@
             </div>
           </div>
           <details class="panel" open>
-            <summary>Linked poll</summary>
+            <summary>
+              Linked poll
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </summary>
             <div class="field">
               <label for="poll-linked">Poll</label>
               <select id="poll-linked" disabled>
@@ -882,7 +897,12 @@
             <p id="poll-link-hint" class="muted"></p>
           </details>
           <details class="panel">
-            <summary>Style</summary>
+            <summary>
+              Style
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </summary>
             <div class="field">
               <label for="poll-font">Font</label>
               <select id="poll-font">
