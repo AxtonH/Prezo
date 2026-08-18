@@ -223,6 +223,19 @@
          * a single group. */
         gap: 12px 16px;
       }
+      /** Flex gap does NOT render between a <details> element's children in
+       * Office's webview (content is slotted; grid gaps render, flex gaps
+       * collapse — which is why every panel-gap bump read as "no change").
+       * Details panels therefore lay out as plain blocks with margins. */
+      details.panel {
+        display: block;
+      }
+      details.panel > summary ~ * {
+        margin-top: 22px;
+      }
+      #poll-link-hint:empty {
+        display: none;
+      }
       details.panel > summary {
         cursor: pointer;
         list-style: none;
