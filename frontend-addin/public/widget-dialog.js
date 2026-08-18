@@ -296,11 +296,10 @@
     } else if (pollState.loaded && pollState.hasSession && pollState.polls.length === 0) {
       hint.textContent =
         'No polls yet — create one in the Prezo panel, or insert now and link later.'
-    } else if (selectedLinkedPoll()) {
-      hint.textContent = "Inserts already linked — the widget shows this poll's live results."
     } else {
       /** Checking / no-session / pick-a-poll guidance all live inside the
-       * dropdown as its placeholder option. */
+       * dropdown as its placeholder option; a linked selection speaks for
+       * itself (the preview shows the poll). */
       hint.textContent = ''
     }
   }
