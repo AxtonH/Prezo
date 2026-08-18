@@ -233,6 +233,11 @@
       details.panel > summary ~ * {
         margin-top: 16px;
       }
+      /** The two sliders read as a pair — thin tracks make the standard
+       * block gap look oversized between them. */
+      details.panel > .field-tight {
+        margin-top: 10px;
+      }
       #poll-link-hint:empty {
         display: none;
       }
@@ -970,7 +975,7 @@
               <label for="poll-width">Bar thickness</label>
               <input id="poll-width" type="range" min="0.4" max="2" step="0.1" value="1" />
             </div>
-            <div class="field">
+            <div class="field field-tight">
               <label for="poll-spacing">Spacing</label>
               <input id="poll-spacing" type="range" min="0.8" max="1.3" step="0.05" value="1" />
             </div>
