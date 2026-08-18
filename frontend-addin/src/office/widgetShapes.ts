@@ -2120,22 +2120,9 @@ export async function insertPollWidget(
     const left = (pageSetup.slideWidth - width) / 2
     const top = Math.max(24, (pageSetup.slideHeight - height) / 2)
 
-    const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
-      left: left + 4,
-      top: top + 6,
-      width,
-      height
-    })
-    shadow.fill.setSolidColor(style.shadowColor)
-    shadow.fill.transparency = style.shadowOpacity
-    shadow.lineFormat.visible = false
-    /** Named shapes keep PowerPoint's Selection Pane readable for designers
-     * ("Prezo Poll Option 3 Bar" instead of "Rectangle 47"). Insert-time
-     * only — updates never rename, so designer renames always stick. */
-    shadow.name = 'Prezo Poll Shadow'
-    shadow.tags.add(POLL_WIDGET_TAG, 'true')
-    shadow.tags.add('PrezoWidgetRole', 'poll-shadow')
-
+    /** No shadow shape since 18/08/2026 — new poll widgets insert flat.
+     * Update passes still style shadows on decks that have them (the
+     * shapeIds.shadow field stays optional). */
     const container = slide.shapes.addGeometricShape('RoundRectangle', {
       left,
       top,
@@ -2145,6 +2132,9 @@ export async function insertPollWidget(
     container.fill.setSolidColor(style.panelColor)
     container.lineFormat.color = style.borderColor
     container.lineFormat.weight = 1
+    /** Named shapes keep PowerPoint's Selection Pane readable for designers
+     * ("Prezo Poll Option 3 Bar" instead of "Rectangle 47"). Insert-time
+     * only — updates never rename, so designer renames always stick. */
     container.name = 'Prezo Poll Panel'
     container.tags.add(POLL_WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'poll-container')
@@ -2301,14 +2291,12 @@ export async function insertPollWidget(
       item.fill.load('id')
     })
 
-    shadow.load('id')
     container.load('id')
     title.load('id')
     question.load('id')
     await context.sync()
 
     const shapeIds: PollWidgetShapeIds = {
-      shadow: shadow.id,
       container: container.id,
       title: title.id,
       question: question.id,

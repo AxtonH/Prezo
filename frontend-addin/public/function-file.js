@@ -2250,18 +2250,9 @@
       const left = (pageSetup.slideWidth - width) / 2
       const top = Math.max(24, (pageSetup.slideHeight - height) / 2)
 
-      const shadow = slide.shapes.addGeometricShape('RoundRectangle', {
-        left: left + 4,
-        top: top + 6,
-        width,
-        height
-      })
-      shadow.fill.setSolidColor(style.shadowColor)
-      shadow.fill.transparency = style.shadowOpacity
-      shadow.lineFormat.visible = false
-      shadow.tags.add(POLL_WIDGET_TAG, 'true')
-      shadow.tags.add('PrezoWidgetRole', 'poll-shadow')
-
+      /** No shadow shape since 18/08/2026 (mirrors widgetShapes.ts) — new
+       * poll widgets insert flat; update passes still tolerate and style
+       * shadows on decks that have them. */
       const container = slide.shapes.addGeometricShape('RoundRectangle', {
         left,
         top,
@@ -2400,14 +2391,12 @@
         item.fill.load('id')
       })
 
-      shadow.load('id')
       container.load('id')
       title.load('id')
       question.load('id')
       await context.sync()
 
       const shapeIds = {
-        shadow: shadow.id,
         container: container.id,
         title: title.id,
         question: question.id,

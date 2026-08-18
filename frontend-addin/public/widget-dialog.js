@@ -93,7 +93,6 @@
     panel: () => el('poll-panel'),
     bar: () => el('poll-bar'),
     border: () => el('poll-border'),
-    shadow: () => el('poll-shadow'),
     spacing: () => el('poll-spacing'),
     width: () => el('poll-width'),
     orientation: () => el('poll-orientation'),
@@ -367,7 +366,10 @@
     panelColor: pollInputs.panel()?.value || '#ffffff',
     barColor: pollInputs.bar()?.value || '#e2e8f0',
     borderColor: pollInputs.border()?.value || '#e2e8f0',
-    shadowOpacity: clamp(parseFloat(pollInputs.shadow()?.value || '0.35'), 0, 0.6),
+    /** Poll widgets insert flat since 18/08/2026 — no shadow shape, no
+     * control; the key stays so the engines' style normalizers see an
+     * explicit value instead of backfilling the old 0.35 default. */
+    shadowOpacity: 0,
     spacingScale: clamp(parseFloat(pollInputs.spacing()?.value || '1'), 0.8, 1.3),
     barThicknessScale: clamp(parseFloat(pollInputs.width()?.value || '1'), 0.4, 2),
     orientation: pollInputs.orientation()?.value || 'horizontal',
@@ -388,7 +390,6 @@
     preview.style.setProperty('--muted', config.mutedColor)
     preview.style.setProperty('--accent', config.accentColor)
     preview.style.setProperty('--bar-bg', config.barColor)
-    preview.style.setProperty('--shadow-alpha', config.shadowOpacity.toString())
     preview.style.setProperty('--spacing', config.spacingScale.toString())
     preview.style.setProperty('--bar-thickness', config.barThicknessScale.toString())
     preview.style.setProperty(
