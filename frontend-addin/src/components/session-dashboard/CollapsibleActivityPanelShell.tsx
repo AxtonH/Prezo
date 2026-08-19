@@ -128,12 +128,16 @@ export function CollapsibleActivityPanelShell({
       ref={rootRef}
       className={`group overflow-hidden rounded-xl border transition-all ${styles.container}`}
     >
-      <div className={expanded ? styles.expandedBorder : ''}>
+      {/* Hover lives on this wrapper so the header button and the meta row
+          highlight as ONE surface, not two halves. */}
+      <div
+        className={`transition-colors ${styles.headerHover} ${
+          expanded ? styles.expandedBorder : ''
+        }`}
+      >
         <button
           type="button"
-          className={`w-full p-5 ${metaRow ? 'pb-0' : ''} text-left transition-colors ${
-            styles.headerHover
-          }`}
+          className={`w-full p-5 ${metaRow ? 'pb-0' : ''} text-left`}
           onClick={() => setExpanded((v) => !v)}
           aria-expanded="false"
           /* aria-expanded via ref: the Edge Tools axe linter rejects JSX
@@ -168,7 +172,7 @@ export function CollapsibleActivityPanelShell({
           /* Same toggle as the header button (keyboard users have the
              button; this div is a convenience click surface). */
           <div
-            className={`px-5 pb-5 pt-3 min-w-0 cursor-pointer transition-colors ${styles.headerHover}`}
+            className="px-5 pb-5 pt-3 min-w-0 cursor-pointer"
             onClick={() => setExpanded((v) => !v)}
           >
             {metaRow}
