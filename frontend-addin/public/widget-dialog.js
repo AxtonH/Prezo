@@ -345,11 +345,7 @@
        * the placeholder; selectedLinkedPoll treats both as unlinked. */
       addOption('none', 'None — link later', false)
       pollState.polls.forEach((poll) => {
-        addOption(
-          poll.id,
-          poll.status === 'open' ? `${poll.question} (live)` : poll.question,
-          false
-        )
+        addOption(poll.id, poll.question, false)
       })
       if (
         previous &&
@@ -416,8 +412,7 @@
     }
     const linked = selectedLinkedPoll()
     if (linked && questionEl && optionsEl) {
-      const prefix = linked.status === 'open' ? 'Live poll' : 'Poll'
-      questionEl.textContent = `${prefix}: ${linked.question}`
+      questionEl.textContent = linked.question
       const shownOptions = linked.options.slice(0, 5)
       const totalVotes = shownOptions.reduce((sum, option) => sum + (option.votes || 0), 0)
       optionsEl.innerHTML = ''
