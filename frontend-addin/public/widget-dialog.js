@@ -469,7 +469,7 @@
 
   const sendInsert = (replace) => {
     setError('')
-    setStatus('Sending request...')
+    setStatus('')
     setBusy(true)
     Office.context.ui.messageParent(
       JSON.stringify({
@@ -482,7 +482,7 @@
 
   const sendDiscussionInsert = (replace) => {
     setDiscussionError('')
-    setDiscussionStatus('Sending request...')
+    setDiscussionStatus('')
     setDiscussionBusy(true)
     Office.context.ui.messageParent(
       JSON.stringify({
@@ -495,7 +495,7 @@
 
   const sendPollInsert = (replace) => {
     setPollError('')
-    setPollStatus('Sending request...')
+    setPollStatus('')
     setPollBusy(true)
     const linked = selectedLinkedPoll()
     Office.context.ui.messageParent(
@@ -702,16 +702,16 @@
           // allow raw string
         }
         if (message && message.type === 'inserted') {
-          setStatus('Widget inserted.')
+          setStatus('')
           setBusy(false)
         } else if (message && message.type === 'discussion-inserted') {
-          setDiscussionStatus('Open discussion widget inserted.')
+          setDiscussionStatus('')
           setDiscussionBusy(false)
         } else if (message && message.type === 'poll-inserted') {
-          setPollStatus('Poll widget inserted.')
+          setPollStatus('')
           setPollBusy(false)
         } else if (message && message.type === 'game-inserted') {
-          setGameStatus('Game slide inserted.')
+          setGameStatus('')
           setGameBusy(false)
         } else if (message && message.type === 'poll-state') {
           pollState = {
