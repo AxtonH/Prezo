@@ -110,18 +110,18 @@ export function LinkedSlidesBadge({
   const numbers = slides.join(', ')
   return (
     <span
-      className="inline-flex items-center gap-1.5"
+      className="inline-flex items-center gap-1.5 min-w-0"
       title={`Linked to a widget on ${noun} ${numbers} of this presentation`}
     >
       <span
-        className={`material-symbols-outlined text-[1.125rem] ${
+        className={`material-symbols-outlined text-[1.125rem] shrink-0 ${
           inactive ? 'text-slate-400' : 'text-slate-500'
         }`}
         aria-hidden
       >
         link
       </span>
-      <span>
+      <span className="truncate">
         {slides.length === 1 ? 'Slide' : 'Slides'} {numbers}
       </span>
     </span>

@@ -120,7 +120,7 @@ export function CollapsibleActivityPanelShell({
     >
       <button
         type="button"
-        className={`w-full p-5 flex flex-wrap items-start justify-between gap-3 text-left transition-colors ${
+        className={`w-full p-5 flex items-start justify-between gap-3 text-left transition-colors ${
           styles.headerHover
         } ${expanded ? styles.expandedBorder : ''}`}
         onClick={() => setExpanded((v) => !v)}

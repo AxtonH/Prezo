@@ -185,19 +185,20 @@ export function ActivePollActivityCard({
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Poll</p>
           <h4
-            className={`font-semibold text-base leading-snug line-clamp-3 ${
+            className={`font-semibold text-base leading-snug line-clamp-2 min-h-[2.75rem] ${
               inactive ? 'text-slate-700' : 'text-slate-900'
             }`}
+            title={poll.question.trim() || undefined}
           >
             {poll.question.trim() || 'Untitled poll'}
           </h4>
           <div
-            className={`flex flex-wrap items-center gap-4 text-sm mt-2 ${
+            className={`flex items-center gap-3 text-sm mt-2 min-w-0 ${
               inactive ? 'text-slate-500' : 'text-slate-600'
             }`}
           >
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${
                 !closed
                   ? 'bg-emerald-100 text-emerald-700'
                   : mode === 'auto'
@@ -214,7 +215,7 @@ export function ActivePollActivityCard({
             >
               {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
             </span>
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap">
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${
                   inactive ? 'text-slate-400' : 'text-slate-500'
