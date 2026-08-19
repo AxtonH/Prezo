@@ -32,7 +32,6 @@
   const pollPreviewEl = () => el('poll-preview')
   const pollLinkedSelect = () => el('poll-linked')
   const pollLinkHint = () => el('poll-link-hint')
-  const pollMaxField = () => el('poll-max-field')
 
   const queryDebug = () => {
     try {
@@ -95,8 +94,7 @@
     border: () => el('poll-border'),
     spacing: () => el('poll-spacing'),
     width: () => el('poll-width'),
-    orientation: () => el('poll-orientation'),
-    max: () => el('poll-max')
+    orientation: () => el('poll-orientation')
   }
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
@@ -373,11 +371,12 @@
     spacingScale: clamp(parseFloat(pollInputs.spacing()?.value || '1'), 0.8, 1.3),
     barThicknessScale: clamp(parseFloat(pollInputs.width()?.value || '1'), 0.4, 2),
     orientation: pollInputs.orientation()?.value || 'horizontal',
-    /** Linked inserts size the skeleton from the poll itself; the
-     * placeholder-options picker only governs the unlinked skeleton. */
+    /** Linked inserts size the skeleton from the poll itself; unlinked
+     * inserts always get the full 5-option skeleton (the picker was
+     * removed 19/08/2026). */
     maxOptions: selectedLinkedPoll()
       ? clamp(selectedLinkedPoll().options.length || 5, 1, 5)
-      : clamp(parseInt(pollInputs.max()?.value || '5', 10), 2, 5)
+      : 5
   })
 
   const updatePollPreview = () => {
@@ -439,10 +438,6 @@
       questionEl.textContent = defaultPollPreview.question
       optionsEl.innerHTML = defaultPollPreview.optionsHtml
     }
-    if (pollMaxField()) {
-      pollMaxField().style.display = linked ? 'none' : ''
-    }
-
     const items = preview.querySelectorAll('.preview-poll-option')
     items.forEach((item, index) => {
       item.style.display = index < config.maxOptions ? 'flex' : 'none'

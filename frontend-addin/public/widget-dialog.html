@@ -30,7 +30,10 @@
         -webkit-font-smoothing: antialiased;
       }
       .dialog {
-        padding: 24px 28px 28px;
+        /** Bottom padding stays slim so the pinned action row sits low and
+         * the scrolling controls region gets the reclaimed height. Keep the
+         * editor-view height calc below in step with these paddings. */
+        padding: 24px 28px 14px;
         display: flex;
         flex-direction: column;
         gap: 18px;
@@ -228,7 +231,9 @@
        * panels scrolling in their own region, actions pinned at the
        * bottom — style tweaks stay visible without sharing a row. */
       .editor-view:not(.hidden) {
-        height: calc(100vh - 52px);
+        /** 100vh minus the dialog's vertical padding (24px top + 14px
+         * bottom) so the pinned action row lands at the bottom edge. */
+        height: calc(100vh - 38px);
         min-height: 380px;
         gap: 10px;
       }
@@ -999,17 +1004,8 @@
                 <option value="vertical">Vertical</option>
               </select>
             </div>
-            <div class="field" id="poll-max-field">
-              <label for="poll-max">Placeholder options</label>
-              <select id="poll-max">
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5" selected>5</option>
-              </select>
-            </div>
           </details>
-          <details class="panel" open>
+          <details class="panel">
             <summary>
               Linked poll
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
