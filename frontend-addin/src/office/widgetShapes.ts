@@ -187,20 +187,105 @@ export interface WidgetSlideLinks {
   qna: number[]
 }
 
+/** Records published by embed webviews (see poll-game-content.html's
+ * linked-slide publication): an embed's activity binding lives only inside
+ * its content add-in webview, so each embed writes {binding, slide} into
+ * the shared same-origin localStorage under this prefix, keyed by embedId. */
+const EMBED_SLIDE_LINK_KEY_PREFIX = 'prezo.embedSlideLink.'
+/** Embeds republish every ~5s while alive; records older than this are
+ * treated as gone (embed deleted, or its webview never booted this open). */
+const EMBED_SLIDE_LINK_MAX_AGE_MS = 5 * 60 * 1000
+
+/**
+ * Merge the embed-published records for this session and deck into the
+ * tag-derived links. Sheet ids collide across decks, so records are scoped
+ * by document url; kind semantics mirror the embed conductor (discussion →
+ * prompt, qna → session-level, else poll).
+ */
+function mergeEmbedSlideLinks(
+  links: WidgetSlideLinks,
+  sessionId: string,
+  sheetIdToSlideNumber: Map<string, number>
+): void {
+  let storage: Storage | null = null
+  try {
+    storage = window.localStorage
+  } catch {
+    return
+  }
+  if (!storage) {
+    return
+  }
+  let docUrl = ''
+  try {
+    docUrl = typeof Office !== 'undefined' ? String(Office.context?.document?.url || '') : ''
+  } catch {
+    // Unsaved/unknown deck — matches records published with '' too.
+  }
+  const push = (bucket: Record<string, number[]>, id: string, slideNumber: number) => {
+    if (!bucket[id]) {
+      bucket[id] = []
+    }
+    bucket[id].push(slideNumber)
+  }
+  const now = Date.now()
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i)
+    if (!key || !key.startsWith(EMBED_SLIDE_LINK_KEY_PREFIX)) {
+      continue
+    }
+    let record: Record<string, unknown>
+    try {
+      record = JSON.parse(storage.getItem(key) || '') as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (!record || typeof record !== 'object') {
+      continue
+    }
+    if (record.sessionId !== sessionId || String(record.docUrl || '') !== docUrl) {
+      continue
+    }
+    const updatedAt = Date.parse(String(record.updatedAt || ''))
+    if (!Number.isFinite(updatedAt) || now - updatedAt > EMBED_SLIDE_LINK_MAX_AGE_MS) {
+      continue
+    }
+    const slideNumber = sheetIdToSlideNumber.get(String(record.sheetId || ''))
+    if (!slideNumber) {
+      continue
+    }
+    const kind = String(record.kind || 'poll')
+    if (kind === 'discussion') {
+      if (typeof record.promptId === 'string' && record.promptId) {
+        push(links.prompts, record.promptId, slideNumber)
+      }
+    } else if (kind === 'qna') {
+      links.qna.push(slideNumber)
+    } else if (typeof record.pollId === 'string' && record.pollId) {
+      push(links.polls, record.pollId, slideNumber)
+    }
+  }
+}
+
 /**
  * Read-only pass over the deck's widget slide tags (the same tags the
  * slideshow conductor maps through), keyed by slide position instead of
- * sheet id so the dashboard can say "linked to slide 3".
+ * sheet id so the dashboard can say "linked to slide 3". Embed-hosted
+ * activities are merged in from their localStorage-published records.
  */
 export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSlideLinks> {
   const links: WidgetSlideLinks = { polls: {}, prompts: {}, qna: [] }
   if (!isPowerPointShapeApiAvailable()) {
     return links
   }
+  const sheetIdToSlideNumber = new Map<string, number>()
   await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
     slides.load('items/id')
     await context.sync()
+    slides.items.forEach((slide, index) => {
+      sheetIdToSlideNumber.set(String(slide.id).split('#')[0], index + 1)
+    })
     const slideTags = slides.items.map((slide) => {
       const tags = {
         pollSession: slide.tags.getItemOrNullObject(POLL_SESSION_TAG),
@@ -248,6 +333,17 @@ export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSli
       }
     })
   })
+  mergeEmbedSlideLinks(links, sessionId, sheetIdToSlideNumber)
+  // A widget and an embed can share a slide (and an activity), so dedupe
+  // and present in deck order.
+  const normalize = (list: number[]) => [...new Set(list)].sort((a, b) => a - b)
+  for (const id of Object.keys(links.polls)) {
+    links.polls[id] = normalize(links.polls[id])
+  }
+  for (const id of Object.keys(links.prompts)) {
+    links.prompts[id] = normalize(links.prompts[id])
+  }
+  links.qna = normalize(links.qna)
   return links
 }
 

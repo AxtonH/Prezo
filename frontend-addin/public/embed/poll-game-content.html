@@ -1423,6 +1423,48 @@
           return selectedPollId
         }
 
+        // === Linked-slide publication =====================================
+        // The taskpane's activity cards list which deck slides host a
+        // widget or embed linked to each activity. Widget links are
+        // readable from slide tags, but an embed's binding lives only in
+        // this webview — so each embed publishes {binding, slide} into the
+        // shared same-origin localStorage (the same channel the auth token
+        // rides), keyed by embedId. Republished on an interval so rebinds,
+        // slide moves, and deletions converge: the taskpane ignores records
+        // that stop refreshing. docUrl scopes records to this deck — sheet
+        // ids collide across decks.
+        const EMBED_SLIDE_LINK_KEY_PREFIX = "prezo.embedSlideLink."
+        const EMBED_SLIDE_LINK_PUBLISH_MS = 5000
+        const publishEmbedSlideLink = () => {
+          if (!embedIdentity?.id || !conductorMySlideId || !window.localStorage) {
+            return
+          }
+          let docUrl = ""
+          try {
+            docUrl = String(window.Office?.context?.document?.url || "")
+          } catch {
+            // url unavailable — record stays deck-unscoped ("").
+          }
+          const record = {
+            sessionId: selectedSessionId || null,
+            kind: normalizeActivityKind(selectedActivityKind),
+            pollId: selectedPollId || null,
+            promptId: selectedPromptId || null,
+            sheetId: String(conductorMySlideId).split("#")[0],
+            docUrl,
+            updatedAt: new Date().toISOString(),
+          }
+          try {
+            window.localStorage.setItem(
+              EMBED_SLIDE_LINK_KEY_PREFIX + embedIdentity.id,
+              JSON.stringify(record)
+            )
+          } catch {
+            // Storage blocked/full — the card chip just won't show this embed.
+          }
+        }
+        window.setInterval(publishEmbedSlideLink, EMBED_SLIDE_LINK_PUBLISH_MS)
+
         const conductorReportPresence = async (sessionId, kind, targetId, onAir) => {
           if (!sessionId || !targetId || !librarySyncState?.token) {
             return false
