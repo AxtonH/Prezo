@@ -213,11 +213,14 @@ export function ActiveQnaActivityCard({
           >
             Audience questions
           </h4>
-          <div
-            className={`flex items-center gap-3 text-sm mt-2 min-w-0 ${
-              inactive ? 'text-slate-500' : 'text-slate-600'
-            }`}
-          >
+        </div>
+      }
+      metaRow={
+        <div
+          className={`flex items-center gap-3 text-sm min-w-0 ${
+            inactive ? 'text-slate-500' : 'text-slate-600'
+          }`}
+        >
             <span
               className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${
                 !closed
@@ -250,8 +253,7 @@ export function ActiveQnaActivityCard({
               </span>
               <span>{questionTotal}</span>
             </span>
-            <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
-          </div>
+          <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
         </div>
       }
     >

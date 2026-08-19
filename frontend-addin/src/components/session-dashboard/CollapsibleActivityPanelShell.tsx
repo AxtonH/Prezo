@@ -5,6 +5,12 @@ import { scrollPanelIntoOverflowParent } from '../../utils/scrollPanelIntoOverfl
 interface CollapsibleActivityPanelShellProps {
   icon: ReactNode
   titleBlock: ReactNode
+  /**
+   * Status/count/linked-slides line rendered as a full-width row under the
+   * icon+title row — the title column is squeezed by the badge and chevron,
+   * so the meta line gets the whole card width instead.
+   */
+  metaRow?: ReactNode
   children: ReactNode
   /** @default false — panels start collapsed */
   defaultExpanded?: boolean
@@ -62,6 +68,7 @@ const VARIANT_STYLES = {
 export function CollapsibleActivityPanelShell({
   icon,
   titleBlock,
+  metaRow,
   children,
   defaultExpanded = false,
   variant = 'active'
@@ -120,7 +127,7 @@ export function CollapsibleActivityPanelShell({
     >
       <button
         type="button"
-        className={`w-full p-5 flex items-start justify-between gap-3 text-left transition-colors ${
+        className={`w-full p-5 text-left transition-colors ${
           styles.headerHover
         } ${expanded ? styles.expandedBorder : ''}`}
         onClick={() => setExpanded((v) => !v)}
@@ -131,25 +138,28 @@ export function CollapsibleActivityPanelShell({
           node?.setAttribute('aria-expanded', expanded ? 'true' : 'false')
         }}
       >
-        <div className="flex items-start gap-4 min-w-0 flex-1">
-          {icon}
-          {titleBlock}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-4 min-w-0 flex-1">
+            {icon}
+            {titleBlock}
+          </div>
+          <div className="flex items-start gap-2 shrink-0 pt-0.5">
+            <span
+              className={`${styles.badge} px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest`}
+            >
+              {styles.badgeLabel}
+            </span>
+            <span
+              className={`material-symbols-outlined transition-transform duration-200 ${
+                styles.chevron
+              } ${expanded ? 'rotate-180' : ''}`}
+              aria-hidden
+            >
+              expand_more
+            </span>
+          </div>
         </div>
-        <div className="flex items-start gap-2 shrink-0 pt-0.5">
-          <span
-            className={`${styles.badge} px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest`}
-          >
-            {styles.badgeLabel}
-          </span>
-          <span
-            className={`material-symbols-outlined transition-transform duration-200 ${
-              styles.chevron
-            } ${expanded ? 'rotate-180' : ''}`}
-            aria-hidden
-          >
-            expand_more
-          </span>
-        </div>
+        {metaRow ? <div className="mt-3 min-w-0">{metaRow}</div> : null}
       </button>
       {expanded ? children : null}
     </div>
