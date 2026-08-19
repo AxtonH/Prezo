@@ -1,4 +1,5 @@
 import type { PollMode, Question } from '../../api/types'
+import type { LinkedSlideRef } from '../../office/widgetShapes'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
@@ -9,8 +10,8 @@ import {
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveQnaActivityCardProps {
-  /** PowerPoint: deck slide numbers hosting an unbound Q&amp;A widget. */
-  linkedSlides?: number[]
+  /** PowerPoint: deck slides hosting an unbound Q&amp;A widget. */
+  linkedSlides?: LinkedSlideRef[]
   /** Audience Q&amp;A questions with status pending (newest first). */
   pendingQuestions: Question[]
   /** Audience Q&amp;A questions with status approved (newest first). */

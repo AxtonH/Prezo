@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 
 import type { PollMode } from '../../api/types'
+import { goToDeckSlide } from '../../office/goToSlide'
+import type { LinkedSlideRef } from '../../office/widgetShapes'
 
 /**
  * Shared UI for slide-driven (auto) vs pinned control, used by the poll,
@@ -94,24 +96,26 @@ export function ActivityActionsGrid({
 /**
  * "Slide 1, 5" chip for the card meta row: which deck slides host a widget
  * linked to this activity (PowerPoint add-in only). One activity can be
- * linked from several slides, so every number is listed.
+ * linked from several slides, so every number is listed — each number is a
+ * button that navigates the deck to that slide (goToByIdAsync via the
+ * ref's stable sheet id, so it survives reorders between scans).
  */
 export function LinkedSlidesBadge({
   slides,
   inactive = false
 }: {
-  slides?: number[]
+  slides?: LinkedSlideRef[]
   inactive?: boolean
 }) {
   if (!slides || slides.length === 0) {
     return null
   }
   const noun = slides.length === 1 ? 'slide' : 'slides'
-  const numbers = slides.join(', ')
+  const numbers = slides.map((slide) => slide.number).join(', ')
   return (
     <span
-      className="inline-flex items-center gap-1.5 min-w-0"
-      title={`Linked to a widget on ${noun} ${numbers} of this presentation`}
+      className="inline-flex items-center gap-1.5 min-w-0 overflow-hidden"
+      title={`Linked to a widget on ${noun} ${numbers} of this presentation — click a number to jump there`}
     >
       <span
         className={`material-symbols-outlined text-[1.125rem] shrink-0 ${
@@ -121,8 +125,24 @@ export function LinkedSlidesBadge({
       >
         link
       </span>
-      <span className="truncate">
-        {slides.length === 1 ? 'Slide' : 'Slides'} {numbers}
+      <span className="shrink-0">{slides.length === 1 ? 'Slide' : 'Slides'}</span>
+      <span className="inline-flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap">
+        {slides.map((slide, index) => (
+          <span key={slide.sheetId || slide.number} className="inline-flex items-center">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                void goToDeckSlide(slide.sheetId)
+              }}
+              title={`Go to slide ${slide.number}`}
+              className="!bg-transparent !border-0 !p-0 !shadow-none !transform-none !rounded-none !font-semibold !text-inherit underline decoration-dotted underline-offset-2 hover:!text-primary cursor-pointer"
+            >
+              {slide.number}
+            </button>
+            {index < slides.length - 1 ? <span aria-hidden>,</span> : null}
+          </span>
+        ))}
       </span>
     </span>
   )

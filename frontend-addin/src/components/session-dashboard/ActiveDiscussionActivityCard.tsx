@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { PollMode, QnaPrompt, Question } from '../../api/types'
+import type { LinkedSlideRef } from '../../office/widgetShapes'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
@@ -12,8 +13,8 @@ import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveDiscussionActivityCardProps {
   prompt: QnaPrompt
-  /** PowerPoint: deck slide numbers hosting a widget linked to this discussion. */
-  linkedSlides?: number[]
+  /** PowerPoint: deck slides hosting a widget linked to this discussion. */
+  linkedSlides?: LinkedSlideRef[]
   /** Pending answers for this prompt (newest first). */
   pendingQuestions: Question[]
   /** Approved answers for this prompt (newest first). */

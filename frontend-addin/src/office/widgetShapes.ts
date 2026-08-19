@@ -173,18 +173,26 @@ export function isPowerPointShapeApiAvailable(): boolean {
   return typeof PowerPoint !== 'undefined' && typeof PowerPoint.run === 'function'
 }
 
+/** One linked slide: display position plus the stable id navigation needs. */
+export interface LinkedSlideRef {
+  /** 1-based position in the deck (display + ordering). */
+  number: number
+  /** Numeric sheet id — stable across reorders; feeds goToByIdAsync. */
+  sheetId: string
+}
+
 /**
- * Deck slide numbers (1-based, presentation order) hosting a widget linked
- * to each of this session's activities. One activity can be linked from
- * several slides, so every value is a list.
+ * Deck slides (1-based, presentation order) hosting a widget linked to each
+ * of this session's activities. One activity can be linked from several
+ * slides, so every value is a list.
  */
 export interface WidgetSlideLinks {
-  /** Poll id → slide numbers with a poll widget linked to that poll. */
-  polls: Record<string, number[]>
-  /** Prompt id → slide numbers (discussion widgets and prompt-bound Q&A widgets). */
-  prompts: Record<string, number[]>
-  /** Slide numbers with an unbound Q&A widget (drives session-level Q&A). */
-  qna: number[]
+  /** Poll id → slides with a poll widget linked to that poll. */
+  polls: Record<string, LinkedSlideRef[]>
+  /** Prompt id → slides (discussion widgets and prompt-bound Q&A widgets). */
+  prompts: Record<string, LinkedSlideRef[]>
+  /** Slides with an unbound Q&A widget (drives session-level Q&A). */
+  qna: LinkedSlideRef[]
 }
 
 /** Records published by embed webviews (see poll-game-content.html's
@@ -222,11 +230,11 @@ function mergeEmbedSlideLinks(
   } catch {
     // Unsaved/unknown deck — matches records published with '' too.
   }
-  const push = (bucket: Record<string, number[]>, id: string, slideNumber: number) => {
+  const push = (bucket: Record<string, LinkedSlideRef[]>, id: string, ref: LinkedSlideRef) => {
     if (!bucket[id]) {
       bucket[id] = []
     }
-    bucket[id].push(slideNumber)
+    bucket[id].push(ref)
   }
   const now = Date.now()
   for (let i = 0; i < storage.length; i += 1) {
@@ -250,19 +258,21 @@ function mergeEmbedSlideLinks(
     if (!Number.isFinite(updatedAt) || now - updatedAt > EMBED_SLIDE_LINK_MAX_AGE_MS) {
       continue
     }
-    const slideNumber = sheetIdToSlideNumber.get(String(record.sheetId || ''))
+    const sheetId = String(record.sheetId || '')
+    const slideNumber = sheetIdToSlideNumber.get(sheetId)
     if (!slideNumber) {
       continue
     }
+    const ref: LinkedSlideRef = { number: slideNumber, sheetId }
     const kind = String(record.kind || 'poll')
     if (kind === 'discussion') {
       if (typeof record.promptId === 'string' && record.promptId) {
-        push(links.prompts, record.promptId, slideNumber)
+        push(links.prompts, record.promptId, ref)
       }
     } else if (kind === 'qna') {
-      links.qna.push(slideNumber)
+      links.qna.push(ref)
     } else if (typeof record.pollId === 'string' && record.pollId) {
-      push(links.polls, record.pollId, slideNumber)
+      push(links.polls, record.pollId, ref)
     }
   }
 }
@@ -279,12 +289,15 @@ export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSli
     return links
   }
   const sheetIdToSlideNumber = new Map<string, number>()
+  const slideRefs: LinkedSlideRef[] = []
   await runPowerPoint(async (context) => {
     const slides = context.presentation.slides
     slides.load('items/id')
     await context.sync()
     slides.items.forEach((slide, index) => {
-      sheetIdToSlideNumber.set(String(slide.id).split('#')[0], index + 1)
+      const sheetId = String(slide.id).split('#')[0]
+      sheetIdToSlideNumber.set(sheetId, index + 1)
+      slideRefs.push({ number: index + 1, sheetId })
     })
     const slideTags = slides.items.map((slide) => {
       const tags = {
@@ -303,32 +316,32 @@ export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSli
     await context.sync()
     const tagValue = (tag: PowerPoint.Tag): string | null =>
       tag.isNullObject || !tag.value ? null : tag.value
-    const push = (bucket: Record<string, number[]>, id: string, slideNumber: number) => {
+    const push = (bucket: Record<string, LinkedSlideRef[]>, id: string, ref: LinkedSlideRef) => {
       if (!bucket[id]) {
         bucket[id] = []
       }
-      bucket[id].push(slideNumber)
+      bucket[id].push(ref)
     }
     slideTags.forEach((tags, index) => {
-      const slideNumber = index + 1
+      const ref = slideRefs[index]
       if (tagValue(tags.pollSession) === sessionId) {
         const pollId = tagValue(tags.pollBinding)
         if (pollId) {
-          push(links.polls, pollId, slideNumber)
+          push(links.polls, pollId, ref)
         }
       }
       if (tagValue(tags.discussionSession) === sessionId) {
         const promptId = tagValue(tags.discussionBinding)
         if (promptId) {
-          push(links.prompts, promptId, slideNumber)
+          push(links.prompts, promptId, ref)
         }
       }
       if (tagValue(tags.qnaSession) === sessionId) {
         const boundPrompt = tagValue(tags.qnaPromptBinding)
         if (boundPrompt) {
-          push(links.prompts, boundPrompt, slideNumber)
+          push(links.prompts, boundPrompt, ref)
         } else {
-          links.qna.push(slideNumber)
+          links.qna.push(ref)
         }
       }
     })
@@ -336,7 +349,15 @@ export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSli
   mergeEmbedSlideLinks(links, sessionId, sheetIdToSlideNumber)
   // A widget and an embed can share a slide (and an activity), so dedupe
   // and present in deck order.
-  const normalize = (list: number[]) => [...new Set(list)].sort((a, b) => a - b)
+  const normalize = (list: LinkedSlideRef[]): LinkedSlideRef[] => {
+    const byNumber = new Map<number, LinkedSlideRef>()
+    for (const ref of list) {
+      if (!byNumber.has(ref.number)) {
+        byNumber.set(ref.number, ref)
+      }
+    }
+    return [...byNumber.values()].sort((a, b) => a.number - b.number)
+  }
   for (const id of Object.keys(links.polls)) {
     links.polls[id] = normalize(links.polls[id])
   }

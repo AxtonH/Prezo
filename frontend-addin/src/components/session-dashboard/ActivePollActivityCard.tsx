@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { Poll, PollMode } from '../../api/types'
+import type { LinkedSlideRef } from '../../office/widgetShapes'
 import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
@@ -11,8 +12,8 @@ import {
 
 export interface ActivePollActivityCardProps {
   poll: Poll
-  /** PowerPoint: deck slide numbers hosting a widget linked to this poll. */
-  linkedSlides?: number[]
+  /** PowerPoint: deck slides hosting a widget linked to this poll. */
+  linkedSlides?: LinkedSlideRef[]
   /** Stopped polls render at the bottom with inactive styling. */
   variant?: 'active' | 'inactive'
   onConfigure?: (pollId: string) => void

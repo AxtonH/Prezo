@@ -8,7 +8,10 @@ interface CollapsibleActivityPanelShellProps {
   /**
    * Status/count/linked-slides line rendered as a full-width row under the
    * icon+title row — the title column is squeezed by the badge and chevron,
-   * so the meta line gets the whole card width instead.
+   * so the meta line gets the whole card width instead. Rendered OUTSIDE
+   * the header <button> (nested interactive elements are invalid) in a
+   * click-to-toggle div, so the row may contain its own buttons — they must
+   * stopPropagation to avoid also toggling the card.
    */
   metaRow?: ReactNode
   children: ReactNode
@@ -125,42 +128,53 @@ export function CollapsibleActivityPanelShell({
       ref={rootRef}
       className={`group overflow-hidden rounded-xl border transition-all ${styles.container}`}
     >
-      <button
-        type="button"
-        className={`w-full p-5 text-left transition-colors ${
-          styles.headerHover
-        } ${expanded ? styles.expandedBorder : ''}`}
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded="false"
-        /* aria-expanded via ref: the Edge Tools axe linter rejects JSX
-           expressions for ARIA values (same workaround as HostSearchBar). */
-        ref={(node) => {
-          node?.setAttribute('aria-expanded', expanded ? 'true' : 'false')
-        }}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-4 min-w-0 flex-1">
-            {icon}
-            {titleBlock}
+      <div className={expanded ? styles.expandedBorder : ''}>
+        <button
+          type="button"
+          className={`w-full p-5 ${metaRow ? 'pb-0' : ''} text-left transition-colors ${
+            styles.headerHover
+          }`}
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded="false"
+          /* aria-expanded via ref: the Edge Tools axe linter rejects JSX
+             expressions for ARIA values (same workaround as HostSearchBar). */
+          ref={(node) => {
+            node?.setAttribute('aria-expanded', expanded ? 'true' : 'false')
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-4 min-w-0 flex-1">
+              {icon}
+              {titleBlock}
+            </div>
+            <div className="flex items-start gap-2 shrink-0 pt-0.5">
+              <span
+                className={`${styles.badge} px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest`}
+              >
+                {styles.badgeLabel}
+              </span>
+              <span
+                className={`material-symbols-outlined transition-transform duration-200 ${
+                  styles.chevron
+                } ${expanded ? 'rotate-180' : ''}`}
+                aria-hidden
+              >
+                expand_more
+              </span>
+            </div>
           </div>
-          <div className="flex items-start gap-2 shrink-0 pt-0.5">
-            <span
-              className={`${styles.badge} px-2.5 py-0.5 rounded-full text-[0.65rem] font-bold uppercase tracking-widest`}
-            >
-              {styles.badgeLabel}
-            </span>
-            <span
-              className={`material-symbols-outlined transition-transform duration-200 ${
-                styles.chevron
-              } ${expanded ? 'rotate-180' : ''}`}
-              aria-hidden
-            >
-              expand_more
-            </span>
+        </button>
+        {metaRow ? (
+          /* Same toggle as the header button (keyboard users have the
+             button; this div is a convenience click surface). */
+          <div
+            className={`px-5 pb-5 pt-3 min-w-0 cursor-pointer transition-colors ${styles.headerHover}`}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {metaRow}
           </div>
-        </div>
-        {metaRow ? <div className="mt-3 min-w-0">{metaRow}</div> : null}
-      </button>
+        ) : null}
+      </div>
       {expanded ? children : null}
     </div>
   )
