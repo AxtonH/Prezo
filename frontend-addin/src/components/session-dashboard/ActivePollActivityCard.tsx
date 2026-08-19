@@ -215,7 +215,10 @@ export function ActivePollActivityCard({
             >
               {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
             </span>
-            <span className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span
+              className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+              title={`${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`}
+            >
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${
                   inactive ? 'text-slate-400' : 'text-slate-500'
@@ -224,9 +227,7 @@ export function ActivePollActivityCard({
               >
                 group
               </span>
-              <span>
-                {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
-              </span>
+              <span>{totalVotes}</span>
             </span>
             <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>

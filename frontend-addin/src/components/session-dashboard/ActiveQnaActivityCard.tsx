@@ -236,7 +236,10 @@ export function ActiveQnaActivityCard({
             >
               {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
             </span>
-            <span className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span
+              className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+              title={`${questionTotal} ${questionTotal === 1 ? 'question' : 'questions'}`}
+            >
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${
                   inactive ? 'text-slate-400' : 'text-slate-500'
@@ -245,9 +248,7 @@ export function ActiveQnaActivityCard({
               >
                 group
               </span>
-              <span>
-                {questionTotal} {questionTotal === 1 ? 'question' : 'questions'}
-              </span>
+              <span>{questionTotal}</span>
             </span>
             <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>

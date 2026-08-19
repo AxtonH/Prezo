@@ -289,7 +289,10 @@ export function ActiveDiscussionActivityCard({
             >
               {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
             </span>
-            <span className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+            <span
+              className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+              title={`${responseTotal} ${responseTotal === 1 ? 'response' : 'responses'}`}
+            >
               <span
                 className={`material-symbols-outlined text-[1.125rem] ${
                   inactive ? 'text-slate-400' : 'text-slate-500'
@@ -298,9 +301,7 @@ export function ActiveDiscussionActivityCard({
               >
                 group
               </span>
-              <span>
-                {responseTotal} {responseTotal === 1 ? 'response' : 'responses'}
-              </span>
+              <span>{responseTotal}</span>
             </span>
             <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>
