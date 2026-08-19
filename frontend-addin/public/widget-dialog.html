@@ -481,10 +481,36 @@
         font-size: 11px;
         color: var(--muted, #64748b);
       }
+      .preview-poll-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
       .preview-poll-question {
         font-size: 14px;
         font-weight: 700;
         color: var(--text, #0f172a);
+      }
+      .preview-poll-votes {
+        font-size: 11px;
+        color: var(--muted, #64748b);
+        margin-top: 2px;
+      }
+      /* Stylized stand-in for the session join QR the insert adds. */
+      .preview-poll-qr {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        border-radius: 4px;
+        opacity: 0.8;
+        background: conic-gradient(
+            var(--text, #0f172a) 25%,
+            transparent 0 50%,
+            var(--text, #0f172a) 0 75%,
+            transparent 0
+          )
+          0 0 / 50% 50%;
       }
       .preview-poll-option {
         display: flex;
@@ -906,8 +932,12 @@
         </div>
         <div class="preview-section">
             <div id="poll-preview" class="preview-card">
-              <div>
-                <div class="preview-poll-question">Which topic should we cover?</div>
+              <div class="preview-poll-header">
+                <div>
+                  <div class="preview-poll-question">Which topic should we cover?</div>
+                  <div class="preview-poll-votes">0 votes</div>
+                </div>
+                <div class="preview-poll-qr" aria-hidden="true"></div>
               </div>
               <div class="preview-poll-options">
                 <div class="preview-poll-option">

@@ -8,6 +8,8 @@ export type SessionBinding = {
   sessionId: string
   code?: string | null
   apiBaseUrl?: string
+  /** Audience join URL — function-file renders it as the widget QR code. */
+  joinUrl?: string | null
   updatedAt?: string
 }
 
@@ -19,18 +21,20 @@ const escapeXml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
 
-const buildXml = ({ sessionId, code, apiBaseUrl, updatedAt }: SessionBinding) => {
+const buildXml = ({ sessionId, code, apiBaseUrl, joinUrl, updatedAt }: SessionBinding) => {
   const safeSession = escapeXml(sessionId)
   const safeCode = code ? `<code>${escapeXml(code)}</code>` : ''
   const safeApiBase = apiBaseUrl
     ? `<apiBaseUrl>${escapeXml(apiBaseUrl)}</apiBaseUrl>`
     : ''
+  const safeJoinUrl = joinUrl ? `<joinUrl>${escapeXml(joinUrl)}</joinUrl>` : ''
   const safeUpdated = updatedAt ? `<updatedAt>${escapeXml(updatedAt)}</updatedAt>` : ''
   return `<?xml version="1.0" encoding="UTF-8"?>
 <prezo xmlns="${PREZO_NAMESPACE}">
   <sessionId>${safeSession}</sessionId>
   ${safeCode}
   ${safeApiBase}
+  ${safeJoinUrl}
   ${safeUpdated}
 </prezo>`
 }
@@ -44,11 +48,13 @@ const parseXml = (xml: string): SessionBinding | null => {
   }
   const codeNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'code')[0]
   const apiBaseNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'apiBaseUrl')[0]
+  const joinUrlNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'joinUrl')[0]
   const updatedNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'updatedAt')[0]
   return {
     sessionId: sessionNode.textContent,
     code: codeNode?.textContent ?? null,
     apiBaseUrl: apiBaseNode?.textContent ?? undefined,
+    joinUrl: joinUrlNode?.textContent ?? null,
     updatedAt: updatedNode?.textContent ?? undefined
   }
 }

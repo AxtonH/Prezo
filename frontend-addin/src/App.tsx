@@ -65,6 +65,7 @@ import {
   setHostQnaEngaged
 } from './utils/hostQnaInactiveStorage'
 import { buildEditingStationUrl } from './utils/editingStationUrl'
+import { resolveJoinUrl } from './utils/joinUrl'
 import {
   clearSessionsListCache,
   readSessionsListCache,
@@ -1014,7 +1015,11 @@ function HostConsole({
     if (!session) {
       return
     }
-    void writeSessionBinding({ sessionId: session.id, code: session.code })
+    void writeSessionBinding({
+      sessionId: session.id,
+      code: session.code,
+      joinUrl: resolveJoinUrl(session) || null
+    })
   }, [session?.id, session?.code])
 
   useEffect(() => {

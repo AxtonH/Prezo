@@ -410,11 +410,15 @@
         optionsHtml: optionsEl.innerHTML
       }
     }
+    const votesEl = preview.querySelector('.preview-poll-votes')
     const linked = selectedLinkedPoll()
     if (linked && questionEl && optionsEl) {
       questionEl.textContent = linked.question
       const shownOptions = linked.options.slice(0, 5)
       const totalVotes = shownOptions.reduce((sum, option) => sum + (option.votes || 0), 0)
+      if (votesEl) {
+        votesEl.textContent = `${totalVotes} ${totalVotes === 1 ? 'vote' : 'votes'}`
+      }
       optionsEl.innerHTML = ''
       shownOptions.forEach((option, index) => {
         const ratio =
@@ -439,6 +443,9 @@
     } else if (defaultPollPreview && questionEl && optionsEl) {
       questionEl.textContent = defaultPollPreview.question
       optionsEl.innerHTML = defaultPollPreview.optionsHtml
+      if (votesEl) {
+        votesEl.textContent = '0 votes'
+      }
     }
     const items = preview.querySelectorAll('.preview-poll-option')
     items.forEach((item, index) => {

@@ -74,10 +74,12 @@
       }
       const codeNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'code')[0]
       const apiBaseNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'apiBaseUrl')[0]
+      const joinUrlNode = doc.getElementsByTagNameNS(PREZO_NAMESPACE, 'joinUrl')[0]
       return {
         sessionId: sessionNode.textContent,
         code: codeNode ? codeNode.textContent : null,
-        apiBaseUrl: apiBaseNode ? apiBaseNode.textContent : null
+        apiBaseUrl: apiBaseNode ? apiBaseNode.textContent : null,
+        joinUrl: joinUrlNode ? joinUrlNode.textContent : null
       }
     } catch {
       return null
@@ -237,6 +239,8 @@
     }
   }
   const buildPollTitle = (code) => (code ? `Prezo Poll • ${code}` : 'Prezo Poll')
+  /** Session join QR square (points) in the poll widget's top-right corner. */
+  const POLL_QR_SIZE = 76
   const resolveApiBaseUrl = (binding) =>
     (binding && binding.apiBaseUrl) || window.PREZO_API_BASE_URL || DEFAULT_API_BASE_URL
 
@@ -710,6 +714,7 @@
         let title = null
         let question = null
         let body = null
+        let qrShape = null
         tagged.forEach(({ shape, pollTag, roleTag }) => {
           const hasPollTag = !pollTag.isNullObject && pollTag.value === 'true'
           const roleValue = !roleTag.isNullObject ? roleTag.value : null
@@ -732,6 +737,9 @@
                 return
               case 'poll-body':
                 body = shape
+                return
+              case 'poll-qr':
+                qrShape = shape
                 return
               case 'poll-label':
                 labels.push(shape)
@@ -771,6 +779,7 @@
           title: title ? title.id : undefined,
           question: question ? question.id : undefined,
           body: body ? body.id : undefined,
+          qr: qrShape ? qrShape.id : undefined,
           items
         }
       }
@@ -941,6 +950,7 @@
           let taggedQuestion = null
           let taggedBody = null
           let taggedCounter = null
+          let taggedQr = null
           tagged.forEach(({ shape, roleTag }) => {
             if (roleTag.isNullObject || !roleTag.value) {
               return
@@ -963,6 +973,9 @@
                 break
               case 'poll-counter':
                 taggedCounter = shape
+                break
+              case 'poll-qr':
+                taggedQr = shape
                 break
               case 'poll-label':
                 labels.push(shape)
@@ -1031,6 +1044,10 @@
                 taggedCounter && !taggedCounter.isNullObject
                   ? taggedCounter.id
                   : shapeIds.counter,
+              /** Same for the QR picture and the layout-generation marker —
+               * dropping layoutV would re-lay v3 rows at the 76 offset. */
+              qr: taggedQr && !taggedQr.isNullObject ? taggedQr.id : shapeIds.qr,
+              layoutV: shapeIds.layoutV,
               items:
                 taggedItems.length > 0
                   ? taggedItems.map((item) => ({
@@ -1083,9 +1100,11 @@
         const scale = style.spacingScale
         const paddingX = 24
         /** Row re-layout must match the widget's structure: legacy widgets
-         * (with a branded title shape) keep the two-line 108 header offset;
-         * 19/08/2026+ widgets have a one-line header at 76. */
-        const optionStartOffset = (shapeIds.title ? 108 : 76) * scale
+         * (branded title) AND v3 widgets (question + votes + QR header) use
+         * the 108 offset; only the short-lived titleless generation between
+         * them (no marker, no QR) sits at 76. */
+        const optionStartOffset =
+          (shapeIds.title || shapeIds.qr || (shapeIds.layoutV || 0) >= 3 ? 108 : 76) * scale
         const barThickness = 10 * scale * style.barThicknessScale
         const rowHeight = Math.max(34 * scale, barThickness + 18)
         const verticalLabelHeight = 16 * scale
@@ -2184,6 +2203,9 @@
       throw new Error('Connect a Prezo session before inserting a linked poll widget.')
     }
     const linkPollId = boundPollId ? String(boundPollId) : null
+    /** Filled by the shape batch below (header geometry); consumed by the
+     * QR insert once the batch has committed. */
+    let qrBox = null
 
     await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
@@ -2215,7 +2237,7 @@
               item.fill
             ])
             const ids = (parsed.group
-              ? [parsed.group, parsed.counter]
+              ? [parsed.group, parsed.counter, parsed.qr]
               : [
                   parsed.shadow,
                   parsed.container,
@@ -2223,6 +2245,7 @@
                   parsed.question,
                   parsed.body,
                   parsed.counter,
+                  parsed.qr,
                   ...itemIds
                 ]
             ).filter(Boolean)
@@ -2248,9 +2271,9 @@
       const isVertical = style.orientation === 'vertical'
       const width = Math.max(360, pageSetup.slideWidth * 0.6)
       const paddingX = 24
-      /** One-line header (question + counter) since 19/08/2026 — rows start
-       * higher than the legacy two-line (title + question) 108 offset. */
-      const optionStartOffset = 76 * scale
+      /** Header block: question (heading) + votes under it on the left, QR
+       * code on the right — rows clear both at the 108 offset. */
+      const optionStartOffset = 108 * scale
       const barThickness = 10 * scale * style.barThicknessScale
       const rowHeight = Math.max(34 * scale, barThickness + 18)
       const verticalLabelHeight = 16 * scale
@@ -2278,12 +2301,13 @@
       container.tags.add('PrezoWidgetRole', 'poll-container')
 
       /** Simplified header (19/08/2026, mirrors widgetShapes.ts): no branded
-       * title line — the bound poll's QUESTION is the heading (left), the
-       * vote counter sits on the same row (right). */
+       * title line — the bound poll's QUESTION is the heading, the vote
+       * counter sits under it, and the session join QR (inserted after this
+       * batch, see below) fills the top-right corner. */
       const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
         left: left + 24,
         top: top + 18 * scale,
-        width: width - 200,
+        width: width - 48 - POLL_QR_SIZE - 12,
         height: 40
       })
       question.textFrame.wordWrap = true
@@ -2296,19 +2320,25 @@
       question.tags.add('PrezoWidgetRole', 'poll-question')
 
       const counter = slide.shapes.addTextBox('0 votes', {
-        left: left + width - 24 - 140,
-        top: top + 24 * scale,
-        width: 140,
+        left: left + 24,
+        top: top + 64 * scale,
+        width: 200,
         height: 16
       })
       counter.textFrame.wordWrap = true
       applyFont(counter.textFrame.textRange, style, { size: 12, color: style.mutedColor })
-      counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Right'
+      counter.textFrame.textRange.paragraphFormat.horizontalAlignment = 'Left'
       counter.name = 'Prezo Poll Vote Counter'
       counter.tags.add(POLL_WIDGET_TAG, 'true')
       counter.tags.add('PrezoWidgetRole', 'poll-counter')
       counter.tags.add('PrezoPollWidgetAutoText', '0 votes')
       counter.load('id')
+
+      qrBox = {
+        left: left + width - 24 - POLL_QR_SIZE,
+        top: top + 18 * scale,
+        size: POLL_QR_SIZE
+      }
 
       const optionStartTop = top + optionStartOffset
       const fullBarWidth = width - paddingX * 2
@@ -2403,6 +2433,10 @@
         container: container.id,
         question: question.id,
         counter: counter.id,
+        /** Header-layout generation marker: v3 = question heading + votes
+         * under it + QR corner, rows at the 108 offset. The short-lived
+         * titleless generation before it (rows at 76) has no marker. */
+        layoutV: 3,
         items: itemShapes.map((item) => ({
           label: item.label.id,
           group: item.group.id,
@@ -2432,6 +2466,26 @@
       await context.sync()
     })
 
+    /** QR code: PowerPoint's shape API cannot insert pictures, so the join
+     * QR goes in via setSelectedDataAsync (image coercion) on the still-
+     * selected slide, then one adopt pass finds the fresh untagged picture
+     * at the requested spot to tag it and record its id. Best-effort — no
+     * session (no join URL) or no encoder simply means no QR. */
+    const joinUrl = binding && binding.joinUrl ? String(binding.joinUrl) : ''
+    if (hasSession && joinUrl && typeof window.qrcode === 'function' && qrBox) {
+      try {
+        const qr = window.qrcode(0, 'M')
+        qr.addData(joinUrl)
+        qr.make()
+        const base64 = qrPngBase64(qr, 300)
+        if (base64 && (await insertImageOnSelectedSlide(base64, qrBox))) {
+          await adoptPollQrPicture(qrBox)
+        }
+      } catch (error) {
+        console.warn('Poll widget QR insert failed', error)
+      }
+    }
+
     if (hasSession && sessionId) {
       try {
         const snapshot = await fetchSnapshot(binding)
@@ -2440,6 +2494,116 @@
         console.warn('Failed to refresh poll widget', error)
       }
     }
+  }
+
+  /** Rasterize a made QR to base64 PNG (white quiet zone, black modules) —
+   * setSelectedDataAsync is happiest with PNG; the encoder's own
+   * createDataURL emits GIF. */
+  const qrPngBase64 = (qr, sizePx) => {
+    try {
+      const count = qr.getModuleCount()
+      const cell = Math.max(2, Math.floor(sizePx / (count + 8)))
+      const margin = cell * 4
+      const canvasSize = count * cell + margin * 2
+      const canvas = document.createElement('canvas')
+      canvas.width = canvasSize
+      canvas.height = canvasSize
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        return null
+      }
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, canvasSize, canvasSize)
+      ctx.fillStyle = '#000000'
+      for (let row = 0; row < count; row += 1) {
+        for (let col = 0; col < count; col += 1) {
+          if (qr.isDark(row, col)) {
+            ctx.fillRect(margin + col * cell, margin + row * cell, cell, cell)
+          }
+        }
+      }
+      const dataUrl = canvas.toDataURL('image/png')
+      return dataUrl.slice(dataUrl.indexOf(',') + 1)
+    } catch {
+      return null
+    }
+  }
+
+  /** Insert a base64 image on the currently selected slide at the given box
+   * (points). The Common API is the only picture-insert path PowerPoint's
+   * add-in surface offers — it returns no shape reference. */
+  const insertImageOnSelectedSlide = (base64, box) =>
+    new Promise((resolve) => {
+      try {
+        Office.context.document.setSelectedDataAsync(
+          base64,
+          {
+            coercionType: Office.CoercionType.Image,
+            imageLeft: box.left,
+            imageTop: box.top,
+            imageWidth: box.size,
+            imageHeight: box.size
+          },
+          (result) =>
+            resolve(Boolean(result) && result.status === Office.AsyncResultStatus.Succeeded)
+        )
+      } catch {
+        resolve(false)
+      }
+    })
+
+  /** Tag the picture setSelectedDataAsync just dropped: the untagged
+   * Image-type shape at the requested box on the selected slide is ours.
+   * Records its id into POLL_SHAPES_TAG so replace-cleanup can delete it. */
+  const adoptPollQrPicture = async (box) => {
+    await runPowerPoint(async (context) => {
+      const slides = context.presentation.getSelectedSlides()
+      slides.load('items')
+      await context.sync()
+      const slide = slides.items[0]
+      if (!slide) {
+        return
+      }
+      const scope = slide.shapes
+      scope.load('items')
+      await context.sync()
+      const candidates = scope.items.map((shape) => {
+        const pollTag = shape.tags.getItemOrNullObject(POLL_WIDGET_TAG)
+        pollTag.load('value')
+        shape.load(['id', 'left', 'top', 'type'])
+        return { shape, pollTag }
+      })
+      await context.sync()
+      const near = (a, b) => Math.abs(a - b) <= 8
+      const found = candidates.find(
+        ({ shape, pollTag }) =>
+          pollTag.isNullObject &&
+          (shape.type === 'Image' || shape.type === 'Picture') &&
+          near(shape.left, box.left) &&
+          near(shape.top, box.top)
+      )
+      if (!found) {
+        return
+      }
+      found.shape.name = 'Prezo Poll Join QR'
+      found.shape.tags.add(POLL_WIDGET_TAG, 'true')
+      found.shape.tags.add('PrezoWidgetRole', 'poll-qr')
+      const shapesTag = slide.tags.getItemOrNullObject(POLL_SHAPES_TAG)
+      shapesTag.load('value')
+      await context.sync()
+      try {
+        const parsed =
+          shapesTag.isNullObject || !shapesTag.value ? null : JSON.parse(shapesTag.value)
+        if (parsed) {
+          parsed.qr = found.shape.id
+          slide.tags.delete(POLL_SHAPES_TAG)
+          slide.tags.add(POLL_SHAPES_TAG, JSON.stringify(parsed))
+        }
+      } catch {
+        // Tag unreadable — the QR stays visible, just untracked.
+      }
+      await context.sync()
+    })
   }
 
   /**
