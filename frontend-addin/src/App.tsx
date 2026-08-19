@@ -40,7 +40,7 @@ import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
-import { widenTaskpaneOnce } from './office/taskpaneWidth'
+import { ensureTaskpaneWidth } from './office/taskpaneWidth'
 import {
   readWidgetSlideLinks,
   setDiscussionWidgetBinding,
@@ -1774,13 +1774,13 @@ function HostConsole({
   // Widget (native shape) poll slides have no webview to report presence,
   // so the taskpane conducts for them during slideshows: it tracks the
   // presented slide and drives auto-mode polls bound via widget slide tags.
-  // First-ever open on this machine: nudge the taskpane ~20% wider so the
-  // dashboard has room without the user discovering the drag handle.
+  // PowerPoint reopens the taskpane at its default (narrow) width every
+  // time, so each boot re-applies the remembered wider target.
   useEffect(() => {
     if (!isAddinHost) {
       return
     }
-    widenTaskpaneOnce()
+    ensureTaskpaneWidth()
   }, [isAddinHost])
 
   useEffect(() => {
