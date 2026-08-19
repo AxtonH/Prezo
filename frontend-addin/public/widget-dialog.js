@@ -158,26 +158,35 @@
     if (pollErrorEl()) pollErrorEl().textContent = text || ''
   }
 
-  // Freeze the button's rendered width while busy so swapping to the
-  // shorter "Inserting..." label never resizes it.
-  const setInsertButtonBusy = (btn, busy, idleText) => {
+  // Freeze the button's rendered width while busy so swapping to a
+  // shorter busy label never resizes it.
+  const setActionButtonBusy = (btn, busy, busyText, idleText) => {
     if (!btn) return
     if (busy && !btn.disabled) btn.style.width = `${btn.offsetWidth}px`
     btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : idleText
+    btn.textContent = busy ? busyText : idleText
     if (!busy) btn.style.width = ''
   }
 
   const setBusy = (busy) => {
-    setInsertButtonBusy(insertQnaButton(), busy, 'Insert widget')
+    setActionButtonBusy(insertQnaButton(), busy, 'Inserting...', 'Insert widget')
   }
 
   const setDiscussionBusy = (busy) => {
-    setInsertButtonBusy(insertDiscussionButton(), busy, 'Insert widget')
+    setActionButtonBusy(insertDiscussionButton(), busy, 'Inserting...', 'Insert widget')
   }
 
   const setPollBusy = (busy) => {
-    setInsertButtonBusy(insertPollButton(), busy, 'Insert poll')
+    setActionButtonBusy(insertPollButton(), busy, 'Inserting...', 'Insert poll')
+  }
+
+  const setRemoveBusy = (key, busy) => {
+    setActionButtonBusy(
+      el(families[key].ids.remove),
+      busy,
+      'Removing...',
+      'Remove widget from slide'
+    )
   }
 
   const setGameStatus = (text) => {
@@ -189,7 +198,7 @@
   }
 
   const setGameBusy = (busy) => {
-    setInsertButtonBusy(insertGameButton(), busy, 'Insert game slide')
+    setActionButtonBusy(insertGameButton(), busy, 'Inserting...', 'Insert game slide')
   }
 
   const readQnaConfig = () => ({
@@ -599,7 +608,8 @@
     }
     if (action === 'remove') {
       family.setError('')
-      family.setStatus('Removing widget...')
+      family.setStatus('')
+      setRemoveBusy(key, true)
       Office.context.ui.messageParent(JSON.stringify({ type: family.removeType }))
     }
   }
@@ -743,8 +753,9 @@
           showConfirm(key, 'replace')
         } else if (message && message.type === 'removed') {
           const key = familyFromSource(message.source)
-          families[key].setStatus('Widget removed from the slide.')
+          families[key].setStatus('')
           families[key].setBusy(false)
+          setRemoveBusy(key, false)
         } else if (message && message.type === 'error') {
           if (message.source === 'game') {
             setGameStatus('')
@@ -754,16 +765,19 @@
             setPollStatus('')
             setPollError(message.message || 'Failed to insert poll widget.')
             setPollBusy(false)
+            setRemoveBusy('poll', false)
           } else if (message.source === 'discussion') {
             setDiscussionStatus('')
             setDiscussionError(
               message.message || 'Failed to insert open discussion widget.'
             )
             setDiscussionBusy(false)
+            setRemoveBusy('discussion', false)
           } else {
             setStatus('')
             setError(message.message || 'Failed to insert widget.')
             setBusy(false)
+            setRemoveBusy('qna', false)
           }
         }
       }
