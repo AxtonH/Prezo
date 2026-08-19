@@ -158,25 +158,26 @@
     if (pollErrorEl()) pollErrorEl().textContent = text || ''
   }
 
-  const setBusy = (busy) => {
-    const btn = insertQnaButton()
+  // Freeze the button's rendered width while busy so swapping to the
+  // shorter "Inserting..." label never resizes it.
+  const setInsertButtonBusy = (btn, busy, idleText) => {
     if (!btn) return
+    if (busy && !btn.disabled) btn.style.width = `${btn.offsetWidth}px`
     btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : 'Insert widget'
+    btn.textContent = busy ? 'Inserting...' : idleText
+    if (!busy) btn.style.width = ''
+  }
+
+  const setBusy = (busy) => {
+    setInsertButtonBusy(insertQnaButton(), busy, 'Insert widget')
   }
 
   const setDiscussionBusy = (busy) => {
-    const btn = insertDiscussionButton()
-    if (!btn) return
-    btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : 'Insert widget'
+    setInsertButtonBusy(insertDiscussionButton(), busy, 'Insert widget')
   }
 
   const setPollBusy = (busy) => {
-    const btn = insertPollButton()
-    if (!btn) return
-    btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : 'Insert poll'
+    setInsertButtonBusy(insertPollButton(), busy, 'Insert poll')
   }
 
   const setGameStatus = (text) => {
@@ -188,10 +189,7 @@
   }
 
   const setGameBusy = (busy) => {
-    const btn = insertGameButton()
-    if (!btn) return
-    btn.disabled = busy
-    btn.textContent = busy ? 'Inserting...' : 'Insert game slide'
+    setInsertButtonBusy(insertGameButton(), busy, 'Insert game slide')
   }
 
   const readQnaConfig = () => ({
@@ -608,7 +606,7 @@
 
   const sendGameInsert = () => {
     setGameError('')
-    setGameStatus('Inserting game slide...')
+    setGameStatus('')
     setGameBusy(true)
     Office.context.ui.messageParent(JSON.stringify({ type: 'insert-game' }))
   }
