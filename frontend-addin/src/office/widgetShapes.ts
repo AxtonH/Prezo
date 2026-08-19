@@ -174,6 +174,84 @@ export function isPowerPointShapeApiAvailable(): boolean {
 }
 
 /**
+ * Deck slide numbers (1-based, presentation order) hosting a widget linked
+ * to each of this session's activities. One activity can be linked from
+ * several slides, so every value is a list.
+ */
+export interface WidgetSlideLinks {
+  /** Poll id → slide numbers with a poll widget linked to that poll. */
+  polls: Record<string, number[]>
+  /** Prompt id → slide numbers (discussion widgets and prompt-bound Q&A widgets). */
+  prompts: Record<string, number[]>
+  /** Slide numbers with an unbound Q&A widget (drives session-level Q&A). */
+  qna: number[]
+}
+
+/**
+ * Read-only pass over the deck's widget slide tags (the same tags the
+ * slideshow conductor maps through), keyed by slide position instead of
+ * sheet id so the dashboard can say "linked to slide 3".
+ */
+export async function readWidgetSlideLinks(sessionId: string): Promise<WidgetSlideLinks> {
+  const links: WidgetSlideLinks = { polls: {}, prompts: {}, qna: [] }
+  if (!isPowerPointShapeApiAvailable()) {
+    return links
+  }
+  await runPowerPoint(async (context) => {
+    const slides = context.presentation.slides
+    slides.load('items/id')
+    await context.sync()
+    const slideTags = slides.items.map((slide) => {
+      const tags = {
+        pollSession: slide.tags.getItemOrNullObject(POLL_SESSION_TAG),
+        pollBinding: slide.tags.getItemOrNullObject(POLL_BINDING_TAG),
+        qnaSession: slide.tags.getItemOrNullObject(SESSION_TAG),
+        qnaPromptBinding: slide.tags.getItemOrNullObject(QNA_PROMPT_BINDING_TAG),
+        discussionSession: slide.tags.getItemOrNullObject(DISCUSSION_SESSION_TAG),
+        discussionBinding: slide.tags.getItemOrNullObject(DISCUSSION_PROMPT_BINDING_TAG)
+      }
+      for (const tag of Object.values(tags)) {
+        tag.load('value')
+      }
+      return tags
+    })
+    await context.sync()
+    const tagValue = (tag: PowerPoint.Tag): string | null =>
+      tag.isNullObject || !tag.value ? null : tag.value
+    const push = (bucket: Record<string, number[]>, id: string, slideNumber: number) => {
+      if (!bucket[id]) {
+        bucket[id] = []
+      }
+      bucket[id].push(slideNumber)
+    }
+    slideTags.forEach((tags, index) => {
+      const slideNumber = index + 1
+      if (tagValue(tags.pollSession) === sessionId) {
+        const pollId = tagValue(tags.pollBinding)
+        if (pollId) {
+          push(links.polls, pollId, slideNumber)
+        }
+      }
+      if (tagValue(tags.discussionSession) === sessionId) {
+        const promptId = tagValue(tags.discussionBinding)
+        if (promptId) {
+          push(links.prompts, promptId, slideNumber)
+        }
+      }
+      if (tagValue(tags.qnaSession) === sessionId) {
+        const boundPrompt = tagValue(tags.qnaPromptBinding)
+        if (boundPrompt) {
+          push(links.prompts, boundPrompt, slideNumber)
+        } else {
+          links.qna.push(slideNumber)
+        }
+      }
+    })
+  })
+  return links
+}
+
+/**
  * PowerPoint slide tags: `tags.add(key, value)` throws RichApi GeneralException if `key` already exists.
  * Always remove first, then add (delete is a no-op when missing in practice for this API).
  */

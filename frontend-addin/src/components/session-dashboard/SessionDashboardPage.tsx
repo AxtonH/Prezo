@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Poll, PollMode, Question, QnaPrompt, Session, SessionSessionStats } from '../../api/types'
+import type { WidgetSlideLinks } from '../../office/widgetShapes'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
@@ -77,6 +78,8 @@ export interface SessionDashboardPageProps {
   onBindPollWidget?: (pollId: string) => Promise<void>
   /** PowerPoint add-in: bind slide open-discussion widget to a prompt. */
   onBindDiscussionWidget?: (promptId: string) => Promise<void>
+  /** PowerPoint: deck slide numbers hosting a widget linked to each activity. */
+  widgetSlideLinks?: WidgetSlideLinks
 }
 
 export function SessionDashboardPage({
@@ -117,7 +120,8 @@ export function SessionDashboardPage({
   onOpenAudienceQna,
   onCreateDiscussionPrompt,
   onBindPollWidget,
-  onBindDiscussionWidget
+  onBindDiscussionWidget,
+  widgetSlideLinks
 }: SessionDashboardPageProps) {
   const joinUrl = resolveJoinUrl(session)
 
@@ -262,6 +266,7 @@ export function SessionDashboardPage({
           onHideAudienceQuestion={onHideAudienceQuestion}
           onBindPollWidget={onBindPollWidget}
           onBindDiscussionWidget={onBindDiscussionWidget}
+          widgetSlideLinks={widgetSlideLinks}
         />
       </div>
 

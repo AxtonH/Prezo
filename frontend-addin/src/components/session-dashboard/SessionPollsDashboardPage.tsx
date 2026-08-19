@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { Poll, PollMode, Session } from '../../api/types'
+import type { WidgetSlideLinks } from '../../office/widgetShapes'
 import type { PollEditUpdate } from './EditActivityModal'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
@@ -31,6 +32,8 @@ export interface SessionPollsDashboardPageProps {
   onCreatePoll: (question: string, options: string[], allowMultiple: boolean) => Promise<void>
   /** PowerPoint add-in: bind slide widget to a poll. */
   onBindPollWidget?: (pollId: string) => Promise<void>
+  /** PowerPoint: deck slide numbers hosting a widget linked to each activity. */
+  widgetSlideLinks?: WidgetSlideLinks
 }
 
 export function SessionPollsDashboardPage({
@@ -45,7 +48,8 @@ export function SessionPollsDashboardPage({
   onSetPollMode,
   onUpdatePoll,
   onCreatePoll,
-  onBindPollWidget
+  onBindPollWidget,
+  widgetSlideLinks
 }: SessionPollsDashboardPageProps) {
   const pollBuilderStackRef = useRef<HTMLDivElement>(null)
   const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
@@ -166,6 +170,7 @@ export function SessionPollsDashboardPage({
                     onApproveAudienceQuestion={undefined}
                     onHideAudienceQuestion={undefined}
                     onBindPollWidget={onBindPollWidget}
+                    widgetSlideLinks={widgetSlideLinks}
                   />
                 </div>
               </div>

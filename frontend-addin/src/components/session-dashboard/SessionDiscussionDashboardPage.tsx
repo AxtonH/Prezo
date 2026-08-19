@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { PollMode, QnaPrompt, Question, Session } from '../../api/types'
+import type { WidgetSlideLinks } from '../../office/widgetShapes'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
 import { SessionDiscussionBuilderCard } from './SessionDiscussionBuilderCard'
@@ -35,6 +36,8 @@ export interface SessionDiscussionDashboardPageProps {
   onCreateDiscussion: (prompt: string) => Promise<void>
   /** PowerPoint add-in: bind slide open-discussion widget to a prompt. */
   onBindDiscussionWidget?: (promptId: string) => Promise<void>
+  /** PowerPoint: deck slide numbers hosting a widget linked to each activity. */
+  widgetSlideLinks?: WidgetSlideLinks
 }
 
 export function SessionDiscussionDashboardPage({
@@ -52,7 +55,8 @@ export function SessionDiscussionDashboardPage({
   onApproveDiscussionQuestion,
   onHideDiscussionQuestion,
   onCreateDiscussion,
-  onBindDiscussionWidget
+  onBindDiscussionWidget,
+  widgetSlideLinks
 }: SessionDiscussionDashboardPageProps) {
   const builderStackRef = useRef<HTMLDivElement>(null)
   const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
@@ -173,6 +177,7 @@ export function SessionDiscussionDashboardPage({
                     onApproveAudienceQuestion={undefined}
                     onHideAudienceQuestion={undefined}
                     onBindDiscussionWidget={onBindDiscussionWidget}
+                    widgetSlideLinks={widgetSlideLinks}
                   />
                 </div>
               </div>

@@ -91,6 +91,43 @@ export function ActivityActionsGrid({
   )
 }
 
+/**
+ * "Slide 1, 5" chip for the card meta row: which deck slides host a widget
+ * linked to this activity (PowerPoint add-in only). One activity can be
+ * linked from several slides, so every number is listed.
+ */
+export function LinkedSlidesBadge({
+  slides,
+  inactive = false
+}: {
+  slides?: number[]
+  inactive?: boolean
+}) {
+  if (!slides || slides.length === 0) {
+    return null
+  }
+  const noun = slides.length === 1 ? 'slide' : 'slides'
+  const numbers = slides.join(', ')
+  return (
+    <span
+      className="inline-flex items-center gap-1.5"
+      title={`Linked to a widget on ${noun} ${numbers} of this presentation`}
+    >
+      <span
+        className={`material-symbols-outlined text-[1.125rem] ${
+          inactive ? 'text-slate-400' : 'text-slate-500'
+        }`}
+        aria-hidden
+      >
+        link
+      </span>
+      <span>
+        {slides.length === 1 ? 'Slide' : 'Slides'} {numbers}
+      </span>
+    </span>
+  )
+}
+
 /** One action tile: icon over a short label, long explanation in the tooltip. */
 export function ActivityActionTile({
   icon,

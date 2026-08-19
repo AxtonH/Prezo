@@ -5,11 +5,14 @@ import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
   ActivityActionTile,
-  controlModeShellVariant
+  controlModeShellVariant,
+  LinkedSlidesBadge
 } from './ControlModeUi'
 
 export interface ActivePollActivityCardProps {
   poll: Poll
+  /** PowerPoint: deck slide numbers hosting a widget linked to this poll. */
+  linkedSlides?: number[]
   /** Stopped polls render at the bottom with inactive styling. */
   variant?: 'active' | 'inactive'
   onConfigure?: (pollId: string) => void
@@ -35,6 +38,7 @@ export interface ActivePollActivityCardProps {
 
 export function ActivePollActivityCard({
   poll,
+  linkedSlides,
   variant = 'active',
   onConfigure,
   onEdit,
@@ -223,6 +227,7 @@ export function ActivePollActivityCard({
                 {totalVotes} {totalVotes === 1 ? 'vote' : 'votes'}
               </span>
             </span>
+            <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>
         </div>
       }

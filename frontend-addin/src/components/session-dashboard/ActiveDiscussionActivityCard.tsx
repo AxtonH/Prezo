@@ -5,12 +5,15 @@ import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
   ActivityActionTile,
-  controlModeShellVariant
+  controlModeShellVariant,
+  LinkedSlidesBadge
 } from './ControlModeUi'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveDiscussionActivityCardProps {
   prompt: QnaPrompt
+  /** PowerPoint: deck slide numbers hosting a widget linked to this discussion. */
+  linkedSlides?: number[]
   /** Pending answers for this prompt (newest first). */
   pendingQuestions: Question[]
   /** Approved answers for this prompt (newest first). */
@@ -99,6 +102,7 @@ function DiscussionAnswerRow({
 
 export function ActiveDiscussionActivityCard({
   prompt,
+  linkedSlides,
   pendingQuestions,
   approvedQuestions,
   variant = 'active',
@@ -297,6 +301,7 @@ export function ActiveDiscussionActivityCard({
                 {responseTotal} {responseTotal === 1 ? 'response' : 'responses'}
               </span>
             </span>
+            <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>
         </div>
       }

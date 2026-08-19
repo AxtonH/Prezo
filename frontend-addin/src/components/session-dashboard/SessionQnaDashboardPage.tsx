@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { PollMode, Question, Session } from '../../api/types'
+import type { WidgetSlideLinks } from '../../office/widgetShapes'
 import { readAudienceQnaOpenedAt } from '../../utils/audienceQnaOpenedAtStorage'
 import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
@@ -41,6 +42,8 @@ export interface SessionQnaDashboardPageProps {
   onSetQnaMode?: (mode: PollMode) => void | Promise<void>
   onApproveAudienceQuestion?: (questionId: string) => void | Promise<void>
   onHideAudienceQuestion?: (questionId: string) => void | Promise<void>
+  /** PowerPoint: deck slide numbers hosting a widget linked to each activity. */
+  widgetSlideLinks?: WidgetSlideLinks
 }
 
 export function SessionQnaDashboardPage({
@@ -56,7 +59,8 @@ export function SessionQnaDashboardPage({
   onResetQna,
   onSetQnaMode,
   onApproveAudienceQuestion,
-  onHideAudienceQuestion
+  onHideAudienceQuestion,
+  widgetSlideLinks
 }: SessionQnaDashboardPageProps) {
   const builderStackRef = useRef<HTMLDivElement>(null)
   const [activitiesRailMaxPx, setActivitiesRailMaxPx] = useState<number | null>(null)
@@ -232,6 +236,7 @@ export function SessionQnaDashboardPage({
                     onHideDiscussionQuestion={undefined}
                     onApproveAudienceQuestion={onApproveAudienceQuestion}
                     onHideAudienceQuestion={onHideAudienceQuestion}
+                    widgetSlideLinks={widgetSlideLinks}
                   />
                 </div>
               </div>

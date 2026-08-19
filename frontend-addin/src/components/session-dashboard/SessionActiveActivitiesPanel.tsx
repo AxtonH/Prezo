@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import type { Poll, PollMode, QnaPrompt, Question } from '../../api/types'
+import type { WidgetSlideLinks } from '../../office/widgetShapes'
 import { ActiveDiscussionActivityCard } from './ActiveDiscussionActivityCard'
 import { ActivePollActivityCard } from './ActivePollActivityCard'
 import { ActiveQnaActivityCard } from './ActiveQnaActivityCard'
@@ -73,6 +74,8 @@ export interface SessionActiveActivitiesPanelProps {
   onBindPollWidget?: (pollId: string) => Promise<void>
   /** PowerPoint: bind the slide open-discussion widget to this prompt (tags + text only). */
   onBindDiscussionWidget?: (promptId: string) => Promise<void>
+  /** PowerPoint: deck slide numbers hosting a widget linked to each activity. */
+  widgetSlideLinks?: WidgetSlideLinks
 }
 
 function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
@@ -139,7 +142,8 @@ export function SessionActiveActivitiesPanel({
   onApproveAudienceQuestion,
   onHideAudienceQuestion,
   onBindPollWidget,
-  onBindDiscussionWidget
+  onBindDiscussionWidget,
+  widgetSlideLinks
 }: SessionActiveActivitiesPanelProps) {
   const [deleteTarget, setDeleteTarget] = useState<
     null | { kind: 'poll'; id: string } | { kind: 'qna' } | { kind: 'discussion'; id: string }
@@ -374,6 +378,7 @@ export function SessionActiveActivitiesPanel({
                 <ActivePollActivityCard
                   key={`poll-open-${row.poll.id}`}
                   poll={row.poll}
+                  linkedSlides={widgetSlideLinks?.polls[row.poll.id]}
                   variant="active"
                   onConfigure={onConfigurePoll}
                   onEdit={
@@ -397,6 +402,7 @@ export function SessionActiveActivitiesPanel({
               return (
                 <ActiveQnaActivityCard
                   key="qna-active"
+                  linkedSlides={widgetSlideLinks?.qna}
                   pendingQuestions={audiencePendingQuestions}
                   approvedQuestions={audienceApprovedQuestions}
                   variant="active"
@@ -416,6 +422,7 @@ export function SessionActiveActivitiesPanel({
               <ActiveDiscussionActivityCard
                 key={`discussion-open-${prompt.id}`}
                 prompt={prompt}
+                linkedSlides={widgetSlideLinks?.prompts[prompt.id]}
                 pendingQuestions={pendingQuestions}
                 approvedQuestions={approvedQuestions}
                 variant="active"
@@ -446,6 +453,7 @@ export function SessionActiveActivitiesPanel({
                 <ActivePollActivityCard
                   key={`poll-closed-${row.poll.id}`}
                   poll={row.poll}
+                  linkedSlides={widgetSlideLinks?.polls[row.poll.id]}
                   variant="inactive"
                   onConfigure={onConfigurePoll}
                   onEdit={
@@ -470,6 +478,7 @@ export function SessionActiveActivitiesPanel({
               return (
                 <ActiveQnaActivityCard
                   key="qna-inactive"
+                  linkedSlides={widgetSlideLinks?.qna}
                   pendingQuestions={audiencePendingQuestions}
                   approvedQuestions={audienceApprovedQuestions}
                   variant="inactive"
@@ -490,6 +499,7 @@ export function SessionActiveActivitiesPanel({
               <ActiveDiscussionActivityCard
                 key={`discussion-closed-${prompt.id}`}
                 prompt={prompt}
+                linkedSlides={widgetSlideLinks?.prompts[prompt.id]}
                 pendingQuestions={pendingQuestions}
                 approvedQuestions={approvedQuestions}
                 variant="inactive"

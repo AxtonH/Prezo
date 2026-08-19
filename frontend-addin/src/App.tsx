@@ -41,11 +41,13 @@ import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
 import {
+  readWidgetSlideLinks,
   setDiscussionWidgetBinding,
   setPollWidgetBinding,
   updateDiscussionWidget,
   updatePollWidget,
-  updateQnaWidget
+  updateQnaWidget,
+  type WidgetSlideLinks
 } from './office/widgetShapes'
 import {
   pollWidgetsDataSignature,
@@ -1778,6 +1780,48 @@ function HostConsole({
     setConductorSession(session?.id ?? null)
   }, [isAddinHost, session?.id])
 
+  /**
+   * Deck slide numbers hosting a widget linked to each activity, for the
+   * activity cards' "Slide 1, 5" chips. Read-only tag scan; refreshed on a
+   * slow interval so inserts, removals, and slide reorders done outside the
+   * taskpane still show up.
+   */
+  const [widgetSlideLinks, setWidgetSlideLinks] = useState<WidgetSlideLinks | undefined>(
+    undefined
+  )
+
+  const refreshWidgetSlideLinks = useCallback(() => {
+    const current = latestSessionRef.current
+    if (!isAddinHost || !current) {
+      return
+    }
+    const targetId = current.id
+    void readWidgetSlideLinks(targetId)
+      .then((links) => {
+        if (latestSessionRef.current?.id !== targetId) {
+          return
+        }
+        setWidgetSlideLinks((previous) =>
+          previous && JSON.stringify(previous) === JSON.stringify(links) ? previous : links
+        )
+      })
+      .catch(() => {
+        // Deck busy — keep the last known links; the interval retries.
+      })
+  }, [isAddinHost])
+
+  useEffect(() => {
+    if (!isAddinHost || !session?.id) {
+      setWidgetSlideLinks(undefined)
+      return
+    }
+    refreshWidgetSlideLinks()
+    const interval = window.setInterval(refreshWidgetSlideLinks, 10000)
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [isAddinHost, session?.id, refreshWidgetSlideLinks])
+
   const editorLink = session
     ? buildEditingStationUrl({
         sessionId: session.id,
@@ -1808,6 +1852,7 @@ function HostConsole({
         return
       }
       await setPollWidgetBinding(session.id, pollId)
+      refreshWidgetSlideLinks()
       try {
         /** Forced pass, same as updatePollActivity: the widget's current text
          * belongs to whatever it showed before (placeholder skeleton, the
@@ -1831,7 +1876,7 @@ function HostConsole({
         throw new Error(message)
       }
     },
-    [session, polls]
+    [session, polls, refreshWidgetSlideLinks]
   )
 
   const handleBindDiscussionWidget = useCallback(
@@ -1840,6 +1885,7 @@ function HostConsole({
         return
       }
       await setDiscussionWidgetBinding(session.id, promptId)
+      refreshWidgetSlideLinks()
       try {
         await updateDiscussionWidget(session.id, session.code, questions, prompts)
       } catch (err) {
@@ -1850,7 +1896,7 @@ function HostConsole({
         throw new Error(message)
       }
     },
-    [session, questions, prompts]
+    [session, questions, prompts, refreshWidgetSlideLinks]
   )
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
   const [sessionFilter, setSessionFilter] = useState<
@@ -2264,6 +2310,7 @@ function HostConsole({
                   onUpdatePoll={updatePollActivity}
                   onCreatePoll={createPoll}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
+                  widgetSlideLinks={isAddinHost ? widgetSlideLinks : undefined}
                 />
               ) : workspaceNav === 'discussion' ? (
                 <SessionDiscussionDashboardPage
@@ -2287,6 +2334,7 @@ function HostConsole({
                   onHideDiscussionQuestion={hideQuestion}
                   onCreateDiscussion={createDiscussionPrompt}
                   onBindDiscussionWidget={isAddinHost ? handleBindDiscussionWidget : undefined}
+                  widgetSlideLinks={isAddinHost ? widgetSlideLinks : undefined}
                 />
               ) : workspaceNav === 'qna' ? (
                 <SessionQnaDashboardPage
@@ -2316,6 +2364,7 @@ function HostConsole({
                   onSetQnaMode={(mode) => void setQnaMode(mode)}
                   onApproveAudienceQuestion={approveQuestion}
                   onHideAudienceQuestion={hideQuestion}
+                  widgetSlideLinks={isAddinHost ? widgetSlideLinks : undefined}
                 />
               ) : workspaceNav !== 'dashboard' ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-8 py-16 text-center">
@@ -2391,6 +2440,7 @@ function HostConsole({
                   }}
                   onBindPollWidget={isAddinHost ? handleBindPollWidget : undefined}
                   onBindDiscussionWidget={isAddinHost ? handleBindDiscussionWidget : undefined}
+                  widgetSlideLinks={isAddinHost ? widgetSlideLinks : undefined}
                 />
               )}
             </>

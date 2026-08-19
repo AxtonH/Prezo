@@ -3,11 +3,14 @@ import { CollapsibleActivityPanelShell } from './CollapsibleActivityPanelShell'
 import {
   ActivityActionsGrid,
   ActivityActionTile,
-  controlModeShellVariant
+  controlModeShellVariant,
+  LinkedSlidesBadge
 } from './ControlModeUi'
 import { formatRelativeTime } from './formatRelativeTime'
 
 export interface ActiveQnaActivityCardProps {
+  /** PowerPoint: deck slide numbers hosting an unbound Q&amp;A widget. */
+  linkedSlides?: number[]
   /** Audience Q&amp;A questions with status pending (newest first). */
   pendingQuestions: Question[]
   /** Audience Q&amp;A questions with status approved (newest first). */
@@ -90,6 +93,7 @@ function AudienceQuestionRow({
 }
 
 export function ActiveQnaActivityCard({
+  linkedSlides,
   pendingQuestions,
   approvedQuestions,
   variant = 'active',
@@ -241,6 +245,7 @@ export function ActiveQnaActivityCard({
                 {questionTotal} {questionTotal === 1 ? 'question' : 'questions'}
               </span>
             </span>
+            <LinkedSlidesBadge slides={linkedSlides} inactive={inactive} />
           </div>
         </div>
       }
