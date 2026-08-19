@@ -86,7 +86,9 @@ type WidgetShapeIds = {
 
 type PollWidgetShapeIds = {
   container: string
-  title: string
+  /** Legacy branded title line ("Prezo Poll • CODE"). Widgets inserted
+   * since 19/08/2026 have no title shape — the question IS the heading. */
+  title?: string
   question?: string
   body?: string
   shadow?: string
@@ -2231,7 +2233,9 @@ export async function updateQnaWidget(
 
 export async function insertPollWidget(
   sessionId?: string | null,
-  code?: string | null,
+  /** Kept for call-site compatibility — the simplified widget has no
+   * branded "Prezo Poll • CODE" title line to stamp the code into. */
+  _code?: string | null,
   styleOverrides?: Partial<PollStyleConfig> | null
 ) {
   if (!isPowerPointShapeApiAvailable()) {
@@ -2303,7 +2307,9 @@ export async function insertPollWidget(
     const isVertical = style.orientation === 'vertical'
     const width = Math.max(360, pageSetup.slideWidth * 0.6)
     const paddingX = 24
-    const optionStartOffset = 108 * scale
+    /** One-line header (question + counter) since 19/08/2026 — rows start
+     * higher than the legacy two-line (title + question) 108 offset. */
+    const optionStartOffset = 76 * scale
     const barThickness = 10 * scale * style.barThicknessScale
     const rowHeight = Math.max(34 * scale, barThickness + 18)
     const verticalLabelHeight = 16 * scale
@@ -2334,31 +2340,22 @@ export async function insertPollWidget(
     container.tags.add(POLL_WIDGET_TAG, 'true')
     container.tags.add('PrezoWidgetRole', 'poll-container')
 
-    const title = slide.shapes.addTextBox(buildPollTitle(code), {
+    /** Simplified header (19/08/2026): no branded title line — the bound
+     * poll's QUESTION is the heading (left), the vote counter sits on the
+     * same row (right). Legacy widgets keep their title shape; update
+     * passes and recovery treat it as optional. */
+    const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
       left: left + 24,
       top: top + 18 * scale,
-      width: width - 48,
+      width: width - 200,
       height: 40
     })
-    title.textFrame.wordWrap = true
-    applyFont(title.textFrame.textRange, style, {
+    question.textFrame.wordWrap = true
+    applyFont(question.textFrame.textRange, style, {
       size: 20,
       bold: true,
       color: style.textColor
     })
-    title.name = 'Prezo Poll Title'
-    title.tags.add(POLL_WIDGET_TAG, 'true')
-    title.tags.add('PrezoWidgetRole', 'poll-title')
-    title.tags.add(POLL_TEXT_SYNC_TAG, buildPollTitle(code))
-
-    const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
-      left: left + 24,
-      top: top + 62 * scale,
-      width: width - 48,
-      height: 40
-    })
-    question.textFrame.wordWrap = true
-    applyFont(question.textFrame.textRange, style, { size: 14, color: style.mutedColor })
     question.name = 'Prezo Poll Question'
     question.tags.add(POLL_WIDGET_TAG, 'true')
     question.tags.add('PrezoWidgetRole', 'poll-question')
@@ -2366,7 +2363,7 @@ export async function insertPollWidget(
 
     const counter = slide.shapes.addTextBox('0 votes', {
       left: left + width - 24 - 140,
-      top: top + 18 * scale,
+      top: top + 24 * scale,
       width: 140,
       height: 16
     })
@@ -2487,13 +2484,11 @@ export async function insertPollWidget(
     })
 
     container.load('id')
-    title.load('id')
     question.load('id')
     await context.sync()
 
     const shapeIds: PollWidgetShapeIds = {
       container: container.id,
-      title: title.id,
       question: question.id,
       counter: counter.id,
       items: itemShapes.map((item) => ({
@@ -2887,7 +2882,9 @@ export async function updatePollWidget(
 
       const hasAnyLabel =
         looseLabels.length > 0 || groupedBarItems.some((item) => Boolean(item.label))
-      if (!title || !container || !hasAnyLabel || barItems.length === 0) {
+      /** Title is NOT an essential — widgets inserted since 19/08/2026 have
+       * no branded title shape (the question is the heading). */
+      if (!container || !hasAnyLabel || barItems.length === 0) {
         return null
       }
 
@@ -2912,7 +2909,7 @@ export async function updatePollWidget(
       return {
         shadow: getShapeId(shadow),
         container: getShapeId(container) as string,
-        title: getShapeId(title) as string,
+        title: getShapeId(title),
         question: getShapeId(question),
         body: getShapeId(body),
         counter: getShapeId(counter),
@@ -3085,8 +3082,10 @@ export async function updatePollWidget(
         container.load(['id', 'width', 'left', 'top', 'height', 'type'])
       }
 
-      let title = resolveShape(shapeIds.title)
-      title.load(['id', 'type'])
+      let title = shapeIds.title ? resolveShape(shapeIds.title) : null
+      if (title) {
+        title.load(['id', 'type'])
+      }
       let questionShape = shapeIds.question ? resolveShape(shapeIds.question) : null
       if (questionShape) {
         questionShape.load(['id', 'type'])
@@ -3164,7 +3163,7 @@ export async function updatePollWidget(
       }))
 
       const needsFallback =
-        title.isNullObject ||
+        (title ? title.isNullObject : false) ||
         (questionShape ? questionShape.isNullObject : false) ||
         itemShapes.length === 0 ||
         itemShapes.every(
@@ -3634,17 +3633,22 @@ export async function updatePollWidget(
           container!.lineFormat.weight = 1
         }
         if (shapeSupportsText(title)) {
-          applyFont(title.textFrame.textRange, style, {
+          applyFont(title!.textFrame.textRange, style, {
             size: 20,
             bold: true,
             color: style.textColor
           })
         }
         if (shapeSupportsText(questionShape)) {
-          applyFont(questionShape!.textFrame.textRange, style, {
-            size: 14,
-            color: style.mutedColor
-          })
+          /** No title shape (19/08/2026+ inserts) → the question IS the
+           * heading; legacy widgets keep the muted secondary line. */
+          applyFont(
+            questionShape!.textFrame.textRange,
+            style,
+            !title || title.isNullObject
+              ? { size: 20, bold: true, color: style.textColor }
+              : { size: 14, color: style.mutedColor }
+          )
         }
         if (shapeSupportsText(bodyShape)) {
           applyFont(bodyShape!.textFrame.textRange, style, {

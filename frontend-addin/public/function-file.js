@@ -748,7 +748,9 @@
           }
         })
 
-        if (!title || !container || labels.length === 0 || bars.length === 0 || fills.length === 0) {
+        /** Title is NOT an essential — widgets inserted since 19/08/2026
+         * have no branded title shape (the question is the heading). */
+        if (!container || labels.length === 0 || bars.length === 0 || fills.length === 0) {
           return null
         }
 
@@ -766,7 +768,7 @@
         return {
           shadow: shadow ? shadow.id : undefined,
           container: container.id,
-          title: title.id,
+          title: title ? title.id : undefined,
           question: question ? question.id : undefined,
           body: body ? body.id : undefined,
           items
@@ -1061,10 +1063,15 @@
             })
           }
           if (questionShape && !questionShape.isNullObject) {
-            applyFont(questionShape.textFrame.textRange, style, {
-              size: 14,
-              color: style.mutedColor
-            })
+            /** No title shape (19/08/2026+ inserts) → the question IS the
+             * heading; legacy widgets keep the muted secondary line. */
+            applyFont(
+              questionShape.textFrame.textRange,
+              style,
+              !title || title.isNullObject
+                ? { size: 20, bold: true, color: style.textColor }
+                : { size: 14, color: style.mutedColor }
+            )
           }
           if (bodyShape && !bodyShape.isNullObject) {
             applyFont(bodyShape.textFrame.textRange, style, {
@@ -1075,7 +1082,10 @@
         }
         const scale = style.spacingScale
         const paddingX = 24
-        const optionStartOffset = 108 * scale
+        /** Row re-layout must match the widget's structure: legacy widgets
+         * (with a branded title shape) keep the two-line 108 header offset;
+         * 19/08/2026+ widgets have a one-line header at 76. */
+        const optionStartOffset = (shapeIds.title ? 108 : 76) * scale
         const barThickness = 10 * scale * style.barThicknessScale
         const rowHeight = Math.max(34 * scale, barThickness + 18)
         const verticalLabelHeight = 16 * scale
@@ -2238,7 +2248,9 @@
       const isVertical = style.orientation === 'vertical'
       const width = Math.max(360, pageSetup.slideWidth * 0.6)
       const paddingX = 24
-      const optionStartOffset = 108 * scale
+      /** One-line header (question + counter) since 19/08/2026 — rows start
+       * higher than the legacy two-line (title + question) 108 offset. */
+      const optionStartOffset = 76 * scale
       const barThickness = 10 * scale * style.barThicknessScale
       const rowHeight = Math.max(34 * scale, barThickness + 18)
       const verticalLabelHeight = 16 * scale
@@ -2265,35 +2277,27 @@
       container.tags.add(POLL_WIDGET_TAG, 'true')
       container.tags.add('PrezoWidgetRole', 'poll-container')
 
-      const title = slide.shapes.addTextBox(buildPollTitle(code), {
+      /** Simplified header (19/08/2026, mirrors widgetShapes.ts): no branded
+       * title line — the bound poll's QUESTION is the heading (left), the
+       * vote counter sits on the same row (right). */
+      const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
         left: left + 24,
         top: top + 18 * scale,
-        width: width - 48,
+        width: width - 200,
         height: 40
       })
-      title.textFrame.wordWrap = true
-      applyFont(title.textFrame.textRange, style, {
+      question.textFrame.wordWrap = true
+      applyFont(question.textFrame.textRange, style, {
         size: 20,
         bold: true,
         color: style.textColor
       })
-      title.tags.add(POLL_WIDGET_TAG, 'true')
-      title.tags.add('PrezoWidgetRole', 'poll-title')
-
-      const question = slide.shapes.addTextBox(POLL_BIND_PLACEHOLDER, {
-        left: left + 24,
-        top: top + 62 * scale,
-        width: width - 48,
-        height: 40
-      })
-      question.textFrame.wordWrap = true
-      applyFont(question.textFrame.textRange, style, { size: 14, color: style.mutedColor })
       question.tags.add(POLL_WIDGET_TAG, 'true')
       question.tags.add('PrezoWidgetRole', 'poll-question')
 
       const counter = slide.shapes.addTextBox('0 votes', {
         left: left + width - 24 - 140,
-        top: top + 18 * scale,
+        top: top + 24 * scale,
         width: 140,
         height: 16
       })
@@ -2392,13 +2396,11 @@
       })
 
       container.load('id')
-      title.load('id')
       question.load('id')
       await context.sync()
 
       const shapeIds = {
         container: container.id,
-        title: title.id,
         question: question.id,
         counter: counter.id,
         items: itemShapes.map((item) => ({
