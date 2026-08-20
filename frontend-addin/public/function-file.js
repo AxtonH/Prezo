@@ -2936,6 +2936,87 @@
     return removed
   }
 
+  /**
+   * Saved widget design presets, owned here because the dialog webview has
+   * no reliable storage of its own (same reason the poll picker asks us for
+   * poll state). Kind-generic storage; the dialog UI adopts kinds one at a
+   * time (poll first).
+   */
+  const PRESET_STORE_KEY = 'prezo.widgetStylePresets.v1'
+  const PRESET_LIMIT = 30
+  const PRESET_KINDS = {
+    poll: { normalize: normalizePollStyle, styleTag: POLL_STYLE_TAG, label: 'poll' },
+    qna: { normalize: normalizeQnaStyle, styleTag: WIDGET_STYLE_TAG, label: 'Q&A' },
+    discussion: {
+      normalize: normalizeQnaStyle,
+      styleTag: DISCUSSION_STYLE_TAG,
+      label: 'open discussion'
+    }
+  }
+
+  const readPresetStore = () => {
+    try {
+      if (!window.localStorage) return {}
+      const raw = localStorage.getItem(PRESET_STORE_KEY)
+      const parsed = raw ? JSON.parse(raw) : {}
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const writePresetStore = (store) => {
+    try {
+      if (!window.localStorage) return false
+      localStorage.setItem(PRESET_STORE_KEY, JSON.stringify(store))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const presetsForKind = (store, kind) => {
+    const bucket = store[kind]
+    const presets = bucket && Array.isArray(bucket.presets) ? bucket.presets : []
+    const defaultId =
+      bucket && typeof bucket.defaultId === 'string' ? bucket.defaultId : null
+    return {
+      presets: presets.filter(
+        (preset) =>
+          preset &&
+          typeof preset.id === 'string' &&
+          typeof preset.name === 'string' &&
+          preset.style &&
+          typeof preset.style === 'object'
+      ),
+      defaultId
+    }
+  }
+
+  const sendWidgetPresets = (kind, savedId) => {
+    if (!activeDialog) return
+    const { presets, defaultId } = presetsForKind(readPresetStore(), kind)
+    activeDialog.messageChild(
+      JSON.stringify({
+        type: 'widget-presets',
+        kind,
+        presets,
+        defaultId,
+        savedId: savedId || null
+      })
+    )
+  }
+
+  const sendPresetError = (kind, message) => {
+    if (!activeDialog) return
+    activeDialog.messageChild(
+      JSON.stringify({ type: 'widget-preset-error', kind, message })
+    )
+  }
+
+  const newPresetId = () =>
+    `wp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+
   const handleDialogMessage = async (arg) => {
     if (!activeDialog) {
       return
@@ -3113,6 +3194,116 @@
           JSON.stringify({ type: 'error', source: 'discussion', message: detail })
         )
       }
+    }
+    if (message && message.type === 'request-widget-presets') {
+      const kind = PRESET_KINDS[message.kind] ? message.kind : null
+      if (kind) {
+        sendWidgetPresets(kind)
+      }
+      return
+    }
+    if (message && message.type === 'save-widget-preset') {
+      const kind = PRESET_KINDS[message.kind] ? message.kind : null
+      if (!kind) return
+      try {
+        const preset = message.preset || {}
+        const name = String(preset.name || '').trim().slice(0, 60)
+        if (!name) {
+          throw new Error('Give the design a name.')
+        }
+        const style = PRESET_KINDS[kind].normalize(preset.style || {})
+        const store = readPresetStore()
+        const bucket = presetsForKind(store, kind)
+        const id = typeof preset.id === 'string' && preset.id ? preset.id : newPresetId()
+        const existingIndex = bucket.presets.findIndex((entry) => entry.id === id)
+        if (existingIndex === -1 && bucket.presets.length >= PRESET_LIMIT) {
+          throw new Error(
+            `Preset limit reached (${PRESET_LIMIT}). Delete a design you no longer use.`
+          )
+        }
+        const record = { id, name, style, updatedAt: new Date().toISOString() }
+        if (existingIndex === -1) {
+          bucket.presets.push(record)
+        } else {
+          bucket.presets[existingIndex] = record
+        }
+        store[kind] = bucket
+        if (!writePresetStore(store)) {
+          throw new Error('Could not save the design on this machine.')
+        }
+        sendWidgetPresets(kind, id)
+      } catch (error) {
+        sendPresetError(kind, error && error.message ? error.message : 'Could not save the design.')
+      }
+      return
+    }
+    if (message && message.type === 'delete-widget-preset') {
+      const kind = PRESET_KINDS[message.kind] ? message.kind : null
+      if (!kind) return
+      const store = readPresetStore()
+      const bucket = presetsForKind(store, kind)
+      bucket.presets = bucket.presets.filter((entry) => entry.id !== message.id)
+      if (bucket.defaultId === message.id) {
+        bucket.defaultId = null
+      }
+      store[kind] = bucket
+      if (!writePresetStore(store)) {
+        sendPresetError(kind, 'Could not update saved designs on this machine.')
+        return
+      }
+      sendWidgetPresets(kind)
+      return
+    }
+    if (message && message.type === 'set-default-widget-preset') {
+      const kind = PRESET_KINDS[message.kind] ? message.kind : null
+      if (!kind) return
+      const store = readPresetStore()
+      const bucket = presetsForKind(store, kind)
+      bucket.defaultId =
+        typeof message.id === 'string' &&
+        bucket.presets.some((entry) => entry.id === message.id)
+          ? message.id
+          : null
+      store[kind] = bucket
+      if (!writePresetStore(store)) {
+        sendPresetError(kind, 'Could not update saved designs on this machine.')
+        return
+      }
+      sendWidgetPresets(kind)
+      return
+    }
+    if (message && message.type === 'request-slide-widget-style') {
+      const kind = PRESET_KINDS[message.kind] ? message.kind : null
+      if (!kind) return
+      try {
+        let styleValue = null
+        await runPowerPoint(async (context) => {
+          const slide = await getSelectedSlideForLifecycle(context)
+          const styleTag = slide.tags.getItemOrNullObject(PRESET_KINDS[kind].styleTag)
+          styleTag.load('value')
+          await context.sync()
+          if (!styleTag.isNullObject && styleTag.value) {
+            styleValue = styleTag.value
+          }
+        })
+        if (!styleValue) {
+          throw new Error(
+            `No ${PRESET_KINDS[kind].label} widget design found on the selected slide.`
+          )
+        }
+        const style = PRESET_KINDS[kind].normalize(JSON.parse(styleValue))
+        activeDialog.messageChild(
+          JSON.stringify({ type: 'slide-widget-style', kind, style })
+        )
+      } catch (error) {
+        sendPresetError(
+          kind,
+          error && error.message
+            ? error.message
+            : 'Could not read the design from the selected slide.'
+        )
+      }
+      return
     }
     if (message && message.type === 'insert-game') {
       try {

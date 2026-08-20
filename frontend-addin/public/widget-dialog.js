@@ -453,7 +453,512 @@
     })
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Saved design presets (poll editor). Storage lives with the parent   */
+  /* (function-file) because dialog webviews have no reliable storage —  */
+  /* same channel pattern as the linked-poll picker.                     */
+  /* ------------------------------------------------------------------ */
+
+  const DEFAULT_POLL_DESIGN = {
+    fontFamily: null,
+    textColor: '#0f172a',
+    mutedColor: '#64748b',
+    accentColor: '#2563eb',
+    panelColor: '#ffffff',
+    barColor: '#e2e8f0',
+    borderColor: '#e2e8f0',
+    spacingScale: 1,
+    barThicknessScale: 1,
+    orientation: 'horizontal'
+  }
+  const POLL_DESIGN_KEYS = Object.keys(DEFAULT_POLL_DESIGN)
+  const BUILTIN_PRESET_ID = '__default__'
+
+  let pollPresetState = { loaded: false, presets: [], defaultId: null }
+  /** BUILTIN_PRESET_ID, a preset id, or null (unsaved custom design). */
+  let pollSelectedPresetId = BUILTIN_PRESET_ID
+  let pollPresetBaseline = null
+  let pollControlsTouched = false
+  let pollDefaultApplied = false
+  /** What the in-flight parent call was for — picks the success hint. */
+  let pollPendingAction = null
+  let pollNamerMode = null
+
+  /** The design half of the poll config: everything a preset captures.
+   * maxOptions stays out — it follows the linked poll, not the design. */
+  const readPollDesign = () => {
+    const config = readPollConfig()
+    const design = {}
+    POLL_DESIGN_KEYS.forEach((key) => {
+      design[key] = config[key] !== undefined ? config[key] : DEFAULT_POLL_DESIGN[key]
+    })
+    return design
+  }
+
+  const designSignature = (style) =>
+    JSON.stringify(
+      POLL_DESIGN_KEYS.map((key) =>
+        style && style[key] !== undefined && style[key] !== null
+          ? style[key]
+          : DEFAULT_POLL_DESIGN[key]
+      )
+    )
+
+  const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value)
+
+  const applyPollDesign = (style) => {
+    const design = { ...DEFAULT_POLL_DESIGN, ...(style || {}) }
+    const fontSelect = pollInputs.font()
+    if (fontSelect) {
+      const value = design.fontFamily ? String(design.fontFamily) : ''
+      if (
+        value &&
+        !Array.prototype.some.call(fontSelect.options, (option) => option.value === value)
+      ) {
+        /** A design can carry a font outside the stock list (e.g. copied
+         * from a slide) — surface it instead of silently dropping it. */
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = value
+        fontSelect.appendChild(option)
+      }
+      fontSelect.value = value
+    }
+    const colorTargets = {
+      textColor: pollInputs.text(),
+      mutedColor: pollInputs.muted(),
+      accentColor: pollInputs.accent(),
+      panelColor: pollInputs.panel(),
+      barColor: pollInputs.bar(),
+      borderColor: pollInputs.border()
+    }
+    Object.keys(colorTargets).forEach((key) => {
+      const input = colorTargets[key]
+      if (input && isHexColor(design[key])) {
+        input.value = design[key].toLowerCase()
+      }
+    })
+    if (pollInputs.spacing()) {
+      pollInputs.spacing().value = String(clamp(Number(design.spacingScale) || 1, 0.8, 1.3))
+    }
+    if (pollInputs.width()) {
+      pollInputs.width().value = String(clamp(Number(design.barThicknessScale) || 1, 0.4, 2))
+    }
+    if (pollInputs.orientation()) {
+      pollInputs.orientation().value =
+        design.orientation === 'vertical' ? 'vertical' : 'horizontal'
+    }
+    updatePollPreview()
+  }
+
+  const setPollPresetHint = (text, isError) => {
+    const hint = el('poll-preset-hint')
+    if (!hint) return
+    hint.textContent = text || ''
+    hint.classList.toggle('error', Boolean(isError))
+  }
+
+  const hidePollPresetNamer = () => {
+    pollNamerMode = null
+    const namer = el('poll-preset-namer')
+    if (namer) namer.classList.add('hidden')
+  }
+
+  const showPollPresetNamer = (mode, initialName) => {
+    pollNamerMode = mode
+    const namer = el('poll-preset-namer')
+    const input = el('poll-preset-name')
+    const choice = el('poll-preset-choice')
+    if (choice) choice.classList.add('hidden')
+    if (namer) namer.classList.remove('hidden')
+    if (input) {
+      input.value = initialName || ''
+      input.focus()
+      input.select()
+    }
+  }
+
+  const sendPresetMessage = (payload, action) => {
+    try {
+      pollPendingAction = action
+      Office.context.ui.messageParent(JSON.stringify(payload))
+      updatePollPresetUi()
+    } catch {
+      pollPendingAction = null
+      setPollPresetHint('Saved designs are unavailable outside PowerPoint.', true)
+    }
+  }
+
+  /* Floating per-card menu, appended to <body> so the strip cannot clip it. */
+  let presetMenuEl = null
+  let presetMenuDeleteArmed = false
+
+  const closePresetMenu = () => {
+    if (presetMenuEl && presetMenuEl.parentNode) {
+      presetMenuEl.parentNode.removeChild(presetMenuEl)
+    }
+    presetMenuEl = null
+    presetMenuDeleteArmed = false
+  }
+
+  const openPresetMenu = (preset, anchor) => {
+    closePresetMenu()
+    const menu = document.createElement('div')
+    menu.className = 'preset-menu'
+
+    const addItem = (label, onClick, danger) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = label
+      if (danger) button.classList.add('danger')
+      button.addEventListener('click', onClick)
+      menu.appendChild(button)
+      return button
+    }
+
+    const isDefault = pollPresetState.defaultId === preset.id
+    addItem(isDefault ? 'Stop using for new widgets' : 'Use for new widgets', () => {
+      closePresetMenu()
+      sendPresetMessage(
+        {
+          type: 'set-default-widget-preset',
+          kind: 'poll',
+          id: isDefault ? null : preset.id
+        },
+        'default'
+      )
+    })
+    addItem('Rename', () => {
+      closePresetMenu()
+      setPollPresetHint('')
+      showPollPresetNamer(`rename:${preset.id}`, preset.name)
+    })
+    const deleteButton = addItem(
+      'Delete',
+      () => {
+        /** Two-step: first click arms, second click deletes. */
+        if (!presetMenuDeleteArmed) {
+          presetMenuDeleteArmed = true
+          deleteButton.textContent = 'Really delete?'
+          return
+        }
+        closePresetMenu()
+        sendPresetMessage(
+          { type: 'delete-widget-preset', kind: 'poll', id: preset.id },
+          'delete'
+        )
+      },
+      true
+    )
+
+    document.body.appendChild(menu)
+    const rect = anchor.getBoundingClientRect()
+    const menuRect = menu.getBoundingClientRect()
+    let left = Math.min(rect.left, window.innerWidth - menuRect.width - 8)
+    let top = rect.bottom + 4
+    if (top + menuRect.height > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - menuRect.height - 4)
+    }
+    menu.style.left = `${Math.max(8, left)}px`
+    menu.style.top = `${top}px`
+    presetMenuEl = menu
+  }
+
+  document.addEventListener('mousedown', (event) => {
+    if (!presetMenuEl) return
+    if (presetMenuEl.contains(event.target)) return
+    /** Reopening from the same ⋯ button is handled by the button itself. */
+    closePresetMenu()
+  })
+
+  const selectPollPreset = (preset) => {
+    closePresetMenu()
+    hidePollPresetNamer()
+    const choice = el('poll-preset-choice')
+    if (choice) choice.classList.add('hidden')
+    setPollPresetHint('')
+    if (preset === BUILTIN_PRESET_ID) {
+      pollSelectedPresetId = BUILTIN_PRESET_ID
+      pollPresetBaseline = designSignature(DEFAULT_POLL_DESIGN)
+      applyPollDesign(DEFAULT_POLL_DESIGN)
+    } else {
+      pollSelectedPresetId = preset.id
+      pollPresetBaseline = designSignature(preset.style)
+      applyPollDesign(preset.style)
+    }
+    renderPollPresetStrip()
+  }
+
+  const makePresetThumb = (style) => {
+    const design = { ...DEFAULT_POLL_DESIGN, ...(style || {}) }
+    const thumb = document.createElement('div')
+    thumb.className = 'preset-thumb'
+    if (design.orientation === 'vertical') thumb.classList.add('vertical')
+    thumb.style.setProperty('--pt-panel', design.panelColor)
+    thumb.style.setProperty('--pt-border', design.borderColor)
+    thumb.style.setProperty('--pt-bar', design.barColor)
+    thumb.style.setProperty('--pt-accent', design.accentColor)
+    thumb.style.setProperty('--pt-text', design.textColor)
+    const q = document.createElement('div')
+    q.className = 'pt-q'
+    thumb.appendChild(q)
+    const bars = document.createElement('div')
+    bars.className = 'pt-bars'
+    ;[72, 45, 24].forEach((fill) => {
+      const bar = document.createElement('div')
+      bar.className = 'pt-bar'
+      bar.style.setProperty('--pt-fill', `${fill}%`)
+      const inner = document.createElement('i')
+      bar.appendChild(inner)
+      bars.appendChild(bar)
+    })
+    thumb.appendChild(bars)
+    return thumb
+  }
+
+  const pollDesignEdited = () =>
+    pollPresetBaseline !== null && designSignature(readPollDesign()) !== pollPresetBaseline
+
+  const renderPollPresetStrip = () => {
+    const strip = el('poll-preset-strip')
+    if (!strip) return
+    strip.innerHTML = ''
+    if (!pollPresetState.loaded) {
+      for (let index = 0; index < 2; index += 1) {
+        const skeleton = document.createElement('div')
+        skeleton.className = 'preset-skeleton'
+        skeleton.setAttribute('aria-hidden', 'true')
+        strip.appendChild(skeleton)
+      }
+      return
+    }
+
+    const addCard = (options) => {
+      const card = document.createElement('div')
+      card.className = 'preset-card'
+      card.tabIndex = 0
+      card.setAttribute('role', 'button')
+      const selected = options.selected
+      if (selected) card.classList.add('selected')
+      card.setAttribute('aria-pressed', selected ? 'true' : 'false')
+      if (options.chip) {
+        const chip = document.createElement('span')
+        chip.className = `preset-chip${options.chip === 'Edited' ? ' edited' : ''}`
+        chip.textContent = options.chip
+        card.appendChild(chip)
+      }
+      card.appendChild(makePresetThumb(options.style))
+      const footer = document.createElement('div')
+      footer.className = 'preset-card-footer'
+      const name = document.createElement('span')
+      name.className = 'preset-card-name'
+      name.textContent = options.name
+      name.title = options.name
+      footer.appendChild(name)
+      if (selected) {
+        const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+        check.setAttribute('viewBox', '0 0 24 24')
+        check.setAttribute('fill', 'none')
+        check.setAttribute('stroke', 'currentColor')
+        check.setAttribute('stroke-width', '3')
+        check.setAttribute('stroke-linecap', 'round')
+        check.setAttribute('stroke-linejoin', 'round')
+        check.setAttribute('class', 'preset-card-check')
+        check.setAttribute('aria-hidden', 'true')
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+        path.setAttribute('d', 'M20 6 9 17l-5-5')
+        check.appendChild(path)
+        footer.appendChild(check)
+      }
+      if (options.onMenu) {
+        const menuButton = document.createElement('button')
+        menuButton.type = 'button'
+        menuButton.className = 'preset-menu-btn'
+        menuButton.title = 'Design options'
+        menuButton.setAttribute('aria-label', `Options for ${options.name}`)
+        menuButton.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+          '<circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
+        menuButton.addEventListener('click', (event) => {
+          event.stopPropagation()
+          if (presetMenuEl) {
+            closePresetMenu()
+            return
+          }
+          options.onMenu(menuButton)
+        })
+        footer.appendChild(menuButton)
+      }
+      card.appendChild(footer)
+      card.addEventListener('click', options.onSelect)
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          options.onSelect()
+        }
+      })
+      strip.appendChild(card)
+    }
+
+    const edited = pollDesignEdited()
+    addCard({
+      name: 'Standard',
+      style: DEFAULT_POLL_DESIGN,
+      selected: pollSelectedPresetId === BUILTIN_PRESET_ID,
+      chip:
+        pollSelectedPresetId === BUILTIN_PRESET_ID && edited ? 'Edited' : null,
+      onSelect: () => selectPollPreset(BUILTIN_PRESET_ID)
+    })
+    pollPresetState.presets.forEach((preset) => {
+      const selected = pollSelectedPresetId === preset.id
+      addCard({
+        name: preset.name,
+        style: preset.style,
+        selected,
+        chip:
+          selected && edited
+            ? 'Edited'
+            : pollPresetState.defaultId === preset.id
+              ? 'Default'
+              : null,
+        onSelect: () => selectPollPreset(preset),
+        onMenu: (anchor) => openPresetMenu(preset, anchor)
+      })
+    })
+
+    if (pollPresetState.presets.length === 0) {
+      /** Teach the flow, but never stomp on live feedback ("Design
+       * deleted.", "Design copied…") — only fill an empty hint. */
+      const hint = el('poll-preset-hint')
+      if (hint && !hint.textContent) {
+        setPollPresetHint(
+          'No saved designs yet. Style the widget below, then save it here.'
+        )
+      }
+    }
+  }
+
+  const updatePollPresetUi = () => {
+    const saveButton = el('poll-preset-save')
+    if (saveButton) {
+      saveButton.disabled = !pollPresetState.loaded || pollPendingAction !== null
+    }
+    const copyButton = el('poll-preset-copy')
+    if (copyButton) {
+      copyButton.disabled = pollPendingAction !== null
+    }
+    renderPollPresetStrip()
+  }
+
+  const selectedPollPreset = () =>
+    pollPresetState.presets.find((preset) => preset.id === pollSelectedPresetId) || null
+
+  const handlePollPresetSave = () => {
+    setPollPresetHint('')
+    hidePollPresetNamer()
+    const selected = selectedPollPreset()
+    const choice = el('poll-preset-choice')
+    if (selected && pollDesignEdited() && choice) {
+      const text = el('poll-preset-choice-text')
+      if (text) {
+        text.textContent = `Update "${selected.name}" with the current style?`
+      }
+      choice.classList.remove('hidden')
+      return
+    }
+    if (choice) choice.classList.add('hidden')
+    showPollPresetNamer('new', '')
+  }
+
+  const submitPollPresetName = () => {
+    const input = el('poll-preset-name')
+    const name = input ? input.value.trim() : ''
+    if (!name) {
+      setPollPresetHint('Give the design a name.', true)
+      return
+    }
+    if (pollNamerMode && pollNamerMode.indexOf('rename:') === 0) {
+      const id = pollNamerMode.slice('rename:'.length)
+      const preset = pollPresetState.presets.find((entry) => entry.id === id)
+      if (preset) {
+        sendPresetMessage(
+          {
+            type: 'save-widget-preset',
+            kind: 'poll',
+            preset: { id, name, style: preset.style }
+          },
+          'rename'
+        )
+      }
+    } else {
+      sendPresetMessage(
+        {
+          type: 'save-widget-preset',
+          kind: 'poll',
+          preset: { name, style: readPollDesign() }
+        },
+        'save'
+      )
+    }
+    hidePollPresetNamer()
+  }
+
+  const handlePollPresetsMessage = (message) => {
+    const firstLoad = !pollPresetState.loaded
+    pollPresetState = {
+      loaded: true,
+      presets: Array.isArray(message.presets) ? message.presets : [],
+      defaultId: typeof message.defaultId === 'string' ? message.defaultId : null
+    }
+    const action = pollPendingAction
+    pollPendingAction = null
+
+    if (action === 'save' && message.savedId) {
+      pollSelectedPresetId = message.savedId
+      pollPresetBaseline = designSignature(readPollDesign())
+      setPollPresetHint('Design saved.')
+    } else if (action === 'rename') {
+      setPollPresetHint('Design renamed.')
+    } else if (action === 'delete') {
+      if (!pollPresetState.presets.some((entry) => entry.id === pollSelectedPresetId)) {
+        /** The controls keep the deleted design; it's simply unsaved now. */
+        if (
+          pollSelectedPresetId !== BUILTIN_PRESET_ID &&
+          pollSelectedPresetId !== null
+        ) {
+          pollSelectedPresetId = null
+          pollPresetBaseline = null
+        }
+      }
+      setPollPresetHint('Design deleted.')
+    } else if (action === 'default') {
+      setPollPresetHint(
+        pollPresetState.defaultId
+          ? 'New poll widgets will start from this design.'
+          : 'New poll widgets will start from the standard design.'
+      )
+    }
+
+    if (firstLoad) {
+      /** Open with the user's chosen default design — but never clobber
+       * controls they already touched while presets were loading. */
+      if (!pollControlsTouched && !pollDefaultApplied && pollPresetState.defaultId) {
+        const preset = pollPresetState.presets.find(
+          (entry) => entry.id === pollPresetState.defaultId
+        )
+        if (preset) {
+          pollDefaultApplied = true
+          pollSelectedPresetId = preset.id
+          pollPresetBaseline = designSignature(preset.style)
+          applyPollDesign(preset.style)
+        }
+      }
+    }
+    updatePollPresetUi()
+  }
+
   const showView = (view) => {
+    closePresetMenu()
     if (selectView()) selectView().classList.add('hidden')
     if (qnaView()) qnaView().classList.add('hidden')
     if (discussionView()) discussionView().classList.add('hidden')
@@ -696,7 +1201,70 @@
       if (!input) return
       input.addEventListener('input', updatePollPreview)
       input.addEventListener('change', updatePollPreview)
+      /** Preset bookkeeping: hand edits mark the selection "Edited" and
+       * block the auto-apply of the default preset at load. */
+      input.addEventListener('input', () => {
+        pollControlsTouched = true
+        updatePollPresetUi()
+      })
     })
+
+    if (el('poll-preset-save')) {
+      el('poll-preset-save').addEventListener('click', handlePollPresetSave)
+    }
+    if (el('poll-preset-copy')) {
+      el('poll-preset-copy').addEventListener('click', () => {
+        setPollPresetHint('')
+        hidePollPresetNamer()
+        sendPresetMessage({ type: 'request-slide-widget-style', kind: 'poll' }, 'copy')
+      })
+    }
+    if (el('poll-preset-choice-update')) {
+      el('poll-preset-choice-update').addEventListener('click', () => {
+        const choice = el('poll-preset-choice')
+        if (choice) choice.classList.add('hidden')
+        const selected = selectedPollPreset()
+        if (selected) {
+          sendPresetMessage(
+            {
+              type: 'save-widget-preset',
+              kind: 'poll',
+              preset: { id: selected.id, name: selected.name, style: readPollDesign() }
+            },
+            'save'
+          )
+        }
+      })
+    }
+    if (el('poll-preset-choice-new')) {
+      el('poll-preset-choice-new').addEventListener('click', () => {
+        const choice = el('poll-preset-choice')
+        if (choice) choice.classList.add('hidden')
+        showPollPresetNamer('new', '')
+      })
+    }
+    if (el('poll-preset-choice-cancel')) {
+      el('poll-preset-choice-cancel').addEventListener('click', () => {
+        const choice = el('poll-preset-choice')
+        if (choice) choice.classList.add('hidden')
+      })
+    }
+    if (el('poll-preset-name-save')) {
+      el('poll-preset-name-save').addEventListener('click', submitPollPresetName)
+    }
+    if (el('poll-preset-name')) {
+      el('poll-preset-name').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          submitPollPresetName()
+        } else if (event.key === 'Escape') {
+          hidePollPresetNamer()
+        }
+      })
+    }
+    if (el('poll-preset-name-cancel')) {
+      el('poll-preset-name-cancel').addEventListener('click', hidePollPresetNamer)
+    }
     if (pollLinkedSelect()) {
       pollLinkedSelect().addEventListener('change', () => {
         updatePollLinkHint()
@@ -748,6 +1316,27 @@
           } else {
             updatePollPreview()
           }
+        } else if (message && message.type === 'widget-presets') {
+          if (message.kind === 'poll') {
+            handlePollPresetsMessage(message)
+          }
+        } else if (message && message.type === 'slide-widget-style') {
+          if (message.kind === 'poll') {
+            pollPendingAction = null
+            /** Copied designs arrive unselected: the controls now hold a
+             * design that exists on a slide but not in the library. */
+            pollSelectedPresetId = null
+            pollPresetBaseline = null
+            applyPollDesign(message.style)
+            setPollPresetHint('Design copied from the selected slide. Save design to keep it.')
+            updatePollPresetUi()
+          }
+        } else if (message && message.type === 'widget-preset-error') {
+          if (message.kind === 'poll') {
+            pollPendingAction = null
+            setPollPresetHint(message.message || 'Something went wrong with saved designs.', true)
+            updatePollPresetUi()
+          }
         } else if (message && message.type === 'confirm-replace') {
           const key = familyFromSource(message.source)
           families[key].setStatus('')
@@ -789,7 +1378,19 @@
     updateDiscussionPreview()
     updatePollPreview()
     updatePollLinkHint()
+    pollPresetBaseline = designSignature(DEFAULT_POLL_DESIGN)
+    updatePollPresetUi()
     renderDebug()
+
+    /** Saved designs load once per dialog open (the handler above is
+     * already registered, so the response can't race past us). */
+    try {
+      Office.context.ui.messageParent(
+        JSON.stringify({ type: 'request-widget-presets', kind: 'poll' })
+      )
+    } catch {
+      // Opened outside a dialog host — the strip keeps its skeleton state.
+    }
 
     /** Ask the parent for session + poll state (handler above must already
      * be registered so the response can't race past us), then keep asking

@@ -566,6 +566,246 @@
         bottom: 0;
         left: 0;
       }
+      /* ------- Saved design presets ------- */
+      .preset-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button.preset-action {
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+      button.preset-action:disabled {
+        opacity: 0.55;
+      }
+      .preset-strip {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        /** Breathing room so the selected card's outline isn't clipped by
+         * the scroll container. */
+        padding: 2px;
+        scrollbar-width: thin;
+      }
+      .preset-strip:empty {
+        display: none;
+      }
+      .preset-card {
+        position: relative;
+        flex: 0 0 auto;
+        width: 108px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+      .preset-card:hover {
+        border-color: #cfd8e3;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      }
+      .preset-card.selected {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary);
+      }
+      .preset-card:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+      .preset-thumb {
+        border-radius: 8px;
+        border: 1px solid var(--pt-border, #e2e8f0);
+        background: var(--pt-panel, #ffffff);
+        padding: 7px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        pointer-events: none;
+      }
+      .pt-q {
+        width: 70%;
+        height: 5px;
+        border-radius: 999px;
+        background: var(--pt-text, #0f172a);
+        opacity: 0.85;
+      }
+      .pt-bar {
+        height: 5px;
+        border-radius: 999px;
+        background: var(--pt-bar, #e2e8f0);
+        overflow: hidden;
+      }
+      .pt-bar i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--pt-accent, #2563eb);
+      }
+      /* Vertical designs read as columns in the thumbnail too. */
+      .preset-thumb.vertical .pt-bars {
+        display: flex;
+        align-items: flex-end;
+        gap: 6px;
+        height: 26px;
+      }
+      .preset-thumb.vertical .pt-bar {
+        width: 9px;
+        height: 100%;
+        position: relative;
+      }
+      .preset-thumb.vertical .pt-bar i {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: var(--pt-fill, 60%);
+      }
+      .preset-thumb:not(.vertical) .pt-bars {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .preset-thumb:not(.vertical) .pt-bar i {
+        width: var(--pt-fill, 60%);
+      }
+      .preset-card-footer {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .preset-card-name {
+        flex: 1;
+        min-width: 0;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .preset-card.selected .preset-card-name {
+        color: var(--primary);
+      }
+      .preset-card-check {
+        flex: none;
+        width: 13px;
+        height: 13px;
+        color: var(--primary);
+      }
+      button.preset-menu-btn {
+        flex: none;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: none;
+      }
+      button.preset-menu-btn:hover {
+        transform: none;
+        box-shadow: none;
+        background: var(--surface-2);
+        color: var(--text);
+      }
+      button.preset-menu-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .preset-chip {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: var(--primary-soft);
+        color: var(--primary);
+        pointer-events: none;
+      }
+      .preset-chip.edited {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      /** Floating per-preset menu — appended to <body> and positioned fixed
+       * so the strip's horizontal scroll can't clip it. */
+      .preset-menu {
+        position: fixed;
+        z-index: 60;
+        min-width: 150px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+      }
+      .preset-menu button {
+        background: transparent;
+        color: var(--text);
+        border: none;
+        box-shadow: none;
+        text-align: left;
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 7px 10px;
+        border-radius: 7px;
+      }
+      .preset-menu button:hover {
+        transform: none;
+        box-shadow: none;
+        background: var(--surface-2);
+      }
+      .preset-menu button.danger {
+        color: #dc2626;
+      }
+      .preset-namer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .preset-namer.hidden {
+        display: none;
+      }
+      .preset-namer input {
+        flex: 1;
+        min-width: 140px;
+      }
+      .preset-hint:empty {
+        display: none;
+      }
+      .preset-hint.error {
+        color: #ef4444;
+      }
+      .preset-skeleton {
+        flex: 0 0 auto;
+        width: 108px;
+        height: 74px;
+        border-radius: 12px;
+        background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 50%, #eef2f7 75%);
+        background-size: 200% 100%;
+        animation: preset-shimmer 1.4s ease infinite;
+      }
+      @keyframes preset-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: 0 0; }
+      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script src="/widget-dialog.js" defer></script>
@@ -968,6 +1208,34 @@
             </div>
           </div>
           <div class="editor-controls">
+          <details class="panel" open>
+            <summary>
+              Presets
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </summary>
+            <div class="preset-toolbar">
+              <button type="button" class="ghost preset-action" id="poll-preset-save">Save design</button>
+              <button type="button" class="ghost preset-action" id="poll-preset-copy" title="Load the design of the poll widget on the selected slide">Copy from slide</button>
+            </div>
+            <div id="poll-preset-strip" class="preset-strip" aria-label="Saved poll designs">
+              <div class="preset-skeleton" aria-hidden="true"></div>
+              <div class="preset-skeleton" aria-hidden="true"></div>
+            </div>
+            <div id="poll-preset-choice" class="confirm-bar hidden">
+              <span id="poll-preset-choice-text"></span>
+              <button type="button" id="poll-preset-choice-update">Update</button>
+              <button type="button" class="ghost" id="poll-preset-choice-new">Save as new</button>
+              <button type="button" class="ghost" id="poll-preset-choice-cancel">Cancel</button>
+            </div>
+            <div id="poll-preset-namer" class="preset-namer hidden">
+              <input id="poll-preset-name" type="text" maxlength="60" placeholder="Design name" />
+              <button type="button" id="poll-preset-name-save">Save</button>
+              <button type="button" class="ghost" id="poll-preset-name-cancel">Cancel</button>
+            </div>
+            <p id="poll-preset-hint" class="muted preset-hint"></p>
+          </details>
           <details class="panel">
             <summary>
               Style
