@@ -2543,7 +2543,9 @@ export async function insertPollWidget(
    * URL or a refusing host simply means no QR. */
   if (hasSession && joinUrl && qrBox) {
     try {
-      const qr = qrcodeGenerator(0, 'M')
+      /** Level L + navy modules match the taskpane's copy-paste QR
+       * (SessionAudienceAccessCard) so the two never look mismatched. */
+      const qr = qrcodeGenerator(0, 'L')
       qr.addData(joinUrl)
       qr.make()
       const base64 = qrPngBase64(qr, 300)
@@ -2577,7 +2579,7 @@ const qrPngBase64 = (
     }
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvasSize, canvasSize)
-    ctx.fillStyle = '#000000'
+    ctx.fillStyle = '#0f172a'
     for (let row = 0; row < count; row += 1) {
       for (let col = 0; col < count; col += 1) {
         if (qr.isDark(row, col)) {
