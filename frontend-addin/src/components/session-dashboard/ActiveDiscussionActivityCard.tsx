@@ -277,21 +277,21 @@ export function ActiveDiscussionActivityCard({
         >
             <span
               className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${
-                !closed
+                !closed || mode === 'auto'
                   ? 'bg-emerald-100 text-emerald-700'
-                  : mode === 'auto'
-                    ? 'bg-sky-100 text-sky-700'
-                    : 'bg-slate-200 text-slate-700'
+                  : 'bg-slate-200 text-slate-700'
               }`}
               title={
                 !closed
                   ? 'Visible on the audience screen right now'
                   : mode === 'auto'
-                    ? 'Waiting for its slide — goes live when the slideshow reaches it'
+                    ? 'Auto follow: live on the audience screen whenever its slide is presented'
                     : 'Closed by the host'
               }
             >
-              {!closed ? 'Live' : mode === 'auto' ? 'Off air' : 'Ended'}
+              {/* Auto follow reads as Live even while technically closed: it goes
+                  live with its slide, and the dashboard shows the presenting state. */}
+              {!closed || mode === 'auto' ? 'Live' : 'Ended'}
             </span>
             <span
               className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
