@@ -16,8 +16,9 @@ export interface SessionActiveActivitiesPanelProps {
   /** Filter rows by activity title or linked slide number (dashboard toolbar search). */
   searchQuery?: string
   /**
-   * Toolbar sort, applied within the active and inactive blocks. Omitted →
-   * legacy oldest-first creation order (scoped workspace pages).
+   * Toolbar sort, applied across the whole list — active and inactive cards
+   * interleave. Omitted → legacy grouped, oldest-first order (scoped
+   * workspace pages).
    */
   sortBy?: ActivitySortMode
   /**
@@ -312,15 +313,27 @@ export function SessionActiveActivitiesPanel({
     return (refs ?? []).map((r) => r.number)
   }
 
-  /** Toolbar search + sort, within one block (active or inactive). */
-  const refineRows = <T extends MergedActiveRow | MergedInactiveRow>(rows: T[]): T[] => {
-    let out = rows
+  /**
+   * Toolbar search + sort. Sorting applies across the WHOLE list — active and
+   * inactive cards interleave (a sort that only reordered within the status
+   * blocks looked broken with one card per block). Without a sort, the legacy
+   * order stands: active block first, oldest first within each.
+   */
+  type CombinedRow = { row: MergedActiveRow | MergedInactiveRow; active: boolean }
+
+  const combinedRows: CombinedRow[] = [
+    ...mergedActiveRows.map((row) => ({ row, active: true })),
+    ...mergedInactiveRows.map((row) => ({ row, active: false }))
+  ]
+
+  const refineRows = (items: CombinedRow[]): CombinedRow[] => {
+    let out = items
     const q = (searchQuery ?? '').trim().toLowerCase()
     if (q) {
       // "5" or "slide 5" matches activities linked to deck slide 5.
       const slideQ = q.replace(/^slide\s*/, '')
       out = out.filter(
-        (row) =>
+        ({ row }) =>
           rowTitle(row).toLowerCase().includes(q) ||
           KIND_SEARCH_ALIASES[row.kind].some((alias) => alias.startsWith(q)) ||
           (slideQ !== '' && rowSlideNumbers(row).some((n) => String(n) === slideQ))
@@ -331,34 +344,32 @@ export function SessionActiveActivitiesPanel({
     }
     const sorted = [...out]
     if (sortBy === 'newest') {
-      sorted.sort((a, b) => sortKeyMs(b.sortAt) - sortKeyMs(a.sortAt))
+      sorted.sort((a, b) => sortKeyMs(b.row.sortAt) - sortKeyMs(a.row.sortAt))
     } else if (sortBy === 'title') {
       sorted.sort((a, b) =>
-        rowTitle(a).localeCompare(rowTitle(b), undefined, { sensitivity: 'base' })
+        rowTitle(a.row).localeCompare(rowTitle(b.row), undefined, { sensitivity: 'base' })
       )
     } else {
       // Slide order: first linked slide wins; unlinked activities sink, newest first.
       sorted.sort((a, b) => {
-        const slidesA = rowSlideNumbers(a)
-        const slidesB = rowSlideNumbers(b)
+        const slidesA = rowSlideNumbers(a.row)
+        const slidesB = rowSlideNumbers(b.row)
         const minA = slidesA.length > 0 ? Math.min(...slidesA) : Infinity
         const minB = slidesB.length > 0 ? Math.min(...slidesB) : Infinity
         if (minA !== minB) {
           return minA - minB
         }
-        return sortKeyMs(b.sortAt) - sortKeyMs(a.sortAt)
+        return sortKeyMs(b.row.sortAt) - sortKeyMs(a.row.sortAt)
       })
     }
     return sorted
   }
 
-  const visibleActiveRows = refineRows(mergedActiveRows)
-  const visibleInactiveRows = refineRows(mergedInactiveRows)
+  const visibleRows = refineRows(combinedRows)
 
   const hasAnyActivity =
     mergedActiveRows.length > 0 || mergedInactiveRows.length > 0
-  const searchHidesEverything =
-    hasAnyActivity && visibleActiveRows.length === 0 && visibleInactiveRows.length === 0
+  const searchHidesEverything = hasAnyActivity && visibleRows.length === 0
 
   const closeDeleteModal = () => {
     if (!deleteBusy) {
@@ -462,14 +473,14 @@ export function SessionActiveActivitiesPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {visibleActiveRows.map((row) => {
+          {visibleRows.map(({ row, active }) => {
             if (row.kind === 'poll') {
               return (
                 <ActivePollActivityCard
-                  key={`poll-open-${row.poll.id}`}
+                  key={`poll-${active ? 'open' : 'closed'}-${row.poll.id}`}
                   poll={row.poll}
                   linkedSlides={widgetSlideLinks?.polls[row.poll.id]}
-                  variant="active"
+                  variant={active ? 'active' : 'inactive'}
                   onConfigure={onConfigurePoll}
                   onEdit={
                     onUpdatePoll
@@ -477,6 +488,7 @@ export function SessionActiveActivitiesPanel({
                       : undefined
                   }
                   onStop={onStopPoll}
+                  onResume={active ? undefined : onResumePoll}
                   onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
                   onReset={
                     onResetPoll
@@ -491,14 +503,15 @@ export function SessionActiveActivitiesPanel({
             if (row.kind === 'qna') {
               return (
                 <ActiveQnaActivityCard
-                  key="qna-active"
+                  key={active ? 'qna-active' : 'qna-inactive'}
                   linkedSlides={widgetSlideLinks?.qna}
                   pendingQuestions={audiencePendingQuestions}
                   approvedQuestions={audienceApprovedQuestions}
-                  variant="active"
+                  variant={active ? 'active' : 'inactive'}
                   mode={qnaControlMode}
                   onConfigure={onConfigureQna}
                   onStop={onStopQna}
+                  onResume={active ? undefined : onResumeQna}
                   onDelete={() => setDeleteTarget({ kind: 'qna' })}
                   onReset={onResetQna ? () => setResetTarget({ kind: 'qna' }) : undefined}
                   onSetMode={onSetQnaMode}
@@ -510,12 +523,12 @@ export function SessionActiveActivitiesPanel({
             const { prompt, pendingQuestions, approvedQuestions } = row.block
             return (
               <ActiveDiscussionActivityCard
-                key={`discussion-open-${prompt.id}`}
+                key={`discussion-${active ? 'open' : 'closed'}-${prompt.id}`}
                 prompt={prompt}
                 linkedSlides={widgetSlideLinks?.prompts[prompt.id]}
                 pendingQuestions={pendingQuestions}
                 approvedQuestions={approvedQuestions}
-                variant="active"
+                variant={active ? 'active' : 'inactive'}
                 onConfigure={onConfigureDiscussion}
                 onEdit={
                   onUpdateDiscussion
@@ -523,84 +536,7 @@ export function SessionActiveActivitiesPanel({
                     : undefined
                 }
                 onStop={onStopDiscussion}
-                onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
-                onReset={
-                  onResetDiscussion
-                    ? () => setResetTarget({ kind: 'discussion', id: prompt.id })
-                    : undefined
-                }
-                onSetMode={onSetDiscussionMode}
-                onApproveQuestion={onApproveDiscussionQuestion}
-                onHideQuestion={onHideDiscussionQuestion}
-                onBindWidget={onBindDiscussionWidget}
-              />
-            )
-          })}
-
-          {visibleInactiveRows.map((row) => {
-            if (row.kind === 'poll') {
-              return (
-                <ActivePollActivityCard
-                  key={`poll-closed-${row.poll.id}`}
-                  poll={row.poll}
-                  linkedSlides={widgetSlideLinks?.polls[row.poll.id]}
-                  variant="inactive"
-                  onConfigure={onConfigurePoll}
-                  onEdit={
-                    onUpdatePoll
-                      ? () => setEditTarget({ kind: 'poll', poll: row.poll })
-                      : undefined
-                  }
-                  onStop={onStopPoll}
-                  onResume={onResumePoll}
-                  onDelete={() => setDeleteTarget({ kind: 'poll', id: row.poll.id })}
-                  onReset={
-                    onResetPoll
-                      ? () => setResetTarget({ kind: 'poll', id: row.poll.id })
-                      : undefined
-                  }
-                  onBindWidget={onBindPollWidget}
-                  onSetMode={onSetPollMode}
-                />
-              )
-            }
-            if (row.kind === 'qna') {
-              return (
-                <ActiveQnaActivityCard
-                  key="qna-inactive"
-                  linkedSlides={widgetSlideLinks?.qna}
-                  pendingQuestions={audiencePendingQuestions}
-                  approvedQuestions={audienceApprovedQuestions}
-                  variant="inactive"
-                  mode={qnaControlMode}
-                  onConfigure={onConfigureQna}
-                  onStop={onStopQna}
-                  onResume={onResumeQna}
-                  onDelete={() => setDeleteTarget({ kind: 'qna' })}
-                  onReset={onResetQna ? () => setResetTarget({ kind: 'qna' }) : undefined}
-                  onSetMode={onSetQnaMode}
-                  onApproveQuestion={onApproveAudienceQuestion}
-                  onHideQuestion={onHideAudienceQuestion}
-                />
-              )
-            }
-            const { prompt, pendingQuestions, approvedQuestions } = row.block
-            return (
-              <ActiveDiscussionActivityCard
-                key={`discussion-closed-${prompt.id}`}
-                prompt={prompt}
-                linkedSlides={widgetSlideLinks?.prompts[prompt.id]}
-                pendingQuestions={pendingQuestions}
-                approvedQuestions={approvedQuestions}
-                variant="inactive"
-                onConfigure={onConfigureDiscussion}
-                onEdit={
-                  onUpdateDiscussion
-                    ? () => setEditTarget({ kind: 'discussion', prompt })
-                    : undefined
-                }
-                onStop={onStopDiscussion}
-                onResume={onResumeDiscussion}
+                onResume={active ? undefined : onResumeDiscussion}
                 onDelete={() => setDeleteTarget({ kind: 'discussion', id: prompt.id })}
                 onReset={
                   onResetDiscussion
