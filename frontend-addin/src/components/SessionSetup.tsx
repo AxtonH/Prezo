@@ -32,8 +32,12 @@ interface SessionSetupProps {
    * header, so real sessions keep the space.
    */
   hasAnySessions?: boolean
-  /** Tailwind classes for the scrollable session list max height (default fits ~6 rows before scroll). */
-  listMaxHeightClass?: string
+  /**
+   * Tailwind classes for the scrollable session list max height (default fits ~6 rows
+   * before scroll). Pass null to drop the inner scroll container entirely and let the
+   * page scroll instead (add-in taskpane: avoids nested scrollbars).
+   */
+  listMaxHeightClass?: string | null
   /** Shown when the list finished loading and has no rows (e.g. Owner vs Co-Host filter). */
   emptyListMessage?: string
   /** Active / Host / Co-Host filter (all-sessions list). */
@@ -281,7 +285,11 @@ export function SessionSetup({
 
         {hasRecentSessions ? (
           <div
-            className={`${listMaxHeightClass} overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1 -mr-0.5 w-full`}
+            className={
+              listMaxHeightClass === null
+                ? 'w-full'
+                : `${listMaxHeightClass} overflow-y-auto overflow-x-hidden scroll-smooth session-list-scroll pr-1 -mr-0.5 w-full`
+            }
           >
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 pb-1">
               {recentSessions?.map((entry) => {

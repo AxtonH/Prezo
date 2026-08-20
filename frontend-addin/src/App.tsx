@@ -2288,7 +2288,9 @@ function HostConsole({
                   isCompact={isAddinHost}
                   listMaxHeightClass={
                     isAddinHost
-                      ? undefined
+                      ? /* Taskpane is narrow: skip the inner scroll container so the
+                           pane's main scrollbar is the only one. */
+                        null
                       : /* Fill the viewport below the tab row (21rem ≈ top bar + heading + tabs
                            + page padding); the 18rem floor keeps short windows usable. */
                         'max-h-[max(18rem,calc(100vh-21rem))]'
