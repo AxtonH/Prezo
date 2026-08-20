@@ -26,7 +26,8 @@ type TaskPaneRuntime = { setWidth?: (width: number) => void }
 const clampTarget = (value: number): number =>
   Math.min(Math.max(Math.round(value), MIN_TARGET_PX), MAX_TARGET_PX)
 
-export function ensureTaskpaneWidth(): void {
+/** Returns true when a resize was actually requested from the host. */
+export function ensureTaskpaneWidth(): boolean {
   const taskpane = (
     typeof Office !== 'undefined'
       ? (Office as unknown as { extensionLifeCycle?: { taskpane?: TaskPaneRuntime } })
@@ -34,11 +35,11 @@ export function ensureTaskpaneWidth(): void {
       : undefined
   ) as TaskPaneRuntime | undefined
   if (!taskpane || typeof taskpane.setWidth !== 'function') {
-    return
+    return false
   }
   const current = Math.round(window.innerWidth)
   if (!Number.isFinite(current) || current <= 0) {
-    return
+    return false
   }
   let storage: Storage | null = null
   try {
@@ -61,13 +62,44 @@ export function ensureTaskpaneWidth(): void {
     }
   }
   if (current >= target - APPLY_SLACK_PX) {
-    return
+    return false
   }
   try {
     // Out-of-range widths (beyond 50% of the client window) are silently
     // ignored by the host — acceptable: the pane just keeps its size.
     taskpane.setWidth(target)
+    return true
   } catch {
     // Host refused the call (old build) — nothing to do until Office updates.
+    return false
   }
+}
+
+/**
+ * Boot-time variant: widen BEFORE the app's first paint and hold rendering
+ * until the host has applied the width (first resize event) or a short
+ * timeout passes. Painting first and resizing after is what made the pane
+ * visibly flicker on open — the UI laid out at the narrow default width and
+ * then reflowed. setWidth gives no completion signal, so the resize event is
+ * the applied-width cue; the timeout covers hosts that silently ignore the
+ * call (out-of-range width, older builds).
+ */
+export function settleTaskpaneWidthBeforeFirstPaint(timeoutMs = 400): Promise<void> {
+  if (!ensureTaskpaneWidth()) {
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) {
+        return
+      }
+      settled = true
+      window.removeEventListener('resize', finish)
+      // One frame so layout at the new width is committed before React paints.
+      requestAnimationFrame(() => resolve())
+    }
+    window.addEventListener('resize', finish)
+    window.setTimeout(finish, timeoutMs)
+  })
 }

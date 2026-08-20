@@ -40,7 +40,6 @@ import { useHostSearchSnapshotCache } from './hooks/useHostSearchSnapshotCache'
 import { useSessionSocket } from './hooks/useSessionSocket'
 import { clearLibrarySyncBridge, writeLibrarySyncBridge } from './office/librarySyncBridge'
 import { readSessionBinding, writeSessionBinding } from './office/sessionBinding'
-import { ensureTaskpaneWidth } from './office/taskpaneWidth'
 import {
   readWidgetSlideLinks,
   setDiscussionWidgetBinding,
@@ -1776,18 +1775,12 @@ function HostConsole({
   // presentable before the show starts (see office/embedWarmup.ts).
   const embedWarmup = useEmbedWarmup()
 
+  // Taskpane widening moved to main.tsx (settleTaskpaneWidthBeforeFirstPaint):
+  // resizing after the first paint made the pane flicker on open.
+
   // Widget (native shape) poll slides have no webview to report presence,
   // so the taskpane conducts for them during slideshows: it tracks the
   // presented slide and drives auto-mode polls bound via widget slide tags.
-  // PowerPoint reopens the taskpane at its default (narrow) width every
-  // time, so each boot re-applies the remembered wider target.
-  useEffect(() => {
-    if (!isAddinHost) {
-      return
-    }
-    ensureTaskpaneWidth()
-  }, [isAddinHost])
-
   useEffect(() => {
     if (!isAddinHost) {
       return

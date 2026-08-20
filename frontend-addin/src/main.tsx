@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { DisplayApp } from './DisplayApp'
 import { WidgetManagerApp } from './WidgetManagerApp'
+import { settleTaskpaneWidthBeforeFirstPaint } from './office/taskpaneWidth'
 import './index.css'
 
 declare global {
@@ -68,7 +69,7 @@ function loadOfficeJs(): Promise<void> {
   })
 }
 
-const start = () => {
+const start = async () => {
   const root = document.getElementById('root')
   if (!root) {
     return
@@ -76,6 +77,15 @@ const start = () => {
 
   const params = new URLSearchParams(window.location.search)
   const mode = params.get('mode')
+
+  // Host taskpane only: PowerPoint reopens the pane at its default (narrow)
+  // width every time, so each boot re-applies the remembered wider target.
+  // Doing it here — before the first React paint — keeps the open from
+  // flickering (paint narrow → host resize → reflow). No-op outside a
+  // TaskPaneApi 1.1 host, and display/widget-manager frames are never widened.
+  if (mode !== 'display' && mode !== 'manager') {
+    await settleTaskpaneWidthBeforeFirstPaint()
+  }
 
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
@@ -93,9 +103,9 @@ const start = () => {
 async function boot() {
   await loadOfficeJs()
   if (window.Office?.onReady) {
-    window.Office.onReady(start)
+    window.Office.onReady(() => void start())
   } else {
-    start()
+    await start()
   }
 }
 
