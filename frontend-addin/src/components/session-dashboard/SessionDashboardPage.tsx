@@ -7,7 +7,10 @@ import { readHostQnaEngaged } from '../../utils/hostQnaInactiveStorage'
 import { resolveJoinUrl } from '../../utils/joinUrl'
 import { CreateActivityMenu } from './CreateActivityMenu'
 import type { PollEditUpdate } from './EditActivityModal'
-import { SessionActiveActivitiesPanel } from './SessionActiveActivitiesPanel'
+import {
+  SessionActiveActivitiesPanel,
+  type ActivitySortMode
+} from './SessionActiveActivitiesPanel'
 import { SessionAudienceAccessCard } from './SessionAudienceAccessCard'
 import { SessionCoHostAccessRow } from './SessionCoHostAccessRow'
 import { SessionDashboardHeader } from './SessionDashboardHeader'
@@ -18,6 +21,12 @@ function sortByCreatedAsc<T extends { created_at: string }>(items: T[]): T[] {
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   )
 }
+
+const ACTIVITY_SORT_OPTIONS: { id: ActivitySortMode; label: string }[] = [
+  { id: 'newest', label: 'Newest first' },
+  { id: 'title', label: 'Title (A–Z)' },
+  { id: 'slide', label: 'Slide order' }
+]
 
 export interface SessionDashboardPageProps {
   session: Session
@@ -213,22 +222,127 @@ export function SessionDashboardPage({
     prompts.length
   ])
 
+  const hasAnyActivity = activityCount > 0
+  const [activitySearch, setActivitySearch] = useState('')
+  const [activitySort, setActivitySort] = useState<ActivitySortMode>('newest')
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!sortMenuOpen) {
+      return
+    }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('[data-activity-sort-menu]')) {
+        return
+      }
+      setSortMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSortMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [sortMenuOpen])
+
+  const activeSortLabel =
+    ACTIVITY_SORT_OPTIONS.find((o) => o.id === activitySort)?.label ?? 'Sort'
+
   return (
     <div className="space-y-8">
       <SessionDashboardHeader title={session.title ?? ''} hostLabel={hostDisplayName} />
 
       {onCreatePoll && onOpenAudienceQna && onCreateDiscussionPrompt ? (
-        <CreateActivityMenu
-          variant="dashed"
-          qnaOpen={session.qna_open}
-          onCreatePoll={onCreatePoll}
-          onOpenAudienceQna={onOpenAudienceQna}
-          onCreateDiscussionPrompt={onCreateDiscussionPrompt}
-        />
+        hasAnyActivity ? (
+          /* With activities in the list, the big dashed CTA collapses into a
+             toolbar: compact add button + search + sort. */
+          <div className="flex items-center gap-2">
+            <CreateActivityMenu
+              variant="compact"
+              qnaOpen={session.qna_open}
+              onCreatePoll={onCreatePoll}
+              onOpenAudienceQna={onOpenAudienceQna}
+              onCreateDiscussionPrompt={onCreateDiscussionPrompt}
+            />
+            <div className="relative min-w-0 flex-1">
+              <span
+                className="material-symbols-outlined pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-slate-400"
+                aria-hidden
+              >
+                search
+              </span>
+              <input
+                type="search"
+                value={activitySearch}
+                onChange={(e) => setActivitySearch(e.target.value)}
+                placeholder="Search by title or slide"
+                aria-label="Search activities by title or slide"
+                className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !pl-8 !pr-3 !py-1.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
+              />
+            </div>
+            <div className="relative shrink-0" data-activity-sort-menu>
+              <button
+                type="button"
+                onClick={() => setSortMenuOpen((v) => !v)}
+                className="!inline-flex !items-center !gap-1 !rounded-xl !border !border-slate-200 !bg-white !px-2.5 !py-1.5 !text-xs !font-semibold !text-slate-600 hover:!border-primary/40 hover:!text-primary !shadow-none !transition-all"
+                title="Sort activities"
+                aria-label="Sort activities"
+                aria-expanded={sortMenuOpen}
+              >
+                <span className="material-symbols-outlined text-lg" aria-hidden>
+                  sort
+                </span>
+                <span className="max-[430px]:hidden">{activeSortLabel}</span>
+              </button>
+              {sortMenuOpen ? (
+                <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                  {ACTIVITY_SORT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setActivitySort(opt.id)
+                        setSortMenuOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50 ${
+                        opt.id === activitySort
+                          ? 'font-semibold text-primary'
+                          : 'text-slate-700'
+                      }`}
+                    >
+                      {opt.label}
+                      {opt.id === activitySort ? (
+                        <span className="material-symbols-outlined text-base" aria-hidden>
+                          check
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <CreateActivityMenu
+            variant="dashed"
+            qnaOpen={session.qna_open}
+            onCreatePoll={onCreatePoll}
+            onOpenAudienceQna={onOpenAudienceQna}
+            onCreateDiscussionPrompt={onCreateDiscussionPrompt}
+          />
+        )
       ) : null}
 
       <div className="min-w-0 space-y-3">
         <SessionActiveActivitiesPanel
+          searchQuery={activitySearch}
+          sortBy={activitySort}
           openPolls={openPolls}
           closedPolls={closedPolls}
           qnaOpen={session.qna_open}

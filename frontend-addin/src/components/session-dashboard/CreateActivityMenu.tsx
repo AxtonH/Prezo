@@ -9,8 +9,12 @@ export interface CreateActivityMenuProps {
   ) => Promise<void>
   onOpenAudienceQna: () => Promise<void>
   onCreateDiscussionPrompt: (prompt: string) => Promise<void>
-  /** `dashed` — full-width dashed CTA with an inline type picker (session dashboard). */
-  variant?: 'toolbar' | 'dashed'
+  /**
+   * `dashed` — full-width dashed CTA with an inline type picker (empty session dashboard).
+   * `compact` — solid blue pill for the dashboard toolbar once activities exist; opens
+   * the modal type picker directly.
+   */
+  variant?: 'toolbar' | 'dashed' | 'compact'
 }
 
 /** Same Material Symbols as `WORKSPACE_NAV_ITEMS` in SideNav (polls, discussion, qna). */
@@ -247,6 +251,21 @@ export function CreateActivityMenu({
             </div>
           ) : null}
         </div>
+      ) : variant === 'compact' ? (
+        <button
+          type="button"
+          onClick={() => {
+            setStep('pick')
+            setFormError(null)
+            setOpen(true)
+          }}
+          className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs !shrink-0"
+        >
+          <span className="material-symbols-outlined text-lg" aria-hidden>
+            add
+          </span>
+          Add activity
+        </button>
       ) : (
         <div className="flex justify-end">
           <button

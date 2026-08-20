@@ -9,7 +9,17 @@ import { DeleteActivityConfirmModal } from './DeleteActivityConfirmModal'
 import { EditActivityModal, type EditActivityTarget, type PollEditUpdate } from './EditActivityModal'
 import { ResetActivityConfirmModal } from './ResetActivityConfirmModal'
 
+/** Dashboard toolbar sort. `newest` = creation time, newest on top (the default there). */
+export type ActivitySortMode = 'newest' | 'title' | 'slide'
+
 export interface SessionActiveActivitiesPanelProps {
+  /** Filter rows by activity title or linked slide number (dashboard toolbar search). */
+  searchQuery?: string
+  /**
+   * Toolbar sort, applied within the active and inactive blocks. Omitted →
+   * legacy oldest-first creation order (scoped workspace pages).
+   */
+  sortBy?: ActivitySortMode
   /**
    * `'polls-only'` — polls workspace; `'discussions-only'` — open discussion
    * workspace; `'qna-only'` — Q&amp;A workspace (audience questions only).
@@ -105,6 +115,8 @@ type MergedInactiveRow =
   | { kind: 'discussion'; sortAt: string; block: DiscussionBlock }
 
 export function SessionActiveActivitiesPanel({
+  searchQuery,
+  sortBy,
   activitiesScope = 'all',
   openPolls,
   closedPolls,
@@ -273,8 +285,69 @@ export function SessionActiveActivitiesPanel({
     questions
   ])
 
+  const rowTitle = (row: MergedActiveRow | MergedInactiveRow): string =>
+    row.kind === 'poll'
+      ? row.poll.question
+      : row.kind === 'qna'
+        ? 'Audience Q&A'
+        : row.block.prompt.prompt
+
+  const rowSlideNumbers = (row: MergedActiveRow | MergedInactiveRow): number[] => {
+    const refs =
+      row.kind === 'poll'
+        ? widgetSlideLinks?.polls[row.poll.id]
+        : row.kind === 'qna'
+          ? widgetSlideLinks?.qna
+          : widgetSlideLinks?.prompts[row.block.prompt.id]
+    return (refs ?? []).map((r) => r.number)
+  }
+
+  /** Toolbar search + sort, within one block (active or inactive). */
+  const refineRows = <T extends MergedActiveRow | MergedInactiveRow>(rows: T[]): T[] => {
+    let out = rows
+    const q = (searchQuery ?? '').trim().toLowerCase()
+    if (q) {
+      // "5" or "slide 5" matches activities linked to deck slide 5.
+      const slideQ = q.replace(/^slide\s*/, '')
+      out = out.filter(
+        (row) =>
+          rowTitle(row).toLowerCase().includes(q) ||
+          (slideQ !== '' && rowSlideNumbers(row).some((n) => String(n) === slideQ))
+      )
+    }
+    if (!sortBy) {
+      return out
+    }
+    const sorted = [...out]
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => sortKeyMs(b.sortAt) - sortKeyMs(a.sortAt))
+    } else if (sortBy === 'title') {
+      sorted.sort((a, b) =>
+        rowTitle(a).localeCompare(rowTitle(b), undefined, { sensitivity: 'base' })
+      )
+    } else {
+      // Slide order: first linked slide wins; unlinked activities sink, newest first.
+      sorted.sort((a, b) => {
+        const slidesA = rowSlideNumbers(a)
+        const slidesB = rowSlideNumbers(b)
+        const minA = slidesA.length > 0 ? Math.min(...slidesA) : Infinity
+        const minB = slidesB.length > 0 ? Math.min(...slidesB) : Infinity
+        if (minA !== minB) {
+          return minA - minB
+        }
+        return sortKeyMs(b.sortAt) - sortKeyMs(a.sortAt)
+      })
+    }
+    return sorted
+  }
+
+  const visibleActiveRows = refineRows(mergedActiveRows)
+  const visibleInactiveRows = refineRows(mergedInactiveRows)
+
   const hasAnyActivity =
     mergedActiveRows.length > 0 || mergedInactiveRows.length > 0
+  const searchHidesEverything =
+    hasAnyActivity && visibleActiveRows.length === 0 && visibleInactiveRows.length === 0
 
   const closeDeleteModal = () => {
     if (!deleteBusy) {
@@ -370,9 +443,15 @@ export function SessionActiveActivitiesPanel({
                   : 'No active activities right now. Open a poll, Q&A, or discussion from the moderation tools below.'}
           </p>
         </div>
+      ) : searchHidesEverything ? (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+          <p className="text-sm text-muted">
+            No activities match your search. Try another title or slide number.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {mergedActiveRows.map((row) => {
+          {visibleActiveRows.map((row) => {
             if (row.kind === 'poll') {
               return (
                 <ActivePollActivityCard
@@ -447,7 +526,7 @@ export function SessionActiveActivitiesPanel({
             )
           })}
 
-          {mergedInactiveRows.map((row) => {
+          {visibleInactiveRows.map((row) => {
             if (row.kind === 'poll') {
               return (
                 <ActivePollActivityCard
