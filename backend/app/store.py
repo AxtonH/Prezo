@@ -33,6 +33,7 @@ from .models import (
     SessionActivity,
     SessionSnapshot,
     SessionStatus,
+    WidgetPresetLibrary,
 )
 
 
@@ -195,6 +196,8 @@ class InMemoryStore:
         self._saved_artifact_versions_by_user: dict[
             str, dict[str, list[SavedArtifactVersionData]]
         ] = defaultdict(lambda: defaultdict(list))
+        self._widget_presets_by_user: dict[str, dict[str, Any]] = {}
+        self._widget_presets_updated_at: dict[str, datetime] = {}
 
     async def create_session(self, title: str | None, user_id: str) -> Session:
         async with self._lock:
@@ -855,6 +858,25 @@ class InMemoryStore:
             if not existing:
                 raise NotFoundError("saved theme not found")
             return self._to_saved_theme(existing)
+
+    async def get_widget_preset_library(self, user_id: str) -> WidgetPresetLibrary | None:
+        async with self._lock:
+            data = self._widget_presets_by_user.get(user_id)
+            if data is None:
+                return None
+            return WidgetPresetLibrary(
+                data=clone_dict(data),
+                updated_at=self._widget_presets_updated_at.get(user_id),
+            )
+
+    async def save_widget_preset_library(
+        self, user_id: str, data: dict[str, Any]
+    ) -> WidgetPresetLibrary:
+        async with self._lock:
+            now = utc_now()
+            self._widget_presets_by_user[user_id] = clone_dict(data)
+            self._widget_presets_updated_at[user_id] = now
+            return WidgetPresetLibrary(data=clone_dict(data), updated_at=now)
 
     async def list_brand_profiles(self, user_id: str) -> list[BrandProfile]:
         async with self._lock:

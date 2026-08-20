@@ -916,7 +916,11 @@
     if (action === 'save' && message.savedId) {
       pollSelectedPresetId = message.savedId
       pollPresetBaseline = designSignature(readPollDesign())
-      setPollPresetHint('Design saved.')
+      setPollPresetHint(
+        message.synced
+          ? 'Design saved to your account.'
+          : 'Design saved on this device. Sign in to the Prezo panel to sync it to your account.'
+      )
     } else if (action === 'rename') {
       setPollPresetHint('Design renamed.')
     } else if (action === 'delete') {

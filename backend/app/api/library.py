@@ -18,6 +18,8 @@ from ..models import (
     SavedArtifactUpsert,
     SavedTheme,
     SavedThemeUpsert,
+    WidgetPresetLibrary,
+    WidgetPresetLibraryUpsert,
 )
 from ..store import InMemoryStore, NotFoundError
 
@@ -116,6 +118,99 @@ async def delete_saved_artifact(
         return await store.delete_saved_artifact(user.id, normalized_name)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# --------------------------------------------------------------------------
+# Widget design presets (widget styler dialog). One JSON document per user,
+# same shape as the add-in's local cache, so sync is a plain GET/PUT and the
+# merge logic stays in function-file where the local cache lives.
+# --------------------------------------------------------------------------
+
+widgets_router = APIRouter(prefix="/library/widgets", tags=["library"])
+
+WIDGET_PRESET_KINDS = ("poll", "qna", "discussion")
+WIDGET_PRESET_LIMIT = 30
+WIDGET_PRESET_STYLE_MAX_KEYS = 40
+
+
+def sanitize_widget_preset_library(data: object) -> dict:
+    """Keep only well-formed kinds/presets; silently drop the rest.
+
+    The client is the sole writer, so malformed input means a bug or a
+    hand-edited payload — sanitizing beats erroring because a single bad
+    entry must not brick the whole library.
+    """
+    result: dict = {}
+    source = data if isinstance(data, dict) else {}
+    for kind in WIDGET_PRESET_KINDS:
+        bucket = source.get(kind)
+        if not isinstance(bucket, dict):
+            continue
+        raw_presets = bucket.get("presets")
+        presets: list[dict] = []
+        seen_ids: set[str] = set()
+        if isinstance(raw_presets, list):
+            for entry in raw_presets:
+                if len(presets) >= WIDGET_PRESET_LIMIT:
+                    break
+                if not isinstance(entry, dict):
+                    continue
+                preset_id = entry.get("id")
+                name = entry.get("name")
+                style = entry.get("style")
+                if not isinstance(preset_id, str) or not preset_id.strip():
+                    continue
+                preset_id = preset_id.strip()[:64]
+                if preset_id in seen_ids:
+                    continue
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                if not isinstance(style, dict) or len(style) > WIDGET_PRESET_STYLE_MAX_KEYS:
+                    continue
+                seen_ids.add(preset_id)
+                cleaned: dict = {
+                    "id": preset_id,
+                    "name": " ".join(name.split())[:60],
+                    "style": style,
+                }
+                updated_at = entry.get("updatedAt")
+                if isinstance(updated_at, str) and updated_at:
+                    cleaned["updatedAt"] = updated_at[:40]
+                presets.append(cleaned)
+        default_id = bucket.get("defaultId")
+        result[kind] = {
+            "presets": presets,
+            "defaultId": default_id
+            if isinstance(default_id, str)
+            and any(preset["id"] == default_id for preset in presets)
+            else None,
+        }
+    return result
+
+
+@widgets_router.get("/presets", response_model=WidgetPresetLibrary)
+async def get_widget_presets(
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> WidgetPresetLibrary:
+    library = await store.get_widget_preset_library(user.id)
+    if library is None:
+        return WidgetPresetLibrary(data={}, updated_at=None)
+    return WidgetPresetLibrary(
+        data=sanitize_widget_preset_library(library.data),
+        updated_at=library.updated_at,
+    )
+
+
+@widgets_router.put("/presets", response_model=WidgetPresetLibrary)
+async def save_widget_presets(
+    payload: WidgetPresetLibraryUpsert,
+    store: InMemoryStore = Depends(get_store),
+    user: AuthUser = Depends(get_library_user),
+) -> WidgetPresetLibrary:
+    return await store.save_widget_preset_library(
+        user.id, sanitize_widget_preset_library(payload.data)
+    )
 
 
 @router.get("/artifacts/{name}/versions", response_model=list[SavedArtifactVersion])

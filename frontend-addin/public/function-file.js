@@ -2993,7 +2993,7 @@
     }
   }
 
-  const sendWidgetPresets = (kind, savedId) => {
+  const sendWidgetPresets = (kind, savedId, synced) => {
     if (!activeDialog) return
     const { presets, defaultId } = presetsForKind(readPresetStore(), kind)
     activeDialog.messageChild(
@@ -3002,9 +3002,134 @@
         kind,
         presets,
         defaultId,
-        savedId: savedId || null
+        savedId: savedId || null,
+        /** true = the account copy on the server matches; false = this
+         * device only (signed out, token expired, or the API was down). */
+        synced: Boolean(synced)
       })
     )
+  }
+
+  /**
+   * Bearer auth for the presets API: the signed-in Supabase token when the
+   * taskpane shares one, else the library sync token bridge the taskpane
+   * writes for embeds — get_library_user on the backend accepts both.
+   */
+  const getPresetAuth = () => {
+    const supabaseToken = getSupabaseAccessToken()
+    if (supabaseToken) {
+      return { token: supabaseToken, apiBaseUrl: resolveApiBaseUrl(null) }
+    }
+    try {
+      if (!window.localStorage) return null
+      const raw = localStorage.getItem('prezo:library-sync')
+      if (!raw) return null
+      const bridge = JSON.parse(raw)
+      if (!bridge || !bridge.token) return null
+      const expiresMs = Date.parse(bridge.expiresAt || '')
+      if (Number.isFinite(expiresMs) && expiresMs - Date.now() < 30 * 1000) {
+        return null
+      }
+      return {
+        token: bridge.token,
+        apiBaseUrl: bridge.apiBaseUrl || resolveApiBaseUrl(null)
+      }
+    } catch {
+      return null
+    }
+  }
+
+  const presetApiFetch = async (auth, method, body) => {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null
+    const timer = controller ? window.setTimeout(() => controller.abort(), 6000) : null
+    try {
+      const response = await fetch(`${auth.apiBaseUrl}/library/widgets/presets`, {
+        method,
+        headers: Object.assign(
+          { Authorization: `Bearer ${auth.token}` },
+          body ? { 'Content-Type': 'application/json' } : {}
+        ),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller ? controller.signal : undefined
+      })
+      if (!response.ok) {
+        throw new Error(`Preset sync failed (${response.status})`)
+      }
+      return await response.json()
+    } finally {
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }
+
+  /** Union by preset id, newer updatedAt wins; the account's defaultId is
+   * preferred when it still exists after the merge. */
+  const mergePresetBuckets = (localBucket, remoteBucket) => {
+    const byId = {}
+    const order = []
+    const consume = (list) => {
+      list.forEach((entry) => {
+        if (!entry || typeof entry.id !== 'string') return
+        const existing = byId[entry.id]
+        if (!existing) {
+          byId[entry.id] = entry
+          order.push(entry.id)
+          return
+        }
+        const existingAt = Date.parse(existing.updatedAt || '') || 0
+        const entryAt = Date.parse(entry.updatedAt || '') || 0
+        if (entryAt >= existingAt) {
+          byId[entry.id] = entry
+        }
+      })
+    }
+    consume(remoteBucket.presets || [])
+    consume(localBucket.presets || [])
+    const presets = order.map((id) => byId[id])
+    const defaultId =
+      remoteBucket.defaultId && byId[remoteBucket.defaultId]
+        ? remoteBucket.defaultId
+        : localBucket.defaultId && byId[localBucket.defaultId]
+          ? localBucket.defaultId
+          : null
+    return { presets, defaultId }
+  }
+
+  /**
+   * Pull the account library, merge the local cache in (saves made while
+   * signed out survive), persist the merge locally, and push it back up when
+   * the merge holds anything the account copy lacked. Returns true when the
+   * account copy is in sync afterwards; local storage stays the offline
+   * fallback either way.
+   */
+  const syncPresetStoreWithAccount = async () => {
+    const auth = getPresetAuth()
+    if (!auth) return false
+    const remoteDoc = await presetApiFetch(auth, 'GET')
+    const remoteData =
+      remoteDoc && remoteDoc.data && typeof remoteDoc.data === 'object' ? remoteDoc.data : {}
+    const store = readPresetStore()
+    const merged = {}
+    let differsFromRemote = false
+    Object.keys(PRESET_KINDS).forEach((kind) => {
+      const localBucket = presetsForKind(store, kind)
+      const remoteBucket = presetsForKind(remoteData, kind)
+      merged[kind] = mergePresetBuckets(localBucket, remoteBucket)
+      if (JSON.stringify(merged[kind]) !== JSON.stringify(remoteBucket)) {
+        differsFromRemote = true
+      }
+    })
+    writePresetStore(merged)
+    if (differsFromRemote) {
+      await presetApiFetch(auth, 'PUT', { data: merged })
+    }
+    return true
+  }
+
+  const pushPresetStoreToAccount = async () => {
+    const auth = getPresetAuth()
+    if (!auth) return false
+    await presetApiFetch(auth, 'PUT', { data: readPresetStore() })
+    return true
   }
 
   const sendPresetError = (kind, message) => {
@@ -3198,7 +3323,13 @@
     if (message && message.type === 'request-widget-presets') {
       const kind = PRESET_KINDS[message.kind] ? message.kind : null
       if (kind) {
-        sendWidgetPresets(kind)
+        let synced = false
+        try {
+          synced = await syncPresetStoreWithAccount()
+        } catch {
+          synced = false
+        }
+        sendWidgetPresets(kind, null, synced)
       }
       return
     }
@@ -3231,7 +3362,13 @@
         if (!writePresetStore(store)) {
           throw new Error('Could not save the design on this machine.')
         }
-        sendWidgetPresets(kind, id)
+        let synced = false
+        try {
+          synced = await pushPresetStoreToAccount()
+        } catch {
+          synced = false
+        }
+        sendWidgetPresets(kind, id, synced)
       } catch (error) {
         sendPresetError(kind, error && error.message ? error.message : 'Could not save the design.')
       }
@@ -3251,7 +3388,13 @@
         sendPresetError(kind, 'Could not update saved designs on this machine.')
         return
       }
-      sendWidgetPresets(kind)
+      let deleteSynced = false
+      try {
+        deleteSynced = await pushPresetStoreToAccount()
+      } catch {
+        deleteSynced = false
+      }
+      sendWidgetPresets(kind, null, deleteSynced)
       return
     }
     if (message && message.type === 'set-default-widget-preset') {
@@ -3269,7 +3412,13 @@
         sendPresetError(kind, 'Could not update saved designs on this machine.')
         return
       }
-      sendWidgetPresets(kind)
+      let defaultSynced = false
+      try {
+        defaultSynced = await pushPresetStoreToAccount()
+      } catch {
+        defaultSynced = false
+      }
+      sendWidgetPresets(kind, null, defaultSynced)
       return
     }
     if (message && message.type === 'request-slide-widget-style') {

@@ -36,12 +36,14 @@ from .models import (
     Session,
     SessionSnapshot,
     SessionStatus,
+    WidgetPresetLibrary,
 )
 from .store import (
     ConflictError,
     NotFoundError,
     PermissionDeniedError,
     generate_code,
+    utc_now,
 )
 
 
@@ -1485,6 +1487,42 @@ class SupabaseStore:
         if not data:
             raise NotFoundError("saved theme not found")
         return self._to_saved_theme(data[0])
+
+    async def get_widget_preset_library(self, user_id: str) -> WidgetPresetLibrary | None:
+        rows = await self._select(
+            "widget_preset_libraries",
+            {"select": "*", "user_id": f"eq.{user_id}"},
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return WidgetPresetLibrary(
+            data=row.get("data") or {},
+            updated_at=row.get("updated_at"),
+        )
+
+    async def save_widget_preset_library(
+        self, user_id: str, data: dict[str, Any]
+    ) -> WidgetPresetLibrary:
+        response = await self._request(
+            "POST",
+            "widget_preset_libraries",
+            params={"on_conflict": "user_id"},
+            json={
+                "user_id": user_id,
+                "data": data,
+                "updated_at": utc_now().isoformat(),
+            },
+            prefer="resolution=merge-duplicates,return=representation",
+        )
+        rows = response.json()
+        if not rows:
+            raise SupabaseError(500, "failed to save widget presets")
+        row = rows[0]
+        return WidgetPresetLibrary(
+            data=row.get("data") or {},
+            updated_at=row.get("updated_at"),
+        )
 
     async def list_brand_profiles(self, user_id: str) -> list[BrandProfile]:
         rows = await self._select(

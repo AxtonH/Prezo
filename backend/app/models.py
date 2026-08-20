@@ -290,6 +290,22 @@ class LibrarySyncToken(BaseModel):
     expires_at: datetime
 
 
+class WidgetPresetLibrary(BaseModel):
+    """Per-user widget design presets, stored as one document.
+
+    ``data`` mirrors the add-in's local cache shape exactly:
+    ``{kind: {"presets": [{id, name, style, updatedAt?}], "defaultId": str|None}}``
+    so sync is a plain upload/download and merge logic stays client-side.
+    """
+
+    data: dict[str, Any]
+    updated_at: datetime | None = None
+
+
+class WidgetPresetLibraryUpsert(BaseModel):
+    data: dict[str, Any]
+
+
 class QnaConfigUpdate(BaseModel):
     mode: QnaMode
     prompt: str | None = Field(default=None, max_length=200)
