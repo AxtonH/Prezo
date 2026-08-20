@@ -259,7 +259,7 @@ export function CreateActivityMenu({
             setFormError(null)
             setOpen(true)
           }}
-          className="!inline-flex !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-1.5 !text-xs !shrink-0"
+          className="!inline-flex !h-9 !items-center !gap-1.5 !bg-primary !text-white !rounded-xl !font-bold !shadow-sm !border-0 hover:!bg-primary-dark active:!scale-[0.98] !transition-all !px-2.5 !py-0 !text-xs !shrink-0"
         >
           <span className="material-symbols-outlined text-lg" aria-hidden>
             add

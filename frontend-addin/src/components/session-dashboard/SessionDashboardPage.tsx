@@ -283,22 +283,21 @@ export function SessionDashboardPage({
                 onChange={(e) => setActivitySearch(e.target.value)}
                 placeholder="Search by title or slide"
                 aria-label="Search activities by title or slide"
-                className="!w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !pl-8 !pr-3 !py-1.5 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
+                className="!h-9 !w-full !rounded-xl !border !border-slate-200 !bg-slate-50 !pl-8 !pr-3 !py-0 !text-sm focus:!border-primary focus:!ring-2 focus:!ring-primary/20 !outline-none !transition-all"
               />
             </div>
             <div className="relative shrink-0" data-activity-sort-menu>
               <button
                 type="button"
                 onClick={() => setSortMenuOpen((v) => !v)}
-                className="!inline-flex !items-center !gap-1 !rounded-xl !border !border-slate-200 !bg-white !px-2.5 !py-1.5 !text-xs !font-semibold !text-slate-600 hover:!border-primary/40 hover:!text-primary !shadow-none !transition-all"
-                title="Sort activities"
+                className="!inline-flex !h-9 !w-9 !items-center !justify-center !rounded-xl !border !border-slate-200 !bg-white !p-0 !text-slate-600 hover:!border-primary/40 hover:!text-primary !shadow-none !transition-all"
+                title={`Sort activities (${activeSortLabel})`}
                 aria-label="Sort activities"
                 aria-expanded={sortMenuOpen}
               >
                 <span className="material-symbols-outlined text-lg" aria-hidden>
                   sort
                 </span>
-                <span className="max-[430px]:hidden">{activeSortLabel}</span>
               </button>
               {sortMenuOpen ? (
                 <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
