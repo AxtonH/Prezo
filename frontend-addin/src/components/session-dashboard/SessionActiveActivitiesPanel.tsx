@@ -98,6 +98,16 @@ function sortKeyMs(iso: string): number {
   return new Date(iso).getTime()
 }
 
+/**
+ * Toolbar search also matches activity-type words ("polls", "q&a",
+ * "open discussion"), prefix-style, so partial typing narrows by kind too.
+ */
+const KIND_SEARCH_ALIASES: Record<'poll' | 'qna' | 'discussion', string[]> = {
+  poll: ['poll', 'polls'],
+  qna: ['qna', 'q&a', 'audience q&a', 'questions'],
+  discussion: ['discussion', 'discussions', 'open discussion', 'open discussions']
+}
+
 type DiscussionBlock = {
   prompt: QnaPrompt
   pendingQuestions: Question[]
@@ -312,6 +322,7 @@ export function SessionActiveActivitiesPanel({
       out = out.filter(
         (row) =>
           rowTitle(row).toLowerCase().includes(q) ||
+          KIND_SEARCH_ALIASES[row.kind].some((alias) => alias.startsWith(q)) ||
           (slideQ !== '' && rowSlideNumbers(row).some((n) => String(n) === slideQ))
       )
     }
