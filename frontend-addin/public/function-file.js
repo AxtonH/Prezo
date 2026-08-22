@@ -393,11 +393,11 @@
     return response.json()
   }
 
-  const updateQnaWidget = async (sessionId, code, questions, prompts) => {
+  const updateQnaWidget = async (sessionId, code, questions, prompts, options) => {
     const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
     await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
-      slides.load('items')
+      slides.load('items/id')
       await context.sync()
 
       const slideInfos = slides.items.map((slide) => {
@@ -417,6 +417,12 @@
       await context.sync()
 
       for (const info of slideInfos) {
+        /** Post-insert refresh scope: an insert must not rewrite every
+         * widget in the deck — unconditional writes stomp designer-
+         * customized widgets on other slides. */
+        if (options && options.onlySlideId && info.slide.id !== options.onlySlideId) {
+          continue
+        }
         const isPending =
           !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
         if (!isPending && (info.sessionTag.isNullObject || info.sessionTag.value !== sessionId)) {
@@ -683,13 +689,13 @@
     }
   }
 
-  const updatePollWidget = async (sessionId, code, polls) => {
+  const updatePollWidget = async (sessionId, code, polls, options) => {
     const pollMap = new Map((polls || []).map((poll) => [poll.id, poll]))
     const titleText = buildPollTitle(code)
 
     await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
-      slides.load('items')
+      slides.load('items/id')
       await context.sync()
 
       const recoverPollShapeIds = async (slide, isVerticalLayout) => {
@@ -801,6 +807,12 @@
       await context.sync()
 
       for (const info of slideInfos) {
+        /** Post-insert refresh scope: an insert must not rewrite every
+         * widget in the deck — unconditional writes stomp designer-
+         * customized widgets on other slides. */
+        if (options && options.onlySlideId && info.slide.id !== options.onlySlideId) {
+          continue
+        }
         const isPending =
           !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
         const hasSessionMatch =
@@ -1304,11 +1316,11 @@
       await context.sync()
     })
   }
-  const updateDiscussionWidget = async (sessionId, code, questions, prompts) => {
+  const updateDiscussionWidget = async (sessionId, code, questions, prompts, options) => {
     const promptMap = new Map((prompts || []).map((entry) => [entry.id, entry]))
     await runPowerPoint(async (context) => {
       const slides = context.presentation.slides
-      slides.load('items')
+      slides.load('items/id')
       await context.sync()
 
       const slideInfos = slides.items.map((slide) => {
@@ -1328,6 +1340,12 @@
       await context.sync()
 
       for (const info of slideInfos) {
+        /** Post-insert refresh scope: an insert must not rewrite every
+         * widget in the deck — unconditional writes stomp designer-
+         * customized widgets on other slides. */
+        if (options && options.onlySlideId && info.slide.id !== options.onlySlideId) {
+          continue
+        }
         const isPending =
           !info.pendingTag.isNullObject && info.pendingTag.value === 'true'
         if (!isPending && (info.sessionTag.isNullObject || info.sessionTag.value !== sessionId)) {
@@ -1548,9 +1566,12 @@
     const eyebrowText = mode === 'prompt' ? PROMPT_EYEBROW_TEXT : EYEBROW_TEXT
     const emptyBody = mode === 'prompt' ? 'No answers yet.' : 'No approved questions yet.'
 
+    /** The just-inserted slide's id — scopes the post-insert refresh so it
+     * cannot rewrite widgets on other slides. */
+    let insertedSlideId = null
     await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
-      slides.load('items')
+      slides.load('items/id')
       const pageSetup = context.presentation.pageSetup
       pageSetup.load(['slideWidth', 'slideHeight'])
       await context.sync()
@@ -1559,6 +1580,7 @@
       if (!slide) {
         throw new Error('Select a slide before inserting a widget.')
       }
+      insertedSlideId = slide.id
 
       const existingSessionTag = slide.tags.getItemOrNullObject(SESSION_TAG)
       const existingPendingTag = slide.tags.getItemOrNullObject(WIDGET_PENDING_TAG)
@@ -1862,7 +1884,8 @@
           sessionId,
           code,
           snapshot.questions || [],
-          snapshot.prompts || []
+          snapshot.prompts || [],
+          insertedSlideId ? { onlySlideId: insertedSlideId } : undefined
         )
       } catch (error) {
         console.warn('Failed to refresh Q&A widget', error)
@@ -1882,9 +1905,12 @@
     const eyebrowText = DISCUSSION_EYEBROW_TEXT
     const emptyBody = DISCUSSION_EMPTY_BODY
 
+    /** The just-inserted slide's id — scopes the post-insert refresh so it
+     * cannot rewrite widgets on other slides. */
+    let insertedSlideId = null
     await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
-      slides.load('items')
+      slides.load('items/id')
       const pageSetup = context.presentation.pageSetup
       pageSetup.load(['slideWidth', 'slideHeight'])
       await context.sync()
@@ -1893,6 +1919,7 @@
       if (!slide) {
         throw new Error('Select a slide before inserting a widget.')
       }
+      insertedSlideId = slide.id
 
       const existingSessionTag = slide.tags.getItemOrNullObject(DISCUSSION_SESSION_TAG)
       const existingPendingTag = slide.tags.getItemOrNullObject(DISCUSSION_PENDING_TAG)
@@ -2192,7 +2219,8 @@
           sessionId,
           code,
           snapshot.questions || [],
-          snapshot.prompts || []
+          snapshot.prompts || [],
+          insertedSlideId ? { onlySlideId: insertedSlideId } : undefined
         )
       } catch (error) {
         console.warn('Failed to refresh open discussion widget', error)
@@ -2215,9 +2243,12 @@
      * QR insert once the batch has committed. */
     let qrBox = null
 
+    /** The just-inserted slide's id — scopes the post-insert refresh so it
+     * cannot rewrite widgets on other slides. */
+    let insertedSlideId = null
     await runPowerPoint(async (context) => {
       const slides = context.presentation.getSelectedSlides()
-      slides.load('items')
+      slides.load('items/id')
       const pageSetup = context.presentation.pageSetup
       pageSetup.load(['slideWidth', 'slideHeight'])
       await context.sync()
@@ -2226,6 +2257,7 @@
       if (!slide) {
         throw new Error('Select a slide before inserting a widget.')
       }
+      insertedSlideId = slide.id
 
       const existingSessionTag = slide.tags.getItemOrNullObject(POLL_SESSION_TAG)
       const existingShapesTag = slide.tags.getItemOrNullObject(POLL_SHAPES_TAG)
@@ -2512,7 +2544,12 @@
     if (hasSession && sessionId) {
       try {
         const snapshot = await fetchSnapshot(binding)
-        await updatePollWidget(sessionId, code, snapshot.polls || [])
+        await updatePollWidget(
+          sessionId,
+          code,
+          snapshot.polls || [],
+          insertedSlideId ? { onlySlideId: insertedSlideId } : undefined
+        )
       } catch (error) {
         console.warn('Failed to refresh poll widget', error)
       }
