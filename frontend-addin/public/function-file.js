@@ -912,7 +912,10 @@
           const fill = resolveShape(item.fill)
           const group = item.group ? resolveShape(item.group) : null
           label.load('id')
-          bg.load(['id', 'width', 'left'])
+          /** top/height loaded too: the ratio/skeleton fill writes read them,
+           * and with re-layout gated off (generation unknown) nothing writes
+           * them first — reading an unloaded scalar throws. */
+          bg.load(['id', 'width', 'left', 'top', 'height'])
           fill.load('id')
           if (group) group.load('id')
           return { label, bg, fill, group }
@@ -1099,12 +1102,17 @@
         }
         const scale = style.spacingScale
         const paddingX = 24
-        /** Row re-layout must match the widget's structure: legacy widgets
-         * (branded title) AND v3 widgets (question + votes + QR header) use
-         * the 108 offset; only the short-lived titleless generation between
-         * them (no marker, no QR) sits at 76. */
-        const optionStartOffset =
-          (shapeIds.title || shapeIds.qr || (shapeIds.layoutV || 0) >= 3 ? 108 : 76) * scale
+        /** Row re-layout runs ONLY when the widget's header generation is
+         * provably known: a branded title (legacy) or a v3 marker/QR — both
+         * use the 108 offset. A shapes tag with none of these is ambiguous:
+         * it may be a recovered v3 widget whose tag rebuild dropped layoutV,
+         * and re-laying it at the old 76 offset slid the rows up over the
+         * vote counter. Ambiguous widgets keep their current geometry —
+         * matching the taskpane engine, which never re-lays rows at all. */
+        const layoutGenerationKnown = Boolean(
+          shapeIds.title || shapeIds.qr || (shapeIds.layoutV || 0) >= 3
+        )
+        const optionStartOffset = 108 * scale
         const barThickness = 10 * scale * style.barThicknessScale
         const rowHeight = Math.max(34 * scale, barThickness + 18)
         const verticalLabelHeight = 16 * scale
@@ -1113,7 +1121,7 @@
         let columnWidth = null
         let verticalBarWidth = null
         let verticalBarAreaHeight = null
-        if (container && !container.isNullObject) {
+        if (layoutGenerationKnown && container && !container.isNullObject) {
           fullBarWidth = container.width - paddingX * 2
           optionStartTop = container.top + optionStartOffset
           const columnCount = Math.max(1, visibleOptions)
