@@ -96,7 +96,9 @@ class QuestionVote(BaseModel):
 
 class PollCreate(BaseModel):
     question: str = Field(min_length=1, max_length=200)
-    options: list[str] = Field(min_length=2, max_length=10)
+    # Capped at 5 because slide widgets render at most 5 option rows — every
+    # option must be visible on the widget (was 10 before 20/08/2026).
+    options: list[str] = Field(min_length=2, max_length=5)
     allow_multiple: bool = False
 
 

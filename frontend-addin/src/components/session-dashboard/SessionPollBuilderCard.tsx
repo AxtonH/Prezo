@@ -7,6 +7,10 @@ export interface SessionPollBuilderCardProps {
 
 type OptionRow = { id: string; value: string }
 
+/** Slide widgets render at most 5 option rows — polls are capped to match
+ * so every option is always visible on the widget. */
+const MAX_POLL_OPTIONS = 5
+
 function newOptionRow(value = ''): OptionRow {
   return { id: crypto.randomUUID(), value }
 }
@@ -21,7 +25,8 @@ export function SessionPollBuilderCard({ onCreatePoll, isBusy = false }: Session
     setOptions((prev) => prev.map((row) => (row.id === id ? { ...row, value } : row)))
   }
 
-  const addOption = () => setOptions((prev) => [...prev, newOptionRow()])
+  const addOption = () =>
+    setOptions((prev) => (prev.length >= MAX_POLL_OPTIONS ? prev : [...prev, newOptionRow()]))
 
   const removeOption = (id: string) => {
     setOptions((prev) => prev.filter((row) => row.id !== id))
@@ -93,15 +98,21 @@ export function SessionPollBuilderCard({ onCreatePoll, isBusy = false }: Session
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={addOption}
-            disabled={isBusy}
-            className="!mt-2 !inline-flex !items-center !gap-1 !text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
-          >
-            <span className="material-symbols-outlined text-lg">add</span>
-            Add option
-          </button>
+          {options.length < MAX_POLL_OPTIONS ? (
+            <button
+              type="button"
+              onClick={addOption}
+              disabled={isBusy}
+              className="!mt-2 !inline-flex !items-center !gap-1 !text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              Add option
+            </button>
+          ) : (
+            <p className="!mt-2 !mb-0 text-xs text-muted">
+              Polls support up to {MAX_POLL_OPTIONS} options.
+            </p>
+          )}
         </div>
 
         <label className="flex items-center gap-2 cursor-pointer select-none">

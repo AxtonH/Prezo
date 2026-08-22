@@ -621,8 +621,11 @@ class InMemoryStore:
             remaining = len(poll.options) - len(removed) + len(add_options or [])
             if remaining < 2:
                 raise ConflictError("a poll needs at least two options")
-            if remaining > 10:
-                raise ConflictError("a poll can have at most ten options")
+            # Growth-only cap: slide widgets render at most 5 rows. Legacy
+            # polls created above the cap stay editable (relabel/remove);
+            # only APPENDING past the cap is refused.
+            if add_options and remaining > 5:
+                raise ConflictError("a poll can have at most five options")
             if allow_multiple is not None and allow_multiple != poll.allow_multiple:
                 if any(opt.votes for opt in poll.options):
                     raise ConflictError(

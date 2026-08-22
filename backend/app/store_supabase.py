@@ -1210,8 +1210,11 @@ class SupabaseStore:
         remaining = len(current_options) - len(removed) + len(add_options or [])
         if remaining < 2:
             raise ConflictError("a poll needs at least two options")
-        if remaining > 10:
-            raise ConflictError("a poll can have at most ten options")
+        # Growth-only cap: slide widgets render at most 5 rows. Legacy polls
+        # created above the cap stay editable (relabel/remove); only
+        # APPENDING past the cap is refused.
+        if add_options and remaining > 5:
+            raise ConflictError("a poll can have at most five options")
 
         poll_patch: dict[str, object] = {}
         if question is not None:

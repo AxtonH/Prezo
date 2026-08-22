@@ -126,8 +126,13 @@ export function EditActivityModal({
   const updateOptionRow = (index: number, value: string) => {
     setOptionRows((prev) => prev.map((r, i) => (i === index ? { ...r, label: value } : r)))
   }
+  /** Slide widgets render at most 5 option rows — polls are capped to match
+   * (legacy polls above the cap can be relabeled or shrunk, never grown). */
+  const MAX_POLL_OPTIONS = 5
   const addOptionRow = () =>
-    setOptionRows((prev) => [...prev, { id: null, label: '', votes: 0 }])
+    setOptionRows((prev) =>
+      prev.length >= MAX_POLL_OPTIONS ? prev : [...prev, { id: null, label: '', votes: 0 }]
+    )
   const removeOptionRow = (index: number) =>
     setOptionRows((prev) => prev.filter((_, i) => i !== index))
 
@@ -301,13 +306,19 @@ export function EditActivityModal({
                     ) : null}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={addOptionRow}
-                  className="!text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
-                >
-                  + Add option
-                </button>
+                {optionRows.length < MAX_POLL_OPTIONS ? (
+                  <button
+                    type="button"
+                    onClick={addOptionRow}
+                    className="!text-sm !font-semibold !text-primary !bg-transparent !border-0 !p-0 !shadow-none hover:!underline"
+                  >
+                    + Add option
+                  </button>
+                ) : (
+                  <p className="!m-0 text-xs text-muted">
+                    Polls support up to {MAX_POLL_OPTIONS} options.
+                  </p>
+                )}
               </div>
               <label
                 className={`flex items-center gap-2 text-sm text-slate-800 ${

@@ -99,9 +99,32 @@ class PollEditTests(TestCase):
         )
         self.assertEqual([o.label for o in poll.options], ["C", "D"])
 
-    def test_more_than_ten_options_is_conflict(self) -> None:
+    def test_growing_past_five_options_is_conflict(self) -> None:
         with self.assertRaises(HTTPException) as ctx:
-            self.update(PollUpdate(add_options=[f"X{i}" for i in range(8)]))
+            self.update(PollUpdate(add_options=["D", "E", "F"]))
+        self.assertEqual(ctx.exception.status_code, 409)
+
+    def test_legacy_over_cap_poll_stays_editable_but_cannot_grow(self) -> None:
+        """Polls created before the 5-option cap can still be relabeled and
+        shrunk — the cap only refuses APPENDS past five."""
+        legacy = run(
+            self.store.create_poll(
+                self.session.id, "Big?", ["A", "B", "C", "D", "E", "F"], False, HOST.id
+            )
+        )
+        relabeled = self.update(
+            PollUpdate(options={legacy.options[0].id: "A2"}), poll_id=legacy.id
+        )
+        self.assertEqual(relabeled.options[0].label, "A2")
+        self.assertEqual(len(relabeled.options), 6)
+
+        shrunk = self.update(
+            PollUpdate(remove_option_ids=[legacy.options[5].id]), poll_id=legacy.id
+        )
+        self.assertEqual(len(shrunk.options), 5)
+
+        with self.assertRaises(HTTPException) as ctx:
+            self.update(PollUpdate(add_options=["G"]), poll_id=legacy.id)
         self.assertEqual(ctx.exception.status_code, 409)
 
     def test_allow_multiple_flips_only_without_votes(self) -> None:
