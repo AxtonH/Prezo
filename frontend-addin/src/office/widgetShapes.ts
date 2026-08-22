@@ -2302,14 +2302,23 @@ export async function insertPollWidget(
               ]
           ).filter((value): value is string => Boolean(value))
           const shapes = ids.map((id) => slide.shapes.getItemOrNullObject(id))
-          shapes.forEach((shape) => shape.load('id'))
+          shapes.forEach((shape) => shape.load(['id', 'type']))
           await context.sync()
-          shapes.forEach((shape) => {
-            if (!shape.isNullObject) {
+          /** Groups first, every delete in its own isolated sync — deleting
+           * a row group kills its children, a second delete on a dead child
+           * throws GeneralException, and RichApi batches are not atomic (a
+           * mid-batch throw left the widget half-deleted). */
+          const live = shapes.filter((shape) => !shape.isNullObject)
+          const groupShapes = live.filter((shape) => shape.type === 'Group')
+          const looseShapes = live.filter((shape) => shape.type !== 'Group')
+          for (const shape of groupShapes.concat(looseShapes)) {
+            try {
               shape.delete()
+              await context.sync()
+            } catch {
+              // Already gone (child of a group deleted above) — fine.
             }
-          })
-          await context.sync()
+          }
         } catch {
           // ignore cleanup errors
         }
