@@ -4114,36 +4114,16 @@ import {
     state.artifact.reportedContentWidth = 0
     state.artifact.reportedContentHeight = 0
     state.artifact.floatingOpen = true
-    // Bake the deleted-element hide stylesheet into the srcdoc so deleted
-    // elements never paint visible on load — eliminates the flicker at the
-    // source, no masking/wait needed. Built from saved + pending hidden
-    // overrides (pending wins), matching what pushArtifactHiddenOverrides sends.
-    const bakedHiddenCss = buildArtifactHiddenCss(
-      mergeCopyIntoStyleOverrides(
-        { ...(state.artifact.savedStyleOverrides || {}) },
-        { hiddenOverrides: artifactDelete.getPendingHiddenOverrides() }
-      )
-    )
-    const srcDoc = buildArtifactSrcDoc(resolvedMarkup, {
-      instanceId: state.artifact.instanceId,
-      hiddenCss: bakedHiddenCss,
-      activityKind: state.activityKind
-    })
-    if (!srcDoc) {
-      return false
-    }
-    artifactBridge.setFrameHeight(520, { force: true })
-    // Hide the frame before it paints if this artifact has manual edits, so the
-    // un-edited version is never shown before the overrides land. Revealed in
-    // confirmArtifactRenderSuccess after the override push (with a safety
-    // timeout inside the mask helper).
-    maskArtifactFrameForOverrides()
-    el.artifactFrame.srcdoc = srcDoc
-    syncArtifactComposerVisibility()
     if (requestKind === 'edit') {
       // Preserve any pending position/size drags through an AI edit by
       // folding them into the savedStyleOverrides map alongside text/copy
       // overrides BEFORE clearing pendings.
+      //
+      // This MUST run before the hidden-CSS bake below: dropOverridesAiChanged
+      // discards stale __prezo_hidden overrides whose element the AI changed,
+      // and the baked stylesheet has to be built from the RECONCILED map — a
+      // stale hide baked into the srcdoc would swallow the AI's new element
+      // (e.g. user deletes the logo, later asks the AI for a new logo).
       const pendingCopyWithPositions = {
         ...pendingArtifactCopyOverrides,
         positionOverrides: artifactPosition.getPendingPositionOverrides(),
@@ -4186,6 +4166,34 @@ import {
         console.log('[prezo-debug] saved after AI edit:', window.__prezoDebug.lastAiEdit)
       } catch (e) { console.warn('[prezo-debug] failed', e) }
     }
+    // Bake the deleted-element hide stylesheet into the srcdoc so deleted
+    // elements never paint visible on load — eliminates the flicker at the
+    // source, no masking/wait needed. Built from saved + pending hidden
+    // overrides (pending wins), matching what pushArtifactHiddenOverrides sends.
+    // On the AI-edit path the pendings were just folded into saved and
+    // reconciled above, so this reads the post-reconciliation map.
+    const bakedHiddenCss = buildArtifactHiddenCss(
+      mergeCopyIntoStyleOverrides(
+        { ...(state.artifact.savedStyleOverrides || {}) },
+        { hiddenOverrides: artifactDelete.getPendingHiddenOverrides() }
+      )
+    )
+    const srcDoc = buildArtifactSrcDoc(resolvedMarkup, {
+      instanceId: state.artifact.instanceId,
+      hiddenCss: bakedHiddenCss,
+      activityKind: state.activityKind
+    })
+    if (!srcDoc) {
+      return false
+    }
+    artifactBridge.setFrameHeight(520, { force: true })
+    // Hide the frame before it paints if this artifact has manual edits, so the
+    // un-edited version is never shown before the overrides land. Revealed in
+    // confirmArtifactRenderSuccess after the override push (with a safety
+    // timeout inside the mask helper).
+    maskArtifactFrameForOverrides()
+    el.artifactFrame.srcdoc = srcDoc
+    syncArtifactComposerVisibility()
     return true
   }
 

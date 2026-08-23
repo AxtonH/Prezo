@@ -679,6 +679,29 @@ def compact_artifact_patch_plan_edits(
             normalized_edit["html"] = snippet
             normalized_edits.append(normalized_edit)
 
+        elif edit_type == "replace_text":
+            old_text = raw_edit.get("old")
+            new_text = raw_edit.get("new")
+            if not isinstance(old_text, str) or not old_text:
+                continue
+            if not isinstance(new_text, str) or old_text == new_text:
+                continue
+            normalized_edit = dict(raw_edit)
+            normalized_edit["type"] = "replace_text"
+            file_name = str(raw_edit.get("file") or ARTIFACT_PACKAGE_RENDERER_FILE).strip()
+            normalized_edit["file"] = file_name or ARTIFACT_PACKAGE_RENDERER_FILE
+            dedup_key = (
+                "replace_text",
+                normalized_edit["file"].lower(),
+                old_text,
+            )
+            existing_index = dedup_index_by_key.get(dedup_key)
+            if existing_index is not None:
+                normalized_edits[existing_index] = normalized_edit
+                continue
+            dedup_index_by_key[dedup_key] = len(normalized_edits)
+            normalized_edits.append(normalized_edit)
+
         else:
             continue
 
@@ -796,6 +819,10 @@ def _format_debug_edit(edit: dict[str, Any]) -> str:
     if edit_type == "insert_html":
         html_preview = str(edit.get("html", ""))[:80]
         return f"{edit_type} | target={edit.get('target','')} pos={edit.get('position','beforeend')} | {html_preview}"
+    if edit_type == "replace_text":
+        old_preview = str(edit.get("old", ""))[:60]
+        new_preview = str(edit.get("new", ""))[:60]
+        return f"{edit_type} | file={edit.get('file','')} | {old_preview} -> {new_preview}"
     return f"{edit_type} | {edit}"
 
 def _build_debug_patch_plan(

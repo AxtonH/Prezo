@@ -468,9 +468,14 @@ export function buildArtifactHiddenSelectors(stableId, ov) {
   }
   const cssLabel = ov && typeof ov.cssLabel === 'string' && ov.cssLabel ? ov.cssLabel : ''
   const anchor = ov && typeof ov.anchor === 'string' && ov.anchor ? ov.anchor : ''
+  // A bare tag name ("img", "small") as an UNSCOPED selector hides every such
+  // element in the document — including ones the AI adds later. Emit the bare
+  // fallback only when the label is specific (id/class/attr) or when there is
+  // no anchor to scope with at all.
+  const bareTagLabel = /^[a-zA-Z][a-zA-Z0-9-]*$/.test(cssLabel)
   if (cssLabel) {
     if (anchor) sels.push(`${anchor} ${cssLabel}`)
-    sels.push(cssLabel)
+    if (!bareTagLabel || !anchor) sels.push(cssLabel)
   } else if (anchor) {
     sels.push(anchor)
   }

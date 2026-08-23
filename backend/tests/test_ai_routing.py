@@ -2879,5 +2879,124 @@ class TestInlineImageBuildEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(forwarded), 6)
 
 
+class TestManualOverridesVsAiEdits(unittest.IsolatedAsyncioTestCase):
+    """Regression coverage for AI edits silently no-oping on artifacts that
+    carry manual edits (style/position/hidden overrides)."""
+
+    def test_compact_artifact_patch_plan_keeps_replace_text_edits(self) -> None:
+        edits = [
+            {"type": "replace_text", "file": "renderer.js", "old": "#ff0000", "new": "#00ff00"},
+            {"type": "set_css_property", "selector": ".car", "property": "fill", "value": "#123456"},
+            # Same (file, old) — the later edit must win, mirroring set_css_property dedupe.
+            {"type": "replace_text", "file": "renderer.js", "old": "#ff0000", "new": "#0000ff"},
+            # Invalid replace_text edits are dropped.
+            {"type": "replace_text", "file": "renderer.js", "old": "", "new": "x"},
+            {"type": "replace_text", "file": "renderer.js", "old": "same", "new": "same"},
+        ]
+        compacted = ai_api.compact_artifact_patch_plan_edits(
+            edits,
+            original_edit_request="change the car color",
+            max_edits=10,
+        )
+        replace_edits = [e for e in compacted if e["type"] == "replace_text"]
+        self.assertEqual(len(replace_edits), 1)
+        self.assertEqual(replace_edits[0]["old"], "#ff0000")
+        self.assertEqual(replace_edits[0]["new"], "#0000ff")
+        self.assertEqual(replace_edits[0]["file"], "renderer.js")
+        self.assertEqual(len([e for e in compacted if e["type"] == "set_css_property"]), 1)
+
+    def test_compact_artifact_patch_plan_defaults_replace_text_file(self) -> None:
+        compacted = ai_api.compact_artifact_patch_plan_edits(
+            [{"type": "replace_text", "old": "a", "new": "b"}],
+            original_edit_request="tweak",
+            max_edits=10,
+        )
+        self.assertEqual(len(compacted), 1)
+        self.assertEqual(compacted[0]["file"], "renderer.js")
+
+    def test_replace_text_only_plan_survives_progressive_apply(self) -> None:
+        plan = {
+            "assistantMessage": "",
+            "edits": [
+                {"type": "replace_text", "file": "styles.css", "old": "#ff4d4f", "new": "#00aa00"}
+            ],
+        }
+        patched_html, _package, issues = ai_api.apply_artifact_patch_plan_progressively(
+            current_html=PATCHABLE_ARTIFACT_HTML,
+            current_package=None,
+            plan=plan,
+            original_edit_request="make the car green",
+            context={"artifact": {}},
+        )
+        self.assertEqual(issues, [])
+        self.assertIn("#00aa00", patched_html)
+        self.assertNotIn("#ff4d4f", patched_html)
+
+    def test_format_style_overrides_separates_hidden_deletes(self) -> None:
+        overrides = {
+            "option-label:abc": "<b>7 +</b>",
+            "__prezo_pos:t1": '{"dx":10,"dy":5,"label":"img.bob","role":"element"}',
+            "__prezo_size:t2": '{"sx":2,"sy":2,"label":"img.bob","role":"element"}',
+            "__prezo_hidden:t3": '{"hidden":true,"label":"div.logo","cssLabel":"div.logo","role":"element","anchor":"#fg"}',
+        }
+        summary = ai_api.format_style_overrides_for_prompt(overrides)
+        self.assertIn("option-label:abc", summary)
+        self.assertIn("DELETED", summary)
+        self.assertIn("div.logo", summary)
+        self.assertIn("ADD IT", summary)
+        self.assertNotIn("__prezo_pos", summary)
+        self.assertNotIn("__prezo_size", summary)
+        self.assertNotIn("__prezo_hidden", summary)
+
+    def test_format_style_overrides_hidden_only_map(self) -> None:
+        summary = ai_api.format_style_overrides_for_prompt(
+            {"__prezo_hidden:t3": '{"hidden":true,"cssLabel":"div.totals","role":"poll-footer","anchor":"#fg","label":"Total Votes"}'}
+        )
+        self.assertIn("DELETED", summary)
+        self.assertIn("Total Votes", summary)
+        self.assertIn("`div.totals`", summary)
+        self.assertNotIn("effective styling intent", summary)
+
+    async def test_unchanged_edit_response_is_rejected_not_reported_ready(self) -> None:
+        anthropic_mock = AsyncMock(
+            return_value=(
+                json.dumps({"assistantMessage": "Patch mode is not suitable.", "edits": []}),
+                "end_turn",
+            )
+        )
+        gemini_mock = AsyncMock(
+            side_effect=[
+                (
+                    json.dumps({"assistantMessage": "Needs a logo URL.", "edits": []}),
+                    "stop",
+                ),
+                (VALID_ARTIFACT_HTML, "stop"),
+            ]
+        )
+        payload = ai_api.PollGameArtifactBuildRequest(
+            prompt="Apply a targeted edit.",
+            context={
+                "artifact": {
+                    "requestMode": "edit",
+                    "originalEditRequest": "add a logo to the top right",
+                    "currentArtifactFullHtml": VALID_ARTIFACT_HTML,
+                    "currentArtifactHtml": "<html><!-- artifact-context-cut --></html>",
+                }
+            },
+            model="gemini-3.1-pro-preview",
+        )
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock), patch.object(
+            ai_api, "request_gemini_text", gemini_mock
+        ):
+            with self.assertRaises(ai_api.HTTPException) as raised:
+                await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertIn("unchanged", str(raised.exception.detail))
+        # The full-generation fallback must have been told the patch attempt failed.
+        full_gen_prompt = gemini_mock.await_args_list[1].kwargs["prompt_text"]
+        self.assertIn("full-rewrite fallback", full_gen_prompt)
+        self.assertIn("add a logo to the top right", full_gen_prompt)
+
+
 if __name__ == "__main__":
     unittest.main()

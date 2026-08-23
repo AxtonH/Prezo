@@ -2611,9 +2611,15 @@ export function buildTextStyleBridgeLines() {
     // delete time; anchor is a uniquely-identifying ancestor selector.
     '    var cssLabel = (ov && typeof ov.cssLabel === "string" && ov.cssLabel) ? ov.cssLabel : ""',
     '    var anchor = (ov && typeof ov.anchor === "string" && ov.anchor) ? ov.anchor : ""',
+    // A bare tag name ("img", "small") as an UNSCOPED selector hides every
+    // such element in the document — including ones the AI adds later. Emit
+    // the bare fallback only when the label is specific (id/class/attr) or
+    // when there is no anchor to scope with at all. MUST stay in lockstep
+    // with buildArtifactHiddenSelectors in poll-game-gamified-artifact-copy.js.
+    '    var bareTagLabel = /^[a-zA-Z][a-zA-Z0-9-]*$/.test(cssLabel)',
     '    if (cssLabel) {',
     '      if (anchor) sels.push(anchor + " " + cssLabel)',
-    '      sels.push(cssLabel)',
+    '      if (!bareTagLabel || !anchor) sels.push(cssLabel)',
     '    } else if (anchor) {',
     // No label but we have an anchor — last resort, hide the anchor subtree.
     '      sels.push(anchor)',

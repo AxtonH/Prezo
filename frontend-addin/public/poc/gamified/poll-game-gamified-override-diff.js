@@ -1,8 +1,8 @@
 /**
  * Artifact override reconciliation for the gamified station: when an AI edit
  * rewrites the artifact HTML, decide which manual overrides (text styling,
- * drags, resizes) must yield because the AI intentionally changed the same
- * element — and which survive. Detection compares element signatures,
+ * drags, resizes, deletes) must yield because the AI intentionally changed
+ * the same element — and which survive. Detection compares element signatures,
  * inline positioning/sizing intent, parent layout, and <style>-rule diffs
  * between the prior and new HTML. Conservative on uncertainty: an override
  * we can't locate in BOTH documents is kept.
@@ -311,9 +311,89 @@ export function createOverrideDiff(deps) {
         recordSizeDecision('KEEP', 'AI did not resize this element')
         continue
       }
+      if (key.startsWith('__prezo_hidden:')) {
+        // Hidden overrides record an element the user manually deleted. On
+        // render they are re-imposed as CSS built from cssLabel/anchor
+        // selector fallbacks, so a stale entry can swallow an element the
+        // AI just added or rewrote: the user deletes the logo, later asks
+        // the AI for a new logo, and the old `div.logo` hide makes the AI
+        // edit look like a silent no-op.
+        //
+        // Drop when the AI took over the territory this hide refers to:
+        //   - the selector now matches MORE elements than before (the AI
+        //     added a new element the hide CSS would also hit)
+        //   - the element the hide pointed at is gone from the AI's HTML
+        //   - the element survived but the AI changed it (markup or the
+        //     stylesheet rules that position it) — the AI's intent wins
+        // Keep only when the same element survives unchanged; the user's
+        // delete then still applies to exactly what they deleted.
+        const stableId = key.slice('__prezo_hidden:'.length)
+        const parsed = safeParseJSON(store[key])
+        const role = parsed && typeof parsed.role === 'string' ? parsed.role : ''
+        const optionId = parsed && typeof parsed.optionId === 'string' ? parsed.optionId : ''
+        // Hidden metas keep the selector in cssLabel; `label` is the human name.
+        const cssLabel = parsed && typeof parsed.cssLabel === 'string' ? parsed.cssLabel : ''
+        const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
+        const target = locatePositionTarget(priorDoc, stableId, role, optionId, cssLabel, anchor)
+        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, cssLabel, anchor)
+        const recordHiddenDecision = (verdict, reason) => {
+          try {
+            window.__prezoDebug = window.__prezoDebug || {}
+            window.__prezoDebug.overrideDecisions = window.__prezoDebug.overrideDecisions || []
+            window.__prezoDebug.overrideDecisions.push({
+              ts: Date.now(), verdict, reason, key, role, optionId, cssLabel,
+              priorFound: !!target, nextFound: !!aiTarget
+            })
+            console.log(`[prezo-hidden-override] ${verdict} (${reason})`, { key, role, cssLabel })
+          } catch (e) {}
+        }
+        if (cssLabel) {
+          const priorCount = countSelectorMatches(priorDoc, cssLabel)
+          const nextCount = countSelectorMatches(nextDoc, cssLabel)
+          if (nextCount > priorCount) {
+            recordHiddenDecision('DROP', 'AI added element matching the hide selector')
+            delete store[key]
+            continue
+          }
+        }
+        if (!target && !aiTarget) {
+          // Runtime-rendered or untraceable in static HTML — keep; the
+          // bridge's own selector scoping (optionId anchors) handles it.
+          recordHiddenDecision('KEEP', 'runtime-rendered (not in static HTML)')
+          continue
+        }
+        if (!aiTarget) {
+          recordHiddenDecision('DROP', 'element removed by AI')
+          delete store[key]
+          continue
+        }
+        if (target && signaturesDiffer(target, aiTarget)) {
+          recordHiddenDecision('DROP', 'AI changed the hidden element')
+          delete store[key]
+          continue
+        }
+        if (target && stylesheetRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
+          recordHiddenDecision('DROP', 'stylesheet rules changed for the hidden element')
+          delete store[key]
+          continue
+        }
+        recordHiddenDecision('KEEP', 'AI did not touch the hidden element')
+        continue
+      }
       // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
+    }
+  }
+
+  function countSelectorMatches(doc, selector) {
+    if (!doc || !doc.body) return 0
+    const sel = typeof selector === 'string' ? selector.trim() : ''
+    if (!sel) return 0
+    try {
+      return doc.body.querySelectorAll(sel).length
+    } catch {
+      return 0
     }
   }
 

@@ -930,6 +930,29 @@ async def create_poll_game_artifact_build(
                         "the claude patch fallback failed before a safe patch could be applied"
                     )
 
+    # When the patch pipeline failed, the full-generation fallback must know it —
+    # otherwise it runs with the exact same context as a fresh edit, tends to
+    # preserve everything, and returns the artifact unchanged (the retry then
+    # fails identically). Feed the failure reasons forward as an explicit
+    # instruction that a no-op response is not acceptable.
+    edit_fallback_note = ""
+    if not is_initial_build and patch_failure_reasons:
+        unique_reasons: list[str] = []
+        for reason in patch_failure_reasons:
+            normalized_reason = (reason or "").strip()
+            if normalized_reason and normalized_reason not in unique_reasons:
+                unique_reasons.append(normalized_reason)
+        requested_change = (original_edit_request or payload.prompt or "").strip()
+        edit_fallback_note = (
+            "A minimal-patch attempt for this exact request already failed ("
+            + "; ".join(unique_reasons[:4])
+            + "). You are the full-rewrite fallback. You MUST apply the requested change"
+            + (f' — "{requested_change}" — ' if requested_change else " ")
+            + "in the artifact you return; returning the artifact unchanged is a failure. "
+            "If the change needs an image or logo asset and no asset URL was provided, "
+            "build the element yourself with inline SVG/CSS/text instead of an external image URL."
+        )
+
     if is_initial_build:
         build_api_key = anthropic_api_key
         if not build_api_key:
@@ -1021,8 +1044,14 @@ async def create_poll_game_artifact_build(
                 edit_attached_image_urls,
                 max_items=ARTIFACT_REFERENCE_IMAGE_MAX_ITEMS,
             )
+        gemini_prompt_payload: dict[str, Any] = {
+            "prompt": payload.prompt,
+            "context": model_context,
+        }
+        if edit_fallback_note:
+            gemini_prompt_payload["editFallbackNote"] = edit_fallback_note
         gemini_prompt_text = json.dumps(
-            {"prompt": payload.prompt, "context": model_context},
+            gemini_prompt_payload,
             indent=2,
         )
         if edit_attached_image_urls:
@@ -1076,12 +1105,18 @@ async def create_poll_game_artifact_build(
                 minimum_seconds=ARTIFACT_MIN_FOLLOWUP_CALL_TIMEOUT_SECONDS,
             ),
         )
+        anthropic_fallback_payload: dict[str, Any] = {
+            "prompt": payload.prompt,
+            "context": model_context,
+        }
+        if edit_fallback_note:
+            anthropic_fallback_payload["editFallbackNote"] = edit_fallback_note
         fallback_text, fallback_stop_reason = await request_anthropic_text(
             api_key=anthropic_api_key,
             model=fallback_model,
             system_instruction=build_artifact_system_instruction(activity_kind),
             prompt_text=json.dumps(
-                {"prompt": payload.prompt, "context": model_context},
+                anthropic_fallback_payload,
                 indent=2,
             ),
             temperature=0.35,
@@ -1132,6 +1167,36 @@ async def create_poll_game_artifact_build(
             response_package,
             fallback_html=html,
         )
+
+    # No-op guard: an edit that echoes the input artifact back verbatim must not
+    # be reported as a successful edit. Compare against the request's own package
+    # (artifact_context still references the ORIGINAL payload artifact, even after
+    # a completion-followup rebuilt request_context).
+    if request_mode == "edit":
+        baseline_html = get_artifact_patch_source_html(artifact_context)
+        baseline_package = build_segmented_artifact_package(
+            baseline_html,
+            get_artifact_patch_source_package(artifact_context),
+        )
+        if baseline_package:
+            materialized_baseline = materialize_artifact_html_from_package(
+                baseline_package,
+                fallback_html=baseline_html,
+            ).strip()
+            if materialized_baseline:
+                baseline_html = materialized_baseline
+        if baseline_html and html.strip() == baseline_html.strip():
+            unchanged_reasons = "; ".join(
+                reason for reason in patch_failure_reasons[:3] if reason
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "The AI edit returned the artifact unchanged for this request."
+                    + (f" Earlier patch attempt: {unchanged_reasons}." if unchanged_reasons else "")
+                    + " Try rephrasing the request, or attach the asset (e.g. a logo image) it needs."
+                ),
+            )
 
     return PollGameArtifactBuildResponse(
         html=html,

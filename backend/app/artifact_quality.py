@@ -207,31 +207,74 @@ def format_style_overrides_for_prompt(overrides: Any) -> str:
     """
     Summarize host-side styleOverrides (manual rich-text HTML per field) for LLM context.
     The base artifact files may not reflect these; the user sees the merged result in the iframe.
+
+    The raw map also carries host bookkeeping keys that are NOT styling intent:
+    `__prezo_pos:`/`__prezo_size:` (drag/resize — summarized separately via
+    positionOverrides/sizeOverrides, skipped here) and `__prezo_hidden:` (manual
+    element deletes — surfaced as their own correctly-framed block so the model
+    does not read a stale hide as "the user wants nothing like this element").
     """
     if not isinstance(overrides, dict) or not overrides:
         return ""
-    lines: list[str] = []
+    style_lines: list[str] = []
+    hidden_lines: list[str] = []
     total = 0
-    for key, val in list(overrides.items())[:STYLE_OVERRIDES_PROMPT_MAX_KEYS]:
+    key_budget = STYLE_OVERRIDES_PROMPT_MAX_KEYS
+    for key, val in overrides.items():
+        if key_budget <= 0:
+            break
         if not isinstance(key, str) or not key.strip():
+            continue
+        stripped_key = key.strip()
+        if stripped_key.startswith("__prezo_pos:") or stripped_key.startswith("__prezo_size:"):
+            continue
+        if stripped_key.startswith("__prezo_hidden:"):
+            meta = val
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except (TypeError, ValueError):
+                    meta = None
+            if not isinstance(meta, dict):
+                continue
+            label = str(meta.get("label") or "").strip()
+            css_label = str(meta.get("cssLabel") or "").strip()
+            described = label or css_label or "element"
+            selector_note = f" (matches `{css_label}`)" if css_label and css_label != described else ""
+            line = f"- {described}{selector_note}"
+            if total + len(line) > STYLE_OVERRIDES_PROMPT_MAX_TOTAL:
+                break
+            hidden_lines.append(line)
+            total += len(line) + 1
+            key_budget -= 1
             continue
         if isinstance(val, str) and val.strip():
             snippet = " ".join(val.strip().split())[:STYLE_OVERRIDES_PROMPT_SNIPPET_PER_KEY]
         else:
             snippet = repr(val)[:STYLE_OVERRIDES_PROMPT_SNIPPET_PER_KEY]
-        line = f"- `{key.strip()}`: {snippet}"
+        line = f"- `{stripped_key}`: {snippet}"
         if total + len(line) > STYLE_OVERRIDES_PROMPT_MAX_TOTAL:
             break
-        lines.append(line)
+        style_lines.append(line)
         total += len(line) + 1
-    if not lines:
-        return ""
-    header = (
-        "Runtime user style overrides (applied in the live preview after the base HTML/CSS loads; "
-        "the user may see colors or text here that are NOT in the raw artifact files alone). "
-        "When the user refers to colors, wording, or labels, treat these as the effective styling intent:"
-    )
-    return header + "\n" + "\n".join(lines)
+        key_budget -= 1
+    blocks: list[str] = []
+    if style_lines:
+        header = (
+            "Runtime user style overrides (applied in the live preview after the base HTML/CSS loads; "
+            "the user may see colors or text here that are NOT in the raw artifact files alone). "
+            "When the user refers to colors, wording, or labels, treat these as the effective styling intent:"
+        )
+        blocks.append(header + "\n" + "\n".join(style_lines))
+    if hidden_lines:
+        hidden_header = (
+            "Elements the user manually DELETED in the editor (the host hides them at render time; "
+            "they still appear in the raw files). Do not re-style or build on these specific elements. "
+            "This does NOT restrict you: if the user now asks to add something similar, ADD IT as a new "
+            "element — the host reconciles stale hides when the artifact changes:"
+        )
+        blocks.append(hidden_header + "\n" + "\n".join(hidden_lines))
+    return "\n\n".join(blocks)
 
 POSITION_OVERRIDES_PROMPT_MAX_TOTAL = 2400
 

@@ -3915,9 +3915,10 @@ body { height: 100%; }
     }
     var cssLabel = (ov && typeof ov.cssLabel === "string" && ov.cssLabel) ? ov.cssLabel : ""
     var anchor = (ov && typeof ov.anchor === "string" && ov.anchor) ? ov.anchor : ""
+    var bareTagLabel = /^[a-zA-Z][a-zA-Z0-9-]*$/.test(cssLabel)
     if (cssLabel) {
       if (anchor) sels.push(anchor + " " + cssLabel)
-      sels.push(cssLabel)
+      if (!bareTagLabel || !anchor) sels.push(cssLabel)
     } else if (anchor) {
       sels.push(anchor)
     }
