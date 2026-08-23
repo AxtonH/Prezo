@@ -2957,6 +2957,60 @@ class TestManualOverridesVsAiEdits(unittest.IsolatedAsyncioTestCase):
         self.assertIn("`div.totals`", summary)
         self.assertNotIn("effective styling intent", summary)
 
+    def test_insert_html_beforeend_lands_inside_nested_target(self) -> None:
+        """Regression: the element finder kept overwriting the recorded close
+        position with every later same-tag close at depth 0, so beforeend
+        inserts landed before the document's LAST </div> (bottom of #scene,
+        clipped off-screen) instead of inside the target."""
+        from app.artifact_html_insert import insert_html_in_artifact
+
+        html = (
+            "<html><body>"
+            '<div id="scene">'
+            '<div id="fg">'
+            '<div class="header">'
+            '<div class="logo"><span>BLK</span></div>'
+            '<div class="titlewrap"><h1>Q</h1></div>'
+            '<div class="totals"><div class="num">0</div></div>'
+            "</div>"
+            '<div id="track"><div class="finish"></div></div>'
+            "</div>"
+            "</div>"
+            "</body></html>"
+        )
+        snippet = '<img src="https://example.com/logo.png" class="custom-logo" />'
+        updated, changed, insert_status = insert_html_in_artifact(
+            html, target=".header", position="beforeend", snippet=snippet
+        )
+        self.assertTrue(changed)
+        self.assertEqual(insert_status, "changed")
+        snippet_pos = updated.index("custom-logo")
+        track_pos = updated.index('<div id="track">')
+        self.assertLess(
+            snippet_pos,
+            track_pos,
+            "beforeend insert must land inside .header, before its sibling #track",
+        )
+
+    def test_insert_html_afterend_lands_after_nested_target(self) -> None:
+        from app.artifact_html_insert import insert_html_in_artifact
+
+        html = (
+            '<div id="scene">'
+            '<div class="header"><div class="logo">L</div></div>'
+            '<div id="track">T</div>'
+            "</div>"
+        )
+        updated, changed, insert_status = insert_html_in_artifact(
+            html, target=".header", position="afterend", snippet='<i id="mark"></i>'
+        )
+        self.assertTrue(changed)
+        self.assertEqual(insert_status, "changed")
+        self.assertIn(
+            '<div class="header"><div class="logo">L</div></div><i id="mark"></i><div id="track">',
+            updated,
+        )
+
     async def test_unchanged_edit_response_is_rejected_not_reported_ready(self) -> None:
         anthropic_mock = AsyncMock(
             return_value=(

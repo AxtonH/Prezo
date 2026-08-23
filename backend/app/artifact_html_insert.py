@@ -178,6 +178,7 @@ class _ElementFinder(HTMLParser):
         super().__init__(convert_charrefs=False)
         self._spec = match_spec
         self._found = False
+        self._closed = False
         self._tag_name: str | None = None
         self._open_start: int | None = None
         self._open_end: int | None = None
@@ -191,7 +192,7 @@ class _ElementFinder(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if self._found:
-            if tag.lower() == self._tag_name:
+            if not self._closed and tag.lower() == self._tag_name:
                 self._depth += 1
             return
 
@@ -214,7 +215,13 @@ class _ElementFinder(HTMLParser):
             self._close_end = None
 
     def handle_endtag(self, tag: str) -> None:
-        if not self._found or tag.lower() != self._tag_name:
+        # Once the target's own closing tag is recorded we must stop: without
+        # the _closed latch, every LATER same-tag close at depth 0 (ancestor
+        # and sibling </div>s) overwrote _close_start, so "beforeend" inserts
+        # landed before the document's LAST close tag instead of the target's
+        # (e.g. a logo inserted into .header ended up at the bottom of #scene,
+        # clipped off-screen and invisible).
+        if not self._found or self._closed or tag.lower() != self._tag_name:
             return
         if self._depth > 0:
             self._depth -= 1
@@ -228,6 +235,7 @@ class _ElementFinder(HTMLParser):
             self._close_end = end_pos + len(close_tag)
         else:
             self._close_end = offset
+        self._closed = True
 
     def _matches(self, tag: str, attrs: list[tuple[str, str | None]]) -> bool:
         spec = self._spec
