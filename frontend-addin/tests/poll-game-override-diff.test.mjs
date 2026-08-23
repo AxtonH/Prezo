@@ -139,6 +139,14 @@ class FakeEl {
   get textContent() {
     return this._text + this.children.map((c) => c.textContent).join('')
   }
+  get outerHTML() {
+    const tag = this.tagName.toLowerCase()
+    const attrs = Object.entries(this.attrs)
+      .map(([name, value]) => ` ${name}="${value}"`)
+      .join('')
+    const inner = this._text + this.children.map((c) => c.outerHTML).join('')
+    return `<${tag}${attrs}>${inner}</${tag}>`
+  }
   _all() {
     const out = []
     const walk = (node) => {
@@ -279,6 +287,39 @@ test('hidden override drops when stylesheet rules for the element changed', () =
     store
   )
   assert.ok(!(LOGO_HIDE_KEY in store), 'AI moved the element via CSS rules — the stale hide yields')
+})
+
+test('hidden override drops when the AI inserts a child INSIDE the hidden element', () => {
+  // Omar's exact case: the top-right "Total Votes" box (div.totals) was
+  // manually deleted; "add this logo to the top right" put the logo inside
+  // that hidden container. The element's own signature is unchanged, and the
+  // poll-footer role heuristic would locate the inner #totalVotes node — the
+  // cssLabel locator + subtree compare must still detect the change.
+  const totalsHideKey = '__prezo_hidden:t5'
+  const totalsHideMeta = JSON.stringify({
+    hidden: true,
+    label: 'Total Votes',
+    cssLabel: 'div.totals',
+    role: 'poll-footer',
+    anchor: '#fg'
+  })
+  const makeTotalsDoc = ({ withLogoInside = false } = {}) => {
+    const totalsChildren = [new FakeEl('div', { id: 'totalVotes', class: 'num' }, [], '0')]
+    if (withLogoInside) {
+      totalsChildren.push(new FakeEl('img', { class: 'brand-logo', src: 'logo.png' }))
+    }
+    return makeFakeDoc([
+      new FakeEl('div', { id: 'fg' }, [new FakeEl('div', { class: 'totals' }, totalsChildren)])
+    ])
+  }
+  const store = { [totalsHideKey]: totalsHideMeta }
+  runHiddenDiff(makeTotalsDoc(), makeTotalsDoc({ withLogoInside: true }), store)
+  assert.ok(!(totalsHideKey in store), 'AI built inside the hidden container — the hide must yield')
+
+  // Control: identical subtree keeps the hide.
+  const keepStore = { [totalsHideKey]: totalsHideMeta }
+  runHiddenDiff(makeTotalsDoc(), makeTotalsDoc(), keepStore)
+  assert.ok(totalsHideKey in keepStore, 'untouched hidden container stays deleted')
 })
 
 test('hidden override for a runtime-rendered element is kept', () => {

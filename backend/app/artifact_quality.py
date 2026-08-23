@@ -269,9 +269,11 @@ def format_style_overrides_for_prompt(overrides: Any) -> str:
     if hidden_lines:
         hidden_header = (
             "Elements the user manually DELETED in the editor (the host hides them at render time; "
-            "they still appear in the raw files). Do not re-style or build on these specific elements. "
+            "they still appear in the raw files). Do not re-style these elements, and NEVER insert new "
+            "content INSIDE them or their subtree — anything placed inside stays hidden with them. "
             "This does NOT restrict you: if the user now asks to add something similar, ADD IT as a new "
-            "element — the host reconciles stale hides when the artifact changes:"
+            "standalone element next to (not inside) the deleted one — the host reconciles stale hides "
+            "when the artifact changes:"
         )
         blocks.append(hidden_header + "\n" + "\n".join(hidden_lines))
     return "\n\n".join(blocks)

@@ -334,8 +334,20 @@ export function createOverrideDiff(deps) {
         // Hidden metas keep the selector in cssLabel; `label` is the human name.
         const cssLabel = parsed && typeof parsed.cssLabel === 'string' ? parsed.cssLabel : ''
         const anchor = parsed && typeof parsed.anchor === 'string' ? parsed.anchor : ''
-        const target = locatePositionTarget(priorDoc, stableId, role, optionId, cssLabel, anchor)
-        const aiTarget = locatePositionTarget(nextDoc, stableId, role, optionId, cssLabel, anchor)
+        // Prefer the cssLabel selector — it identifies the ACTUAL hidden
+        // element. Role heuristics can resolve to an inner child instead
+        // (poll-footer finds #totalVotes inside the hidden div.totals), and
+        // a child-level compare would miss the AI building inside the
+        // hidden container.
+        const locateHiddenTarget = (doc) => {
+          if (cssLabel) {
+            const byLabel = locateLabelSelectorInDoc(doc, cssLabel, anchor)
+            if (byLabel) return byLabel
+          }
+          return locatePositionTarget(doc, stableId, role, optionId, cssLabel, anchor)
+        }
+        const target = locateHiddenTarget(priorDoc)
+        const aiTarget = locateHiddenTarget(nextDoc)
         const recordHiddenDecision = (verdict, reason) => {
           try {
             window.__prezoDebug = window.__prezoDebug || {}
@@ -372,6 +384,17 @@ export function createOverrideDiff(deps) {
           delete store[key]
           continue
         }
+        // Subtree compare: signatureFor only fingerprints the element's own
+        // tag/attrs/text, so the AI inserting a CHILD into the hidden
+        // element (e.g. dropping the requested logo into the deleted
+        // top-right totals box) slips past it. visibility:hidden hides the
+        // whole subtree, so any subtree change means the hide would swallow
+        // new AI content — the hide must yield.
+        if (target && normalizedOuterHtml(target) !== normalizedOuterHtml(aiTarget)) {
+          recordHiddenDecision('DROP', 'AI changed the hidden element subtree')
+          delete store[key]
+          continue
+        }
         if (target && stylesheetRulesChangedForElement(priorDoc, nextDoc, target, aiTarget)) {
           recordHiddenDecision('DROP', 'stylesheet rules changed for the hidden element')
           delete store[key]
@@ -383,6 +406,15 @@ export function createOverrideDiff(deps) {
       // Other keys (subtitle, footer, generic text) — left alone here.
       // They're handled by pruneStalePollStyleOverridesInStore against the
       // live poll data, and by the bridge's own re-match fallback.
+    }
+  }
+
+  function normalizedOuterHtml(el) {
+    if (!el) return ''
+    try {
+      return String(el.outerHTML || '').replace(/\s+/g, ' ').trim()
+    } catch {
+      return ''
     }
   }
 
