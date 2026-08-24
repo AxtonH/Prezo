@@ -123,7 +123,6 @@ import { createArtifactPositionHandler } from './poll-game-gamified-artifact-pos
 import { createArtifactSizeHandler } from './poll-game-gamified-artifact-size.js'
 import { createArtifactDeleteHandler } from './poll-game-gamified-artifact-delete.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
-import { createArtifactAiUndo } from './poll-game-gamified-artifact-ai-undo.js'
 import {
   createArtifactGuidesHandler
 
@@ -760,15 +759,15 @@ import {
   // Undo/redo. Closure resolves apply* helpers at call time so they don't
   // need to be defined before this constructor runs. Scope: per-artifact —
   // we clear the stacks when the artifact is rebuilt or swapped.
+  // ONE timeline for manual edits AND AI edits: AI rewrites push an
+  // 'ai-edit' entry (whole-artifact snapshot) into this same stack, so
+  // Ctrl+Z walks back through drags, deletes, text edits, and AI edits in
+  // strict chronological order. onStatus fires after every push/undo/redo,
+  // keeping the composer's undo/redo buttons in sync.
   const artifactHistory = createArtifactHistoryHandler({
-    applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
+    applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction),
+    onStatus: () => refreshArtifactAiUndoControls()
   })
-  // Whole-artifact undo/redo for AI edits (separate from the element-level
-  // history above, which is cleared on every AI rewrite). Snapshots the
-  // pre-edit {html, package, merged overrides}; app.js applies them back
-  // through the 'rollback' path. Scope: per-artifact — cleared on fresh
-  // builds and artifact swaps.
-  const artifactAiUndo = createArtifactAiUndo()
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
   // preference, persisted in localStorage. Present mode unconditionally
   // forces visual aids off — handled by the handler's getEffectiveConfig.
@@ -3429,9 +3428,9 @@ import {
     const detail = asText(errorMessage)
     const statusMessage = 'Artifact edit was reverted because the updated artifact failed to render.'
     state.artifact.pendingSuccessMessage = ''
-    // The failed edit never stuck — drop its undo snapshot so the user's
-    // next "undo AI edit" doesn't step to a state identical to the current.
-    artifactAiUndo.discardLast()
+    // The failed edit never stuck — drop its history entry so the user's
+    // next undo doesn't step to a state identical to the current.
+    artifactHistory.discardLast('ai-edit')
     applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback', artifactPackage: rollbackPackage })
     showArtifactStageFrame()
     state.artifact.lastRuntimeError = detail
@@ -4110,7 +4109,6 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactHistory.clear()
-      artifactAiUndo.clear()
     } else {
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
@@ -4118,12 +4116,12 @@ import {
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
-      artifactHistory.clear()
-      // Artifact swaps / library loads invalidate AI-edit history, but the
-      // 'rollback' kind IS the AI-undo/redo apply path (and the failed-edit
-      // revert) — those must keep the stacks.
+      // Artifact swaps / library loads invalidate the undo timeline, but the
+      // 'rollback' kind IS the ai-edit undo/redo apply path (and the
+      // failed-edit revert) — those must keep the stacks so the rest of the
+      // timeline stays walkable.
       if (requestKind !== 'rollback') {
-        artifactAiUndo.clear()
+        artifactHistory.clear()
       }
     }
     state.artifact.pendingSuccessMessage = ''
@@ -4163,14 +4161,25 @@ import {
         { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
         pendingCopyWithPositions
       )
-      // AI-edit undo snapshot: the pre-edit files plus the merged override
-      // map BEFORE reconciliation drops anything — restoring it reproduces
-      // exactly what the user saw before this edit.
+      // Record the AI edit as an undo entry in the SAME timeline as manual
+      // edits. `before` is the pre-edit files plus the merged override map
+      // BEFORE reconciliation drops anything — restoring it reproduces
+      // exactly what the user saw before this edit. `after` is captured
+      // lazily on the first undo. Prior manual entries are NOT cleared:
+      // they sit beneath this entry and only become reachable again once
+      // its undo has restored the DOM they were recorded against.
       if (preEditAiUndoState && preEditAiUndoState.html) {
-        artifactAiUndo.pushSnapshot({
-          html: preEditAiUndoState.html,
-          package: preEditAiUndoState.package,
-          styleOverrides: merged
+        artifactHistory.push({
+          kind: 'ai-edit',
+          targetKey: 'ai-edit',
+          before: cloneArtifactAiUndoSnapshot({
+            html: preEditAiUndoState.html,
+            package: preEditAiUndoState.package,
+            styleOverrides: merged
+          }),
+          after: null,
+          label: 'AI edit',
+          ts: Date.now()
         })
       }
       pendingArtifactStyleOverrides = {}
@@ -4178,9 +4187,6 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactDelete.clearPendingHiddenOverrides()
-      // AI edits rebuild the DOM — prior undo entries reference nodes that
-      // may no longer exist or whose stable ids have shifted.
-      artifactHistory.clear()
       const nextOverrides = { ...merged }
       // Drop overrides whose underlying element the AI just changed. This
       // resolves the conflict where the user manually colors the title red,
@@ -4237,37 +4243,62 @@ import {
     return true
   }
 
-  // ── AI-edit undo/redo ────────────────────────────────────────────────
-  // Whole-artifact snapshots around AI edits, applied back through the
-  // same 'rollback' path the failed-edit revert uses. Separate from the
-  // element-level artifactHistory (Ctrl+Z), which cannot survive AI DOM
-  // rewrites and is cleared on every edit.
+  // ── AI-edit history entries ──────────────────────────────────────────
+  // AI edits live in the SAME artifactHistory timeline as manual edits
+  // (Ctrl+Z walks everything in chronological order). An 'ai-edit' entry
+  // holds whole-artifact snapshots; applying one goes through the same
+  // 'rollback' path the failed-edit revert uses. The composer buttons are
+  // just another trigger for artifactHistory.undo()/redo().
 
   function refreshArtifactAiUndoControls() {
     const busy = Boolean(state.artifact.busy)
-    el.artifactAiUndoBtn.disabled = busy || !artifactAiUndo.canUndo()
-    el.artifactAiRedoBtn.disabled = busy || !artifactAiUndo.canRedo()
+    el.artifactAiUndoBtn.disabled = busy || !artifactHistory.canUndo()
+    el.artifactAiRedoBtn.disabled = busy || !artifactHistory.canRedo()
+  }
+
+  // Deep-clone a {html, package, styleOverrides} snapshot. Entries live in
+  // the history stacks across many later state mutations; sharing object
+  // references with live state would corrupt them.
+  function cloneArtifactAiUndoSnapshot(snapshot) {
+    const html = asText(snapshot && snapshot.html)
+    let pkg = null
+    try {
+      pkg =
+        snapshot && snapshot.package && typeof snapshot.package === 'object'
+          ? JSON.parse(JSON.stringify(snapshot.package))
+          : null
+    } catch {
+      pkg = null
+    }
+    const overrides =
+      snapshot && snapshot.styleOverrides && typeof snapshot.styleOverrides === 'object'
+        ? { ...snapshot.styleOverrides }
+        : {}
+    return { html, package: pkg, styleOverrides: overrides }
   }
 
   function captureCurrentArtifactAiUndoState() {
-    return {
-      html: asText(state.artifact.html),
+    return cloneArtifactAiUndoSnapshot({
+      html: state.artifact.html,
       package: state.artifact.package,
-      styleOverrides: { ...(state.artifact.savedStyleOverrides || {}) }
-    }
+      styleOverrides: state.artifact.savedStyleOverrides
+    })
   }
 
   function applyArtifactAiUndoSnapshot(snapshot, feedMessage) {
+    if (!snapshot || !asText(snapshot.html)) return false
     // Restore the override map FIRST: the rollback apply path bakes the
     // hidden-element CSS from savedStyleOverrides, so it must already hold
-    // the snapshot's map when applyArtifactMarkup runs.
-    state.artifact.savedStyleOverrides = snapshot.styleOverrides || {}
+    // the snapshot's map when applyArtifactMarkup runs. Clone so the stored
+    // history entry keeps its own copy.
+    const restored = cloneArtifactAiUndoSnapshot(snapshot)
+    state.artifact.savedStyleOverrides = restored.styleOverrides
     pendingArtifactStyleOverrides = {}
     artifactDelete.clearPendingHiddenOverrides()
-    const snapshotPackage = snapshot.package
-      ? buildSegmentedArtifactPackage(snapshot.package)
+    const snapshotPackage = restored.package
+      ? buildSegmentedArtifactPackage(restored.package)
       : null
-    const applied = applyArtifactMarkup(snapshot.html, {
+    const applied = applyArtifactMarkup(restored.html, {
       requestKind: 'rollback',
       artifactPackage: snapshotPackage
     })
@@ -4280,29 +4311,19 @@ import {
 
   function undoLastArtifactAiEdit() {
     if (state.artifact.busy) return
-    const snapshot = artifactAiUndo.undo(captureCurrentArtifactAiUndoState())
-    if (!snapshot) {
-      refreshArtifactAiUndoControls()
-      return
-    }
-    applyArtifactAiUndoSnapshot(snapshot, 'Reverted the last AI edit.')
+    artifactHistory.undo()
   }
 
   function redoArtifactAiEdit() {
     if (state.artifact.busy) return
-    const snapshot = artifactAiUndo.redo(captureCurrentArtifactAiUndoState())
-    if (!snapshot) {
-      refreshArtifactAiUndoControls()
-      return
-    }
-    applyArtifactAiUndoSnapshot(snapshot, 'Reapplied the AI edit.')
+    artifactHistory.redo()
   }
 
   function clearArtifactMarkup() {
     artifactBridge.clearRenderWatchdog()
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
-    artifactAiUndo.clear()
+    artifactHistory.clear()
     state.artifact.html = ''
     state.artifact.package = null
     state.artifact.lastStableHtml = ''
@@ -4996,6 +5017,19 @@ import {
    */
   function applyArtifactHistoryEntry(entry, direction) {
     if (!entry || !entry.kind) return
+    if (entry.kind === 'ai-edit') {
+      // Whole-artifact snapshot entry. `after` (the post-edit state) is
+      // captured lazily on the first undo: by the time this entry is
+      // reached, every manual entry recorded after the AI edit has already
+      // been undone, so the current state IS the post-edit state.
+      if (direction === 'undo') {
+        entry.after = captureCurrentArtifactAiUndoState()
+        applyArtifactAiUndoSnapshot(entry.before, 'Reverted the AI edit.')
+      } else if (entry.after) {
+        applyArtifactAiUndoSnapshot(entry.after, 'Reapplied the AI edit.')
+      }
+      return
+    }
     const target = direction === 'undo' ? entry.before : entry.after
     if (!target) return
     if (entry.kind === 'position') {

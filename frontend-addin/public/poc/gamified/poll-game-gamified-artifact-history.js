@@ -5,14 +5,22 @@
  *   - position drags  (kind: 'position')
  *   - text content    (kind: 'text-content')
  *   - text styling    (kind: 'text-html')
+ *   - element deletes (kind: 'hidden')
+ *   - AI edits        (kind: 'ai-edit') — whole-artifact snapshots
  *
  * Each entry stores BOTH the "before" and "after" state so undo and redo
  * are symmetric — just apply the opposite snapshot. Same-target text-content
  * edits within a short window are coalesced into a single entry so the user
  * doesn't have to press Cmd+Z once per keystroke.
  *
- * Scope is per-artifact. The host clears the stacks on AI rebuilds and
- * artifact swaps because the DOM those entries targeted no longer exists.
+ * AI edits and manual edits share this ONE timeline: undo walks back through
+ * whatever happened last, whether that was a drag or an AI rewrite. That
+ * works because an 'ai-edit' entry restores the complete pre-edit artifact
+ * (html + package + override map), which makes the older manual entries
+ * beneath it — recorded against that pre-edit DOM — valid again.
+ *
+ * Scope is per-artifact. The host clears the stacks on fresh builds and
+ * artifact swaps because the artifact those entries targeted is gone.
  *
  * Mirrors the shape of the existing handler modules (textedit, select,
  * position) so the integration point in poll-game-gamified-app.js stays
@@ -30,7 +38,7 @@
 
 /**
  * @typedef {Object} HistoryEntry
- * @property {'position' | 'size' | 'text-content' | 'text-html'} kind
+ * @property {'position' | 'size' | 'text-content' | 'text-html' | 'hidden' | 'ai-edit'} kind
  * @property {string} targetKey  Unique key for the target so we know when
  *   to coalesce. Position: stableId. Size: stableId. Text: `${field}:${optionId}`.
  * @property {*} before  Pre-action snapshot (depends on kind).
@@ -168,6 +176,24 @@ export function createArtifactHistoryHandler({ applyEntry, onStatus } = {}) {
     return null
   }
 
+  /**
+   * Drop the newest undo entry without applying it. When `kind` is given,
+   * only an entry of that kind is dropped. Used when an AI edit is rolled
+   * back by the render-health guard — the edit never stuck, so its history
+   * entry must not leave a dead undo step.
+   *
+   * @param {string} [kind]
+   * @returns {boolean} true when an entry was dropped
+   */
+  function discardLast(kind) {
+    const last = undoStack[undoStack.length - 1]
+    if (!last) return false
+    if (kind && last.kind !== kind) return false
+    undoStack.pop()
+    status(`discard ${last.kind} on ${last.targetKey}`)
+    return true
+  }
+
   return {
     push,
     breakCoalesce,
@@ -176,6 +202,7 @@ export function createArtifactHistoryHandler({ applyEntry, onStatus } = {}) {
     canUndo,
     canRedo,
     clear,
+    discardLast,
     classifyKeyEvent
   }
 }
