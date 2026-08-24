@@ -568,15 +568,16 @@ def remove_last_artifact_script_close_tag(html: str) -> str:
 # the option-/question-named variants.
 _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS = (
     r"\.replaceChildren\s*\(",
-    r"\.innerHTML\s*=\s*['\"]\s*['\"]",
-    r"\.textContent\s*=\s*['\"]\s*['\"]",
+    r"\.innerHTML\s*=\s*['\"`]\s*['\"`]",
+    r"\.textContent\s*=\s*['\"`]\s*['\"`]",
     r"data-id",
     r"\browsById\b",
     r"\browById\b",
     r"\bmountedRows\b",
     r"\bnew Map\s*\(",
-    r"while\s*\([^)]*(?:firstChild|lastChild|childNodes)",
+    r"while\s*\([^)]*(?:firstChild|lastChild|childNodes|firstElementChild|lastElementChild)",
     r"\.forEach\s*\(\s*(?:function\s*\([^)]*\)|[^=)]+=>)\s*[^)]*\.remove\s*\(",
+    r"\.remove\s*\(\s*\)",
     r"\bexistingRows\b",
     r"\.children\.length",
     r"\.childNodes\.length",
@@ -585,6 +586,7 @@ _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS = (
 _APPEND_ONLY_POLL_RECONCILIATION_MARKERS = _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS + (
     r"data-option-id",
     r"data-prezo-option-id",
+    r"dataset\s*\.\s*optionId\b",
     r"\boptionNodesById\b",
     r"\bexistingOptions\b",
     r"\boptionElements\b",
@@ -596,6 +598,7 @@ _APPEND_ONLY_POLL_RECONCILIATION_MARKERS = _APPEND_ONLY_SHARED_RECONCILIATION_MA
 _APPEND_ONLY_QNA_RECONCILIATION_MARKERS = _APPEND_ONLY_SHARED_RECONCILIATION_MARKERS + (
     r"data-question-id",
     r"data-prezo-question-id",
+    r"dataset\s*\.\s*questionId\b",
     r"\bquestionNodesById\b",
     r"\bexistingQuestions\b",
     r"\bquestionElements\b",
@@ -1099,12 +1102,87 @@ def ensure_artifact_time_budget_remaining(
         ),
     )
 
+_REGEX_LITERAL_PRECEDING_KEYWORDS = frozenset(
+    {
+        "return",
+        "typeof",
+        "instanceof",
+        "in",
+        "of",
+        "new",
+        "delete",
+        "void",
+        "case",
+        "do",
+        "else",
+        "yield",
+        "await",
+        "throw",
+    }
+)
+
+
+def _regex_literal_can_start(last_code_char: str, last_code_word: str) -> bool:
+    """A `/` in code position is a regex literal (not division) when the previous
+    significant token cannot end an expression: start of input, an opening
+    delimiter/operator, or a keyword like `return`."""
+    if last_code_word in _REGEX_LITERAL_PRECEDING_KEYWORDS:
+        return True
+    if not last_code_char:
+        return True
+    return last_code_char in "({[,;:=!&|?+-*%^~<>"
+
+
+def _regex_literal_end(text: str, start: int) -> int | None:
+    """Index just past the JS regex literal whose opening `/` sits at
+    text[start] (flags included), or None when the slice does not scan as a
+    single-line regex literal — the caller then treats the `/` as division."""
+    index = start + 1
+    length = len(text)
+    in_class = False
+    saw_body = False
+    while index < length:
+        char = text[index]
+        if char in "\r\n":
+            return None
+        if char == "\\":
+            index += 2
+            saw_body = True
+            continue
+        if in_class:
+            if char == "]":
+                in_class = False
+            index += 1
+            saw_body = True
+            continue
+        if char == "[":
+            in_class = True
+            index += 1
+            saw_body = True
+            continue
+        if char == "/":
+            if not saw_body:
+                return None
+            index += 1
+            while index < length and (text[index].isalpha() or text[index] in "_$"):
+                index += 1
+            return index
+        saw_body = True
+        index += 1
+    return None
+
+
 def validate_inline_script_syntax(script_body: str) -> str:
     text = script_body or ""
     mode_stack: list[str] = ["code"]
     delimiter_stack: list[str] = []
     index = 0
     length = len(text)
+    # Last significant char/word seen in code position, used to decide whether a
+    # `/` opens a regex literal or is a division operator.
+    last_code_char = ""
+    last_code_word = ""
+    word_active = False
 
     while index < length:
         mode = mode_stack[-1]
@@ -1131,6 +1209,9 @@ def validate_inline_script_syntax(script_body: str) -> str:
                 continue
             if char == "'":
                 mode_stack.pop()
+                last_code_char = "'"
+                last_code_word = ""
+                word_active = False
             index += 1
             continue
 
@@ -1140,6 +1221,9 @@ def validate_inline_script_syntax(script_body: str) -> str:
                 continue
             if char == '"':
                 mode_stack.pop()
+                last_code_char = '"'
+                last_code_word = ""
+                word_active = False
             index += 1
             continue
 
@@ -1149,11 +1233,17 @@ def validate_inline_script_syntax(script_body: str) -> str:
                 continue
             if char == "`":
                 mode_stack.pop()
+                last_code_char = "`"
+                last_code_word = ""
+                word_active = False
                 index += 1
                 continue
             if char == "$" and next_char == "{":
                 delimiter_stack.append("${")
                 mode_stack.append("code")
+                last_code_char = ""
+                last_code_word = ""
+                word_active = False
                 index += 2
                 continue
             index += 1
@@ -1167,6 +1257,14 @@ def validate_inline_script_syntax(script_body: str) -> str:
             mode_stack.append("block_comment")
             index += 2
             continue
+        if char == "/" and _regex_literal_can_start(last_code_char, last_code_word):
+            regex_end = _regex_literal_end(text, index)
+            if regex_end is not None:
+                index = regex_end
+                last_code_char = "/"
+                last_code_word = ""
+                word_active = False
+                continue
         if char == "'":
             mode_stack.append("single_quote")
             index += 1
@@ -1181,6 +1279,9 @@ def validate_inline_script_syntax(script_body: str) -> str:
             continue
         if char in "({[":
             delimiter_stack.append(char)
+            last_code_char = char
+            last_code_word = ""
+            word_active = False
             index += 1
             continue
         if char == "}":
@@ -1188,6 +1289,9 @@ def validate_inline_script_syntax(script_body: str) -> str:
                 top = delimiter_stack[-1]
                 if top == "{":
                     delimiter_stack.pop()
+                    last_code_char = char
+                    last_code_word = ""
+                    word_active = False
                     index += 1
                     continue
                 if top == "${":
@@ -1205,6 +1309,9 @@ def validate_inline_script_syntax(script_body: str) -> str:
             if top != "(":
                 return f"script has mismatched closing `{char}`."
             delimiter_stack.pop()
+            last_code_char = char
+            last_code_word = ""
+            word_active = False
             index += 1
             continue
         if char == "]":
@@ -1214,8 +1321,21 @@ def validate_inline_script_syntax(script_body: str) -> str:
             if top != "[":
                 return f"script has mismatched closing `{char}`."
             delimiter_stack.pop()
+            last_code_char = char
+            last_code_word = ""
+            word_active = False
             index += 1
             continue
+        if char.isspace():
+            word_active = False
+        else:
+            if char.isalnum() or char in "_$":
+                last_code_word = f"{last_code_word}{char}" if word_active else char
+                word_active = True
+            else:
+                last_code_word = ""
+                word_active = False
+            last_code_char = char
         index += 1
 
     unfinished_mode = mode_stack[-1] if mode_stack else "code"

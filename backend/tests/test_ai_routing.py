@@ -341,6 +341,81 @@ APPEND_ONLY_OPTION_RENDER_HTML = """<!doctype html>
   </body>
 </html>"""
 
+REGEX_LITERAL_ARTIFACT_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var root = document.getElementById("artifact-root");
+        if (!root) {
+          return;
+        }
+        var label = state && state.poll ? state.poll.question || "" : "";
+        var cleaned = label.replace(/\\(/g, "").replace(/[)'"]/g, "").replace(/\\s+/g, " ");
+        var half = cleaned.length / 2;
+        root.textContent = cleaned + " " + half;
+      });
+    </script>
+  </body>
+</html>"""
+
+CLEAR_BEFORE_APPEND_OPTION_RENDER_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"><div id="option-list"></div></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var list = document.getElementById("option-list");
+        if (!list) {
+          return;
+        }
+        while (list.firstElementChild) {
+          list.removeChild(list.firstElementChild);
+        }
+        var options = state && state.poll && Array.isArray(state.poll.options) ? state.poll.options : [];
+        options.forEach(function (option) {
+          var row = document.createElement("div");
+          row.className = "poll-row";
+          row.textContent = option && option.label ? option.label : "";
+          list.appendChild(row);
+        });
+      });
+    </script>
+  </body>
+</html>"""
+
+DATASET_KEYED_OPTION_RENDER_HTML = """<!doctype html>
+<html lang="en">
+  <body>
+    <div id="artifact-root"><div id="option-list"></div></div>
+    <script>
+      window.prezoSetPollRenderer(function (state) {
+        var list = document.getElementById("option-list");
+        if (!list) {
+          return;
+        }
+        var options = state && state.poll && Array.isArray(state.poll.options) ? state.poll.options : [];
+        options.forEach(function (option) {
+          var row = null;
+          for (var i = 0; i < list.childElementCount; i += 1) {
+            if (list.children[i].dataset.optionId === String(option.id)) {
+              row = list.children[i];
+              break;
+            }
+          }
+          if (!row) {
+            row = document.createElement("div");
+            row.dataset.optionId = String(option.id);
+            list.appendChild(row);
+          }
+          row.textContent = option && option.label ? option.label : "";
+        });
+      });
+    </script>
+  </body>
+</html>"""
+
 INVALID_ARTIFACT_HTML = """<!doctype html>
 <html lang="en">
   <body>
@@ -774,6 +849,50 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "script appears to append option rows on each render without clear keyed reconciliation; repeated poll updates can duplicate rows.",
             issues,
+        )
+
+    def test_validate_poll_game_artifact_html_allows_regex_literals_with_delimiters(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(REGEX_LITERAL_ARTIFACT_HTML)
+
+        self.assertEqual(issues, [])
+
+    def test_validate_poll_game_artifact_html_allows_clear_before_append_renderer(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(CLEAR_BEFORE_APPEND_OPTION_RENDER_HTML)
+
+        self.assertEqual(issues, [])
+
+    def test_validate_poll_game_artifact_html_allows_dataset_keyed_renderer(self) -> None:
+        issues = ai_api.validate_poll_game_artifact_html(DATASET_KEYED_OPTION_RENDER_HTML)
+
+        self.assertEqual(issues, [])
+
+    def test_validate_inline_script_syntax_ignores_regex_literals(self) -> None:
+        self.assertEqual(
+            ai_api.validate_inline_script_syntax(
+                "var cleaned = label.replace(/\\(/g, '').replace(/[)}\\]]/g, '');\n"
+                "var parts = value.split(/['\"`]/);\n"
+                "if (/^(a|b)$/.test(value)) { parts.push(value); }\n"
+                "return parts.join(' ');"
+            ),
+            "",
+        )
+
+    def test_validate_inline_script_syntax_still_treats_division_as_code(self) -> None:
+        self.assertEqual(
+            ai_api.validate_inline_script_syntax(
+                "var half = total / 2;\n"
+                "var ratio = (votes + 1) / (max + 1);\n"
+                "var pct = Math.round(100 * votes / max);"
+            ),
+            "",
+        )
+
+    def test_validate_inline_script_syntax_still_detects_unterminated_paren(self) -> None:
+        self.assertEqual(
+            ai_api.validate_inline_script_syntax(
+                "var cleaned = label.replace(/\\(/g, '';"
+            ),
+            "script has an unterminated parenthesized expression.",
         )
 
     def test_attempt_artifact_structural_autorepair_balances_missing_script_close_tag(self) -> None:
