@@ -115,7 +115,14 @@ function makePanel({ state: stateOverrides = {}, deps: depOverrides = {}, pendin
   }
   const themeLibrary = { themes: {}, activeName: null }
   const artifactLibrary = { artifacts: {}, activeName: null }
-  const calls = { saveThemeLibrary: 0, saveArtifactLibrary: 0, applyArtifactMarkup: 0, cleared: 0 }
+  const calls = {
+    saveThemeLibrary: 0,
+    saveArtifactLibrary: 0,
+    applyArtifactMarkup: 0,
+    cleared: 0,
+    clearedHidden: 0,
+    dirty: []
+  }
   let currentTheme = { ...defaultTheme }
   const deps = {
     state,
@@ -154,8 +161,17 @@ function makePanel({ state: stateOverrides = {}, deps: depOverrides = {}, pendin
       getPendingSizeOverrides: () => ({}),
       clearPendingSizeOverrides: () => {}
     },
-    artifactDelete: { getPendingHiddenOverrides: () => ({}) },
+    artifactDelete: {
+      getPendingHiddenOverrides: () => ({}),
+      clearPendingHiddenOverrides: () => {
+        calls.clearedHidden += 1
+      }
+    },
     artifactHistory: { clear: () => {} },
+    guardArtifactDiscard: () => true,
+    setArtifactDirty: (value) => {
+      calls.dirty.push(Boolean(value))
+    },
     updateTheme: () => {},
     applyTheme: () => {},
     syncThemeControls: () => {},
@@ -214,6 +230,69 @@ test('artifactRecordMatchesActivityKind treats legacy records as polls and pairs
     assert.equal(qna.artifactRecordMatchesActivityKind({ kind: 'discussion' }), true, 'shared runtime contract')
     assert.equal(qna.artifactRecordMatchesActivityKind({ kind: 'poll' }), false)
     assert.equal(qna.artifactRecordMatchesActivityKind({}), false)
+  } finally {
+    restore()
+  }
+})
+
+test('saveArtifactToLibrary clears the dirty flag and every pending store, hidden included', async () => {
+  const restore = installDomStub()
+  try {
+    const { panel, el, state, calls } = makePanel()
+    state.artifact.html = '<html><body>votes</body></html>'
+    el.artifactName.value = 'My Artifact'
+    await panel.saveArtifactToLibrary()
+    assert.equal(calls.cleared, 1, 'style/copy pendings cleared')
+    assert.equal(calls.clearedHidden, 1, 'hidden pendings cleared (save-gap regression)')
+    assert.deepEqual(calls.dirty, [false], 'dirty flag cleared exactly once')
+    await flush()
+  } finally {
+    restore()
+  }
+})
+
+test('load/new/restore bail when the discard guard blocks, proceed when it allows', async () => {
+  const restore = installDomStub()
+  try {
+    let allow = false
+    let cleared = 0
+    let restoresRequested = 0
+    const guardRetries = []
+    const { panel, el, state, artifactLibrary, calls } = makePanel({
+      deps: {
+        guardArtifactDiscard: (retry) => {
+          guardRetries.push(typeof retry)
+          return allow
+        },
+        clearArtifactMarkup: () => {
+          cleared += 1
+        },
+        restoreArtifactVersionInAccount: async () => {
+          restoresRequested += 1
+          return null
+        }
+      }
+    })
+    state.artifact.html = '<html><body>current</body></html>'
+    artifactLibrary.artifacts.saved = { kind: 'poll', html: '<div>x</div>' }
+    el.artifactSelect.value = 'saved'
+    el.artifactVersionSelect.value = '2'
+
+    panel.loadArtifactFromSelect()
+    assert.equal(calls.applyArtifactMarkup, 0, 'blocked load applies nothing')
+    panel.startNewArtifact()
+    assert.equal(cleared, 0, 'blocked new-artifact clears nothing')
+    await panel.restoreArtifactFromVersionHistory()
+    assert.equal(restoresRequested, 0, 'blocked restore never hits the account')
+    assert.deepEqual(guardRetries, ['function', 'function', 'function'], 'guard gets a retry callback each time')
+
+    allow = true
+    panel.loadArtifactFromSelect()
+    assert.equal(calls.applyArtifactMarkup, 1, 'allowed load applies the record')
+    assert.ok(calls.dirty.includes(false), 'a loaded saved record is not unsaved work')
+    panel.startNewArtifact()
+    assert.equal(cleared, 1, 'allowed new-artifact proceeds')
+    await flush()
   } finally {
     restore()
   }

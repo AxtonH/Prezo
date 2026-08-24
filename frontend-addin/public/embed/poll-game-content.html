@@ -485,6 +485,11 @@
         let currentScreenMode = ""
         let currentArtifactName = ""
         let currentPresentMode = false
+        // True while the inner station reports unsaved artifact edits
+        // (prezo:artifact-dirty). Reloading the iframe discards those edits
+        // and the station cannot intercept a parent-driven reload, so the
+        // pickers below must confirm before proceeding.
+        let stationArtifactDirty = false
         // Last URL written to the inner iframe. Used to short-circuit
         // loadGameFrame when nothing relevant has changed — token refreshes
         // and other idle-time triggers were re-running the function and
@@ -1755,9 +1760,34 @@
           }
         }
 
+        // Reloading the inner iframe discards any unsaved artifact edits in
+        // the station, and the station's own beforeunload cannot intercept a
+        // parent-driven src reassignment — this confirm is the only place
+        // that can. Clears the flag on proceed so the reload isn't re-asked.
+        function confirmDiscardStationArtifactEdits() {
+          if (!stationArtifactDirty) {
+            return true
+          }
+          let proceed = false
+          try {
+            proceed = window.confirm(
+              "This slide's artifact has unsaved edits. Switching will discard them. Continue?"
+            )
+          } catch {
+            proceed = false
+          }
+          if (proceed) {
+            stationArtifactDirty = false
+          }
+          return proceed
+        }
         sessionSelectEl.addEventListener("change", async () => {
           const next = sessionSelectEl.value || ""
           if (next === selectedSessionId) {
+            return
+          }
+          if (!confirmDiscardStationArtifactEdits()) {
+            sessionSelectEl.value = selectedSessionId
             return
           }
           conductorHandleBindingChange(selectedSessionId)
@@ -1777,6 +1807,10 @@
           if (next === selectedActivityKind) {
             return
           }
+          if (!confirmDiscardStationArtifactEdits()) {
+            activitySelectEl.value = selectedActivityKind
+            return
+          }
           conductorHandleBindingChange(selectedSessionId)
           selectedActivityKind = next
           queueEmbedStatePatch({
@@ -1790,6 +1824,10 @@
           if (next === selectedPollId) {
             return
           }
+          if (!confirmDiscardStationArtifactEdits()) {
+            pollSelectEl.value = selectedPollId
+            return
+          }
           conductorHandleBindingChange(selectedSessionId)
           selectedPollId = next
           queueEmbedStatePatch({ poll_id: selectedPollId || null })
@@ -1798,6 +1836,10 @@
         promptSelectEl.addEventListener("change", () => {
           const next = promptSelectEl.value || ""
           if (next === selectedPromptId) {
+            return
+          }
+          if (!confirmDiscardStationArtifactEdits()) {
+            promptSelectEl.value = selectedPromptId
             return
           }
           conductorHandleBindingChange(selectedSessionId)
@@ -1809,6 +1851,9 @@
           loadGameFrame()
         })
         refreshBtn.addEventListener("click", () => {
+          if (!confirmDiscardStationArtifactEdits()) {
+            return
+          }
           void loadSessions()
         })
         window.addEventListener("storage", (event) => {
@@ -1839,6 +1884,9 @@
           })()
         })
         frame.addEventListener("load", () => {
+          // A fresh station instance starts clean; it re-announces dirty via
+          // prezo:artifact-dirty if unsaved edits accumulate again.
+          stationArtifactDirty = false
           postLibrarySyncToFrame()
         })
         // Present-mode escape hatch. The inner station only hears Escape
@@ -1911,6 +1959,10 @@
             // metadata.loadToken, and any merge race between the two writers
             // can erase the load token and trick that logic into forking.
             queueEmbedStatePatch({ screen_mode: nextMode })
+            return
+          }
+          if (message.type === "prezo:artifact-dirty") {
+            stationArtifactDirty = Boolean(message.dirty)
             return
           }
           if (message.type !== PREZO_LIBRARY_SYNC_REQUEST_MESSAGE) {

@@ -626,7 +626,8 @@ export function createDragResizeEngine(deps) {
       target.closest('#artifact-composer') ||
       target.closest('#artifact-composer-fab') ||
       target.closest('#ai-chat-shell') ||
-      target.closest('#reset-positions-modal')
+      target.closest('#reset-positions-modal') ||
+      target.closest('#discard-artifact-modal')
     ) {
       return
     }

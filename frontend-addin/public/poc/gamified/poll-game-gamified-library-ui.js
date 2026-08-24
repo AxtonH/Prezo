@@ -112,7 +112,12 @@ export function createLibraryPanel(deps) {
     showArtifactStagePlaceholder,
     showArtifactStageFrame,
     clearArtifactEditPromptQueue,
-    syncArtifactConversationUi
+    syncArtifactConversationUi,
+    // Unsaved-artifact guard: returns true when safe to proceed; when the
+    // artifact has unsaved edits it opens the discard confirm and re-runs
+    // the supplied retry callback on accept.
+    guardArtifactDiscard,
+    setArtifactDirty
   } = deps
 
   const artifactVersionState = {
@@ -229,6 +234,9 @@ export function createLibraryPanel(deps) {
     if (state.artifact.busy) {
       return
     }
+    if (!guardArtifactDiscard(startNewArtifact)) {
+      return
+    }
     if (getCurrentTheme().visualMode !== ARTIFACT_VISUAL_MODE) {
       updateTheme({ visualMode: ARTIFACT_VISUAL_MODE }, { historyLabel: 'New artifact' })
       return
@@ -266,6 +274,11 @@ export function createLibraryPanel(deps) {
     clearPendingArtifactOverrides()
     artifactPosition.clearPendingPositionOverrides()
     artifactSize.clearPendingSizeOverrides()
+    // Hidden (deleted-element) pendings are folded into the record too —
+    // without this clear they would linger as permanently-"pending" and
+    // keep the artifact looking dirty forever after a save.
+    artifactDelete.clearPendingHiddenOverrides()
+    setArtifactDirty(false)
     saveArtifactLibrary(artifactLibrary)
     postActiveArtifactToParent('artifact-saved')
     refreshArtifactSelect(name)
@@ -331,6 +344,9 @@ export function createLibraryPanel(deps) {
       showArtifactStageFrame()
     }
     recordHistoryCheckpoint(asText(options.historyLabel) || 'Load artifact')
+    // A freshly-applied saved record IS the saved state — not unsaved work.
+    // (applyArtifactMarkup's 'build' path raises the dirty flag; undo it.)
+    setArtifactDirty(false)
     const successMessage = asText(options.successMessage) || `Artifact "${name}" loaded.`
     const failureMessage =
       asText(options.failureMessage) || `Artifact "${name}" could not be loaded.`
@@ -343,6 +359,9 @@ export function createLibraryPanel(deps) {
     const artifactRecord = name ? artifactLibrary.artifacts[name] : null
     if (!name || !artifactRecord) {
       showArtifactFeedback('Select a saved artifact first.', 'error')
+      return
+    }
+    if (!guardArtifactDiscard(loadArtifactFromSelect)) {
       return
     }
     applyArtifactLibraryRecord(name, artifactRecord, {
@@ -484,6 +503,9 @@ export function createLibraryPanel(deps) {
     const name = asText(el.artifactSelect.value)
     if (!name || !artifactLibrary.artifacts[name]) {
       showArtifactFeedback('Select a saved artifact first.', 'error')
+      return
+    }
+    if (!guardArtifactDiscard(() => void restoreArtifactFromVersionHistory())) {
       return
     }
     const version = Math.max(1, toInt(el.artifactVersionSelect.value))

@@ -432,6 +432,9 @@ import {
     resetPositionsModal: must('reset-positions-modal'),
     resetPositionsAccept: must('reset-positions-accept'),
     resetPositionsCancel: must('reset-positions-cancel'),
+    discardArtifactModal: must('discard-artifact-modal'),
+    discardArtifactAccept: must('discard-artifact-accept'),
+    discardArtifactCancel: must('discard-artifact-cancel'),
     textToolBold: must('text-tool-bold'),
     textToolItalic: must('text-tool-italic'),
     textToolUnderline: must('text-tool-underline'),
@@ -766,7 +769,16 @@ import {
   // keeping the composer's undo/redo buttons in sync.
   const artifactHistory = createArtifactHistoryHandler({
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction),
-    onStatus: () => refreshArtifactAiUndoControls()
+    onStatus: (message) => {
+      refreshArtifactAiUndoControls()
+      // Any recorded or replayed edit means the artifact differs from its
+      // last-saved state. All six manual mutation kinds plus AI edits route
+      // through history pushes, so this one hook covers them. Discards
+      // (failed-edit cleanup) don't change state and are excluded.
+      if (/^(push|coalesced|undo|redo) /.test(asText(message))) {
+        setArtifactDirty(true)
+      }
+    }
   })
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
   // preference, persisted in localStorage. Present mode unconditionally
@@ -836,7 +848,9 @@ import {
     showArtifactStagePlaceholder: (text, type) => showArtifactStagePlaceholder(text, type),
     showArtifactStageFrame: () => showArtifactStageFrame(),
     clearArtifactEditPromptQueue: () => clearArtifactEditPromptQueue(),
-    syncArtifactConversationUi: () => syncArtifactConversationUi()
+    syncArtifactConversationUi: () => syncArtifactConversationUi(),
+    guardArtifactDiscard: (retry) => guardArtifactDiscard(retry),
+    setArtifactDirty: (next) => setArtifactDirty(next)
   })
   const {
     setLibrarySyncStatus,
@@ -896,6 +910,12 @@ import {
   function runArtifactRestoreAttempt() {
     artifactRestoreTimerId = 0
     if (!pendingArtifactRestoreName) {
+      return
+    }
+    // A late library sync must never silently replace an artifact the user
+    // has already started editing — cancel the URL restore once dirty.
+    if (artifactDirty) {
+      pendingArtifactRestoreName = ''
       return
     }
     const record =
@@ -973,6 +993,57 @@ import {
     } catch {
       /* ignore cross-frame postMessage failures */
     }
+  }
+
+  // ── Unsaved-artifact guard ───────────────────────────────────────────
+  // True whenever the in-memory artifact differs from the last saved
+  // library record (or was never saved). Explicit flag — NOT derived from
+  // override-map emptiness (AI edits fold pendings into saved overrides,
+  // so emptiness lies) and NOT from history depth (undoing to the start
+  // doesn't mean "matches the saved record").
+  let artifactDirty = false
+
+  /**
+   * Set the dirty flag and mirror every transition to the embed parent —
+   * the outer embed reloads this iframe on session/activity/poll picker
+   * changes, which no in-iframe dialog can intercept, so the parent needs
+   * its own copy of the flag to show a confirm before reloading.
+   */
+  function setArtifactDirty(next) {
+    const value = Boolean(next)
+    if (value === artifactDirty) {
+      return
+    }
+    artifactDirty = value
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          { type: 'prezo:artifact-dirty', dirty: artifactDirty },
+          parentPostMessageOrigin
+        )
+      }
+    } catch {
+      /* ignore cross-frame postMessage failures */
+    }
+  }
+
+  // The in-station action intercepted by the discard modal; run on accept.
+  let pendingArtifactDiscardAction = null
+
+  /**
+   * Gate for actions that would destroy the current in-memory artifact
+   * (load another artifact, restore a version, start a new one). Returns
+   * true when it's safe to proceed. When there are unsaved edits, opens
+   * the discard modal, remembers `retry`, and returns false — on accept
+   * the dirty flag is cleared and `retry` re-runs the intercepted action.
+   */
+  function guardArtifactDiscard(retry) {
+    if (!artifactDirty) {
+      return true
+    }
+    pendingArtifactDiscardAction = typeof retry === 'function' ? retry : null
+    openDiscardArtifactModal()
+    return false
   }
   const artifactLayoutRefitState = {
     rafId: 0,
@@ -1269,6 +1340,11 @@ import {
     })
     window.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') {
+        return
+      }
+      if (isDiscardArtifactModalOpen()) {
+        event.preventDefault()
+        cancelDiscardArtifactModal()
         return
       }
       if (isResetPositionsModalOpen()) {
@@ -1645,6 +1721,14 @@ import {
       }
     })
     window.addEventListener('keydown', handleResetPositionsModalKeydown, true)
+    el.discardArtifactCancel.addEventListener('click', cancelDiscardArtifactModal)
+    el.discardArtifactAccept.addEventListener('click', acceptDiscardArtifactModal)
+    el.discardArtifactModal.addEventListener('click', (event) => {
+      if (event.target === el.discardArtifactModal) {
+        cancelDiscardArtifactModal()
+      }
+    })
+    window.addEventListener('keydown', handleDiscardArtifactModalKeydown, true)
 
     bindImageUpload('theme-bg-image-upload', 'bgImageUrl', 'Background image applied.')
     bindImageUpload('theme-logo-upload', 'logoUrl', 'Logo applied.')
@@ -4240,6 +4324,13 @@ import {
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     refreshArtifactAiUndoControls()
+    // AI edits and fresh builds both leave the in-memory artifact ahead of
+    // any saved record. Library loads also come through 'build' — the
+    // library panel clears the flag again right after applying a saved
+    // record. Rollback (undo/redo, failed-edit revert) keeps the flag.
+    if (requestKind === 'edit' || requestKind === 'build') {
+      setArtifactDirty(true)
+    }
     return true
   }
 
@@ -4324,6 +4415,7 @@ import {
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
     artifactHistory.clear()
+    setArtifactDirty(false)
     state.artifact.html = ''
     state.artifact.package = null
     state.artifact.lastStableHtml = ''
@@ -4441,7 +4533,7 @@ import {
   }
 
   function handleDeleteKeydown(event) {
-    if (event.defaultPrevented || isResetPositionsModalOpen()) {
+    if (event.defaultPrevented || isAnyConfirmModalOpen()) {
       return
     }
     const key = asText(event.key).toLowerCase()
@@ -4626,7 +4718,7 @@ import {
     if (!(event.ctrlKey || event.metaKey) || event.altKey) {
       return
     }
-    if (isResetPositionsModalOpen()) {
+    if (isAnyConfirmModalOpen()) {
       return
     }
     const key = asText(event.key).toLowerCase()
@@ -5003,7 +5095,12 @@ import {
         pendingArtifactCopyOverrides.textOverrides = {}
       }
       pendingArtifactCopyOverrides.textOverrides[stableId] = text
+    } else {
+      return
     }
+    // Copy edits (subtitle/footer/generic text) don't all route through
+    // artifactHistory pushes, so mark unsaved work here directly.
+    setArtifactDirty(true)
   }
 
   /**
@@ -5944,6 +6041,68 @@ import {
     return el.resetPositionsModal.classList.contains('open')
   }
 
+  function isDiscardArtifactModalOpen() {
+    return el.discardArtifactModal.classList.contains('open')
+  }
+
+  // Keyboard/drag subsystems must stand down while EITHER confirm modal is
+  // up (mirrors the reset-positions suppression sites).
+  function isAnyConfirmModalOpen() {
+    return isResetPositionsModalOpen() || isDiscardArtifactModalOpen()
+  }
+
+  function openDiscardArtifactModal() {
+    if (isDiscardArtifactModalOpen()) {
+      return
+    }
+    state.discardArtifactModalInvoker =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    el.discardArtifactModal.classList.add('open')
+    el.discardArtifactModal.setAttribute('aria-hidden', 'false')
+    el.discardArtifactCancel.focus()
+  }
+
+  function closeDiscardArtifactModal() {
+    if (!isDiscardArtifactModalOpen()) {
+      return
+    }
+    el.discardArtifactModal.classList.remove('open')
+    el.discardArtifactModal.setAttribute('aria-hidden', 'true')
+    if (state.discardArtifactModalInvoker && state.discardArtifactModalInvoker.isConnected) {
+      state.discardArtifactModalInvoker.focus()
+    }
+    state.discardArtifactModalInvoker = null
+  }
+
+  function cancelDiscardArtifactModal() {
+    pendingArtifactDiscardAction = null
+    closeDiscardArtifactModal()
+  }
+
+  function acceptDiscardArtifactModal() {
+    const action = pendingArtifactDiscardAction
+    pendingArtifactDiscardAction = null
+    closeDiscardArtifactModal()
+    // The user chose to discard: the current edits no longer count as
+    // unsaved work, and the retried action must not re-trip the guard.
+    setArtifactDirty(false)
+    if (typeof action === 'function') {
+      action()
+    }
+  }
+
+  function handleDiscardArtifactModalKeydown(event) {
+    if (!isDiscardArtifactModalOpen()) {
+      return
+    }
+    if (event.key !== 'Escape') {
+      return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    cancelDiscardArtifactModal()
+  }
+
   function openResetPositionsModal() {
     if (isResetPositionsModalOpen()) {
       return
@@ -6001,7 +6160,18 @@ import {
     })
   }
 
-  function handleUnload() {
+  function handleUnload(event) {
+    // Unsaved-edits guard: block the navigation (browser shows its own
+    // confirm) and skip teardown — if the user cancels, the page must keep
+    // working; if they proceed, the document dies and teardown is moot.
+    // Best-effort only: embedded Office webviews may suppress the native
+    // beforeunload prompt, which is why the in-app guards and the embed
+    // parent's prezo:artifact-dirty confirm carry the real weight.
+    if (artifactDirty && event && typeof event.preventDefault === 'function') {
+      event.preventDefault()
+      event.returnValue = ''
+      return
+    }
     state.isUnloading = true
     stopSnapshotPolling()
     hideSelectionToolbar()
@@ -6073,6 +6243,7 @@ import {
     window.removeEventListener('keydown', handleHistoryKeydown, true)
     window.removeEventListener('keydown', handleDeleteKeydown, true)
     window.removeEventListener('keydown', handleResetPositionsModalKeydown, true)
+    window.removeEventListener('keydown', handleDiscardArtifactModalKeydown, true)
     el.deleteSelectedObject.removeEventListener('click', handleDeleteSelectedObjectClick)
     clearTypingHistoryTimer()
     if (state.selectionToolbarRafId != null) {

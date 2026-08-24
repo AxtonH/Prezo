@@ -912,6 +912,17 @@
       </div>
     </div>
 
+    <div id="discard-artifact-modal" class="confirm-modal" aria-hidden="true">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-artifact-title">
+        <h3 id="discard-artifact-title">Discard unsaved artifact edits?</h3>
+        <p>This artifact has unsaved edits. If you continue without saving, those edits will be discarded.</p>
+        <div class="confirm-actions">
+          <button id="discard-artifact-cancel" type="button" class="ghost">Keep editing</button>
+          <button id="discard-artifact-accept" type="button" class="danger">Discard edits</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/poc/gamified/poll-game-gamified-entry.js"></script>
   </body>
 </html>
