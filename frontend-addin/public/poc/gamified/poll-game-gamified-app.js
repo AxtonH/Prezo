@@ -123,6 +123,7 @@ import { createArtifactPositionHandler } from './poll-game-gamified-artifact-pos
 import { createArtifactSizeHandler } from './poll-game-gamified-artifact-size.js'
 import { createArtifactDeleteHandler } from './poll-game-gamified-artifact-delete.js'
 import { createArtifactHistoryHandler } from './poll-game-gamified-artifact-history.js'
+import { createArtifactAiUndo } from './poll-game-gamified-artifact-ai-undo.js'
 import {
   createArtifactGuidesHandler
 
@@ -413,6 +414,8 @@ import {
     artifactTypeReferenceStatus: must('artifact-type-reference-status'),
     artifactBrandProfileSelect: must('artifact-brand-profile-select'),
     artifactIntakeBuildNow: must('artifact-intake-build-now'),
+    artifactAiUndoBtn: must('artifact-ai-undo'),
+    artifactAiRedoBtn: must('artifact-ai-redo'),
     artifactBrandReferenceInput: must('artifact-brand-reference-input'),
     artifactBrandReferenceStatus: must('artifact-brand-reference-status'),
     artifactBrandReferencePreview: must('artifact-brand-reference-preview'),
@@ -760,6 +763,12 @@ import {
   const artifactHistory = createArtifactHistoryHandler({
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction)
   })
+  // Whole-artifact undo/redo for AI edits (separate from the element-level
+  // history above, which is cleared on every AI rewrite). Snapshots the
+  // pre-edit {html, package, merged overrides}; app.js applies them back
+  // through the 'rollback' path. Scope: per-artifact — cleared on fresh
+  // builds and artifact swaps.
+  const artifactAiUndo = createArtifactAiUndo()
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
   // preference, persisted in localStorage. Present mode unconditionally
   // forces visual aids off — handled by the handler's getEffectiveConfig.
@@ -1927,6 +1936,8 @@ import {
     el.artifactPromptForm.addEventListener('drop', handleArtifactTypeReferenceDrop)
     el.artifactTypeReferenceInput.addEventListener('change', handleArtifactTypeReferenceInputChange)
     el.artifactTypeReferenceClear.addEventListener('click', handleArtifactTypeReferenceClearClick)
+    el.artifactAiUndoBtn.addEventListener('click', undoLastArtifactAiEdit)
+    el.artifactAiRedoBtn.addEventListener('click', redoArtifactAiEdit)
     document.addEventListener('paste', handleArtifactBuildReferencePaste, true)
   }
 
@@ -2068,6 +2079,7 @@ import {
       state.artifact.busy || artifactBrandReferenceBusy || queueFull || conversationBlocked
     )
     syncArtifactTypeReferenceRow()
+    refreshArtifactAiUndoControls()
   }
 
   function setArtifactComposerFloatingOpen(open) {
@@ -3417,6 +3429,9 @@ import {
     const detail = asText(errorMessage)
     const statusMessage = 'Artifact edit was reverted because the updated artifact failed to render.'
     state.artifact.pendingSuccessMessage = ''
+    // The failed edit never stuck — drop its undo snapshot so the user's
+    // next "undo AI edit" doesn't step to a state identical to the current.
+    artifactAiUndo.discardLast()
     applyArtifactMarkup(rollbackHtml, { requestKind: 'rollback', artifactPackage: rollbackPackage })
     showArtifactStageFrame()
     state.artifact.lastRuntimeError = detail
@@ -4068,6 +4083,13 @@ import {
       }
       console.log('[prezo-debug] applyArtifactMarkup', window.__prezoDebug.lastApply)
     } catch (e) {}
+    // Capture the CURRENT (pre-edit) state for AI-edit undo before anything
+    // below swaps it. rollbackHtml can lag behind (it prefers lastStableHtml),
+    // so it is not a substitute for this.
+    const preEditAiUndoState =
+      requestKind === 'edit'
+        ? { html: asText(state.artifact.html), package: state.artifact.package }
+        : null
     if (requestKind === 'edit') {
       state.artifact.rollbackHtml = normalizeArtifactMarkup(
         state.artifact.lastStableHtml || state.artifact.html
@@ -4088,6 +4110,7 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactHistory.clear()
+      artifactAiUndo.clear()
     } else {
       state.artifact.rollbackHtml = ''
       state.artifact.rollbackPackage = null
@@ -4096,6 +4119,12 @@ import {
       artifactPosition.clearPendingPositionOverrides()
       artifactSize.clearPendingSizeOverrides()
       artifactHistory.clear()
+      // Artifact swaps / library loads invalidate AI-edit history, but the
+      // 'rollback' kind IS the AI-undo/redo apply path (and the failed-edit
+      // revert) — those must keep the stacks.
+      if (requestKind !== 'rollback') {
+        artifactAiUndo.clear()
+      }
     }
     state.artifact.pendingSuccessMessage = ''
     artifactBridge.clearPostLoadReplays()
@@ -4134,6 +4163,16 @@ import {
         { ...(state.artifact.savedStyleOverrides || {}), ...pendingArtifactStyleOverrides },
         pendingCopyWithPositions
       )
+      // AI-edit undo snapshot: the pre-edit files plus the merged override
+      // map BEFORE reconciliation drops anything — restoring it reproduces
+      // exactly what the user saw before this edit.
+      if (preEditAiUndoState && preEditAiUndoState.html) {
+        artifactAiUndo.pushSnapshot({
+          html: preEditAiUndoState.html,
+          package: preEditAiUndoState.package,
+          styleOverrides: merged
+        })
+      }
       pendingArtifactStyleOverrides = {}
       pendingArtifactCopyOverrides = {}
       artifactPosition.clearPendingPositionOverrides()
@@ -4194,13 +4233,76 @@ import {
     maskArtifactFrameForOverrides()
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
+    refreshArtifactAiUndoControls()
     return true
+  }
+
+  // ── AI-edit undo/redo ────────────────────────────────────────────────
+  // Whole-artifact snapshots around AI edits, applied back through the
+  // same 'rollback' path the failed-edit revert uses. Separate from the
+  // element-level artifactHistory (Ctrl+Z), which cannot survive AI DOM
+  // rewrites and is cleared on every edit.
+
+  function refreshArtifactAiUndoControls() {
+    const busy = Boolean(state.artifact.busy)
+    el.artifactAiUndoBtn.disabled = busy || !artifactAiUndo.canUndo()
+    el.artifactAiRedoBtn.disabled = busy || !artifactAiUndo.canRedo()
+  }
+
+  function captureCurrentArtifactAiUndoState() {
+    return {
+      html: asText(state.artifact.html),
+      package: state.artifact.package,
+      styleOverrides: { ...(state.artifact.savedStyleOverrides || {}) }
+    }
+  }
+
+  function applyArtifactAiUndoSnapshot(snapshot, feedMessage) {
+    // Restore the override map FIRST: the rollback apply path bakes the
+    // hidden-element CSS from savedStyleOverrides, so it must already hold
+    // the snapshot's map when applyArtifactMarkup runs.
+    state.artifact.savedStyleOverrides = snapshot.styleOverrides || {}
+    pendingArtifactStyleOverrides = {}
+    artifactDelete.clearPendingHiddenOverrides()
+    const snapshotPackage = snapshot.package
+      ? buildSegmentedArtifactPackage(snapshot.package)
+      : null
+    const applied = applyArtifactMarkup(snapshot.html, {
+      requestKind: 'rollback',
+      artifactPackage: snapshotPackage
+    })
+    if (applied) {
+      appendArtifactEditMessage('assistant', feedMessage)
+    }
+    refreshArtifactAiUndoControls()
+    return applied
+  }
+
+  function undoLastArtifactAiEdit() {
+    if (state.artifact.busy) return
+    const snapshot = artifactAiUndo.undo(captureCurrentArtifactAiUndoState())
+    if (!snapshot) {
+      refreshArtifactAiUndoControls()
+      return
+    }
+    applyArtifactAiUndoSnapshot(snapshot, 'Reverted the last AI edit.')
+  }
+
+  function redoArtifactAiEdit() {
+    if (state.artifact.busy) return
+    const snapshot = artifactAiUndo.redo(captureCurrentArtifactAiUndoState())
+    if (!snapshot) {
+      refreshArtifactAiUndoControls()
+      return
+    }
+    applyArtifactAiUndoSnapshot(snapshot, 'Reapplied the AI edit.')
   }
 
   function clearArtifactMarkup() {
     artifactBridge.clearRenderWatchdog()
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
+    artifactAiUndo.clear()
     state.artifact.html = ''
     state.artifact.package = null
     state.artifact.lastStableHtml = ''

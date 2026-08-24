@@ -654,6 +654,28 @@
             <div>
               <p id="artifact-composer-kicker" class="artifact-kicker">Artifact wizard</p>
             </div>
+            <div class="artifact-ai-undo-controls">
+              <button
+                id="artifact-ai-undo"
+                type="button"
+                class="artifact-ai-undo-btn"
+                disabled
+                aria-label="Undo last AI edit"
+                title="Undo last AI edit"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">undo</span>
+              </button>
+              <button
+                id="artifact-ai-redo"
+                type="button"
+                class="artifact-ai-undo-btn"
+                disabled
+                aria-label="Redo AI edit"
+                title="Redo AI edit"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true">redo</span>
+              </button>
+            </div>
           </div>
           <div id="artifact-prompt-queue" class="ai-chat-queue hidden" aria-live="polite"></div>
           <div id="artifact-chat-log" class="artifact-chat-log" aria-live="polite"></div>
