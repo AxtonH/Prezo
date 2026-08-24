@@ -771,13 +771,20 @@ import {
     applyEntry: (entry, direction) => applyArtifactHistoryEntry(entry, direction),
     onStatus: (message) => {
       refreshArtifactAiUndoControls()
-      // Any recorded or replayed edit means the artifact differs from its
-      // last-saved state. All six manual mutation kinds plus AI edits route
-      // through history pushes, so this one hook covers them. Discards
-      // (failed-edit cleanup) don't change state and are excluded.
-      if (/^(push|coalesced|undo|redo) /.test(asText(message))) {
-        setArtifactDirty(true)
+      // All six manual mutation kinds plus AI edits route through history,
+      // so recomputing dirty here covers them — including undo walking the
+      // depth BACK to the clean checkpoint, which makes the artifact clean
+      // again. A push at or below the checkpoint depth diverges from the
+      // saved state (it just cleared the redo path back to it), so the
+      // checkpoint is unreachable and must be poisoned.
+      const status = asText(message)
+      if (
+        /^(push|coalesced) /.test(status) &&
+        artifactHistory.depth() <= artifactCleanHistoryDepth
+      ) {
+        artifactDirtyBeyondHistory = true
       }
+      recomputeArtifactDirty()
     }
   })
   // Designer tools (rulers / grid / snap-to-grid). Scope: per-user
@@ -850,7 +857,11 @@ import {
     clearArtifactEditPromptQueue: () => clearArtifactEditPromptQueue(),
     syncArtifactConversationUi: () => syncArtifactConversationUi(),
     guardArtifactDiscard: (retry) => guardArtifactDiscard(retry),
-    setArtifactDirty: (next) => setArtifactDirty(next)
+    // false = "this state was just saved/loaded" → establish a clean
+    // checkpoint at the current history depth; true = unsaved work that
+    // history can't walk back → poison until the next checkpoint.
+    setArtifactDirty: (next) =>
+      next ? poisonArtifactCleanCheckpoint() : markArtifactCleanCheckpoint()
   })
   const {
     setLibrarySyncStatus,
@@ -997,11 +1008,37 @@ import {
 
   // ── Unsaved-artifact guard ───────────────────────────────────────────
   // True whenever the in-memory artifact differs from the last saved
-  // library record (or was never saved). Explicit flag — NOT derived from
-  // override-map emptiness (AI edits fold pendings into saved overrides,
-  // so emptiness lies) and NOT from history depth (undoing to the start
-  // doesn't mean "matches the saved record").
+  // library record (or was never saved). Checkpoint-based so that undoing
+  // back to the clean state clears it again: we remember the history depth
+  // at the last clean point (save / load / clear) and compare. Changes that
+  // history can't walk back — a fresh build, copy edits, or a divergent
+  // edit made after undoing below the checkpoint (which invalidates the
+  // redo path back to it) — poison the checkpoint until the next clean
+  // point. NOT derived from override-map emptiness (AI edits fold pendings
+  // into saved overrides, so emptiness lies).
   let artifactDirty = false
+  let artifactCleanHistoryDepth = 0
+  let artifactDirtyBeyondHistory = false
+
+  function recomputeArtifactDirty() {
+    setArtifactDirty(
+      artifactDirtyBeyondHistory ||
+        artifactHistory.depth() !== artifactCleanHistoryDepth
+    )
+  }
+
+  /** A change happened that undo/redo cannot restore the clean state from. */
+  function poisonArtifactCleanCheckpoint() {
+    artifactDirtyBeyondHistory = true
+    recomputeArtifactDirty()
+  }
+
+  /** The current state IS the clean state (just saved / loaded / cleared). */
+  function markArtifactCleanCheckpoint() {
+    artifactDirtyBeyondHistory = false
+    artifactCleanHistoryDepth = artifactHistory.depth()
+    recomputeArtifactDirty()
+  }
 
   /**
    * Set the dirty flag and mirror every transition to the embed parent —
@@ -4324,12 +4361,16 @@ import {
     el.artifactFrame.srcdoc = srcDoc
     syncArtifactComposerVisibility()
     refreshArtifactAiUndoControls()
-    // AI edits and fresh builds both leave the in-memory artifact ahead of
-    // any saved record. Library loads also come through 'build' — the
-    // library panel clears the flag again right after applying a saved
-    // record. Rollback (undo/redo, failed-edit revert) keeps the flag.
-    if (requestKind === 'edit' || requestKind === 'build') {
-      setArtifactDirty(true)
+    // Fresh builds replace the artifact with content history can't undo
+    // back from (history was just cleared), so they poison the clean
+    // checkpoint. Library loads also come through 'build' — the library
+    // panel marks a fresh clean checkpoint right after applying a saved
+    // record. AI edits are covered by their history push; rollback
+    // (undo/redo, failed-edit revert) recomputes via history status.
+    if (requestKind === 'build') {
+      poisonArtifactCleanCheckpoint()
+    } else if (requestKind === 'edit') {
+      recomputeArtifactDirty()
     }
     return true
   }
@@ -4415,7 +4456,7 @@ import {
     artifactBridge.clearPostLoadReplays()
     artifactBridge.clearPendingPayloadTimer()
     artifactHistory.clear()
-    setArtifactDirty(false)
+    markArtifactCleanCheckpoint()
     state.artifact.html = ''
     state.artifact.package = null
     state.artifact.lastStableHtml = ''
@@ -5099,8 +5140,9 @@ import {
       return
     }
     // Copy edits (subtitle/footer/generic text) don't all route through
-    // artifactHistory pushes, so mark unsaved work here directly.
-    setArtifactDirty(true)
+    // artifactHistory pushes, so undo can't walk them back — poison the
+    // clean checkpoint until the next save/load.
+    poisonArtifactCleanCheckpoint()
   }
 
   /**
@@ -6085,7 +6127,7 @@ import {
     closeDiscardArtifactModal()
     // The user chose to discard: the current edits no longer count as
     // unsaved work, and the retried action must not re-trip the guard.
-    setArtifactDirty(false)
+    markArtifactCleanCheckpoint()
     if (typeof action === 'function') {
       action()
     }

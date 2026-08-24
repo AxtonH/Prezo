@@ -81,6 +81,14 @@ export function createArtifactHistoryHandler({ applyEntry, onStatus } = {}) {
   function canRedo() { return redoStack.length > 0 }
 
   /**
+   * Current undo-stack depth. The host compares this against the depth it
+   * recorded at the last clean (saved/loaded) state to decide whether the
+   * artifact has unsaved edits — undoing back to that depth means the
+   * timeline is back at the clean state.
+   */
+  function depth() { return undoStack.length }
+
+  /**
    * Push a new entry. Same-target text-content edits within the coalesce
    * window merge into the previous entry (so typing N characters is one
    * undo). Drags and style changes never coalesce.
@@ -201,6 +209,7 @@ export function createArtifactHistoryHandler({ applyEntry, onStatus } = {}) {
     redo,
     canUndo,
     canRedo,
+    depth,
     clear,
     discardLast,
     classifyKeyEvent
