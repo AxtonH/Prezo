@@ -4,6 +4,20 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Prezo Game Content Add-in (PoC)</title>
+    <script>
+      // Pre-paint present-mode hint. A cold slideshow boot must paint BLACK
+      // from the very first frame — the authoritative present_mode flag
+      // arrives only after the async embed-row fetch, and until then the
+      // light chrome/background reads as a white screen mid-presentation.
+      // The row read and every station-posted transition refresh this hint
+      // (last writer wins across a deck's embeds); a stale hint costs one
+      // dark-to-light swap in edit view, never a white flash in a show.
+      try {
+        if (window.localStorage.getItem("prezo:embed:present-mode-hint") === "1") {
+          document.documentElement.classList.add("present-mode")
+        }
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!--
@@ -317,9 +331,24 @@
        * re-parent/resize repaints (and any beat where the inner station
        * iframe hasn't covered the new box yet) the page background shows —
        * a white flash on a dark presentation if left at the light --bg.
+       * The html.present-mode variants serve the pre-paint localStorage
+       * hint (see the inline head script), which lands before <body> exists
+       * and before the async embed-row fetch confirms the flag.
        */
-      body.present-mode {
+      body.present-mode,
+      html.present-mode,
+      html.present-mode body {
         background: #000;
+      }
+
+      html.present-mode .bar {
+        display: none;
+      }
+
+      html.present-mode .frame-wrap {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
       }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
@@ -619,15 +648,29 @@
             // the station only posts prezo:present-mode seconds later, and
             // until then a boot inside the slideshow would show the light
             // chrome/background. Class-only: persistence still writes solely
-            // on station-posted transitions (see the message handler).
-            if (currentPresentMode) {
-              const appEl = document.querySelector(".app")
-              if (appEl) {
-                appEl.classList.add("present-mode")
-              }
-              document.body.classList.add("present-mode")
-            }
+            // on station-posted transitions (see the message handler). This
+            // also reconciles the pre-paint localStorage hint in both
+            // directions (a stale hint painted black; confirm or clear it).
+            applyPresentModeCss(currentPresentMode)
           }
+        }
+
+        // One place owns the presentation CSS classes + the pre-paint hint,
+        // so the boot row read and station-posted transitions can't drift.
+        const applyPresentModeCss = (isActive) => {
+          const appEl = document.querySelector(".app")
+          if (appEl) {
+            appEl.classList.toggle("present-mode", isActive)
+          }
+          document.body.classList.toggle("present-mode", isActive)
+          document.documentElement.classList.toggle("present-mode", isActive)
+          try {
+            if (isActive) {
+              window.localStorage.setItem("prezo:embed:present-mode-hint", "1")
+            } else {
+              window.localStorage.removeItem("prezo:embed:present-mode-hint")
+            }
+          } catch (e) {}
         }
 
         const DUPLICATE_DETECTION_DELAY_MS = 1500
@@ -1945,11 +1988,7 @@
           }
           if (message.type === "prezo:present-mode") {
             const isActive = Boolean(message.active)
-            const app = document.querySelector(".app")
-            if (app) {
-              app.classList.toggle("present-mode", isActive)
-            }
-            document.body.classList.toggle("present-mode", isActive)
+            applyPresentModeCss(isActive)
             if (isActive === currentPresentMode) {
               return
             }
