@@ -28,9 +28,10 @@ import {
 } from './poll-game-gamified-utils.js'
 
 // Must exceed the backend's total artifact budget (GEMINI_ARTIFACT_TOTAL_TIMEOUT_SECONDS,
-// currently 420s on Railway) so the server's own timeout/validation errors reach the user
-// instead of a blind client abort while the build is still legitimately running.
-const ARTIFACT_BUILD_TIMEOUT_MS = 480000
+// 420s default, raisable to 480s by env) so the server's own timeout/validation errors
+// reach the user instead of a blind client abort while the build is still running. The
+// build route streams heartbeats, so a long-open request is safe at the proxy level.
+const ARTIFACT_BUILD_TIMEOUT_MS = 540000
 const ARTIFACT_INTAKE_TIMEOUT_MS = 45000
 
 export function extractGeminiText(payload) {
