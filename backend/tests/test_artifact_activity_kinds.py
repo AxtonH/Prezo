@@ -181,6 +181,22 @@ class KindAwarePromptTests(unittest.TestCase):
         self.assertIn("discussion prompt the host posed", text)
         self.assertIn("prezoSetQnaRenderer", text)
 
+    def test_build_instruction_carries_design_language_per_kind(self) -> None:
+        poll_text = ai_prompts.build_artifact_system_instruction("poll")
+        self.assertIn("Visual design language", poll_text)
+        self.assertIn("poll scene archetypes", poll_text)
+        self.assertIn("tabular-nums", poll_text)
+        self.assertIn("Canvas and layout contract:", poll_text)
+        self.assertIn("1920x1080 (16:9)", poll_text)
+        self.assertIn("avoid vh/vw", poll_text)
+
+        qna_text = ai_prompts.build_artifact_system_instruction("qna")
+        self.assertIn("Q&A board archetypes", qna_text)
+        self.assertNotIn("poll scene archetypes", qna_text)
+
+        discussion_text = ai_prompts.build_artifact_system_instruction("discussion")
+        self.assertIn("Q&A board archetypes", discussion_text)
+
     def test_patch_instruction_swaps_dynamic_element_guidance(self) -> None:
         qna_text = ai_prompts.build_artifact_patch_system_instruction("qna")
         self.assertIn("Question list elements", qna_text)

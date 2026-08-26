@@ -129,6 +129,13 @@ _ARTIFACT_KIND_VOCAB: dict[str, dict[str, Any]] = {
         "renderer_guard_line": "- In window.prezoRenderPoll(state) or the function passed to window.prezoSetPollRenderer(fn), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "no_fetch_line": "- Do not fetch poll data over HTTP yourself and do not open WebSockets for poll updates.",
         "resilience_line": "- Build resilient rendering when options/votes change over time.",
+        "archetype_line": (
+            "- When the prompt is open-ended, draw from proven poll scene archetypes and adapt one to the subject "
+            "instead of inventing a generic bar list: a race or progress scene where option avatars advance along "
+            "lanes; a vertical arena leaderboard with rank-animated rows; stacked or radial proportion visuals with "
+            "glowing segments; a podium scene where leading options physically rise; or oversized editorial "
+            "typography where the percentage itself is the design."
+        ),
     },
     "qna": {
         "head": "You build complete interactive HTML artifacts for a live audience Q&A board.",
@@ -171,6 +178,12 @@ _ARTIFACT_KIND_VOCAB: dict[str, dict[str, Any]] = {
         "renderer_guard_line": "- In window.prezoRenderQna(state) or the function passed to window.prezoSetQnaRenderer(fn), guard DOM queries before mutating them. If an element is temporarily missing, skip that mutation instead of throwing.",
         "no_fetch_line": "- Do not fetch Q&A data over HTTP yourself and do not open WebSockets for Q&A updates.",
         "resilience_line": "- Build resilient rendering when questions and votes change over time.",
+        "archetype_line": (
+            "- When the prompt is open-ended, draw from proven Q&A board archetypes and adapt one to the session's "
+            "tone: a spotlight feed with the top question hero-sized and the rest as a ranked side list; a card wall "
+            "weighted by upvotes; a rising-bubbles or floating-notes scene; or an editorial live-magazine column "
+            "layout."
+        ),
     },
 }
 
@@ -240,19 +253,34 @@ def _artifact_system_instruction_lines(kind: str) -> list[str]:
         "- Prioritize user prompt intent over default templates.",
         v["chrome_line"],
         "- Express creative layout and motion in HTML, CSS, and JavaScript; when a brand package is present, it takes priority over generic creative defaults.",
-        "- By default, produce a polished, presentation-quality artifact scene rather than a rough experiment.",
-        "- Favor balanced composition, clear alignment, and strong visual hierarchy across the full 16:9 frame.",
+        "Visual design language (strong defaults — the user prompt and brand package always override these):",
+        "- Commit to one clear visual concept per artifact (a scene, a metaphor, or a bold editorial layout) and execute it fully. A simple concept executed with craft beats a complex one executed halfway.",
+        "- Derive the concept from the subject of the prompt: when it names a theme (racing, space, retro, corporate, playful), build the palette, typography, shapes, and motion around that theme instead of bolting themed decorations onto a generic layout.",
+        v["archetype_line"],
+        "- Build the palette deliberately: one dominant background family, one saturated accent reserved for the live data, one neutral for text. Cap it at 4-5 core colors plus tints; every extra hue must earn its place.",
+        "- Default stage is rich and dark (deep navy, charcoal, forest, aubergine — not pure #000) with luminous accents, which projects best in a presentation room. Use a light stage only when the prompt, brand, or concept calls for it, and then prefer a warm off-white over sterile pure white.",
+        "- Give the background depth: a subtle 2-3 stop gradient or vignette plus one atmospheric layer (soft glow, faint texture, or large blurred shapes at low opacity). A flat single-hex background reads as unfinished.",
+        "- Never default to purple-to-teal gradients, blue-violet glassmorphism, or one-rainbow-color-per-option palettes. When repeated items need distinct colors, use tints and shades of the accent family or a small curated harmonious set.",
+        "- Keep text readable from the back of a room: roughly WCAG 4.5:1 contrast against the layer the text actually sits on.",
+        "- External fonts are unavailable, so choose an intentional system font stack and commit to it. Good stacks: display/geometric 'Avenir Next', 'Segoe UI Variable Display', Futura, 'Century Gothic', sans-serif; editorial serif 'Iowan Old Style', Georgia, serif; neutral UI -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; technical mono 'Cascadia Code', Consolas, 'SF Mono', monospace.",
+        "- Use a real type scale with confident jumps at 1920x1080: hero title roughly 64-120px, supporting labels 24-40px, metadata smaller still. Pair strong weight contrast (700-800 display against 400-500 text), tighten letter-spacing slightly on large display text, and add 0.05-0.1em tracking on short uppercase eyebrow labels.",
+        "- Compose on a consistent spacing rhythm (multiples of 8px) with aligned text blocks and consistent gutters, one focal point, and a clear reading order: context/eyebrow, then title, then the live data visual, then totals and meta.",
+        "- Style repeated rows or cards as one consistent material system: same corner radius, same border treatment, same shadow recipe. Shadows: one soft ambient (large blur, low opacity), optionally one tight contact shadow — never heavy boxes on everything. Let only the leading item or the accent data mark glow.",
+        "- Treat the numbers as heroes: style vote counts and percentages as designed data (accent color, strong weight, font-variant-numeric: tabular-nums so digits do not jitter) with units and % marks smaller than their values. Prefer hairline separators at low opacity over hard borders.",
+        "- Motion standards: ease with out-expo-style curves such as cubic-bezier(0.22, 1, 0.36, 1); 250-450ms for data changes; stagger list entrances by 40-80ms per item on first render only; add one subtle ambient motion layer (slow drift, shimmer, or parallax on a 20-60s loop) so the scene feels alive between updates.",
+        v["animation_line"],
+        v["readability_line"],
+        "- Design the zero-data state deliberately: the artifact is usually shown before the audience responds, and it must look intentional and complete with no votes or submissions yet, never broken or empty.",
+        "- Avoid the generic-AI look: gratuitous glassmorphism on every element, emoji as decoration, everything-centered layouts, identical unstyled rounded rectangles with no concept, and giant empty areas that do not support the composition.",
+        "- Be expressive and creative, but avoid messy, chaotic, or gimmicky layouts unless the user explicitly asks for that.",
+        v["clarity_line"],
+        "- Keep decorative elements supportive of the information instead of competing with it.",
+        "- During live updates, keep the overall structure stable and animate changes without flicker or full-scene resets.",
+        "Canvas and layout contract:",
         "- Keep important content comfortably inside the canvas with safe padding so nothing critical is clipped.",
         "- The canvas is a 1920x1080 (16:9) viewport while editing; in present mode the same artifact can reflow to viewport aspects between 4:3 and 21:9, so build the overall composition with fluid layout that tolerates that range instead of hard-coded absolute pixel positions.",
         "- Fill the full canvas height: set html, body { height: 100% } and give the scene root height: 100% (or min-height: 100%), then distribute content vertically with flex or CSS grid so the composition claims the whole frame. Never let the scene collapse to content height and bunch at the top with dead space below.",
         f"- For layout in the sandboxed iframe, avoid vh/vw for primary bar heights and other critical vertical sizing: the host rescales the artifact document between edit and present mode, and viewport units can disagree with rescaled px lengths. Prefer % of the full-height scene root, flex, CSS grid with minmax(0, 1fr), or clamp(..., px, ...) — not vh — for {v['vh_tail']}.",
-        "- Be expressive and creative, but avoid messy, chaotic, or gimmicky layouts unless the user explicitly asks for that.",
-        v["readability_line"],
-        v["animation_line"],
-        "- Avoid giant empty areas unless they clearly support the concept.",
-        "- Keep decorative elements supportive of the information instead of competing with it.",
-        v["clarity_line"],
-        "- During live updates, keep the overall structure stable and animate changes without flicker or full-scene resets.",
         *v["scaling_lines"],
         "- Keep all scripts self-contained inside the generated HTML.",
         "- All inline JavaScript must be syntactically complete browser JavaScript with closed blocks, strings, templates, and script tags.",
