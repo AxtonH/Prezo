@@ -196,6 +196,11 @@ export function createAiTransport({
       const message = extractApiErrorMessage(payload, response.status)
       throw new Error(message)
     }
+    // The build route streams heartbeat whitespace and always answers HTTP 200;
+    // failures after streaming starts arrive in-body as { detail, status }.
+    if (payload && asText(payload.detail) && !asText(payload.html)) {
+      throw new Error(extractApiErrorMessage(payload, payload.status || 502))
+    }
 
     const html = normalizeArtifactMarkup(asText(payload?.html) || asText(payload?.text))
     if (!html) {

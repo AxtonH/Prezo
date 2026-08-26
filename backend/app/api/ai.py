@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import re
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 logger = logging.getLogger("prezo.ai")
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..auth import AuthUser, get_optional_library_user
@@ -703,7 +706,62 @@ async def create_poll_game_edit_plan(
     )
 
 
-@router.post("/poll-game-artifact-build", response_model=PollGameArtifactBuildResponse)
+# Railway's public-networking edge closes any HTTP request that transfers no
+# bytes for 5 minutes (data-carrying requests may run up to 15). Opus builds
+# routinely out-silence that, so the route streams a whitespace heartbeat while
+# the build runs and then the response JSON. Leading whitespace is a valid JSON
+# prefix, so the client's response.json() is unaffected. Errors raised after
+# streaming starts cannot change the HTTP status anymore; they ride in-body as
+# {"detail", "status"} and the client surfaces them.
+ARTIFACT_BUILD_STREAM_HEARTBEAT_SECONDS = 10.0
+
+
+@router.post("/poll-game-artifact-build")
+async def create_poll_game_artifact_build_stream(
+    payload: PollGameArtifactBuildRequest,
+    store: InMemoryStore = Depends(get_store),
+    library_user: AuthUser | None = Depends(get_optional_library_user),
+) -> StreamingResponse:
+    build_task = asyncio.create_task(
+        create_poll_game_artifact_build(payload, store, library_user)
+    )
+
+    async def stream_build() -> AsyncIterator[str]:
+        try:
+            while True:
+                done, _pending = await asyncio.wait(
+                    {build_task}, timeout=ARTIFACT_BUILD_STREAM_HEARTBEAT_SECONDS
+                )
+                if not done:
+                    yield " "
+                    continue
+                try:
+                    response = build_task.result()
+                except HTTPException as exc:
+                    yield json.dumps(
+                        {"detail": str(exc.detail), "status": exc.status_code},
+                        ensure_ascii=False,
+                    )
+                    return
+                except Exception:
+                    logger.exception("Artifact build failed after streaming started")
+                    yield json.dumps(
+                        {
+                            "detail": "Artifact build failed unexpectedly.",
+                            "status": 500,
+                        },
+                        ensure_ascii=False,
+                    )
+                    return
+                yield response.model_dump_json()
+                return
+        finally:
+            if not build_task.done():
+                build_task.cancel()
+
+    return StreamingResponse(stream_build(), media_type="application/json")
+
+
 async def create_poll_game_artifact_build(
     payload: PollGameArtifactBuildRequest,
     store: InMemoryStore = Depends(get_store),

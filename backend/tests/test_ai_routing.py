@@ -759,6 +759,43 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(ai_api.validate_poll_game_artifact_html(response.html), [])
 
+    async def test_artifact_build_stream_route_heartbeats_then_delivers_json(self) -> None:
+        import asyncio
+
+        async def fake_build(payload, store, library_user):
+            await asyncio.sleep(0.05)
+            return ai_api.PollGameArtifactBuildResponse(
+                html=VALID_ARTIFACT_HTML, model="claude-opus-5", assistantMessage="ok"
+            )
+
+        payload = self.build_payload("build")
+        with patch.object(ai_api, "create_poll_game_artifact_build", fake_build), patch.object(
+            ai_api, "ARTIFACT_BUILD_STREAM_HEARTBEAT_SECONDS", 0.01
+        ):
+            response = await ai_api.create_poll_game_artifact_build_stream(payload, None, None)
+            chunks = [chunk async for chunk in response.body_iterator]
+
+        body = "".join(chunk.decode() if isinstance(chunk, bytes) else chunk for chunk in chunks)
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertTrue(body.startswith(" "))
+        parsed = json.loads(body)
+        self.assertEqual(parsed["html"], VALID_ARTIFACT_HTML)
+        self.assertEqual(parsed["model"], "claude-opus-5")
+
+    async def test_artifact_build_stream_route_reports_http_errors_in_body(self) -> None:
+        async def fake_build(payload, store, library_user):
+            raise ai_api.HTTPException(status_code=502, detail="Artifact request failed validation: boom")
+
+        payload = self.build_payload("build")
+        with patch.object(ai_api, "create_poll_game_artifact_build", fake_build):
+            response = await ai_api.create_poll_game_artifact_build_stream(payload, None, None)
+            chunks = [chunk async for chunk in response.body_iterator]
+
+        body = "".join(chunk.decode() if isinstance(chunk, bytes) else chunk for chunk in chunks)
+        parsed = json.loads(body)
+        self.assertEqual(parsed["status"], 502)
+        self.assertIn("boom", parsed["detail"])
+
     async def test_claude_build_failure_does_not_fallback_to_gemini(self) -> None:
         anthropic_mock = AsyncMock(
             side_effect=ai_api.HTTPException(status_code=503, detail="Anthropic timed out")
