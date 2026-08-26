@@ -27,7 +27,10 @@ import {
   safeJsonParse
 } from './poll-game-gamified-utils.js'
 
-const ARTIFACT_BUILD_TIMEOUT_MS = 300000
+// Must exceed the backend's total artifact budget (GEMINI_ARTIFACT_TOTAL_TIMEOUT_SECONDS,
+// currently 420s on Railway) so the server's own timeout/validation errors reach the user
+// instead of a blind client abort while the build is still legitimately running.
+const ARTIFACT_BUILD_TIMEOUT_MS = 480000
 const ARTIFACT_INTAKE_TIMEOUT_MS = 45000
 
 export function extractGeminiText(payload) {
