@@ -73,6 +73,7 @@ from ..ai_providers import (  # noqa: F401  (re-exported for tests/backcompat)
     normalize_gemini_model_name,
     request_anthropic_text,
     request_gemini_text,
+    resolve_anthropic_artifact_build_effort,
     resolve_anthropic_artifact_build_model,
     resolve_anthropic_intake_model,
     resolve_anthropic_base_url,
@@ -1064,6 +1065,7 @@ async def create_poll_game_artifact_build(
             request_stage="artifact initial build",
             remaining_budget_seconds=remaining_budget_seconds,
             reference_images=ref_parts or None,
+            effort=resolve_anthropic_artifact_build_effort(),
         )
         generation_provider_name = "Anthropic"
     else:
@@ -1182,6 +1184,7 @@ async def create_poll_game_artifact_build(
             timeout_seconds=fallback_timeout_seconds,
             request_stage="artifact edit fallback generation",
             remaining_budget_seconds=remaining_budget_seconds,
+            effort=resolve_anthropic_artifact_build_effort(),
         )
         fallback_html = normalize_poll_game_artifact_html(fallback_text)
         if fallback_html:

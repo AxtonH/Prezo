@@ -123,6 +123,7 @@ async def request_anthropic_text(
     request_stage: str = "",
     remaining_budget_seconds: float | None = None,
     reference_images: list[tuple[str, str]] | None = None,
+    effort: str | None = None,
 ) -> tuple[str, str]:
     base_url = resolve_anthropic_base_url()
     endpoint = f"{base_url}/messages"
@@ -157,6 +158,11 @@ async def request_anthropic_text(
     # Opus 4.7/4.8 reject temperature (400). Only send it on models that accept it.
     if anthropic_model_accepts_sampling_params(resolved_model):
         body["temperature"] = temperature
+    # Adaptive-thinking depth (and overall token spend) on models that support
+    # output_config.effort. Callers pass it only for models operators control
+    # (the artifact build model); older models that reject effort never see it.
+    if effort:
+        body["output_config"] = {"effort": effort}
 
     # Stream so the read timeout applies per SSE chunk instead of to the whole
     # generation — Opus artifact builds routinely outlive any sane whole-response
@@ -546,6 +552,17 @@ def resolve_anthropic_artifact_build_model() -> str:
         normalize_anthropic_model_name(settings.anthropic_artifact_build_model)
         or DEFAULT_ANTHROPIC_ARTIFACT_BUILD_MODEL
     )
+
+
+ANTHROPIC_EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def resolve_anthropic_artifact_build_effort() -> str | None:
+    """Validated output_config.effort for artifact build calls, or None to let
+    the API default (high) apply. Misconfigured values are dropped rather than
+    sent, so a typo in the env var degrades to slower builds, not 400s."""
+    value = (getattr(settings, "anthropic_artifact_build_effort", "") or "").strip().lower()
+    return value if value in ANTHROPIC_EFFORT_LEVELS else None
 
 
 def resolve_anthropic_intake_model() -> str:

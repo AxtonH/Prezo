@@ -99,6 +99,11 @@ class Settings(BaseSettings):
     # run past 3 minutes; the total artifact budget below must stay larger than
     # this cap plus the follow-up repair reserve.
     anthropic_artifact_build_timeout_seconds: float = 300.0
+    # output_config.effort for artifact build calls (low|medium|high|xhigh|max).
+    # Opus 5 defaults to high, which regularly blows the 300s call budget on
+    # first builds; medium keeps adaptive thinking on but shallower and faster.
+    # Only sent on the artifact build model, never the intake model.
+    anthropic_artifact_build_effort: str = "medium"
     anthropic_intake_model: str = "claude-haiku-4-5"
     anthropic_intake_timeout_seconds: float = 30.0
     gemini_api_key: str | None = None

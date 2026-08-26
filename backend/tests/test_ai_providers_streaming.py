@@ -60,7 +60,7 @@ def make_stream_client_factory(handler):
 
 
 class RequestAnthropicTextStreamingTest(unittest.IsolatedAsyncioTestCase):
-    async def _call(self, handler) -> tuple[str, str]:
+    async def _call(self, handler, effort: str | None = None) -> tuple[str, str]:
         with patch.object(
             ai_providers.httpx, "AsyncClient", make_stream_client_factory(handler)
         ):
@@ -74,6 +74,7 @@ class RequestAnthropicTextStreamingTest(unittest.IsolatedAsyncioTestCase):
                 timeout_seconds=30.0,
                 request_stage="artifact initial build",
                 remaining_budget_seconds=60.0,
+                effort=effort,
             )
 
     async def test_streaming_build_assembles_text_and_stop_reason(self) -> None:
@@ -119,6 +120,31 @@ class RequestAnthropicTextStreamingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIs(captured["body"]["stream"], True)
         # claude-opus-5 rejects sampling params; the body must omit temperature.
         self.assertNotIn("temperature", captured["body"])
+        # No effort passed → no output_config (the API default applies).
+        self.assertNotIn("output_config", captured["body"])
+
+    async def test_streaming_build_sends_output_config_effort_when_passed(self) -> None:
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content.decode("utf-8"))
+            events = [
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "<html></html>"},
+                },
+                {"type": "message_stop"},
+            ]
+            return httpx.Response(
+                200,
+                content=sse_bytes(events),
+                headers={"content-type": "text/event-stream"},
+            )
+
+        await self._call(handler, effort="medium")
+
+        self.assertEqual(captured["body"]["output_config"], {"effort": "medium"})
 
     async def test_streaming_joins_multiple_text_blocks_with_newline(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

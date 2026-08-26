@@ -759,6 +759,26 @@ class AiRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(ai_api.validate_poll_game_artifact_html(response.html), [])
 
+    async def test_initial_build_passes_configured_effort(self) -> None:
+        anthropic_mock = AsyncMock(return_value=(VALID_ARTIFACT_HTML, "end_turn"))
+        payload = self.build_payload("build")
+        with patch.object(ai_api, "request_anthropic_text", anthropic_mock):
+            await ai_api.create_poll_game_artifact_build(payload)
+
+        self.assertEqual(anthropic_mock.await_args.kwargs["effort"], "medium")
+
+    def test_resolve_anthropic_artifact_build_effort_validates_values(self) -> None:
+        original = ai_api.settings.anthropic_artifact_build_effort
+        try:
+            ai_api.settings.anthropic_artifact_build_effort = "MEDIUM"
+            self.assertEqual(ai_api.resolve_anthropic_artifact_build_effort(), "medium")
+            ai_api.settings.anthropic_artifact_build_effort = "turbo"
+            self.assertIsNone(ai_api.resolve_anthropic_artifact_build_effort())
+            ai_api.settings.anthropic_artifact_build_effort = ""
+            self.assertIsNone(ai_api.resolve_anthropic_artifact_build_effort())
+        finally:
+            ai_api.settings.anthropic_artifact_build_effort = original
+
     async def test_artifact_build_stream_route_heartbeats_then_delivers_json(self) -> None:
         import asyncio
 
