@@ -355,6 +355,14 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     '    resizeResponseTimerId = 0',
     '    if (pendingRenderPayload) {',
     '      schedulePendingRenderRetry(pendingRenderPayload, 0)',
+    // Re-dispatch the current state after a geometry change. Renderer JS
+    // measures the viewport at render time (font fitting, px positioning);
+    // when the artifact first renders during a transitional boot geometry
+    // (station booting straight into present mode, stage not yet
+    // full-bleed) and no further votes arrive, those stale measurements
+    // otherwise persist for the whole presentation.
+    '    } else if (hasRenderedState) {',
+    '      dispatchState(clone(currentState))',
     '    }',
     '    scheduleRuntimeBackgroundTreatment()',
     '    scheduleLayoutSafetyPass()',
@@ -2254,10 +2262,15 @@ function buildBridgeScript(instanceId = 0, activityKind = 'poll') {
     '    if (message.type === VIEWPORT_ZOOM_MESSAGE_TYPE) {',
     '      var zoomValue = Number(message.zoom)',
     '      if (!document.documentElement) return',
-    '      if (Number.isFinite(zoomValue) && zoomValue > 0 && zoomValue !== 1) {',
-    '        document.documentElement.style.zoom = String(zoomValue)',
-    '      } else {',
-    '        document.documentElement.style.zoom = ""',
+    '      var previousZoom = document.documentElement.style.zoom || ""',
+    '      var nextZoom = Number.isFinite(zoomValue) && zoomValue > 0 && zoomValue !== 1 ? String(zoomValue) : ""',
+    '      if (nextZoom !== previousZoom) {',
+    '        document.documentElement.style.zoom = nextZoom',
+    // A zoom change reflows CSS but fires no window resize, so renderer JS
+    // never re-measures on its own — run the same debounced response a
+    // real resize gets. The string compare keeps same-value re-sends
+    // (READY handshake after a baked zoom) from triggering re-renders.
+    '        scheduleResizeResponse()',
     '      }',
     '      return',
     '    }',

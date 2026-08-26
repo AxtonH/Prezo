@@ -107,6 +107,145 @@ test('every kind emits a parseable bridge with kind-correct identifiers', () => 
   }
 })
 
+test('geometry changes re-render the current state; same-value zoom re-sends do not', () => {
+  const body = bridgeBody(buildArtifactSrcDoc(GOLDEN_INPUT_HTML, { ...GOLDEN_OPTIONS }))
+
+  const listeners = {}
+  const makeEl = () => ({
+    style: {},
+    appendChild() {},
+    setAttribute() {},
+    getAttribute() {
+      return null
+    },
+    querySelectorAll() {
+      return []
+    },
+    querySelector() {
+      return null
+    },
+    children: [],
+    textContent: '',
+    getBoundingClientRect() {
+      return { width: 0, height: 0 }
+    }
+  })
+  const docEl = makeEl()
+  const windowStub = {
+    addEventListener(type, fn) {
+      ;(listeners[type] ||= []).push(fn)
+    },
+    matchMedia: () => ({ matches: false, addEventListener() {} }),
+    parent: { postMessage() {} },
+    innerWidth: 1920,
+    innerHeight: 1080,
+    getComputedStyle: () => ({
+      backgroundColor: 'rgba(0,0,0,0)',
+      display: 'block',
+      visibility: 'visible',
+      opacity: '1'
+    }),
+    requestAnimationFrame: () => 0
+  }
+  windowStub.window = windowStub
+  const documentStub = {
+    body: makeEl(),
+    documentElement: docEl,
+    readyState: 'complete',
+    addEventListener() {},
+    dispatchEvent() {},
+    createElement: () => makeEl(),
+    querySelectorAll() {
+      return []
+    },
+    querySelector() {
+      return null
+    },
+    getElementById() {
+      return null
+    }
+  }
+  // Manual timer queue so the 120ms resize-response debounce is deterministic.
+  let timerQueue = []
+  const fakeSetTimeout = (fn) => {
+    timerQueue.push(fn)
+    return timerQueue.length
+  }
+  const drainTimers = () => {
+    const batch = timerQueue
+    timerQueue = []
+    for (const fn of batch) fn()
+  }
+
+  new Function(
+    'window',
+    'document',
+    'CustomEvent',
+    'MutationObserver',
+    'ResizeObserver',
+    'requestAnimationFrame',
+    'cancelAnimationFrame',
+    'getComputedStyle',
+    'setTimeout',
+    'clearTimeout',
+    body
+  )(
+    windowStub,
+    documentStub,
+    class {
+      constructor(name, opts) {
+        this.name = name
+        this.detail = opts?.detail
+      }
+    },
+    class {
+      observe() {}
+    },
+    class {
+      observe() {}
+    },
+    () => 0,
+    () => {},
+    windowStub.getComputedStyle,
+    fakeSetTimeout,
+    () => {}
+  )
+
+  let renderCount = 0
+  windowStub.prezoSetPollRenderer(() => {
+    renderCount += 1
+  })
+  const send = (data) => {
+    for (const fn of listeners.message || []) fn({ data })
+  }
+
+  send({
+    type: 'prezo-poll-state',
+    payload: {
+      poll: { id: 'p1', question: 'Q', options: [{ id: 'o1', text: 'A', votes: 0 }] }
+    }
+  })
+  drainTimers()
+  assert.equal(renderCount, 1, 'state message renders once')
+
+  // Zoom change: reflows CSS without a window resize, so the bridge must
+  // re-render the current state itself for renderer JS to re-measure.
+  send({ type: 'prezo-viewport-zoom', zoom: 0.8 })
+  assert.equal(docEl.style.zoom, '0.8', 'zoom applied')
+  drainTimers()
+  assert.equal(renderCount, 2, 'zoom change re-renders the current state')
+
+  // Same-value re-send (READY handshake after a baked zoom): no re-render.
+  send({ type: 'prezo-viewport-zoom', zoom: 0.8 })
+  drainTimers()
+  assert.equal(renderCount, 2, 'unchanged zoom does not re-render')
+
+  // A real window resize re-renders too (stage box changes in present mode).
+  for (const fn of listeners.resize || []) fn()
+  drainTimers()
+  assert.equal(renderCount, 3, 'window resize re-renders the current state')
+})
+
 test('qna bridge normalizes and dispatches a discussion payload', () => {
   const body = bridgeBody(
     buildArtifactSrcDoc(GOLDEN_INPUT_HTML, { ...GOLDEN_OPTIONS, activityKind: 'discussion' })
