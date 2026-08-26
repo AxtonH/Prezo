@@ -163,6 +163,12 @@ import {
   const ARTIFACT_STAGE_SURFACE_LOADING = 'loading'
   const ARTIFACT_STAGE_SURFACE_FRAME = 'frame'
   const ARTIFACT_STAGE_SURFACE_PLACEHOLDER = 'placeholder'
+  // Reveal delay while present-mode geometry settles: covers the stage box
+  // snapping full-bleed, the refit + zoom message, and the iframe's 120ms
+  // debounced state re-render, with margin. Letting that chain play out
+  // visibly reads as a white flash + expand-and-shrink mid-presentation.
+  const ARTIFACT_GEOMETRY_SETTLE_REVEAL_MS = 450
+  const ARTIFACT_PRESENT_MASK_CEILING_MS = 1400
   // One intake turn is a short Haiku call (a question or a small JSON brief).
   // Hard cap on an attached image; matches the backend upload + reference ceilings.
   const ARTIFACT_BUILD_REFERENCE_MAX_BYTES = 10 * 1024 * 1024
@@ -1992,6 +1998,9 @@ import {
     // notify the outer embed, which persists the flag.
     postPresentModeToParent()
     syncEditorDockingState()
+    // Mask BEFORE the refit so no wrongly-fitted frame ever paints; the
+    // reveal timer brings it back once the geometry chain settles.
+    maskArtifactFrameForGeometryTransition()
     scheduleArtifactLayoutRefit()
     // Present-mode entry/exit swaps the effective grid config (everything
     // off in present mode). Push to the iframe so visual aids hide / show.
@@ -3508,7 +3517,14 @@ import {
     // Deleted elements are baked into the srcdoc (never paint visible), so the
     // reveal no longer needs to wait on the hide. Position/size/text overrides
     // apply fast once pushed, so reveal one frame after the push for all cases.
-    setTimeout(revealArtifactFrame, 190)
+    // Present mode holds the mask longer: render-ok fires off the FIRST render,
+    // which can predate the stage snapping full-bleed and the iframe's
+    // debounced geometry re-render — revealing at +190ms would show the
+    // pre-settle layout mid-correction.
+    setTimeout(
+      revealArtifactFrame,
+      state.presentMode ? ARTIFACT_GEOMETRY_SETTLE_REVEAL_MS : 190
+    )
   }
 
   function handleArtifactRenderError(message) {
@@ -5433,7 +5449,11 @@ import {
       artifactRevealTimerId = 0
     }
     if (!el.artifactFrame) return
-    if (!artifactHasOverridesToApply()) {
+    // Present mode masks EVERY load, overrides or not: the document paints
+    // white while parsing, then renders at the pre-settle geometry before
+    // the zoom/refit/re-render chain corrects it — all of which is visible
+    // to a live audience if the frame isn't masked.
+    if (!artifactHasOverridesToApply() && !state.presentMode) {
       revealArtifactFrame()
       return
     }
@@ -5441,8 +5461,35 @@ import {
     // Deleted elements are now baked into the srcdoc as a hide stylesheet, so
     // they never paint visible; the mask no longer has to wait for the hide to
     // land. A short safety ceiling is enough for position/size/text overrides,
-    // which apply fast once pushed.
-    artifactRevealTimerId = setTimeout(revealArtifactFrame, 700)
+    // which apply fast once pushed. Present mode gets a higher ceiling to
+    // cover the geometry-settle chain on slow loads.
+    artifactRevealTimerId = setTimeout(
+      revealArtifactFrame,
+      state.presentMode ? ARTIFACT_PRESENT_MASK_CEILING_MS : 700
+    )
+  }
+
+  /**
+   * Mask the artifact frame across a present-mode geometry TRANSITION
+   * (enter/exit without a document reload). The stage box, frame fit,
+   * document zoom, and the iframe's debounced state re-render all change
+   * over several frames; masked, that settles invisibly against the stage
+   * background. Visual only — the bridge handshake and refits keep running
+   * underneath (same contract as the overrides mask), and the reveal timer
+   * guarantees the frame always comes back.
+   */
+  function maskArtifactFrameForGeometryTransition() {
+    if (!el.artifactFrame) return
+    if (state.artifact.stageSurface !== ARTIFACT_STAGE_SURFACE_FRAME) return
+    if (artifactRevealTimerId) {
+      clearTimeout(artifactRevealTimerId)
+      artifactRevealTimerId = 0
+    }
+    el.artifactFrame.classList.add('artifact-frame--overrides-pending')
+    artifactRevealTimerId = setTimeout(
+      revealArtifactFrame,
+      ARTIFACT_GEOMETRY_SETTLE_REVEAL_MS
+    )
   }
 
   /**
