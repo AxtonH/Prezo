@@ -192,6 +192,7 @@ class KindAwarePromptTests(unittest.TestCase):
         self.assertIn("Canvas and layout contract:", poll_text)
         self.assertIn("1920x1080 (16:9)", poll_text)
         self.assertIn("avoid vh/vw", poll_text)
+        self.assertIn("never from a container width measured once at load", poll_text)
 
         qna_text = ai_prompts.build_artifact_system_instruction("qna")
         self.assertIn("Q&A board archetypes", qna_text)
