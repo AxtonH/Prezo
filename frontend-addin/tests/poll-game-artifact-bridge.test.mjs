@@ -66,9 +66,10 @@ const makeBridgeHarness = ({ stageWidth, stageHeight, inlineStageHeight }) => {
     clearTimeout: () => {}
   }
   const state = { presentMode: true }
+  const artifactState = { frameHeight: 519 }
   const bridge = createPollGameArtifactBridge({
     windowObj,
-    artifactState: { frameHeight: 519 },
+    artifactState,
     stageEl,
     frameEl,
     getIsArtifactMode: () => true,
@@ -88,7 +89,7 @@ const makeBridgeHarness = ({ stageWidth, stageHeight, inlineStageHeight }) => {
     editRenderConfirmTimeoutMs: 1000,
     onRenderWatchdogTimeout: () => {}
   })
-  return { bridge, stageEl, frameEl, state }
+  return { bridge, stageEl, frameEl, state, artifactState }
 }
 
 test('present mode releases the edit-mode inline stage height so CSS owns the box', () => {
@@ -105,6 +106,31 @@ test('present mode releases the edit-mode inline stage height so CSS owns the bo
   assert.equal(frameEl.style.width, '1152px', 'frame fills the stage width')
   assert.equal(frameEl.style.height, '648px', 'frame fills the stage height')
   assert.equal(frameEl.style.transform, 'translate(0px, 0px)', 'no letterbox offsets in-range')
+})
+
+test('getViewportZoom reports the present fit scale and 1 in edit mode', () => {
+  const { bridge, state } = makeBridgeHarness({ stageWidth: 960, stageHeight: 540 })
+  assert.equal(bridge.getViewportZoom(), 0.5, 'present mode: fit scale of the stage box')
+  state.presentMode = false
+  assert.equal(bridge.getViewportZoom(), 1, 'edit mode: host transform-scales the frame instead')
+})
+
+test('READY re-sends a viewport zoom that was latched during document parse', () => {
+  const { bridge, frameEl, artifactState } = makeBridgeHarness({
+    stageWidth: 1152,
+    stageHeight: 648
+  })
+  const sent = []
+  frameEl.contentWindow = { postMessage: (message) => sent.push(message) }
+  // Parse-time refit: contentWindow exists but the end-of-body listener
+  // isn't attached yet, so this message is lost — yet the dedupe latches.
+  bridge.setFrameHeight(519, { force: true })
+  assert.equal(artifactState.lastViewportZoom, 0.6, 'dedupe latched by the lost send')
+  sent.length = 0
+  bridge.handleReadyMessage()
+  const zoomMessage = sent.find((message) => message && message.type === 'prezo-viewport-zoom')
+  assert.ok(zoomMessage, 'zoom re-sent once the listener provably exists')
+  assert.equal(zoomMessage.zoom, 0.6)
 })
 
 test('leaving present mode restores the aspect-derived inline stage height', () => {

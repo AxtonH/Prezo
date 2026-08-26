@@ -53,6 +53,33 @@ test('unknown kinds fall back to the poll bridge', () => {
   assert.equal(garbage, poll)
 })
 
+test('initialViewportZoom bakes a synchronous zoom script ahead of the body', () => {
+  const zoomed = buildArtifactSrcDoc(GOLDEN_INPUT_HTML, {
+    ...GOLDEN_OPTIONS,
+    initialViewportZoom: 0.8
+  })
+  const bakeTag =
+    '<script data-prezo-viewport-zoom="bake">document.documentElement.style.zoom = "0.8"</script>'
+  assert.ok(zoomed.includes(bakeTag), 'zoom bake script injected')
+  const bodyIndex = zoomed.search(/<body\b/i)
+  assert.ok(bodyIndex > 0, 'document has a body')
+  assert.ok(
+    zoomed.indexOf(bakeTag) < bodyIndex,
+    'zoom applies before any body content parses or paints'
+  )
+})
+
+test('zoom 1, absent, or invalid zoom leaves the srcdoc byte-identical', () => {
+  const base = buildArtifactSrcDoc(GOLDEN_INPUT_HTML, { ...GOLDEN_OPTIONS })
+  for (const zoom of [1, 0, -2, Number.NaN, 'garbage', undefined]) {
+    const actual = buildArtifactSrcDoc(GOLDEN_INPUT_HTML, {
+      ...GOLDEN_OPTIONS,
+      initialViewportZoom: zoom
+    })
+    assert.equal(actual, base, `zoom ${String(zoom)} injects nothing`)
+  }
+})
+
 test('every kind emits a parseable bridge with kind-correct identifiers', () => {
   const expectations = {
     poll: {

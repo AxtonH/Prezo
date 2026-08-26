@@ -4347,7 +4347,13 @@ import {
     const srcDoc = buildArtifactSrcDoc(resolvedMarkup, {
       instanceId: state.artifact.instanceId,
       hiddenCss: bakedHiddenCss,
-      activityKind: state.activityKind
+      activityKind: state.activityKind,
+      // Present mode: bake the current fit zoom into <head> so the first
+      // paint is already at presentation scale. Without it the document
+      // paints unzoomed (oversized) until the bridge's end-of-body listener
+      // receives the host's zoom message — a visible expand-then-shrink
+      // flicker whenever the fitted scale is below 1.
+      initialViewportZoom: artifactBridge.getViewportZoom()
     })
     if (!srcDoc) {
       return false

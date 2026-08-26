@@ -59,7 +59,17 @@ export function buildArtifactSrcDoc(rawMarkup, options = {}) {
   // so they never paint visible on load — no flash, no masked wait.
   const hiddenCss = typeof options?.hiddenCss === 'string' ? options.hiddenCss : ''
   const activityKind = normalizeArtifactActivityKind(options?.activityKind)
-  return injectBridgeScript(baseDocument, { instanceId, hiddenCss, activityKind })
+  // Optional present-mode document zoom, baked into <head> so the FIRST
+  // paint is already at presentation scale. The host's viewport-zoom
+  // message can only land after the end-of-body bridge attaches its
+  // listener — by then an unzoomed (oversized) paint is already visible.
+  const initialViewportZoom = Number(options?.initialViewportZoom)
+  return injectBridgeScript(baseDocument, {
+    instanceId,
+    hiddenCss,
+    activityKind,
+    initialViewportZoom
+  })
 }
 
 function unwrapMarkdownFence(value) {
@@ -164,6 +174,22 @@ function injectBridgeScript(htmlDocument, options = {}) {
     return ''
   }
   source = injectBaseSizingStyle(source)
+
+  // Bake the present-mode zoom in as early as possible (right after <head>
+  // opens) so it applies before any of the body parses or paints. Number()
+  // round-trip keeps the interpolation injection-safe. Zoom 1 (edit mode)
+  // injects nothing, so non-present srcdocs stay byte-identical.
+  const initialViewportZoom = Number(options.initialViewportZoom)
+  if (Number.isFinite(initialViewportZoom) && initialViewportZoom > 0 && initialViewportZoom !== 1) {
+    const zoomTag = `<script data-prezo-viewport-zoom="bake">document.documentElement.style.zoom = "${initialViewportZoom}"<\/script>`
+    if (/<head\b[^>]*>/i.test(source)) {
+      source = source.replace(/<head\b[^>]*>/i, (match) => `${match}\n${zoomTag}`)
+    } else if (/<body\b[^>]*>/i.test(source)) {
+      source = source.replace(/<body\b[^>]*>/i, (match) => `${zoomTag}\n${match}`)
+    } else {
+      source = `${zoomTag}\n${source}`
+    }
+  }
 
   // Bake the hide stylesheet for deleted elements into <head> (before <body>
   // parses) so the renderer's first paint already excludes them. The iframe's

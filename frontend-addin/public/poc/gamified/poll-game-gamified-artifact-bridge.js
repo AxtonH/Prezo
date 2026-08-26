@@ -354,6 +354,22 @@ export function createPollGameArtifactBridge({
     artifactState.reportedContentHeight = Math.round(fit.scaledHeight)
   }
 
+  /**
+   * The document zoom the artifact should render at RIGHT NOW: the present-
+   * mode fit scale, or 1 in edit mode (where the host transform-scales the
+   * frame instead). Used to bake the initial zoom into a fresh srcdoc so the
+   * first paint is already at presentation scale — the post-load zoom
+   * message otherwise arrives after the unzoomed document is visible.
+   */
+  function getViewportZoom() {
+    if (!getIsPresentMode()) {
+      return 1
+    }
+    const stageSize = readStageLayoutSize()
+    const fit = computeArtifactFrameFit(stageSize.width, stageSize.height, true)
+    return fit ? fit.scale : 1
+  }
+
   function clearRenderWatchdog() {
     if (!artifactState.renderWatchdogTimerId) {
       return
@@ -403,6 +419,15 @@ export function createPollGameArtifactBridge({
   }
 
   function handleReadyMessage() {
+    // READY is posted by the same injected script that attaches the message
+    // listener, so this is the earliest moment a viewport-zoom message is
+    // guaranteed deliverable. Any zoom posted during document parse (stage
+    // ResizeObserver refits fire then) was silently dropped AND latched into
+    // the lastViewportZoom dedupe — without this re-send, the correction
+    // waits for the iframe `load` event, which stalls on images/fonts and
+    // paints the artifact unzoomed (oversized) until then.
+    artifactState.lastViewportZoom = null
+    setFrameHeight(artifactState.frameHeight, { force: true })
     const currentPayload = getCurrentPollPayload()
     if (currentPayload) {
       artifactState.pendingPayload = currentPayload
@@ -433,6 +458,7 @@ export function createPollGameArtifactBridge({
     setFrameHeight,
     handleViewportResize,
     applyFrameFit,
+    getViewportZoom,
     clearRenderWatchdog,
     scheduleRenderWatchdog,
     dispose
