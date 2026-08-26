@@ -3932,6 +3932,13 @@ body.present-mode-fullscreen .wrap {
    surplus axis — the stage's black background shows through.
    ---------------------------------------------------------------- */
 
+/* The page itself goes black too: during webview re-parent/resize repaints
+   (PowerPoint F5) the body can flash through before the fixed wrap covers
+   the new box. */
+body.present-mode-artifact {
+  background: #000;
+}
+
 body.present-mode-artifact .wrap,
 body.present-mode-artifact.present-mode-fullscreen .wrap {
   top: 0;

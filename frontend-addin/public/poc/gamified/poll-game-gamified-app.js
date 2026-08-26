@@ -1816,6 +1816,18 @@ import {
     document.addEventListener('fullscreenchange', handlePresentModeFullscreenChange)
     document.addEventListener('webkitfullscreenchange', handlePresentModeFullscreenChange)
     window.addEventListener('message', handlePresentModeMessage)
+    // PowerPoint keeps the on-slide embed webview alive and re-parents it
+    // into the slideshow window on F5 — from in here that is just a large
+    // window resize on an already-rendered artifact. Curtain the frame for
+    // each resize burst so the refit/zoom/re-render chain settles behind
+    // the black stage instead of playing out as an on-camera expansion.
+    // Each call re-arms the reveal timer, so a burst stays masked until
+    // ARTIFACT_GEOMETRY_SETTLE_REVEAL_MS after its last resize event.
+    window.addEventListener('resize', () => {
+      if (state.presentMode) {
+        maskArtifactFrameForGeometryTransition()
+      }
+    })
   }
 
   /**

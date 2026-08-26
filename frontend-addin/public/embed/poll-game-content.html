@@ -310,6 +310,17 @@
         inset: 0;
         z-index: 100;
       }
+
+      /*
+       * Present mode paints the page black. PowerPoint keeps this webview
+       * alive and RE-PARENTS it into the slideshow window on F5; during the
+       * re-parent/resize repaints (and any beat where the inner station
+       * iframe hasn't covered the new box yet) the page background shows —
+       * a white flash on a dark presentation if left at the light --bg.
+       */
+      body.present-mode {
+        background: #000;
+      }
     </style>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
     <script src="./embed-identity.js"></script>
@@ -604,6 +615,18 @@
           }
           if (typeof row.present_mode === "boolean") {
             currentPresentMode = row.present_mode
+            // Apply the presentation CSS from the SAVED flag immediately —
+            // the station only posts prezo:present-mode seconds later, and
+            // until then a boot inside the slideshow would show the light
+            // chrome/background. Class-only: persistence still writes solely
+            // on station-posted transitions (see the message handler).
+            if (currentPresentMode) {
+              const appEl = document.querySelector(".app")
+              if (appEl) {
+                appEl.classList.add("present-mode")
+              }
+              document.body.classList.add("present-mode")
+            }
           }
         }
 
@@ -1926,6 +1949,7 @@
             if (app) {
               app.classList.toggle("present-mode", isActive)
             }
+            document.body.classList.toggle("present-mode", isActive)
             if (isActive === currentPresentMode) {
               return
             }
