@@ -2004,6 +2004,10 @@ import {
       el.settingsPanel.classList.remove('open')
     } else {
       el.settingsPanel.classList.toggle('open', !ribbonState.collapsed)
+      // Exiting present mode mid-boot must not leave the boot curtain's
+      // hidden body in place until its safety timeout — the editor chrome
+      // is the thing to show now.
+      clearPresentBootCurtain()
     }
     syncPresentModeUi()
     // Real transition (the early return above filtered echoes) — safe to
@@ -3205,6 +3209,9 @@ import {
   function showArtifactStagePlaceholder(text, type = 'pending') {
     setArtifactStagePlaceholder(text, type)
     setArtifactStageSurface(ARTIFACT_STAGE_SURFACE_PLACEHOLDER)
+    // A placeholder (e.g. "sign in to load this visual") is a terminal boot
+    // state — it must be visible even under the slideshow boot curtain.
+    clearPresentBootCurtain()
   }
 
   function hideArtifactStage() {
@@ -5514,8 +5521,22 @@ import {
       clearTimeout(artifactRevealTimerId)
       artifactRevealTimerId = 0
     }
+    clearPresentBootCurtain()
     if (!el.artifactFrame) return
     el.artifactFrame.classList.remove('artifact-frame--overrides-pending')
+  }
+
+  /**
+   * Lift the slideshow boot curtain (black page + hidden body, applied by
+   * the inline <head> script in poll-game-poc.html when the URL says this
+   * boot is a presented artifact). Called from the artifact frame's reveal
+   * paths and the placeholder path so every "something is ready to show"
+   * moment clears it; the inline script's own timeout is the last resort.
+   */
+  function clearPresentBootCurtain() {
+    try {
+      document.documentElement.classList.remove('prezo-present-boot')
+    } catch {}
   }
 
   /**

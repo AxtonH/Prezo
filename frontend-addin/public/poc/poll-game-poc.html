@@ -30,6 +30,28 @@
       (~1KB) and the inline copy is only consulted during the brief window
       before the main sheet attaches.
     -->
+    <script>
+      // Presentation boot curtain. When this page boots INSIDE a slideshow
+      // (the outer embed passes presentMode=1 + the artifact visual mode in
+      // the URL, both knowable synchronously), the editor's light skeleton
+      // and chrome must never paint — on a projector they read as a white
+      // flash before the artifact appears. The class paints the page black
+      // and hides the body until the artifact frame's first reveal clears
+      // it (see revealArtifactFrame); the timer is a safety net so no boot
+      // path can leave the station permanently blank.
+      try {
+        var prezoBootQuery = new URLSearchParams(window.location.search)
+        if (
+          prezoBootQuery.get("presentMode") === "1" &&
+          prezoBootQuery.get("visualMode") === "artifact"
+        ) {
+          document.documentElement.classList.add("prezo-present-boot")
+          window.setTimeout(function () {
+            document.documentElement.classList.remove("prezo-present-boot")
+          }, 6000)
+        }
+      } catch (e) {}
+    </script>
     <style>
       * { box-sizing: border-box; }
       html, body {
@@ -39,6 +61,16 @@
         font-family: "Inter", "Sora", "Segoe UI", system-ui, sans-serif;
         overflow: hidden;
         background: #fafafa;
+      }
+      html.prezo-present-boot,
+      html.prezo-present-boot body {
+        background: #000;
+      }
+      html.prezo-present-boot body {
+        visibility: hidden;
+      }
+      html.prezo-present-boot .initial-skeleton {
+        display: none;
       }
       .initial-skeleton {
         position: absolute;
