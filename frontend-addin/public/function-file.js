@@ -22,6 +22,11 @@
   const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
   const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
   const POLL_BINDING_TAG = 'PrezoPollWidgetPollId'
+  /** Option identity stamped on every row part at insert (mirrors
+   * src/office/widgetShapes.ts OPTION_INDEX_TAG): the taskpane's recovery
+   * pairs rows to poll options by this index, so designer rearrangements
+   * can't permute option order. */
+  const OPTION_INDEX_TAG = 'PrezoWidgetOptionIndex'
   const DEFAULT_API_BASE_URL = 'http://localhost:8000'
   const MAX_QNA_ITEMS = 4
   const MAX_POLL_OPTIONS = 5
@@ -2425,6 +2430,7 @@
         label.textFrame.textRange.paragraphFormat.alignment = isVertical ? 'Center' : 'Left'
         label.tags.add(POLL_WIDGET_TAG, 'true')
         label.tags.add('PrezoWidgetRole', 'poll-label')
+        label.tags.add(OPTION_INDEX_TAG, String(index))
 
         const barTop = isVertical ? verticalBarTop : rowTop + 18
         const bg = slide.shapes.addGeometricShape('Rectangle', {
@@ -2438,6 +2444,7 @@
         bg.lineFormat.visible = false
         bg.tags.add(POLL_WIDGET_TAG, 'true')
         bg.tags.add('PrezoWidgetRole', 'poll-bar-bg')
+        bg.tags.add(OPTION_INDEX_TAG, String(index))
 
         const fillHeight = isVertical
           ? Math.max(2, verticalBarAreaHeight * 0.35)
@@ -2453,6 +2460,7 @@
         fill.lineFormat.visible = false
         fill.tags.add(POLL_WIDGET_TAG, 'true')
         fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
+        fill.tags.add(OPTION_INDEX_TAG, String(index))
 
         itemShapes.push({ label, bg, fill, group: null })
       }
@@ -2471,6 +2479,9 @@
         rowGroup.name = `Prezo Poll Option ${index + 1} Row`
         rowGroup.tags.add(POLL_WIDGET_TAG, 'true')
         rowGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+        /** Group AND parts both carry the index: the group covers the grouped
+         * case, the parts keep identity through a designer ungroup. */
+        rowGroup.tags.add(OPTION_INDEX_TAG, String(index))
         item.group = rowGroup
         item.label.load('id')
         rowGroup.load('id')

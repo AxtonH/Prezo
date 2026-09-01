@@ -30,6 +30,19 @@ const POLL_SHAPES_TAG = 'PrezoPollWidgetShapeIds'
 const POLL_PENDING_TAG = 'PrezoPollWidgetPending'
 const POLL_STYLE_TAG = 'PrezoPollWidgetStyle'
 const POLL_BINDING_TAG = 'PrezoPollWidgetPollId'
+/** Written by the remnant purge in place of the tags it deletes, so a widget
+ * whose shapes come back (cut → purge → paste) can be re-adopted WITH its
+ * binding instead of reviving as an unbound skeleton. Field origin
+ * (01/09/2026): cutting a widget can't take its hidden surplus rows along
+ * (marquee select skips hidden shapes), the cut-window pass judged the
+ * leftovers a hand-deleted remnant, and the purge orphaned the pasted copy
+ * for the rest of the session. */
+const POLL_TOMBSTONE_TAG = 'PrezoPollWidgetTombstone'
+/** Stamped on each option row (group + label + bg + fill) at insert so
+ * recovery can pair rows to poll options by identity. Positional pairing is
+ * the legacy fallback only — it breaks on designer layouts that tie on the
+ * sort axis (rows arranged side by side), where order degraded to z-order. */
+const OPTION_INDEX_TAG = 'PrezoWidgetOptionIndex'
 const POLL_TEXT_SYNC_TAG = 'PrezoPollWidgetAutoText'
 
 /** Slide tags the slideshow conductor needs to map widget slides to polls. */
@@ -756,6 +769,15 @@ type PollTextSyncState = {
  */
 const appliedWidgetSignatures = new Map<string, string>()
 const NO_WIDGET_SIGNATURE = 'no-widget'
+
+/** First time each slide's poll shapes were seen in the all-hidden "remnant"
+ * state, keyed by slideKey. The purge only fires once the verdict has held
+ * this long — a widget sitting on the clipboard mid cut/paste looks exactly
+ * like hand-deleted debris, and purging inside that window destroyed the
+ * binding the pasted copy needed. Real debris is permanent, so it still gets
+ * purged, just a beat later. */
+const remnantFirstSeenAt = new Map<string, number>()
+const REMNANT_PURGE_CONFIRM_MS = 15000
 
 /** Options shared by the widget update entry points. */
 type WidgetUpdatePassOptions = {
@@ -2446,6 +2468,7 @@ export async function insertPollWidget(
       label.name = `Prezo Poll Option ${index + 1} Label`
       label.tags.add(POLL_WIDGET_TAG, 'true')
       label.tags.add('PrezoWidgetRole', 'poll-label')
+      label.tags.add(OPTION_INDEX_TAG, String(index))
       label.tags.add(POLL_TEXT_SYNC_TAG, showItem ? `Option ${index + 1}` : '')
 
       const barTop = isVertical ? verticalBarTop : rowTop + 18
@@ -2461,6 +2484,7 @@ export async function insertPollWidget(
       bg.name = `Prezo Poll Option ${index + 1} Bar Track`
       bg.tags.add(POLL_WIDGET_TAG, 'true')
       bg.tags.add('PrezoWidgetRole', 'poll-bar-bg')
+      bg.tags.add(OPTION_INDEX_TAG, String(index))
 
       const fillHeight = isVertical
         ? Math.max(2, verticalBarAreaHeight * POLL_SKELETON_FILL_RATIO)
@@ -2481,6 +2505,7 @@ export async function insertPollWidget(
       fill.name = `Prezo Poll Option ${index + 1} Bar Fill`
       fill.tags.add(POLL_WIDGET_TAG, 'true')
       fill.tags.add('PrezoWidgetRole', 'poll-bar-fill')
+      fill.tags.add(OPTION_INDEX_TAG, String(index))
 
       itemShapes.push({ label, group: null, bg, fill, showItem })
     }
@@ -2499,6 +2524,9 @@ export async function insertPollWidget(
       rowGroup.name = `Prezo Poll Option ${index + 1} Row`
       rowGroup.tags.add(POLL_WIDGET_TAG, 'true')
       rowGroup.tags.add('PrezoWidgetRole', 'poll-bar-group')
+      /** Option identity on the group AND its parts: the group covers the
+       * grouped case, the parts keep identity through a designer ungroup. */
+      rowGroup.tags.add(OPTION_INDEX_TAG, String(index))
       item.group = rowGroup
 
       /** Rows beyond the style's option count start truly hidden on capable
@@ -2906,12 +2934,29 @@ export async function updatePollWidget(
       const tagged = scope.items.map((shape) => {
         const pollTag = shape.tags.getItemOrNullObject(POLL_WIDGET_TAG)
         const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+        const indexTag = shape.tags.getItemOrNullObject(OPTION_INDEX_TAG)
         pollTag.load('value')
         roleTag.load('value')
+        indexTag.load('value')
         shape.load(['id', 'left', 'top', 'width', 'height', 'type'])
-        return { shape, pollTag, roleTag }
+        return { shape, pollTag, roleTag, indexTag }
       })
       await context.sync()
+
+      /** Option identity (inserts since 01/09/2026 stamp every row part):
+       * rows pair to options by this index wherever present, so designer
+       * rearrangements — including side-by-side rows whose positions tie on
+       * the sort axis — can never permute the option order. */
+      const optionIndexById = new Map<string, number>()
+      tagged.forEach(({ shape, indexTag }) => {
+        if (indexTag.isNullObject || !indexTag.value) {
+          return
+        }
+        const parsedIndex = parseInt(indexTag.value, 10)
+        if (Number.isFinite(parsedIndex)) {
+          optionIndexById.set(shape.id, parsedIndex)
+        }
+      })
 
       const labels: PowerPoint.Shape[] = []
       const bars: PowerPoint.Shape[] = []
@@ -3045,12 +3090,36 @@ export async function updatePollWidget(
         })
       }
 
+      /** Order: option-index identity first; position only as the legacy
+       * fallback, with a cross-axis tiebreaker — rows arranged side by side
+       * tie on the primary axis, and a bare tie degraded to z-order, which
+       * is how designer layouts got their options permuted. */
       const sortKey = (shape: PowerPoint.Shape) =>
         isVerticalLayout ? shape.left : shape.top
+      const crossKey = (shape: PowerPoint.Shape) =>
+        isVerticalLayout ? shape.top : shape.left
+      const optionIndexOf = (
+        ...shapes: Array<PowerPoint.Shape | null | undefined>
+      ): number => {
+        for (const shape of shapes) {
+          const value = shape ? optionIndexById.get(shape.id) : undefined
+          if (typeof value === 'number') {
+            return value
+          }
+        }
+        return Number.POSITIVE_INFINITY
+      }
+      /** Infinity-safe compare (Infinity - Infinity is NaN). */
+      const cmpIndex = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1)
       /** Group children can surface in the top-level scan too — keep them
        * out of the loose-label pool so they aren't paired twice. */
       const looseLabels = labels.filter((shape) => !groupChildIds.has(shape.id))
-      looseLabels.sort((a, b) => sortKey(a) - sortKey(b))
+      looseLabels.sort(
+        (a, b) =>
+          cmpIndex(optionIndexOf(a), optionIndexOf(b)) ||
+          sortKey(a) - sortKey(b) ||
+          crossKey(a) - crossKey(b)
+      )
 
       const barItems: PollBarItem[] =
         groupedBarItems.length > 0
@@ -3059,7 +3128,12 @@ export async function updatePollWidget(
               bg: bars[index],
               fill: fills[index]
             }))
-      barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
+      barItems.sort(
+        (a, b) =>
+          cmpIndex(optionIndexOf(a.group, a.bg), optionIndexOf(b.group, b.bg)) ||
+          sortKey(a.bg) - sortKey(b.bg) ||
+          crossKey(a.bg) - crossKey(b.bg)
+      )
 
       const hasAnyLabel =
         looseLabels.length > 0 || groupedBarItems.some((item) => Boolean(item.label))
@@ -3069,10 +3143,29 @@ export async function updatePollWidget(
         return null
       }
 
-      let looseLabelIndex = 0
+      /** Loose labels pair by option-index identity when both sides carry
+       * one (ungrouped rows keep their part tags), sequentially otherwise —
+       * index-blind sequential pairing crossed labels between rows whenever
+       * the two sorts resolved ties differently. */
+      const looseLabelPool = [...looseLabels]
+      const takeLabelForBar = (barItem: PollBarItem): PowerPoint.Shape | undefined => {
+        if (barItem.label) {
+          return barItem.label
+        }
+        const barIndex = optionIndexOf(barItem.group, barItem.bg)
+        if (Number.isFinite(barIndex)) {
+          const matchAt = looseLabelPool.findIndex(
+            (label) => optionIndexOf(label) === barIndex
+          )
+          if (matchAt !== -1) {
+            return looseLabelPool.splice(matchAt, 1)[0]
+          }
+        }
+        return looseLabelPool.shift()
+      }
       const items: NonNullable<PollWidgetShapeIds['items']> = []
       for (const barItem of barItems) {
-        const label = barItem.label ?? looseLabels[looseLabelIndex++]
+        const label = takeLabelForBar(barItem)
         if (!label) {
           break
         }
@@ -3105,12 +3198,14 @@ export async function updatePollWidget(
       const shapeTag = slide.tags.getItemOrNullObject(POLL_SHAPES_TAG)
       const styleTag = slide.tags.getItemOrNullObject(POLL_STYLE_TAG)
       const bindingTag = slide.tags.getItemOrNullObject(POLL_BINDING_TAG)
+      const tombstoneTag = slide.tags.getItemOrNullObject(POLL_TOMBSTONE_TAG)
       sessionTag.load('value')
       pendingTag.load('value')
       shapeTag.load('value')
       styleTag.load('value')
       bindingTag.load('value')
-      return { slide, sessionTag, pendingTag, shapeTag, styleTag, bindingTag }
+      tombstoneTag.load('value')
+      return { slide, sessionTag, pendingTag, shapeTag, styleTag, bindingTag, tombstoneTag }
     })
 
     await context.sync()
@@ -3147,24 +3242,26 @@ export async function updatePollWidget(
           style = DEFAULT_POLL_STYLE
         }
       }
-      const boundPollId =
+      let boundPollId =
         !info.bindingTag.isNullObject && info.bindingTag.value
           ? info.bindingTag.value.trim()
           : ''
       /** Unbound widgets never auto-follow a poll: they hold the designable
-       * placeholder skeleton until the host explicitly binds one. */
-      const poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : null
-      const optionData = buildPollOptions(poll)
-      const questionText = boundPollId
+       * placeholder skeleton until the host explicitly binds one.
+       * `let` (not const): a tombstone restore during shape adoption below
+       * re-derives these for the same pass. */
+      let poll = boundPollId ? (pollMap.get(boundPollId) ?? null) : null
+      let optionData = buildPollOptions(poll)
+      let questionText = boundPollId
         ? poll
           ? buildPollQuestion(poll)
           : 'Poll not found.'
         : POLL_BIND_PLACEHOLDER
       const isVertical = style.orientation === 'vertical'
-      const visibleOptions = poll
+      let visibleOptions = poll
         ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
         : style.maxOptions
-      const hasPollData = Boolean(poll)
+      let hasPollData = Boolean(poll)
       const forceText =
         options?.forceText && poll && poll.id === options.forceText.pollId
           ? options.forceText
@@ -3220,6 +3317,47 @@ export async function updatePollWidget(
         recovered = Boolean(shapeIds)
         if (shapeIds) {
           setSlideTag(info.slide, POLL_SHAPES_TAG, JSON.stringify(shapeIds))
+          /** Adopting shapes on a purged slide: restore what the purge
+           * recorded, so a pasted-back widget returns with its binding and
+           * style instead of as an unbound skeleton. Same-session only —
+           * a tombstone from another session is left for that session. */
+          if (!info.tombstoneTag.isNullObject && info.tombstoneTag.value) {
+            try {
+              const tomb = JSON.parse(info.tombstoneTag.value) as {
+                sessionId?: string | null
+                binding?: string | null
+                style?: string | null
+              }
+              if (tomb.sessionId === sessionId) {
+                setSlideTag(info.slide, POLL_SESSION_TAG, sessionId)
+                if (tomb.binding) {
+                  setSlideTag(info.slide, POLL_BINDING_TAG, tomb.binding)
+                }
+                if (tomb.style) {
+                  setSlideTag(info.slide, POLL_STYLE_TAG, tomb.style)
+                }
+                info.slide.tags.delete(POLL_TOMBSTONE_TAG)
+                await context.sync()
+                /** Re-derive the binding-dependent view of this pass so the
+                 * revived widget renders its poll NOW rather than flashing
+                 * the unbound placeholder until the next data change. The
+                 * cached signature stays as computed from the pre-restore
+                 * tags, so the next pass re-runs once and converges. */
+                if (tomb.binding) {
+                  boundPollId = tomb.binding.trim()
+                  poll = pollMap.get(boundPollId) ?? null
+                  optionData = buildPollOptions(poll)
+                  questionText = poll ? buildPollQuestion(poll) : 'Poll not found.'
+                  visibleOptions = poll
+                    ? Math.max(1, Math.min(optionData.length, MAX_POLL_OPTIONS))
+                    : style.maxOptions
+                  hasPollData = Boolean(poll)
+                }
+              }
+            } catch {
+              // Unreadable tombstone — adopt unbound, leave it for inspection.
+            }
+          }
         }
       }
 
@@ -3358,11 +3496,26 @@ export async function updatePollWidget(
         await context.sync()
         const tagged = fallbackScope.items.map((shape) => {
           const roleTag = shape.tags.getItemOrNullObject('PrezoWidgetRole')
+          const indexTag = shape.tags.getItemOrNullObject(OPTION_INDEX_TAG)
           roleTag.load('value')
+          indexTag.load('value')
           shape.load(withVisible(['id', 'left', 'top', 'width', 'height', 'type']))
-          return { shape, roleTag }
+          return { shape, roleTag, indexTag }
         })
         await context.sync()
+
+        /** Option identity, mirroring recoverPollShapeIds: rows pair to
+         * options by the index stamped at insert wherever present. */
+        const optionIndexById = new Map<string, number>()
+        tagged.forEach(({ shape, indexTag }) => {
+          if (indexTag.isNullObject || !indexTag.value) {
+            return
+          }
+          const parsedIndex = parseInt(indexTag.value, 10)
+          if (Number.isFinite(parsedIndex)) {
+            optionIndexById.set(shape.id, parsedIndex)
+          }
+        })
 
         const labels: PowerPoint.Shape[] = []
         const bars: PowerPoint.Shape[] = []
@@ -3490,13 +3643,33 @@ export async function updatePollWidget(
           })
         }
 
+        /** Identity-first ordering with a positional cross-axis tiebreak —
+         * same rationale as recoverPollShapeIds. */
         const sortKey = (shape: PowerPoint.Shape) => (isVertical ? shape.left : shape.top)
+        const crossKey = (shape: PowerPoint.Shape) => (isVertical ? shape.top : shape.left)
+        const optionIndexOf = (
+          ...shapes: Array<PowerPoint.Shape | null | undefined>
+        ): number => {
+          for (const shape of shapes) {
+            const value = shape ? optionIndexById.get(shape.id) : undefined
+            if (typeof value === 'number') {
+              return value
+            }
+          }
+          return Number.POSITIVE_INFINITY
+        }
+        const cmpIndex = (a: number, b: number) => (a === b ? 0 : a < b ? -1 : 1)
         /** Group children surfaced in the top-level scan stay out of the
          * loose pools — they pair by membership, and the remnant verdict
          * below must not read a hidden row's children (whose own visible
          * flag stays true inside a hidden group) as visible anchors. */
         const looseLabels = labels.filter((shape) => !groupChildIds.has(shape.id))
-        looseLabels.sort((a, b) => sortKey(a) - sortKey(b))
+        looseLabels.sort(
+          (a, b) =>
+            cmpIndex(optionIndexOf(a), optionIndexOf(b)) ||
+            sortKey(a) - sortKey(b) ||
+            crossKey(a) - crossKey(b)
+        )
         const barItems: PollBarItem[] =
           groupedBarItems.length > 0
             ? groupedBarItems
@@ -3504,7 +3677,12 @@ export async function updatePollWidget(
                 bg: bars[index],
                 fill: fills[index]
               }))
-        barItems.sort((a, b) => sortKey(a.bg) - sortKey(b.bg))
+        barItems.sort(
+          (a, b) =>
+            cmpIndex(optionIndexOf(a.group, a.bg), optionIndexOf(b.group, b.bg)) ||
+            sortKey(a.bg) - sortKey(b.bg) ||
+            crossKey(a.bg) - crossKey(b.bg)
+        )
 
         /**
          * Remnant detection: a "widget" whose EVERY recovered shape is
@@ -3541,8 +3719,42 @@ export async function updatePollWidget(
           useShapeVisibility &&
           presentAnchors.length > 0 &&
           presentAnchors.every((shape) => loadedVisibleState(shape) === false)
+        if (!isRemnantOnly) {
+          remnantFirstSeenAt.delete(slideKey)
+        }
         if (isRemnantOnly) {
+          /** Debounce (01/09/2026): during a cut/paste the visible shapes sit
+           * on the clipboard and this slide looks exactly like debris — a cut
+           * fires a selection-change repair pass immediately, so the purge
+           * used to land inside the cut window and destroy the binding the
+           * pasted copy needed. Purge only after the verdict has held for
+           * REMNANT_PURGE_CONFIRM_MS; until then skip the slide, uncached, so
+           * the next pass re-judges it. */
+          const firstSeenAt = remnantFirstSeenAt.get(slideKey)
+          const now = Date.now()
+          if (firstSeenAt === undefined) {
+            remnantFirstSeenAt.set(slideKey, now)
+            continue
+          }
+          if (now - firstSeenAt < REMNANT_PURGE_CONFIRM_MS) {
+            continue
+          }
+          remnantFirstSeenAt.delete(slideKey)
           syncPhase = 'purge-remnants'
+          /** Tombstone before the tag deletes: if these shapes ever come back
+           * (long-held clipboard, undo), adoption restores the binding/style
+           * recorded here instead of reviving an unbound skeleton. */
+          setSlideTag(
+            info.slide,
+            POLL_TOMBSTONE_TAG,
+            JSON.stringify({
+              sessionId: info.sessionTag.isNullObject ? null : info.sessionTag.value || null,
+              binding: boundPollId || null,
+              style:
+                info.styleTag.isNullObject || !info.styleTag.value ? null : info.styleTag.value,
+              purgedAt: Date.now()
+            })
+          )
           const remnantShapes = [
             ...presentAnchors,
             ...(barGroups.length > 0 ? [...bars, ...fills] : [])
@@ -3570,7 +3782,23 @@ export async function updatePollWidget(
           continue
         }
 
-        let looseLabelIndex = 0
+        /** Identity-first label pairing, mirroring recoverPollShapeIds. */
+        const looseLabelPool = [...looseLabels]
+        const takeLabelForBar = (barItem: PollBarItem): PowerPoint.Shape | undefined => {
+          if (barItem.label) {
+            return barItem.label
+          }
+          const barIndex = optionIndexOf(barItem.group, barItem.bg)
+          if (Number.isFinite(barIndex)) {
+            const matchAt = looseLabelPool.findIndex(
+              (label) => optionIndexOf(label) === barIndex
+            )
+            if (matchAt !== -1) {
+              return looseLabelPool.splice(matchAt, 1)[0]
+            }
+          }
+          return looseLabelPool.shift()
+        }
         const taggedItems: Array<{
           label: PowerPoint.Shape
           group: PowerPoint.Shape | null
@@ -3578,7 +3806,7 @@ export async function updatePollWidget(
           fill: PowerPoint.Shape
         }> = []
         for (const barItem of barItems) {
-          const label = barItem.label ?? looseLabels[looseLabelIndex++]
+          const label = takeLabelForBar(barItem)
           if (!label) {
             break
           }
