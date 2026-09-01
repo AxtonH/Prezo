@@ -23,6 +23,60 @@
     <!-- Office.js is injected from main.tsx only in real add-in hosts (see loadOfficeJs).
          Loading it on every page (e.g. localhost in Chrome) pulls Microsoft telemetry and can log
          "Unsafe attempt to load URL ... telemetryproxy.html ... chrome-error://chromewebdata/". -->
+    <!-- Early taskpane widen. PowerPoint shows the pane chrome at its narrow
+         default width before any add-in code runs; waiting for the app bundle
+         to execute and then dynamically load office.js before calling setWidth
+         is what made the open visibly stutter (narrow pause, then a late jump).
+         This script starts office.js in parallel with the bundle and widens the
+         instant the host API is ready — the closest a web add-in can get to a
+         native pane's "set Width before Visible" open. Constants and logic
+         mirror src/office/taskpaneWidth.ts (which stays as the pre-first-paint
+         render gate / fallback) — KEEP BOTH IN SYNC. loadOfficeJs() in
+         src/main.tsx dedupes on the data-prezo-office-js marker. ES5 on
+         purpose: a legacy webview must parse (not run) this without erroring. -->
+    <script>
+      ;(function () {
+        try {
+          var search = window.location.search || ''
+          // Real add-in hosts inject _host_Info; skip plain browser tabs
+          // (telemetry, see note above) and non-taskpane frames.
+          if (search.indexOf('host_Info') === -1) return
+          if (/[?&]mode=(display|manager)(&|$)/.test(search)) return
+          var s = document.createElement('script')
+          s.src = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js'
+          s.async = true
+          s.setAttribute('data-prezo-office-js', 'true')
+          s.onload = function () {
+            try {
+              if (!window.Office || !window.Office.onReady) return
+              window.Office.onReady(function () {
+                try {
+                  var lifecycle = window.Office.extensionLifeCycle
+                  var taskpane = lifecycle && lifecycle.taskpane
+                  if (!taskpane || typeof taskpane.setWidth !== 'function') return
+                  var current = Math.round(window.innerWidth)
+                  if (!(current > 0)) return
+                  var KEY = 'prezo.taskpaneTargetWidthPx'
+                  var target = NaN
+                  try {
+                    target = parseInt(window.localStorage.getItem(KEY) || '', 10)
+                  } catch (e) {}
+                  if (!(target >= 360 && target <= 680)) {
+                    target = Math.min(Math.max(Math.round(current * 1.4), 360), 680)
+                    try {
+                      window.localStorage.setItem(KEY, String(target))
+                    } catch (e) {}
+                  }
+                  if (current >= target - 20) return
+                  taskpane.setWidth(target)
+                } catch (e) {}
+              })
+            } catch (e) {}
+          }
+          document.head.appendChild(s)
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

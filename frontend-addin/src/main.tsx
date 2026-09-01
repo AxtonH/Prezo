@@ -79,10 +79,13 @@ const start = async () => {
   const mode = params.get('mode')
 
   // Host taskpane only: PowerPoint reopens the pane at its default (narrow)
-  // width every time, so each boot re-applies the remembered wider target.
-  // Doing it here — before the first React paint — keeps the open from
-  // flickering (paint narrow → host resize → reflow). No-op outside a
-  // TaskPaneApi 1.1 host, and display/widget-manager frames are never widened.
+  // width every time. The inline script in index.html normally widens the
+  // pane long before this line runs (it fires as soon as office.js is ready,
+  // in parallel with the bundle); this call is the render gate and fallback —
+  // if the resize is still in flight it re-requests the same target
+  // (idempotent) and holds React's first paint until the width lands, so the
+  // UI never lays out narrow and reflows. No-op outside a TaskPaneApi 1.1
+  // host, and display/widget-manager frames are never widened.
   if (mode !== 'display' && mode !== 'manager') {
     await settleTaskpaneWidthBeforeFirstPaint()
   }

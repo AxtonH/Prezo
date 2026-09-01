@@ -12,6 +12,13 @@
  * and remembered, and every boot re-applies it when the pane comes up
  * narrower. The pane is never shrunk: a user who drags wider than the
  * target stays wider for their session.
+ *
+ * NOTE: index.html carries an inline ES5 copy of this logic that fires as
+ * soon as office.js is ready — before the app bundle has even parsed — so
+ * the pane expands near-instantly on open instead of stuttering. The
+ * constants and clamp/slack rules there MUST match this file; change both
+ * together. This module remains the pre-first-paint render gate and the
+ * fallback when the early script did not run.
  */
 
 const TARGET_KEY = 'prezo.taskpaneTargetWidthPx'
