@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import { DisplayApp } from './DisplayApp'
 import { WidgetManagerApp } from './WidgetManagerApp'
-import { settleTaskpaneWidthBeforeFirstPaint } from './office/taskpaneWidth'
+import {
+  settleTaskpaneWidthBeforeFirstPaint,
+  watchTaskpaneVisibilityForWidth,
+} from './office/taskpaneWidth'
 import './index.css'
 
 declare global {
@@ -88,6 +91,10 @@ const start = async () => {
   // host, and display/widget-manager frames are never widened.
   if (mode !== 'display' && mode !== 'manager') {
     await settleTaskpaneWidthBeforeFirstPaint()
+    // Shared runtime (manifest <Runtimes lifetime="long">): the pane hides on
+    // close instead of unloading, so reopens skip the cold boot entirely —
+    // this re-applies the width the instant the pane becomes visible again.
+    watchTaskpaneVisibilityForWidth()
   }
 
   ReactDOM.createRoot(root).render(
