@@ -11,7 +11,7 @@
   xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
   xsi:type="TaskPaneApp">
   <Id>7f6d2a90-58c4-4b1e-b1d3-2f9a34c8e6a2</Id>
-  <Version>1.0.0.3</Version>
+  <Version>1.0.0.2</Version>
   <ProviderName>Prezo</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Prezo (Dev)" />
@@ -38,17 +38,6 @@
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Hosts>
       <Host xsi:type="Presentation">
-        <!-- Shared runtime, matched to the taskpane by resid: the pane's runtime
-             survives close (lifetime="long"), so reopening re-attaches to the
-             already-rendered app instead of cold-booting a fresh webview at the
-             host's narrow default width (the open stutter). The function file
-             keeps its own resid on purpose — a Widgets click must NOT boot the
-             full app (its embed warm-up sweep flips slides; see
-             src/office/embedWarmup.ts). Hosts without SharedRuntime support
-             ignore this element and behave exactly as before. -->
-        <Runtimes>
-          <Runtime resid="Prezo.TaskpaneUrl" lifetime="long" />
-        </Runtimes>
         <DesktopFormFactor>
           <FunctionFile resid="Prezo.FunctionFileUrl" />
           <ExtensionPoint xsi:type="PrimaryCommandSurface">

@@ -83,51 +83,6 @@ export function ensureTaskpaneWidth(): boolean {
 }
 
 /**
- * Shared-runtime reopen path. The manifest gives the taskpane a
- * lifetime="long" shared runtime, so closing the pane hides this runtime
- * instead of destroying it and reopening re-attaches to the already-rendered
- * app — no webview boot, no bundle, no office.js fetch. The host still
- * re-shows the pane chrome at its default (narrow) width, so re-apply the
- * remembered target the moment visibility flips back; with Office already
- * initialized this lands within a frame or two instead of after a full cold
- * boot. Office.addin only exists under a shared runtime — on classic
- * (per-open) runtimes this registers nothing and boot behaves as before.
- */
-export function watchTaskpaneVisibilityForWidth(): void {
-  const addin = (
-    typeof Office !== 'undefined'
-      ? (
-          Office as unknown as {
-            addin?: {
-              onVisibilityModeChanged?: (
-                handler: (message: { visibilityMode?: string }) => void
-              ) => Promise<unknown>
-            }
-          }
-        ).addin
-      : undefined
-  )
-  if (!addin || typeof addin.onVisibilityModeChanged !== 'function') {
-    return
-  }
-  try {
-    void addin
-      .onVisibilityModeChanged((message) => {
-        const mode = String(message?.visibilityMode || '').toLowerCase()
-        if (mode && mode !== 'hidden') {
-          ensureTaskpaneWidth()
-        }
-      })
-      .catch(() => {
-        // Host refused the registration (unsupported build) — reopen then
-        // falls back to whatever width the host chooses.
-      })
-  } catch {
-    // Same fallback: never let width plumbing break boot.
-  }
-}
-
-/**
  * Boot-time variant: widen BEFORE the app's first paint and hold rendering
  * until the host has applied the width (first resize event) or a short
  * timeout passes. Painting first and resizing after is what made the pane
